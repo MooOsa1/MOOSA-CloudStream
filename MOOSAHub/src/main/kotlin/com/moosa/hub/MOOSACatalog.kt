@@ -190,25 +190,24 @@ object MOOSACatalog {
         val canLoadMore =
             allItems.isNotEmpty() && lastFetchedPage < maxPage
 
-        val visibleItems = if (
+        if (
             showMoreButton &&
             page == 1 &&
             canLoadMore &&
             api is MOOSAHubProvider
         ) {
-            allItems + MOOSASeeAll.makeButton(
+            MOOSASeeAll.register(
                 api = api,
                 request = request,
                 items = allItems,
-                hasNext = true
+                hasNext = true,
+                horizontal = false
             )
-        } else {
-            allItems
         }
 
         newHomePageResponse(
             request,
-            visibleItems,
+            allItems,
             hasNext = if (showMoreButton && page == 1) {
                 false
             } else {
