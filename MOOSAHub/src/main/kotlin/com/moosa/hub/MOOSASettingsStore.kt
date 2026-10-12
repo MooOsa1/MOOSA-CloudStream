@@ -2,6 +2,8 @@ package com.moosa.hub
 
 import android.content.Context
 import android.content.SharedPreferences
+import org.json.JSONArray
+import org.json.JSONObject
 
 object MOOSASettingsStore {
     private const val PREF_FILE = "MOOSAHub"
@@ -12,6 +14,7 @@ object MOOSASettingsStore {
     private const val KEY_WYZIE_KEY = "wyzie_key"
     private const val KEY_SUBDL_KEY = "subdl_key"
     private const val KEY_DISABLED_SERVERS = "disabled_servers"
+    private const val KEY_SOURCE_PROFILES = "source_profiles"
 
     @Volatile
     private var prefs: SharedPreferences? = null
@@ -78,5 +81,62 @@ object MOOSASettingsStore {
 
     fun setDisabledServers(values: Set<String>) {
         prefs?.edit()?.putStringSet(KEY_DISABLED_SERVERS, values.toSet())?.apply()
+    }
+
+    fun saveSourceProfile(name: String) {
+        val clean = name.trim()
+        if (clean.isBlank()) return
+
+        val root = JSONObject(
+            prefs?.getString(KEY_SOURCE_PROFILES, "{}") ?: "{}"
+        )
+        val array = JSONArray()
+        disabledSources().sorted().forEach { array.put(it) }
+        root.put(clean, array)
+        prefs?.edit()?.putString(KEY_SOURCE_PROFILES, root.toString())?.apply()
+    }
+
+    fun sourceProfiles(): Map<String, Set<String>> {
+        val raw = prefs?.getString(KEY_SOURCE_PROFILES, "{}") ?: "{}"
+        val root = try {
+            JSONObject(raw)
+        } catch (_: Throwable) {
+            JSONObject()
+        }
+
+        val result = linkedMapOf<String, Set<String>>()
+        val keys = root.keys()
+        while (keys.hasNext()) {
+            val name = keys.next()
+            val array = root.optJSONArray(name) ?: continue
+            val values = buildSet {
+                for (index in 0 until array.length()) {
+                    array.optString(index)
+                        .takeIf { it.isNotBlank() }
+                        ?.let(::add)
+                }
+            }
+            result[name] = values
+        }
+        return result
+    }
+
+    fun loadSourceProfile(name: String): Boolean {
+        val profile = sourceProfiles()[name] ?: return false
+        setDisabledSources(profile)
+        return true
+    }
+
+    fun deleteSourceProfile(name: String): Boolean {
+        val raw = prefs?.getString(KEY_SOURCE_PROFILES, "{}") ?: "{}"
+        val root = try {
+            JSONObject(raw)
+        } catch (_: Throwable) {
+            JSONObject()
+        }
+        if (!root.has(name)) return false
+        root.remove(name)
+        prefs?.edit()?.putString(KEY_SOURCE_PROFILES, root.toString())?.apply()
+        return true
     }
 }
