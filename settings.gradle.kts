@@ -4,3 +4,4 @@ include("MOOSAMovies")
 include("DistroTV")
 
 include("Filmzie")
+include("StreamPlay")
