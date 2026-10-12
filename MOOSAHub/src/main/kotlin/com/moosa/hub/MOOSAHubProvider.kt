@@ -22,19 +22,18 @@ class MOOSAHubProvider : TmdbProvider() {
     override val disableSeasonZero = true
     override val includeAdult = false
 
-    private val playbackProviderNames = setOf(
-        "PlexFree",
-        "Plex Free",
-        "Filmzie",
-        "DistroTV",
-        "DistroTV On Demand",
-        "InternetArchive",
-        "YouTube",
-        "Dailymotion"
-    )
-
     private fun normalizeTitle(value: String): String =
-        value.lowercase().replace(Regex("[^a-z0-9]"), "")
+        value.lowercase()
+            .replace("&", "and")
+            .replace(Regex("[^a-z0-9]"), "")
+
+    private fun isTitleMatch(candidate: String, wanted: String): Boolean {
+        val normalized = normalizeTitle(candidate)
+        if (normalized.isBlank() || wanted.isBlank()) return false
+        return normalized == wanted ||
+            normalized.contains(wanted) ||
+            wanted.contains(normalized)
+    }
 
     override suspend fun loadLinks(
         data: String,
@@ -45,37 +44,55 @@ class MOOSAHubProvider : TmdbProvider() {
         val meta = tryParseJson<TmdbLink>(data) ?: return false
         val title = meta.movieName?.takeIf { it.isNotBlank() } ?: return false
         val wantedTitle = normalizeTitle(title)
+        val isEpisode = meta.season != null && meta.episode != null
         var foundAny = false
 
-        apis.filter { api ->
-            api !== this && api.name in playbackProviderNames
-        }.amap { api ->
+        // Search every provider currently loaded in CloudStream, regardless of repository.
+        apis.filter { api -> api !== this }.amap { api ->
             try {
-                val match = api.search(title)?.firstOrNull { result ->
-                    (
-                            normalizeTitle(result.name) == wantedTitle ||
-                            normalizeTitle(result.name).contains(wantedTitle) ||
-                            wantedTitle.contains(normalizeTitle(result.name))
-                        ) &&
-                        if (meta.season == null || meta.episode == null) {
-                            result is MovieSearchResponse
-                        } else {
+                val results = api.search(title, 1)?.items.orEmpty()
+
+                val matchingResults = results.filter { result ->
+                    isTitleMatch(result.name, wantedTitle) &&
+                        if (isEpisode) {
                             result is TvSeriesSearchResponse
+                        } else {
+                            result is MovieSearchResponse
                         }
-                } ?: return@amap
+                }
 
-                val loaded = api.load(match.url) ?: return@amap
+                // Exact title first, then close title matches.
+                val orderedMatches = matchingResults.sortedByDescending { result ->
+                    normalizeTitle(result.name) == wantedTitle
+                }
 
-                val providerData = if (meta.season == null || meta.episode == null) {
-                    (loaded as? MovieLoadResponse)?.dataUrl
-                } else {
-                    (loaded as? TvSeriesLoadResponse)?.episodes?.firstOrNull { episode ->
-                        episode.season == meta.season && episode.episode == meta.episode
-                    }?.data
-                } ?: return@amap
+                for (match in orderedMatches.take(3)) {
+                    val loaded = try {
+                        api.load(match.url)
+                    } catch (error: Exception) {
+                        logError(error)
+                        null
+                    } ?: continue
 
-                if (api.loadLinks(providerData, isCasting, subtitleCallback, callback)) {
-                    foundAny = true
+                    val providerData = if (!isEpisode) {
+                        (loaded as? MovieLoadResponse)?.dataUrl
+                    } else {
+                        (loaded as? TvSeriesLoadResponse)?.episodes
+                            ?.firstOrNull { episode ->
+                                episode.season == meta.season &&
+                                    episode.episode == meta.episode
+                            }
+                            ?.data
+                    } ?: continue
+
+                    try {
+                        if (api.loadLinks(providerData, isCasting, subtitleCallback, callback)) {
+                            foundAny = true
+                            break
+                        }
+                    } catch (error: Exception) {
+                        logError(error)
+                    }
                 }
             } catch (error: Exception) {
                 logError(error)
