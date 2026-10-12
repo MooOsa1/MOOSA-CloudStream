@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.TextView
+import android.widget.Toast
 import com.lagradost.cloudstream3.CommonActivity.activity
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
@@ -15,10 +16,16 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.ui.home.HomeFragment
 import com.lagradost.cloudstream3.ui.home.HomeViewModel
 import java.util.WeakHashMap
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 object MOOSASeeAll {
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private data class CategoryState(
         val api: MOOSAHubProvider,
@@ -26,7 +33,8 @@ object MOOSASeeAll {
         var page: Int,
         var items: List<SearchResponse>,
         var hasNext: Boolean,
-        val horizontal: Boolean
+        val horizontal: Boolean,
+        var opening: Boolean = false
     )
 
     private val states = ConcurrentHashMap<String, CategoryState>()
@@ -39,7 +47,7 @@ object MOOSASeeAll {
         hasNext: Boolean,
         horizontal: Boolean = false
     ) {
-        if (!hasNext || items.isEmpty()) return
+        if (items.isEmpty()) return
 
         states[request.name] = CategoryState(
             api = api,
@@ -188,27 +196,59 @@ object MOOSASeeAll {
         return createExpandable(state)
     }
 
+    private suspend fun prefetchCategory(state: CategoryState) {
+        val targetItems = 100
+        val maxInitialPages = 5
+
+        while (
+            state.hasNext &&
+            state.items.size < targetItems &&
+            state.page < maxInitialPages
+        ) {
+            val before = state.items.size
+            expandCategory(state)
+            if (state.items.size <= before) break
+        }
+    }
+
     private fun openCategory(state: CategoryState) {
         val currentActivity = activity ?: return
-        val expandable = createExpandable(state)
+        if (state.opening) return
+        state.opening = true
 
-        mainHandler.post {
+        Toast.makeText(
+            currentActivity,
+            "Loading ${state.request.name}…",
+            Toast.LENGTH_SHORT
+        ).show()
+
+        scope.launch {
             try {
-                with(HomeFragment.Companion) {
-                    currentActivity.loadHomepageList(
-                        expand = expandable,
-                        deleteCallback = null,
-                        expandCallback = {
-                            expandCategory(state)
-                        },
-                        dismissCallback = {
-                            mainHandler.postDelayed({
-                                applyHeaders()
-                            }, 120L)
+                prefetchCategory(state)
+                val expandable = createExpandable(state)
+
+                withContext(Dispatchers.Main) {
+                    try {
+                        with(HomeFragment.Companion) {
+                            currentActivity.loadHomepageList(
+                                expand = expandable,
+                                deleteCallback = null,
+                                expandCallback = {
+                                    expandCategory(state)
+                                },
+                                dismissCallback = {
+                                    mainHandler.postDelayed({
+                                        applyHeaders()
+                                    }, 120L)
+                                }
+                            )
                         }
-                    )
+                    } finally {
+                        state.opening = false
+                    }
                 }
             } catch (_: Throwable) {
+                state.opening = false
             }
         }
     }
