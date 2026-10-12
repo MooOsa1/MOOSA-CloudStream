@@ -1044,7 +1044,11 @@ class MOOSAHubProvider : TmdbProvider() {
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
-    ): HomePageResponse = MOOSACatalog.home(this, page, request)
+    ): HomePageResponse {
+        val response = MOOSACatalog.home(this, page, request)
+        MOOSASeeAll.register(this, request, page, response)
+        return response
+    }
 
     override suspend fun search(
         query: String,
