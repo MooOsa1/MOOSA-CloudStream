@@ -104,13 +104,13 @@ object MOOSAServerRegistry {
         return result
     }
 
-    suspend fun testLink(link: ExtractorLink): Boolean {
+    private suspend fun probeOnce(link: ExtractorLink): Boolean {
         if (
             !link.url.startsWith("http://", ignoreCase = true) &&
             !link.url.startsWith("https://", ignoreCase = true)
         ) return false
 
-        return withTimeoutOrNull(3500L) {
+        return withTimeoutOrNull(4500L) {
             try {
                 val headers = link.getAllHeaders()
 
@@ -148,6 +148,7 @@ object MOOSAServerRegistry {
                         if (head.isSuccessful) {
                             val contentType =
                                 head.headers["Content-Type"].orEmpty().lowercase()
+
                             contentType.isBlank() ||
                                 (
                                     !contentType.contains("text/html") &&
@@ -156,12 +157,15 @@ object MOOSAServerRegistry {
                         } else {
                             val ranged = app.get(
                                 link.url,
-                                headers = headers + mapOf("Range" to "bytes=0-1023"),
+                                headers = headers + mapOf(
+                                    "Range" to "bytes=0-2047"
+                                ),
                                 referer = link.referer,
                                 verify = false
                             )
                             val contentType =
                                 ranged.headers["Content-Type"].orEmpty().lowercase()
+
                             ranged.isSuccessful &&
                                 !contentType.contains("text/html") &&
                                 !contentType.contains("application/json")
@@ -172,5 +176,11 @@ object MOOSAServerRegistry {
                 false
             }
         } ?: false
+    }
+
+    suspend fun testLink(link: ExtractorLink): Boolean {
+        if (probeOnce(link)) return true
+        kotlinx.coroutines.delay(300L)
+        return probeOnce(link)
     }
 }
