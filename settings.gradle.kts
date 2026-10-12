@@ -1,2 +1,2 @@
 rootProject.name = "MOOSACloudStreamPlugins"
-include("MOOSAArchiveProvider")
+include("PlutoTV")
