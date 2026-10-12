@@ -85,7 +85,7 @@
     },
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-b1ee59c947b9867b8bd35ecf1cfddb82da96fe5c9cc70dfd4a1b8c70376a7070",
+        "fileHash": "sha256-71210e5e3d9d4d6eac82ce8664b2ea8e61d8e7f27219e3bd6e527c6acb5d9827",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
         "fileSize": 8607,
@@ -98,9 +98,9 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 269,
+        "version": 270,
         "internalName": "StreamPlay",
-        "description": "TMDB movie and TV catalog with trailers. Unlicensed playback sources removed.",
+        "description": "MOOSA Hub for movies and TV",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/StreamPlay.cs3",
         "name": "StreamPlay"
     }
