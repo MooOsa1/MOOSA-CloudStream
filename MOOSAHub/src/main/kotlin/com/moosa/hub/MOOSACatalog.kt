@@ -3,6 +3,7 @@ package com.moosa.hub
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SearchResponseList
@@ -59,13 +60,13 @@ object MOOSACatalog {
         ).text
     }
 
-    private fun Item.toResponse(forceTv: Boolean? = null): SearchResponse? {
+    private fun Item.toResponse(api: MainAPI, forceTv: Boolean? = null): SearchResponse? {
         val contentId = id ?: return null
         val isTv = forceTv ?: (mediaType == "tv" || (name != null && title == null))
         val poster = posterPath?.let { "$IMAGE$it" }
 
         return if (isTv) {
-            newTvSeriesSearchResponse(
+            api.newTvSeriesSearchResponse(
                 name = displayName,
                 url = "https://www.themoviedb.org/tv/$contentId",
                 type = TvType.TvSeries,
@@ -77,7 +78,7 @@ object MOOSACatalog {
                 this.score = Score.from10(voteAverage)
             }
         } else {
-            newMovieSearchResponse(
+            api.newMovieSearchResponse(
                 name = displayName,
                 url = "https://www.themoviedb.org/movie/$contentId",
                 type = TvType.Movie,
@@ -108,10 +109,10 @@ object MOOSACatalog {
             )
         ) ?: return emptyList()
 
-        return response.results.mapNotNull { it.toResponse(forceTv) }
+        return response.results.mapNotNull { it.toResponse(api, forceTv) }
     }
 
-    suspend fun home(page: Int): HomePageResponse = coroutineScope {
+    suspend fun home(api: MainAPI, page: Int): HomePageResponse = coroutineScope {
         val trendingMovies = async {
             list("/trending/movie/week", page, false)
         }
@@ -183,7 +184,7 @@ object MOOSACatalog {
         )
     }
 
-    suspend fun search(query: String, page: Int): SearchResponseList? {
+    suspend fun search(api: MainAPI, query: String, page: Int): SearchResponseList? {
         val data = tryParseJson<Page>(
             get(
                 "/search/multi",
@@ -198,7 +199,7 @@ object MOOSACatalog {
 
         return data.results
             .mapNotNull { item ->
-                if (item.mediaType == "person") null else item.toResponse()
+                if (item.mediaType == "person") null else item.toResponse(api)
             }
             .toNewSearchResponseList()
     }
