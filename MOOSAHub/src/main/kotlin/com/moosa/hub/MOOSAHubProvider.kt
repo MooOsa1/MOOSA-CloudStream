@@ -512,7 +512,8 @@ class MOOSAHubProvider : TmdbProvider() {
     override suspend fun load(url: String): LoadResponse? {
         if (MOOSASeeAll.isShowMoreUrl(url)) {
             MOOSASeeAll.open(url)
-            return null
+            val fallbackUrl = MOOSASeeAll.cleanUrl(url)
+            return super.load(fallbackUrl)
         }
 
         val base = super.load(url) ?: return null
