@@ -27,6 +27,7 @@ import com.lagradost.cloudstream3.MainAPI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 
 class MOOSASourceTesterDialog : DialogFragment() {
     private lateinit var listContainer: LinearLayout
@@ -41,7 +42,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
     private lateinit var loadProfile: Button
     private lateinit var deleteProfile: Button
 
-    private val rowFocusPairs = mutableListOf<Pair<CheckBox, Button>>()
+    private val rowFocusPairs = mutableListOf<Pair<View, Button>>()
     private var query: String = ""
 
     private fun dp(value: Int): Int =
@@ -385,7 +386,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             rowFocusPairs += pair
 
             listContainer.addView(
-                pair.first.parent as View,
+                pair.first,
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     dp(72)
@@ -398,22 +399,22 @@ class MOOSASourceTesterDialog : DialogFragment() {
         wireListFocus()
     }
 
-    private fun buildSourceRow(api: MainAPI): Pair<CheckBox, Button> {
+    private fun buildSourceRow(api: MainAPI): Pair<View, Button> {
         val context = requireContext()
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), dp(6), dp(8), dp(6))
-            background = rounded(Color.rgb(24, 31, 40), 10)
-            isFocusable = false
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            isClickable = true
+            decorateFocusable(this, Color.rgb(24, 31, 40))
         }
 
         val check = CheckBox(context).apply {
             id = View.generateViewId()
             isChecked = MOOSASourceTester.isEnabled(api)
-            isFocusable = true
-            isFocusableInTouchMode = false
+            isFocusable = false
+            isClickable = false
             buttonTintList = ColorStateList.valueOf(Color.rgb(45, 145, 255))
             setPadding(0, 0, dp(8), 0)
         }
@@ -474,6 +475,10 @@ class MOOSASourceTesterDialog : DialogFragment() {
             LinearLayout.LayoutParams(dp(94), dp(48))
         )
 
+        row.setOnClickListener {
+            check.isChecked = !check.isChecked
+        }
+
         check.setOnCheckedChangeListener { _, checked ->
             MOOSASourceTester.setEnabled(api, checked)
             updateCountOnly()
@@ -483,7 +488,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             runSingleTest(api, test)
         }
 
-        return check to test
+        return row to test
     }
 
     private fun wireListFocus() {
@@ -492,20 +497,27 @@ class MOOSASourceTesterDialog : DialogFragment() {
             return
         }
 
-        search.nextFocusDownId = rowFocusPairs.first().first.id
+        val firstRow = rowFocusPairs.first().first
+        val firstTest = rowFocusPairs.first().second
+
+        search.nextFocusDownId = firstRow.id
+        saveProfile.nextFocusDownId = firstRow.id
+        loadProfile.nextFocusDownId = firstRow.id
+        deleteProfile.nextFocusDownId = firstTest.id
 
         rowFocusPairs.forEachIndexed { index, pair ->
-            val (check, test) = pair
-            check.nextFocusRightId = test.id
-            test.nextFocusLeftId = check.id
-
+            val row = pair.first
+            val test = pair.second
             val previous = rowFocusPairs.getOrNull(index - 1)
             val next = rowFocusPairs.getOrNull(index + 1)
 
-            check.nextFocusUpId = previous?.first?.id ?: search.id
+            row.nextFocusRightId = test.id
+            test.nextFocusLeftId = row.id
+
+            row.nextFocusUpId = previous?.first?.id ?: search.id
             test.nextFocusUpId = previous?.second?.id ?: search.id
 
-            check.nextFocusDownId = next?.first?.id ?: check.id
+            row.nextFocusDownId = next?.first?.id ?: row.id
             test.nextFocusDownId = next?.second?.id ?: test.id
         }
     }
@@ -534,21 +546,31 @@ class MOOSASourceTesterDialog : DialogFragment() {
 
     private fun runAllTests() {
         testAllButton.isEnabled = false
-        testAllButton.text = "TESTING..."
+        val total = MOOSASourceTester.sources().size.coerceAtLeast(1)
+        val completed = AtomicInteger(0)
+        testAllButton.text = "TESTING 0/$total"
 
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
-                MOOSASourceTester.testAll()
+                MOOSASourceTester.testAll(discoveryDepth = 1) { _, state ->
+                    if (state.status != MOOSASourceTester.Status.TESTING) {
+                        val done = completed.incrementAndGet()
+                        testAllButton.post {
+                            testAllButton.text = "TESTING $done/$total"
+                        }
+                    }
+                }
             }
 
             if (isAdded) {
                 testAllButton.isEnabled = true
                 testAllButton.text = "DISCOVER & TEST ALL"
                 rebuildList()
+                testAllButton.requestFocus()
 
                 Toast.makeText(
                     requireContext(),
-                    "Finished. Server Manager now contains the discovered servers.",
+                    "Source test finished.",
                     Toast.LENGTH_LONG
                 ).show()
             }
