@@ -170,44 +170,37 @@ object MOOSASeeAll {
     ): HomeViewModel.ExpandableHomepageList? {
         if (!state.hasNext) return createExpandable(state)
 
-        val nextPage = state.page + 1
-        val response: HomePageResponse = try {
-            MOOSACatalog.home(
-                api = state.api,
-                page = nextPage,
-                request = state.request,
-                showMoreButton = false
-            )
-        } catch (_: Throwable) {
+        val batch = MOOSACatalog.browseBatch(
+            api = state.api,
+            request = state.request,
+            startPage = state.page + 1,
+            pageCount = 5
+        )
+
+        if (batch.items.isEmpty()) {
             state.hasNext = false
             return createExpandable(state)
         }
 
-        val nextList = response.items.firstOrNull()
-        if (nextList == null || nextList.list.isEmpty()) {
-            state.hasNext = false
-            return createExpandable(state)
-        }
-
-        state.items = (state.items + nextList.list).distinctBy { it.url }
-        state.page = nextPage
-        state.hasNext = response.hasNext
+        state.items = (state.items + batch.items).distinctBy { it.url }
+        state.page = batch.lastPage
+        state.hasNext = batch.hasNext
 
         return createExpandable(state)
     }
 
     private suspend fun prefetchCategory(state: CategoryState) {
-        val targetItems = 100
-        val maxInitialPages = 5
+        val batch = MOOSACatalog.browseBatch(
+            api = state.api,
+            request = state.request,
+            startPage = 1,
+            pageCount = 10
+        )
 
-        while (
-            state.hasNext &&
-            state.items.size < targetItems &&
-            state.page < maxInitialPages
-        ) {
-            val before = state.items.size
-            expandCategory(state)
-            if (state.items.size <= before) break
+        if (batch.items.isNotEmpty()) {
+            state.items = batch.items
+            state.page = batch.lastPage
+            state.hasNext = batch.hasNext
         }
     }
 
