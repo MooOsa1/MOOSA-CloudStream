@@ -12,7 +12,7 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import java.util.concurrent.ConcurrentHashMap
 
 object MOOSASeeAll {
-    private const val PREFIX = "moosa://showmore/"
+    private const val MARKER = "moosa_showmore="
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private data class CategoryState(
@@ -45,9 +45,13 @@ object MOOSASeeAll {
             horizontal = false
         )
 
+        val fallbackUrl = items.firstOrNull()?.url
+            ?: "https://www.themoviedb.org/movie/2"
+
+        val separator = if ("?" in fallbackUrl) "&" else "?"
         return api.newMovieSearchResponse(
             name = "Show More ›",
-            url = "$PREFIX$token",
+            url = "${fallbackUrl}${separator}${MARKER}${token}",
             type = TvType.Movie,
             fix = false
         ) {
@@ -57,15 +61,24 @@ object MOOSASeeAll {
     }
 
     fun isShowMoreUrl(url: String): Boolean =
-        url.startsWith(PREFIX)
+        MARKER in url
+
+    fun cleanUrl(url: String): String =
+        url.replace(Regex("""[?&]moosa_showmore=[^&]+"""), "")
+            .replace("?&", "?")
+            .trimEnd('?', '&')
 
     fun open(url: String): Boolean {
-        val token = url.removePrefix(PREFIX)
+        val token = Regex("""(?:\\?|&)moosa_showmore=([^&]+)""")
+            .find(url)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?: return false
         val state = states[token] ?: return false
 
-        mainHandler.post {
+        mainHandler.postDelayed({
             openCategory(state)
-        }
+        }, 180L)
         return true
     }
 
