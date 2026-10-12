@@ -510,6 +510,11 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
+        if (MOOSASeeAll.isShowMoreUrl(url)) {
+            MOOSASeeAll.open(url)
+            return null
+        }
+
         val base = super.load(url) ?: return null
         val imdbId = base.getImdbId()
         val tmdbMatch = Regex("""themoviedb\.org/(movie|tv)/(\d+)""").find(url)
@@ -637,7 +642,9 @@ class MOOSAHubProvider : TmdbProvider() {
         val tmdbId = request.tmdbId ?: return null
         val type = if (request.isTv || request.season != null) "tv" else "movie"
 
-        return timed(1800L) {
+        val timeout = if (MOOSASettingsStore.arabicFastMode()) 900L else 1800L
+
+        return timed(timeout) {
             app.get(
                 "$tmdbApiUrl/$type/$tmdbId/external_ids",
                 params = mapOf("api_key" to tmdbApiKey)
