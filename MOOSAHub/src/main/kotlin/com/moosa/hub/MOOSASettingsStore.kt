@@ -15,6 +15,7 @@ object MOOSASettingsStore {
     private const val KEY_SUBDL_KEY = "subdl_key"
     private const val KEY_DISABLED_SERVERS = "disabled_servers"
     private const val KEY_SOURCE_PROFILES = "source_profiles"
+    private const val KEY_SERVER_PROFILES = "server_profiles"
 
     @Volatile
     private var prefs: SharedPreferences? = null
@@ -139,4 +140,62 @@ object MOOSASettingsStore {
         prefs?.edit()?.putString(KEY_SOURCE_PROFILES, root.toString())?.apply()
         return true
     }
+
+    fun saveServerProfile(name: String) {
+        val clean = name.trim()
+        if (clean.isBlank()) return
+
+        val root = JSONObject(
+            prefs?.getString(KEY_SERVER_PROFILES, "{}") ?: "{}"
+        )
+        val array = JSONArray()
+        disabledServers().sorted().forEach { array.put(it) }
+        root.put(clean, array)
+        prefs?.edit()?.putString(KEY_SERVER_PROFILES, root.toString())?.apply()
+    }
+
+    fun serverProfiles(): Map<String, Set<String>> {
+        val raw = prefs?.getString(KEY_SERVER_PROFILES, "{}") ?: "{}"
+        val root = try {
+            JSONObject(raw)
+        } catch (_: Throwable) {
+            JSONObject()
+        }
+
+        val result = linkedMapOf<String, Set<String>>()
+        val keys = root.keys()
+        while (keys.hasNext()) {
+            val name = keys.next()
+            val array = root.optJSONArray(name) ?: continue
+            val values = buildSet {
+                for (index in 0 until array.length()) {
+                    array.optString(index)
+                        .takeIf { it.isNotBlank() }
+                        ?.let(::add)
+                }
+            }
+            result[name] = values
+        }
+        return result
+    }
+
+    fun loadServerProfile(name: String): Boolean {
+        val profile = serverProfiles()[name] ?: return false
+        setDisabledServers(profile)
+        return true
+    }
+
+    fun deleteServerProfile(name: String): Boolean {
+        val raw = prefs?.getString(KEY_SERVER_PROFILES, "{}") ?: "{}"
+        val root = try {
+            JSONObject(raw)
+        } catch (_: Throwable) {
+            JSONObject()
+        }
+        if (!root.has(name)) return false
+        root.remove(name)
+        prefs?.edit()?.putString(KEY_SERVER_PROFILES, root.toString())?.apply()
+        return true
+    }
+
 }
