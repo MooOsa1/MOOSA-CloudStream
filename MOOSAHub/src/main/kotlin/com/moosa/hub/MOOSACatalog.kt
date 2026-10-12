@@ -15,32 +15,28 @@ import com.lagradost.cloudstream3.toNewSearchResponseList
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 
 object MOOSACatalog {
     private const val TMDB_API = "https://api.themoviedb.org/3"
     private const val TMDB_KEY = "e6333b32409e02a4a6eba6fb7ff866bb"
     private const val IMAGE = "https://image.tmdb.org/t/p/w500"
 
-    @Serializable
-    data class Page(
-        @JsonProperty("results") @SerialName("results")
+        data class Page(
+        @JsonProperty("results")
         val results: List<Item> = emptyList()
     )
 
-    @Serializable
-    data class Item(
-        @JsonProperty("id") @SerialName("id") val id: Int? = null,
-        @JsonProperty("title") @SerialName("title") val title: String? = null,
-        @JsonProperty("original_title") @SerialName("original_title") val originalTitle: String? = null,
-        @JsonProperty("name") @SerialName("name") val name: String? = null,
-        @JsonProperty("original_name") @SerialName("original_name") val originalName: String? = null,
-        @JsonProperty("poster_path") @SerialName("poster_path") val posterPath: String? = null,
-        @JsonProperty("release_date") @SerialName("release_date") val releaseDate: String? = null,
-        @JsonProperty("first_air_date") @SerialName("first_air_date") val firstAirDate: String? = null,
-        @JsonProperty("vote_average") @SerialName("vote_average") val voteAverage: Double? = null,
-        @JsonProperty("media_type") @SerialName("media_type") val mediaType: String? = null
+        data class Item(
+        @JsonProperty("id") val id: Int? = null,
+        @JsonProperty("title") val title: String? = null,
+        @JsonProperty("original_title") val originalTitle: String? = null,
+        @JsonProperty("name") val name: String? = null,
+        @JsonProperty("original_name") val originalName: String? = null,
+        @JsonProperty("poster_path") val posterPath: String? = null,
+        @JsonProperty("release_date") val releaseDate: String? = null,
+        @JsonProperty("first_air_date") val firstAirDate: String? = null,
+        @JsonProperty("vote_average") val voteAverage: Double? = null,
+        @JsonProperty("media_type") val mediaType: String? = null
     ) {
         val displayName: String
             get() = title ?: name ?: originalTitle ?: originalName ?: ""
@@ -49,12 +45,11 @@ object MOOSACatalog {
             get() = (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull()
     }
 
-    @Serializable
-    data class AliasDetail(
-        @JsonProperty("title") @SerialName("title") val title: String? = null,
-        @JsonProperty("original_title") @SerialName("original_title") val originalTitle: String? = null,
-        @JsonProperty("name") @SerialName("name") val name: String? = null,
-        @JsonProperty("original_name") @SerialName("original_name") val originalName: String? = null
+        data class AliasDetail(
+        @JsonProperty("title") val title: String? = null,
+        @JsonProperty("original_title") val originalTitle: String? = null,
+        @JsonProperty("name") val name: String? = null,
+        @JsonProperty("original_name") val originalName: String? = null
     )
 
     private suspend fun get(path: String, params: Map<String, String> = emptyMap()): String {
