@@ -33,7 +33,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
-import java.net.URLEncoder
 import java.util.Collections
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
@@ -427,7 +426,6 @@ class MOOSAHubProvider : TmdbProvider() {
     private suspend fun translateSynopsisToArabic(text: String): String? {
         if (text.isBlank()) return null
 
-        val encoded = URLEncoder.encode(text, "UTF-8")
         val response = timed(2600L) {
             app.get(
                 "https://translate.googleapis.com/translate_a/single",
@@ -436,7 +434,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     "sl" to "auto",
                     "tl" to "ar",
                     "dt" to "t",
-                    "q" to encoded
+                    "q" to text
                 )
             ).text
         } ?: return null
