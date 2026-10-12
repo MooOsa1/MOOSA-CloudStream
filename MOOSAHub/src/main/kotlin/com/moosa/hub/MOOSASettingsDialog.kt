@@ -17,6 +17,10 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.lagradost.cloudstream3.APIHolder.apis
 import com.lagradost.cloudstream3.ProviderType
 
@@ -225,6 +229,16 @@ class MOOSASettingsDialog : DialogFragment() {
         addCard(
             content,
             card(
+                "◉",
+                "Server Manager",
+                "Disable or test servers found during playback"
+            ) {
+                openServerManager()
+            }
+        )
+        addCard(
+            content,
+            card(
                 "●",
                 "Toggle Extensions",
                 "Control link verification and Arabic fast mode"
@@ -254,6 +268,16 @@ class MOOSASettingsDialog : DialogFragment() {
                 "Add your Wyzie subtitle provider access key"
             ) {
                 openWyzieKey()
+            }
+        )
+        addCard(
+            content,
+            card(
+                "S",
+                "SubDL Key",
+                "Add SubDL as an Arabic and English subtitle source"
+            ) {
+                openSubdlKey()
             }
         )
 
@@ -338,6 +362,100 @@ class MOOSASettingsDialog : DialogFragment() {
             .show()
     }
 
+    private fun openServerManager() {
+        val entries = MOOSAServerRegistry.snapshot()
+
+        if (entries.isEmpty()) {
+            AlertDialog.Builder(requireContext())
+                .setTitle("Server Manager")
+                .setMessage(
+                    "No servers have been scanned yet. Play a movie or episode once, " +
+                        "then come back here to test or disable individual servers."
+                )
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
+        val labels = entries.map { entry ->
+            val status = when (entry.lastResult) {
+                true -> "✓"
+                false -> "✕"
+                null -> "?"
+            }
+            val disabled = if (MOOSAServerRegistry.isDisabled(entry.key)) {
+                " • Disabled"
+            } else {
+                ""
+            }
+            "$status  ${entry.label}$disabled"
+        }.toTypedArray()
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Server Manager")
+            .setItems(labels) { _, which ->
+                openServerActions(entries[which])
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun openServerActions(entry: MOOSAServerRegistry.Entry) {
+        val disabled = MOOSAServerRegistry.isDisabled(entry.key)
+        val state = when (entry.lastResult) {
+            true -> "Working"
+            false -> "Failed"
+            null -> "Not tested"
+        }
+
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(entry.label)
+            .setMessage(
+                "Status: $state\n" +
+                    "Playback: ${if (disabled) "Disabled" else "Enabled"}"
+            )
+            .setPositiveButton("Test", null)
+            .setNeutralButton(if (disabled) "Enable" else "Disable") { _, _ ->
+                MOOSAServerRegistry.setDisabled(entry.key, !disabled)
+                openServerManager()
+            }
+            .setNegativeButton("Back") { _, _ ->
+                openServerManager()
+            }
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val button = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                button.isEnabled = false
+                button.text = "Testing…"
+
+                lifecycleScope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        MOOSAServerRegistry.test(entry.key)
+                    }
+
+                    button.isEnabled = true
+                    button.text = "Test"
+
+                    AlertDialog.Builder(requireContext())
+                        .setTitle(entry.label)
+                        .setMessage(
+                            when (result) {
+                                true -> "Server is working ✓"
+                                false -> "Server test failed ✕"
+                                null -> "Server is no longer available for testing."
+                            }
+                        )
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
+
+        dialog.show()
+    }
+
     private fun openExtensions() {
         val labels = arrayOf(
             "Verify server links before showing them",
@@ -394,6 +512,35 @@ class MOOSASettingsDialog : DialogFragment() {
             }
             .setNeutralButton("Clear") { _, _ ->
                 MOOSASettingsStore.setWyzieKey(null)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun openSubdlKey() {
+        val input = EditText(requireContext()).apply {
+            hint = "SubDL API key"
+            setSingleLine(true)
+            setText(MOOSASettingsStore.subdlKey().orEmpty())
+            setPadding(
+                dp(context, 18),
+                dp(context, 14),
+                dp(context, 18),
+                dp(context, 14)
+            )
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("SubDL Key")
+            .setMessage(
+                "Optional. Add a SubDL API key to search Arabic and English subtitles."
+            )
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                MOOSASettingsStore.setSubdlKey(input.text?.toString())
+            }
+            .setNeutralButton("Clear") { _, _ ->
+                MOOSASettingsStore.setSubdlKey(null)
             }
             .setNegativeButton("Cancel", null)
             .show()
