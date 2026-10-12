@@ -16,7 +16,6 @@ import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import kotlinx.serialization.Serializable
 
 class MOOSAHubProvider : TmdbProvider() {
     override var name = "MOOSA Hub"
@@ -27,14 +26,12 @@ class MOOSAHubProvider : TmdbProvider() {
     override val disableSeasonZero = true
     override val includeAdult = false
 
-    @Serializable
     data class ProviderTarget(
         val providerName: String,
         val mainUrl: String,
         val data: String
     )
 
-    @Serializable
     data class HubPlaybackData(
         val targets: List<ProviderTarget> = emptyList()
     )
