@@ -74,7 +74,7 @@ class MOOSAHubProvider : TmdbProvider() {
     private suspend fun searchProvider(api: MainAPI, title: String): List<SearchResponse> {
         val paged = try {
             api.search(title, 1)?.items.orEmpty()
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             logError(error)
             emptyList()
         }
@@ -82,7 +82,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         return try {
             api.search(title).orEmpty()
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             logError(error)
             emptyList()
         }
@@ -107,7 +107,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     for ((match, _) in candidates) {
                         val loaded = try {
                             api.load(match.url)
-                        } catch (error: Exception) {
+                        } catch (error: Throwable) {
                             logError(error)
                             null
                         }
@@ -121,7 +121,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         }
                     }
                     null
-                } catch (error: Exception) {
+                } catch (error: Throwable) {
                     logError(error)
                     null
                 }
@@ -148,7 +148,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     for ((match, _) in candidates) {
                         val loaded = try {
                             api.load(match.url)
-                        } catch (error: Exception) {
+                        } catch (error: Throwable) {
                             logError(error)
                             null
                         }
@@ -168,7 +168,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         }
                     }
                     emptyList()
-                } catch (error: Exception) {
+                } catch (error: Throwable) {
                     logError(error)
                     emptyList()
                 }
@@ -233,7 +233,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     subtitleCallback,
                     callback
                 )
-            } catch (error: Exception) {
+            } catch (error: Throwable) {
                 logError(error)
                 false
             }
