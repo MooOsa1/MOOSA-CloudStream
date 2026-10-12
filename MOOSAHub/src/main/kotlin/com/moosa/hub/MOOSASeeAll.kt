@@ -1,16 +1,20 @@
 package com.moosa.hub
 
-import android.app.Activity
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.TextView
+import com.lagradost.cloudstream3.CommonActivity.activity
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.ui.home.HomeFragment
+import com.lagradost.cloudstream3.ui.home.HomeViewModel
+import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 
 object MOOSASeeAll {
@@ -26,6 +30,7 @@ object MOOSASeeAll {
     )
 
     private val states = ConcurrentHashMap<String, CategoryState>()
+    private val observedRoots = WeakHashMap<ViewGroup, ViewTreeObserver.OnGlobalLayoutListener>()
 
     fun register(
         api: MOOSAHubProvider,
@@ -45,20 +50,24 @@ object MOOSASeeAll {
             horizontal = horizontal
         )
 
-        mainHandler.postDelayed({ installHeaders(28) }, 180L)
+        mainHandler.post {
+            installObserver()
+            applyHeaders()
+        }
     }
 
-    private fun currentActivity(): Activity? {
-        return try {
-            val cls = Class.forName("com.lagradost.cloudstream3.CommonActivity")
-            val instance = cls.getField("INSTANCE").get(null)
-            cls.methods
-                .firstOrNull {
-                    it.name == "getActivity" && it.parameterCount == 0
-                }
-                ?.invoke(instance) as? Activity
-        } catch (_: Throwable) {
-            null
+    private fun installObserver() {
+        val current = activity ?: return
+        val root = current.findViewById<ViewGroup>(android.R.id.content) ?: return
+
+        synchronized(observedRoots) {
+            if (observedRoots.containsKey(root)) return
+
+            val listener = ViewTreeObserver.OnGlobalLayoutListener {
+                applyHeaders()
+            }
+            observedRoots[root] = listener
+            root.viewTreeObserver.addOnGlobalLayoutListener(listener)
         }
     }
 
@@ -86,51 +95,30 @@ object MOOSASeeAll {
         }
     }
 
-    private fun installHeaders(retries: Int) {
-        val activity = currentActivity()
-        val root = activity?.findViewById<ViewGroup>(android.R.id.content)
+    private fun originalHeaderText(value: String): String =
+        value.substringBefore("  SHOW MORE").trim()
 
-        if (activity == null || root == null) {
-            if (retries > 0) {
-                mainHandler.postDelayed({ installHeaders(retries - 1) }, 220L)
-            }
-            return
-        }
-
+    private fun applyHeaders() {
+        val currentActivity = activity ?: return
+        val root = currentActivity.findViewById<ViewGroup>(android.R.id.content) ?: return
         val headers = mutableListOf<TextView>()
         collectHeaders(root, headers)
 
-        var installed = 0
-
         headers.forEach { header ->
-            val current = header.text?.toString().orEmpty()
-                .substringBefore("  SHOW MORE")
-                .trim()
+            val original = originalHeaderText(header.text?.toString().orEmpty())
+            val state = states[original] ?: return@forEach
 
-            val state = states[current]
-                ?: states.entries.firstOrNull {
-                    current.startsWith(it.key)
-                }?.value
-                ?: return@forEach
-
-            val title = state.request.name
-            header.text = "$title  SHOW MORE  ›"
-            header.contentDescription = "$title. Show more."
+            header.text = "${state.request.name}  SHOW MORE  ›"
+            header.contentDescription = "${state.request.name}. Show more."
             header.isClickable = true
             header.isFocusable = true
-            header.isFocusableInTouchMode = true
-            header.alpha = 0.88f
-            header.setPadding(
-                header.paddingLeft,
-                header.paddingTop,
-                header.paddingRight,
-                header.paddingBottom
-            )
+            header.isFocusableInTouchMode = false
+            header.alpha = 0.9f
 
             header.setOnFocusChangeListener { view, focused ->
-                view.alpha = if (focused) 1f else 0.88f
+                view.alpha = if (focused) 1f else 0.9f
                 view.setBackgroundColor(
-                    if (focused) Color.argb(90, 30, 120, 205)
+                    if (focused) Color.argb(120, 24, 101, 180)
                     else Color.TRANSPARENT
                 )
             }
@@ -139,50 +127,39 @@ object MOOSASeeAll {
                 openCategory(state)
             }
 
-            val parent = header.parent as? ViewGroup
-            if (parent != null) {
-                val recyclerId = activity.resources.getIdentifier(
-                    "home_child_recyclerview",
-                    "id",
-                    activity.packageName
-                )
-                if (recyclerId != 0) {
-                    header.nextFocusDownId = recyclerId
+            header.setOnKeyListener { _, keyCode, event ->
+                if (
+                    event.action == android.view.KeyEvent.ACTION_UP &&
+                    (
+                        keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == android.view.KeyEvent.KEYCODE_ENTER
+                        )
+                ) {
+                    openCategory(state)
+                    true
+                } else {
+                    false
                 }
             }
-
-            installed++
-        }
-
-        if (installed < states.size && retries > 0) {
-            mainHandler.postDelayed({ installHeaders(retries - 1) }, 220L)
         }
     }
 
-    private fun createExpandable(state: CategoryState): Any? {
-        return try {
-            val expandableClass = Class.forName(
-                "com.lagradost.cloudstream3.ui.home.HomeViewModel\$ExpandableHomepageList"
-            )
-            val constructor = expandableClass.constructors.firstOrNull {
-                it.parameterCount == 3
-            } ?: return null
+    private fun createExpandable(
+        state: CategoryState
+    ): HomeViewModel.ExpandableHomepageList =
+        HomeViewModel.ExpandableHomepageList(
+            HomePageList(
+                state.request.name,
+                state.items,
+                state.horizontal
+            ),
+            state.page,
+            state.hasNext
+        )
 
-            constructor.newInstance(
-                HomePageList(
-                    state.request.name,
-                    state.items,
-                    state.horizontal
-                ),
-                state.page,
-                state.hasNext
-            )
-        } catch (_: Throwable) {
-            null
-        }
-    }
-
-    private suspend fun expandCategory(state: CategoryState): Any? {
+    private suspend fun expandCategory(
+        state: CategoryState
+    ): HomeViewModel.ExpandableHomepageList? {
         if (!state.hasNext) return createExpandable(state)
 
         val nextPage = state.page + 1
@@ -204,8 +181,7 @@ object MOOSASeeAll {
             return createExpandable(state)
         }
 
-        state.items = (state.items + nextList.list)
-            .distinctBy { it.url }
+        state.items = (state.items + nextList.list).distinctBy { it.url }
         state.page = nextPage
         state.hasNext = response.hasNext
 
@@ -213,36 +189,27 @@ object MOOSASeeAll {
     }
 
     private fun openCategory(state: CategoryState) {
-        val activity = currentActivity() ?: return
-        val expandable = createExpandable(state) ?: return
+        val currentActivity = activity ?: return
+        val expandable = createExpandable(state)
 
-        try {
-            val homeFragment = Class.forName(
-                "com.lagradost.cloudstream3.ui.home.HomeFragment"
-            )
-            val companion = homeFragment.getField("Companion").get(null)
-
-            val method = companion.javaClass.methods.firstOrNull {
-                it.name == "loadHomepageList" &&
-                    it.parameterCount == 5
-            } ?: return
-
-            val expandCallback: suspend (String) -> Any? = {
-                expandCategory(state)
+        mainHandler.post {
+            try {
+                with(HomeFragment.Companion) {
+                    currentActivity.loadHomepageList(
+                        expand = expandable,
+                        deleteCallback = null,
+                        expandCallback = {
+                            expandCategory(state)
+                        },
+                        dismissCallback = {
+                            mainHandler.postDelayed({
+                                applyHeaders()
+                            }, 120L)
+                        }
+                    )
+                }
+            } catch (_: Throwable) {
             }
-            val dismissCallback: () -> Unit = {
-                mainHandler.postDelayed({ installHeaders(8) }, 150L)
-            }
-
-            method.invoke(
-                companion,
-                activity,
-                expandable,
-                null,
-                expandCallback,
-                dismissCallback
-            )
-        } catch (_: Throwable) {
         }
     }
 }
