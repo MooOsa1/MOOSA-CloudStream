@@ -4,14 +4,18 @@ import android.app.Activity
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import com.lagradost.cloudstream3.plugins.BasePlugin
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
+import com.lagradost.cloudstream3.plugins.Plugin
 
 @CloudstreamPlugin
-class MOOSAHubPlugin : BasePlugin() {
-    override fun load() {
-        forceTvLayoutOnce()
+class MOOSAHubPlugin : Plugin() {
+    override fun load(context: Context) {
+        MOOSASettingsStore.attach(context)
+        forceTvLayoutOnce(context)
         MOOSAProgress.setArabicSubtitleDefault()
+        openSettings = { ctx ->
+            MOOSASettingsDialog.show(ctx)
+        }
         registerMainAPI(MOOSAHubProvider())
     }
 
@@ -31,7 +35,7 @@ class MOOSAHubPlugin : BasePlugin() {
         }
     }
 
-    private fun forceTvLayoutOnce() {
+    private fun forceTvLayoutOnce(context: Context) {
         val activity = currentActivity() ?: return
         val prefs = activity.getSharedPreferences(
             "${activity.packageName}_preferences",
@@ -46,7 +50,7 @@ class MOOSAHubPlugin : BasePlugin() {
             .putBoolean(recoveryKey, true)
             .apply()
 
-        updateCloudStreamLayout(activity)
+        updateCloudStreamLayout(context)
 
         Handler(Looper.getMainLooper()).postDelayed({
             try {
