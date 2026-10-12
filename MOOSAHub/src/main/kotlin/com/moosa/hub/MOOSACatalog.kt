@@ -1,7 +1,6 @@
 package com.moosa.hub
 
 import com.fasterxml.jackson.annotation.JsonProperty
-import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
@@ -16,8 +15,6 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.toNewSearchResponseList
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 
 object MOOSACatalog {
     private const val TMDB_API = "https://api.themoviedb.org/3"
@@ -26,7 +23,14 @@ object MOOSACatalog {
 
         data class Page(
         @JsonProperty("results")
-        val results: List<Item> = emptyList()
+        val results: List<Item> = emptyList(),
+        @JsonProperty("total_pages")
+        val totalPages: Int = 1
+    )
+
+    private data class CatalogPage(
+        val items: List<SearchResponse>,
+        val totalPages: Int
     )
 
         data class Item(
@@ -94,13 +98,13 @@ object MOOSACatalog {
         }
     }
 
-    private suspend fun list(
+    private suspend fun listPage(
         api: MainAPI,
         path: String,
         page: Int,
         forceTv: Boolean,
         extra: Map<String, String> = emptyMap()
-    ): List<SearchResponse> {
+    ): CatalogPage {
         val response = tryParseJson<Page>(
             get(
                 path,
@@ -110,18 +114,20 @@ object MOOSACatalog {
                     "include_adult" to "false"
                 ) + extra
             )
-        ) ?: return emptyList()
+        ) ?: return CatalogPage(emptyList(), 1)
 
-        return response.results.mapNotNull { it.toResponse(api, forceTv) }
+        return CatalogPage(
+            items = response.results.mapNotNull { it.toResponse(api, forceTv) },
+            totalPages = response.totalPages.coerceAtLeast(1)
+        )
     }
 
     val categories = mainPageOf(
         "/trending/movie/week" to "Trending Movies",
         "/trending/tv/week" to "Trending Series",
-        "/discover/movie?with_original_language=ar" to "Arabic Movies",
-        "/discover/tv?with_original_language=ar" to "Arabic Series",
-        "/discover/movie?with_origin_country=IN" to "Indian Movies",
-        "/discover/tv?with_origin_country=IN" to "Indian Series",
+        "/discover/movie?with_original_language=ar&sort_by=popularity.desc" to "Arabic Movies",
+        "/discover/tv?with_original_language=ar&sort_by=popularity.desc" to "Arabic Series",
+        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200" to "Top Indian Movies",
         "/movie/top_rated" to "Top Rated Movies",
         "/tv/top_rated" to "Top Rated Series"
     )
@@ -134,88 +140,17 @@ object MOOSACatalog {
             parts[0] to parts[1]
         }
         val isTv = path.contains("/tv/") || path == "/discover/tv"
-        val options = if (path.startsWith("/discover/")) {
-            extras + ("sort_by" to "popularity.desc")
-        } else if (path == "/movie/top_rated") {
+        val options = if (path == "/movie/top_rated") {
             extras + ("region" to "US")
-        } else extras
-        val items = list(api, path, page, isTv, options)
-        return newHomePageResponse(request, items, hasNext = items.isNotEmpty() && page < 500)
-    }
-
-    suspend fun homeLegacy(api: MainAPI, page: Int): HomePageResponse = coroutineScope {
-        val trendingMovies = async {
-            list(api, "/trending/movie/week", page, false)
-        }
-        val trendingSeries = async {
-            list(api, "/trending/tv/week", page, true)
-        }
-        val arabicMovies = async {
-            list(
-                api,
-                "/discover/movie",
-                page,
-                false,
-                mapOf(
-                    "with_original_language" to "ar",
-                    "sort_by" to "popularity.desc"
-                )
-            )
-        }
-        val arabicSeries = async {
-            list(
-                api,
-                "/discover/tv",
-                page,
-                true,
-                mapOf(
-                    "with_original_language" to "ar",
-                    "sort_by" to "popularity.desc"
-                )
-            )
-        }
-        val indianMovies = async {
-            list(
-                api,
-                "/discover/movie",
-                page,
-                false,
-                mapOf(
-                    "with_origin_country" to "IN",
-                    "sort_by" to "popularity.desc"
-                )
-            )
-        }
-        val indianSeries = async {
-            list(
-                api,
-                "/discover/tv",
-                page,
-                true,
-                mapOf(
-                    "with_origin_country" to "IN",
-                    "sort_by" to "popularity.desc"
-                )
-            )
-        }
-        val topMovies = async {
-            list(api, "/movie/top_rated", page, false, mapOf("region" to "US"))
-        }
-        val topSeries = async {
-            list(api, "/tv/top_rated", page, true)
+        } else {
+            extras
         }
 
-        newHomePageResponse(
-            listOf(
-                HomePageList("Trending Movies", trendingMovies.await()),
-                HomePageList("Trending Series", trendingSeries.await()),
-                HomePageList("Arabic Movies", arabicMovies.await()),
-                HomePageList("Arabic Series", arabicSeries.await()),
-                HomePageList("Indian Movies", indianMovies.await()),
-                HomePageList("Indian Series", indianSeries.await()),
-                HomePageList("Top Rated Movies", topMovies.await()),
-                HomePageList("Top Rated Series", topSeries.await())
-            ).filter { it.list.isNotEmpty() }
+        val result = listPage(api, path, page, isTv, options)
+        return newHomePageResponse(
+            request,
+            result.items,
+            hasNext = result.items.isNotEmpty() && page < minOf(result.totalPages, 500)
         )
     }
 
