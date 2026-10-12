@@ -32,9 +32,8 @@ import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
+import java.net.URLEncoder
 import java.util.Collections
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
@@ -137,11 +136,16 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private val targetCache = ConcurrentHashMap<String, CachedTarget>()
     private val providerHealth = ConcurrentHashMap<String, Int>()
+    private val synopsisCache = ConcurrentHashMap<String, String>()
 
     private val cacheLifetimeMs = 20 * 60 * 1000L
     private val providerResolveTimeoutMs = 8000L
     private val providerLinksTimeoutMs = 6500L
     private val subtitleTimeoutMs = 2200L
+    private val linkProbeTimeoutMs = 2200L
+    private val maxProvidersToTry = 18
+    private val desiredVerifiedLinks = 10
+    private val linksPerProviderToProbe = 4
 
     private val tmdbApiKey = "e6333b32409e02a4a6eba6fb7ff866bb"
     private val tmdbApiUrl = "https://api.themoviedb.org/3"
@@ -171,26 +175,40 @@ class MOOSAHubProvider : TmdbProvider() {
         else -> null
     }
 
-    private fun matchScore(
-        result: SearchResponse,
-        wantedTitle: String,
+    private fun titleMatchScore(
+        candidate: String,
+        aliases: List<String>
+    ): Int {
+        val normalized = normalizeTitle(candidate)
+        if (normalized.isBlank()) return 0
+
+        return aliases.maxOfOrNull { alias ->
+            val wanted = normalizeTitle(alias)
+            if (wanted.isBlank()) {
+                0
+            } else when {
+                normalized == wanted -> 100
+                wanted.length >= 5 &&
+                    (normalized.contains(wanted) || wanted.contains(normalized)) -> 65
+                else -> 0
+            }
+        } ?: 0
+    }
+
+    private fun contentMatchScore(
+        candidateName: String,
+        candidateYear: Int?,
+        aliases: List<String>,
         wantedYear: Int?
     ): Int {
-        val normalized = normalizeTitle(result.name)
-        if (normalized.isBlank() || wantedTitle.isBlank()) return 0
-
-        val titleScore = when {
-            normalized == wantedTitle -> 100
-            wantedTitle.length >= 5 &&
-                (normalized.contains(wantedTitle) || wantedTitle.contains(normalized)) -> 65
-            else -> 0
-        }
+        val titleScore = titleMatchScore(candidateName, aliases)
         if (titleScore == 0) return 0
 
-        val year = resultYear(result)
         return when {
-            wantedYear != null && year != null && wantedYear == year -> titleScore + 25
-            wantedYear != null && year != null && wantedYear != year -> titleScore - 45
+            wantedYear != null && candidateYear != null && wantedYear == candidateYear ->
+                titleScore + 25
+            wantedYear != null && candidateYear != null && wantedYear != candidateYear ->
+                titleScore - 60
             else -> titleScore
         }
     }
@@ -199,9 +217,23 @@ class MOOSAHubProvider : TmdbProvider() {
         result: SearchResponse,
         aliases: List<String>,
         year: Int?
-    ): Int = aliases.maxOfOrNull { alias ->
-        matchScore(result, normalizeTitle(alias), year)
-    } ?: 0
+    ): Int = contentMatchScore(
+        candidateName = result.name,
+        candidateYear = resultYear(result),
+        aliases = aliases,
+        wantedYear = year
+    )
+
+    private fun loadedScore(
+        result: LoadResponse,
+        aliases: List<String>,
+        year: Int?
+    ): Int = contentMatchScore(
+        candidateName = result.name,
+        candidateYear = result.year,
+        aliases = aliases,
+        wantedYear = year
+    )
 
     private suspend fun searchProvider(
         api: MainAPI,
