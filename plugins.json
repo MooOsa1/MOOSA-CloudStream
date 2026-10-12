@@ -1,21 +1,25 @@
 [
     {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=archive.org&sz=%size%",
-        "jarFileSize": 65487,
-        "fileHash": "sha256-91fa9d1a9678bc30e0ccf2e85f8d8a0baffeea2a2d4395627676c32c9a7e92e9",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=https://pluto.tv&sz=%size%",
+        "fileHash": "sha256-da576801d6ae55f3bf58dbcc71fcaf2e4cebaa13d5c49326c48480d2286d379f",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 14869,
+        "fileSize": 43535,
         "status": 1,
+        "language": "en",
         "authors": [
+            "Bnyro",
             "MOOSA"
         ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Live"
+        ],
         "version": 1,
-        "internalName": "MOOSAArchiveProvider",
-        "jarUrl": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAArchiveProvider.jar",
-        "description": "Free archive catalogs for foreign, Arabic and Indian video content",
-        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAArchiveProvider.cs3",
-        "name": "MOOSAArchiveProvider",
-        "jarHash": "sha256-c5a9d80c480e867960a1e55dd11c045ee4b4c961a3e32c7db2de3c892a7e82a7"
+        "internalName": "PlutoTV",
+        "description": "Free movies, TV series and live channels from Pluto TV",
+        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/PlutoTV.cs3",
+        "name": "PlutoTV"
     }
 ]
