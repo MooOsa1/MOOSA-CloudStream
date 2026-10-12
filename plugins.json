@@ -1,52 +1,10 @@
 [
     {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=distro.tv&sz=%size%",
-        "fileHash": "sha256-2ea2ffee0a749050db05973dfb8fa2b3f0fa439faaa09155c338a29979d28920",
-        "apiVersion": 1,
-        "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 21526,
-        "status": 1,
-        "language": "en",
-        "authors": [
-            "MOOSA"
-        ],
-        "tvTypes": [
-            "Movie",
-            "TvSeries"
-        ],
-        "version": 2,
-        "internalName": "DistroTV",
-        "description": "Free on-demand movies and shows from DistroTV",
-        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/DistroTV.cs3",
-        "name": "DistroTV"
-    },
-    {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=filmzie.com&sz=%size%",
-        "fileHash": "sha256-4f2c5b3ad8348238a0ba5e9a225a2f8d7830527fc7d85587d8009e695b8b3ee5",
-        "apiVersion": 1,
-        "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 28906,
-        "status": 1,
-        "language": "en",
-        "authors": [
-            "MOOSA"
-        ],
-        "tvTypes": [
-            "Movie",
-            "TvSeries"
-        ],
-        "version": 1,
-        "internalName": "Filmzie",
-        "description": "Free movies and TV shows from Filmzie",
-        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/Filmzie.cs3",
-        "name": "Filmzie"
-    },
-    {
         "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-c9abb5819aec90457d9fdba342f1c8ef11b97b79fe0656e3955ac150bc10ced5",
+        "fileHash": "sha256-05c0a6a1726f504f5219a8ba06e7f2508792ba9f7ba88798b08150a0d6a1446c",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 10293,
+        "fileSize": 17228,
         "status": 1,
         "language": "ar",
         "authors": [
@@ -56,7 +14,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 3,
+        "version": 4,
         "internalName": "MOOSAHub",
         "description": "\u0648\u0627\u062c\u0647\u0629 MOOSA \u062a\u0628\u062d\u062b \u0641\u064a \u0643\u0644 \u0627\u0644\u0645\u0635\u0627\u062f\u0631 \u0627\u0644\u0645\u062b\u0628\u062a\u0629 \u062f\u0627\u062e\u0644 CloudStream",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAHub.cs3",
