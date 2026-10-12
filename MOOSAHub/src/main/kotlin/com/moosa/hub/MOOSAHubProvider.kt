@@ -115,12 +115,12 @@ class MOOSAHubProvider : TmdbProvider() {
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
-    ): HomePageResponse = MOOSACatalog.home(page)
+    ): HomePageResponse = MOOSACatalog.home(this, page)
 
     override suspend fun search(
         query: String,
         page: Int
-    ): SearchResponseList? = MOOSACatalog.search(query, page)
+    ): SearchResponseList? = MOOSACatalog.search(this, query, page)
 
     private fun normalizeTitle(value: String): String =
         value.lowercase()
@@ -456,8 +456,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     arIndex += 1
                     SubtitleFile(
                         lang = "Arabic • OpenSubtitles #$arIndex",
-                        url = url,
-                        langTag = "ar"
+                        url = url
                     )
                 }
 
@@ -465,8 +464,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     enIndex += 1
                     SubtitleFile(
                         lang = "English • OpenSubtitles #$enIndex",
-                        url = url,
-                        langTag = "en"
+                        url = url
                     )
                 }
 
@@ -483,14 +481,12 @@ class MOOSAHubProvider : TmdbProvider() {
         return when (subtitleLanguage(subtitle.lang, subtitle.langTag)) {
             PreferredSubtitleLanguage.ARABIC ->
                 subtitle.copy(
-                    lang = "Arabic • $source",
-                    langTag = "ar"
+                    lang = "Arabic • $source"
                 )
 
             PreferredSubtitleLanguage.ENGLISH ->
                 subtitle.copy(
-                    lang = "English • $source",
-                    langTag = "en"
+                    lang = "English • $source"
                 )
 
             PreferredSubtitleLanguage.OTHER -> null
