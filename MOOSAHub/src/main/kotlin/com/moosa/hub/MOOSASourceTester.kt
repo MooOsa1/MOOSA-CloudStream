@@ -270,7 +270,7 @@ object MOOSASourceTester {
     ) = coroutineScope {
         val all = sources()
 
-        for (batch in all.chunked(5)) {
+        for (batch in all.chunked(8)) {
             batch.map { api ->
                 async {
                     test(api) { state ->
