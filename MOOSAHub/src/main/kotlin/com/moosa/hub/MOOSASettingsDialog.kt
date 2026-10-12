@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -244,6 +245,18 @@ class MOOSASettingsDialog : DialogFragment() {
             }
         )
 
+        content.addView(section("INTEGRATIONS"))
+        addCard(
+            content,
+            card(
+                "⚿",
+                "Wyzie Key",
+                "Add your Wyzie subtitle provider access key"
+            ) {
+                openWyzieKey()
+            }
+        )
+
         content.addView(section("MAINTENANCE"))
         addCard(
             content,
@@ -356,6 +369,33 @@ class MOOSASettingsDialog : DialogFragment() {
                     "They are emitted before English subtitles whenever a source responds."
             )
             .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun openWyzieKey() {
+        val input = EditText(requireContext()).apply {
+            hint = "Wyzie key"
+            setSingleLine(true)
+            setText(MOOSASettingsStore.wyzieKey().orEmpty())
+            setPadding(
+                dp(context, 18),
+                dp(context, 14),
+                dp(context, 18),
+                dp(context, 14)
+            )
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Wyzie Key")
+            .setMessage("Optional. Used as an extra subtitle source when configured.")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                MOOSASettingsStore.setWyzieKey(input.text?.toString())
+            }
+            .setNeutralButton("Clear") { _, _ ->
+                MOOSASettingsStore.setWyzieKey(null)
+            }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
