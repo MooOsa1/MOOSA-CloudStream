@@ -10,6 +10,8 @@ object MOOSASettingsStore {
     private const val KEY_VERIFY_LINKS = "verify_links"
     private const val KEY_ARABIC_FAST = "arabic_fast_mode"
     private const val KEY_WYZIE_KEY = "wyzie_key"
+    private const val KEY_SUBDL_KEY = "subdl_key"
+    private const val KEY_DISABLED_SERVERS = "disabled_servers"
 
     @Volatile
     private var prefs: SharedPreferences? = null
@@ -58,5 +60,23 @@ object MOOSASettingsStore {
 
     fun setWyzieKey(value: String?) {
         prefs?.edit()?.putString(KEY_WYZIE_KEY, value?.trim().orEmpty())?.apply()
+    }
+
+    fun subdlKey(): String? =
+        prefs?.getString(KEY_SUBDL_KEY, null)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+    fun setSubdlKey(value: String?) {
+        prefs?.edit()?.putString(KEY_SUBDL_KEY, value?.trim().orEmpty())?.apply()
+    }
+
+    fun disabledServers(): Set<String> =
+        prefs?.getStringSet(KEY_DISABLED_SERVERS, emptySet())
+            ?.toSet()
+            .orEmpty()
+
+    fun setDisabledServers(values: Set<String>) {
+        prefs?.edit()?.putStringSet(KEY_DISABLED_SERVERS, values.toSet())?.apply()
     }
 }
