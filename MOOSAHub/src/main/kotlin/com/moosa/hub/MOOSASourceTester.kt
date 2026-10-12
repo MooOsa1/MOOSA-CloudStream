@@ -120,34 +120,71 @@ object MOOSASourceTester {
 
         val result = withTimeoutOrNull(22000L) {
             try {
-                val query = testQuery(api)
-                val search = try {
-                    api.quickSearch(query)
-                } catch (_: Throwable) {
-                    null
-                }.takeUnless { it.isNullOrEmpty() }
-                    ?: try {
-                        api.search(query)
+                val baseQuery = testQuery(api)
+                val queries = when (baseQuery) {
+                    "Inception" -> listOf("Inception", "Avatar", "The Dark Knight")
+                    "Breaking Bad" -> listOf("Breaking Bad", "The Last of Us", "Wednesday")
+                    "Naruto" -> listOf("Naruto", "One Piece", "Attack on Titan")
+                    else -> listOf(baseQuery)
+                }
+
+                var match = queries.firstNotNullOfOrNull { query ->
+                    val search = try {
+                        api.quickSearch(query)
                     } catch (_: Throwable) {
                         null
-                    }
-                    ?: emptyList()
-
-                val wanted = normalize(query)
-                val match = search
-                    .sortedByDescending {
-                        val candidate = normalize(it.name)
-                        when {
-                            candidate == wanted -> 3
-                            candidate.contains(wanted) || wanted.contains(candidate) -> 2
-                            else -> 0
+                    }.takeUnless { it.isNullOrEmpty() }
+                        ?: try {
+                            api.search(query)
+                        } catch (_: Throwable) {
+                            null
                         }
+                        ?: emptyList()
+
+                    val wanted = normalize(query)
+                    search
+                        .sortedByDescending {
+                            val candidate = normalize(it.name)
+                            when {
+                                candidate == wanted -> 3
+                                candidate.contains(wanted) ||
+                                    wanted.contains(candidate) -> 2
+                                else -> 0
+                            }
+                        }
+                        .firstOrNull()
+                }
+
+                if (match == null) {
+                    val page = api.mainPage
+                        .firstOrNull { it.data.isNotBlank() }
+
+                    if (page != null) {
+                        val homepage = try {
+                            api.getMainPage(
+                                1,
+                                com.lagradost.cloudstream3.MainPageRequest(
+                                    page.name,
+                                    page.data,
+                                    page.horizontalImages
+                                )
+                            )
+                        } catch (_: Throwable) {
+                            null
+                        }
+
+                        match = homepage
+                            ?.items
+                            ?.firstOrNull()
+                            ?.list
+                            ?.firstOrNull()
                     }
-                    .firstOrNull()
-                    ?: return@withTimeoutOrNull false
+                }
+
+                val target = match ?: return@withTimeoutOrNull false
 
                 val loaded = try {
-                    api.load(match.url)
+                    api.load(target.url)
                 } catch (_: Throwable) {
                     null
                 } ?: return@withTimeoutOrNull false
@@ -199,19 +236,24 @@ object MOOSASourceTester {
                     return@withTimeoutOrNull false
                 }
 
-                coroutineScope {
-                    unique
-                        .take(8)
-                        .map { link ->
+                var anyWorking = false
+
+                for (linkBatch in unique.chunked(8)) {
+                    val batchResults = coroutineScope {
+                        linkBatch.map { link ->
                             async {
                                 val working = MOOSAServerRegistry.testLink(link)
                                 MOOSAServerRegistry.recordResult(link, working)
                                 working
                             }
-                        }
-                        .awaitAll()
-                        .any { it }
+                        }.awaitAll()
+                    }
+                    if (batchResults.any { it }) {
+                        anyWorking = true
+                    }
                 }
+
+                anyWorking
             } catch (_: Throwable) {
                 false
             }
