@@ -1,25 +1,23 @@
 [
     {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=https://pluto.tv&sz=%size%",
-        "fileHash": "sha256-e09b1c173801016cfe59e2903001f791a11632381c76d0611f3d44e8d806aa39",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=plex.tv&sz=%size%",
+        "fileHash": "sha256-d35c8fe6f53168e22b6952d338e552e749610dfe17efb8f3b1b1152fcb3d66f6",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 43714,
+        "fileSize": 26715,
         "status": 1,
         "language": "en",
         "authors": [
-            "Bnyro",
             "MOOSA"
         ],
         "tvTypes": [
             "Movie",
-            "TvSeries",
-            "Live"
+            "TvSeries"
         ],
-        "version": 2,
-        "internalName": "PlutoTV",
-        "description": "Free movies, TV series and live channels from Pluto TV",
-        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/PlutoTV.cs3",
-        "name": "PlutoTV"
+        "version": 1,
+        "internalName": "PlexFree",
+        "description": "Free ad-supported movies and TV shows from Plex",
+        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/PlexFree.cs3",
+        "name": "PlexFree"
     }
 ]
