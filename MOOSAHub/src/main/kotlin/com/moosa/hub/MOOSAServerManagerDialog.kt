@@ -15,11 +15,12 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.widget.addTextChangedListener
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -30,8 +31,11 @@ import java.util.concurrent.atomic.AtomicInteger
 class MOOSAServerManagerDialog : DialogFragment() {
     private lateinit var listContainer: LinearLayout
     private lateinit var countText: TextView
-    private lateinit var search: EditText
+    private lateinit var progressBar: ProgressBar
+    private lateinit var progressText: TextView
     private lateinit var discoverButton: Button
+    private lateinit var searchButton: Button
+
     private lateinit var selectAll: Button
     private lateinit var selectNone: Button
     private lateinit var disableOffline: Button
@@ -74,11 +78,11 @@ class MOOSAServerManagerDialog : DialogFragment() {
         view.id = View.generateViewId()
         view.isFocusable = true
         view.isFocusableInTouchMode = false
-        view.setOnFocusChangeListener { focusedView, hasFocus ->
-            focusedView.scaleX = if (hasFocus) 1.025f else 1f
-            focusedView.scaleY = if (hasFocus) 1.025f else 1f
-            focusedView.alpha = if (hasFocus) 1f else 0.92f
-            focusedView.background = rounded(
+        view.setOnFocusChangeListener { focused, hasFocus ->
+            focused.scaleX = if (hasFocus) 1.025f else 1f
+            focused.scaleY = if (hasFocus) 1.025f else 1f
+            focused.alpha = if (hasFocus) 1f else 0.92f
+            focused.background = rounded(
                 if (hasFocus) Color.rgb(42, 117, 190) else baseColor,
                 11,
                 if (hasFocus) Color.WHITE else Color.argb(70, 255, 255, 255),
@@ -87,7 +91,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
         }
     }
 
-    private fun button(text: String, color: Int): Button =
+    private fun actionButton(text: String, color: Int): Button =
         Button(requireContext()).apply {
             this.text = text
             setTextColor(Color.WHITE)
@@ -150,110 +154,112 @@ class MOOSAServerManagerDialog : DialogFragment() {
 
         content.addView(
             label(
-                "Discover, test, enable or disable individual servers",
-                16f,
+                "DISCOVER & TEST SERVERS scans multiple titles in the background. Each server is probed twice before it is marked offline.",
+                14f,
                 Color.LTGRAY
             ).apply {
-                setPadding(0, dp(8), 0, dp(12))
+                setPadding(0, dp(6), 0, dp(12))
             }
         )
 
         val row1 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        selectAll = button("SELECT ALL", Color.rgb(35, 180, 75))
-        selectNone = button("SELECT NONE", Color.rgb(210, 45, 55))
+        selectAll = actionButton("SELECT ALL", Color.rgb(35, 180, 75))
+        selectNone = actionButton("SELECT NONE", Color.rgb(210, 45, 55))
         row1.addView(
             selectAll,
-            LinearLayout.LayoutParams(0, dp(66), 1f).apply {
-                marginEnd = dp(8)
-            }
+            LinearLayout.LayoutParams(0, dp(64), 1f).apply { marginEnd = dp(8) }
         )
         row1.addView(
             selectNone,
-            LinearLayout.LayoutParams(0, dp(66), 1f).apply {
-                marginStart = dp(8)
-            }
+            LinearLayout.LayoutParams(0, dp(64), 1f).apply { marginStart = dp(8) }
         )
         content.addView(row1)
 
         val row2 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(10), 0, dp(12))
+            setPadding(0, dp(8), 0, dp(8))
         }
-        discoverButton = button(
+        discoverButton = actionButton(
             "DISCOVER & TEST SERVERS",
             Color.rgb(30, 105, 180)
         )
-        disableOffline = button(
+        disableOffline = actionButton(
             "DISABLE OFFLINE",
             Color.rgb(80, 80, 90)
         )
         row2.addView(
             discoverButton,
-            LinearLayout.LayoutParams(0, dp(66), 1f).apply {
-                marginEnd = dp(8)
-            }
+            LinearLayout.LayoutParams(0, dp(60), 1f).apply { marginEnd = dp(8) }
         )
         row2.addView(
             disableOffline,
-            LinearLayout.LayoutParams(0, dp(66), 1f).apply {
-                marginStart = dp(8)
-            }
+            LinearLayout.LayoutParams(0, dp(60), 1f).apply { marginStart = dp(8) }
         )
         content.addView(row2)
 
+        progressBar = ProgressBar(
+            context,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            max = 100
+            progress = 0
+            visibility = View.GONE
+        }
+        content.addView(
+            progressBar,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(10)
+            ).apply { topMargin = dp(4) }
+        )
+
+        progressText = label("", 13f, Color.LTGRAY, true).apply {
+            visibility = View.GONE
+            setPadding(0, dp(4), 0, dp(8))
+        }
+        content.addView(progressText)
+
         val row3 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, dp(12))
         }
-        saveProfile = button("SAVE PROFILE", Color.rgb(35, 120, 210))
-        loadProfile = button("LOAD PROFILE", Color.rgb(40, 155, 75))
-        deleteProfile = button("DELETE PROFILE", Color.rgb(205, 50, 55))
+        saveProfile = actionButton("SAVE PROFILE", Color.rgb(35, 120, 210))
+        loadProfile = actionButton("LOAD PROFILE", Color.rgb(40, 155, 75))
+        deleteProfile = actionButton("DELETE PROFILE", Color.rgb(205, 50, 55))
         row3.addView(
             saveProfile,
-            LinearLayout.LayoutParams(0, dp(62), 1f).apply { marginEnd = dp(5) }
+            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(5) }
         )
         row3.addView(
             loadProfile,
-            LinearLayout.LayoutParams(0, dp(62), 1f).apply {
+            LinearLayout.LayoutParams(0, dp(58), 1f).apply {
                 marginStart = dp(5)
                 marginEnd = dp(5)
             }
         )
         row3.addView(
             deleteProfile,
-            LinearLayout.LayoutParams(0, dp(62), 1f).apply { marginStart = dp(5) }
+            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(5) }
         )
         content.addView(row3)
 
-        search = EditText(context).apply {
-            id = View.generateViewId()
-            hint = "Search servers..."
-            setHintTextColor(Color.GRAY)
-            setTextColor(Color.WHITE)
-            textSize = 18f
-            setSingleLine(true)
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            background = rounded(
-                Color.rgb(30, 38, 48),
-                12,
-                Color.rgb(85, 100, 115)
-            )
-            isFocusable = true
-            isFocusableInTouchMode = false
-        }
+        searchButton = actionButton(
+            "SEARCH SERVERS…",
+            Color.rgb(35, 45, 55)
+        )
         content.addView(
-            search,
+            searchButton,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(58)
-            )
+            ).apply { topMargin = dp(10) }
         )
 
         listContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(12), 0, dp(12))
+            setPadding(0, dp(10), 0, dp(12))
         }
         content.addView(listContainer)
 
@@ -280,31 +286,11 @@ class MOOSAServerManagerDialog : DialogFragment() {
             rebuildList()
         }
 
-        discoverButton.setOnClickListener {
-            discoverAndTest()
-        }
-
-        saveProfile.setOnClickListener {
-            promptSaveProfile()
-        }
-
-        loadProfile.setOnClickListener {
-            chooseProfile(load = true)
-        }
-
-        deleteProfile.setOnClickListener {
-            chooseProfile(load = false)
-        }
-
-        search.addTextChangedListener {
-            query = it?.toString()?.trim().orEmpty()
-            rebuildList()
-        }
-
-        search.setOnEditorActionListener { _, _, _ ->
-            rowFocusPairs.firstOrNull()?.first?.requestFocus()
-            true
-        }
+        discoverButton.setOnClickListener { discoverAndTest() }
+        saveProfile.setOnClickListener { promptSaveProfile() }
+        loadProfile.setOnClickListener { chooseProfile(load = true) }
+        deleteProfile.setOnClickListener { chooseProfile(load = false) }
+        searchButton.setOnClickListener { openSearchDialog() }
 
         wireTopFocus()
         rebuildList()
@@ -317,6 +303,18 @@ class MOOSAServerManagerDialog : DialogFragment() {
             requestWindowFeature(Window.FEATURE_NO_TITLE)
             setContentView(root)
             setCanceledOnTouchOutside(true)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val metrics = resources.displayMetrics
+        dialog?.window?.apply {
+            setLayout(
+                (metrics.widthPixels * 0.94f).toInt(),
+                (metrics.heightPixels * 0.94f).toInt()
+            )
+            setBackgroundDrawableResource(android.R.color.transparent)
         }
     }
 
@@ -337,30 +335,18 @@ class MOOSAServerManagerDialog : DialogFragment() {
 
         saveProfile.nextFocusUpId = discoverButton.id
         saveProfile.nextFocusRightId = loadProfile.id
-        saveProfile.nextFocusDownId = search.id
+        saveProfile.nextFocusDownId = searchButton.id
 
         loadProfile.nextFocusUpId = discoverButton.id
         loadProfile.nextFocusLeftId = saveProfile.id
         loadProfile.nextFocusRightId = deleteProfile.id
-        loadProfile.nextFocusDownId = search.id
+        loadProfile.nextFocusDownId = searchButton.id
 
         deleteProfile.nextFocusUpId = disableOffline.id
         deleteProfile.nextFocusLeftId = loadProfile.id
-        deleteProfile.nextFocusDownId = search.id
+        deleteProfile.nextFocusDownId = searchButton.id
 
-        search.nextFocusUpId = loadProfile.id
-    }
-
-    override fun onStart() {
-        super.onStart()
-        val metrics = resources.displayMetrics
-        dialog?.window?.apply {
-            setLayout(
-                (metrics.widthPixels * 0.94f).toInt(),
-                (metrics.heightPixels * 0.94f).toInt()
-            )
-            setBackgroundDrawableResource(android.R.color.transparent)
-        }
+        searchButton.nextFocusUpId = loadProfile.id
     }
 
     private fun rebuildList() {
@@ -370,10 +356,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
         rowFocusPairs.clear()
 
         val all = MOOSAServerRegistry.snapshot()
-        val enabledCount = all.count {
-            !MOOSAServerRegistry.isDisabled(it.key)
-        }
-        countText.text = "$enabledCount / ${all.size} enabled"
+        countText.text =
+            "${all.count { !MOOSAServerRegistry.isDisabled(it.key) }} / ${all.size} enabled"
 
         val visible = all.filter {
             query.isBlank() ||
@@ -384,13 +368,13 @@ class MOOSAServerManagerDialog : DialogFragment() {
             listContainer.addView(
                 label(
                     "No servers yet. Use DISCOVER & TEST SERVERS.",
-                    17f,
+                    16f,
                     Color.LTGRAY
                 ).apply {
-                    setPadding(dp(8), dp(18), dp(8), dp(18))
+                    setPadding(dp(8), dp(16), dp(8), dp(16))
                 }
             )
-            search.nextFocusDownId = View.NO_ID
+            searchButton.nextFocusDownId = searchButton.id
             return
         }
 
@@ -401,10 +385,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
                 pair.first,
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    dp(72)
-                ).apply {
-                    bottomMargin = dp(6)
-                }
+                    dp(70)
+                ).apply { bottomMargin = dp(5) }
             )
         }
 
@@ -419,13 +401,12 @@ class MOOSAServerManagerDialog : DialogFragment() {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setPadding(dp(8), dp(5), dp(8), dp(5))
             isClickable = true
             decorateFocusable(this, Color.rgb(24, 31, 40))
         }
 
         val check = CheckBox(context).apply {
-            id = View.generateViewId()
             isChecked = !MOOSAServerRegistry.isDisabled(entry.key)
             isFocusable = false
             isClickable = false
@@ -433,7 +414,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
         }
         row.addView(
             check,
-            LinearLayout.LayoutParams(dp(52), ViewGroup.LayoutParams.MATCH_PARENT)
+            LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT)
         )
 
         row.addView(
@@ -441,69 +422,53 @@ class MOOSAServerManagerDialog : DialogFragment() {
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
 
-        val state = TextView(context).apply {
-            val (textValue, color) = when (entry.lastResult) {
+        val status = TextView(context).apply {
+            val pair = when (entry.lastResult) {
                 true -> "• ONLINE" to Color.rgb(30, 180, 85)
                 false -> "• OFFLINE" to Color.rgb(220, 55, 55)
                 null -> "• UNKNOWN" to Color.rgb(95, 105, 115)
             }
-            text = textValue
-            textSize = 13f
+            text = pair.first
+            textSize = 12f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(7), dp(12), dp(7))
-            background = rounded(color, 8)
+            setPadding(dp(9), dp(6), dp(9), dp(6))
+            background = rounded(pair.second, 8)
             isFocusable = false
         }
         row.addView(
-            state,
+            status,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                marginEnd = dp(12)
-            }
+            ).apply { marginEnd = dp(10) }
         )
 
-        val test = button("TEST", Color.rgb(45, 55, 65))
+        val test = actionButton("TEST", Color.rgb(45, 55, 65))
         row.addView(
             test,
-            LinearLayout.LayoutParams(dp(94), dp(48))
+            LinearLayout.LayoutParams(dp(88), dp(46))
         )
 
         row.setOnClickListener {
             check.isChecked = !check.isChecked
         }
-
         check.setOnCheckedChangeListener { _, enabled ->
             MOOSAServerRegistry.setDisabled(entry.key, !enabled)
             updateCountOnly()
         }
-
-        test.setOnClickListener {
-            testServer(entry, test)
-        }
+        test.setOnClickListener { testServer(entry, test) }
 
         return row to test
     }
 
     private fun wireRows() {
-        if (rowFocusPairs.isEmpty()) {
-            discoverButton.nextFocusDownId = search.id
-            disableOffline.nextFocusDownId = search.id
-            search.nextFocusDownId = View.NO_ID
-            return
-        }
+        if (rowFocusPairs.isEmpty()) return
 
         val firstRow = rowFocusPairs.first().first
         val firstTest = rowFocusPairs.first().second
-
-        discoverButton.nextFocusDownId = saveProfile.id
-        disableOffline.nextFocusDownId = deleteProfile.id
-        saveProfile.nextFocusDownId = firstRow.id
-        loadProfile.nextFocusDownId = firstRow.id
+        searchButton.nextFocusDownId = firstRow.id
         deleteProfile.nextFocusDownId = firstTest.id
-        search.nextFocusDownId = firstRow.id
 
         rowFocusPairs.forEachIndexed { index, pair ->
             val row = pair.first
@@ -514,8 +479,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
             row.nextFocusRightId = test.id
             test.nextFocusLeftId = row.id
 
-            row.nextFocusUpId = previous?.first?.id ?: search.id
-            test.nextFocusUpId = previous?.second?.id ?: search.id
+            row.nextFocusUpId = previous?.first?.id ?: searchButton.id
+            test.nextFocusUpId = previous?.second?.id ?: searchButton.id
 
             row.nextFocusDownId = next?.first?.id ?: row.id
             test.nextFocusDownId = next?.second?.id ?: test.id
@@ -533,34 +498,47 @@ class MOOSAServerManagerDialog : DialogFragment() {
         button: Button
     ) {
         button.isEnabled = false
-        button.text = "..."
+        button.text = "…"
 
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 MOOSAServerRegistry.test(entry.key)
             }
+
             if (isAdded) {
                 button.isEnabled = true
                 button.text = "TEST"
                 rebuildList()
+                button.requestFocus()
             }
         }
     }
 
     private fun discoverAndTest() {
         discoverButton.isEnabled = false
+
         val total = MOOSASourceTester.sources().size.coerceAtLeast(1)
-        val completed = AtomicInteger(0)
-        discoverButton.text = "DISCOVERING 0/$total"
+        val done = AtomicInteger(0)
+
+        progressBar.max = total
+        progressBar.progress = 0
+        progressBar.visibility = View.VISIBLE
+        progressText.visibility = View.VISIBLE
+        progressText.text = "Scanning sources 0/$total • Servers 0"
+        discoverButton.text = "DISCOVERING…"
 
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
-                MOOSASourceTester.testAll(discoveryDepth = 2) { _, state ->
-                    if (state.status != MOOSASourceTester.Status.TESTING) {
-                        val done = completed.incrementAndGet()
-                        discoverButton.post {
-                            discoverButton.text = "DISCOVERING $done/$total"
-                        }
+                MOOSASourceTester.testAll(discoveryDepth = 3) { _, state ->
+                    if (state.status == MOOSASourceTester.Status.TESTING) {
+                        return@testAll
+                    }
+
+                    val completed = done.incrementAndGet()
+                    progressBar.post {
+                        progressBar.progress = completed
+                        progressText.text =
+                            "Scanning sources $completed/$total • Servers ${MOOSAServerRegistry.snapshot().size}"
                     }
                 }
             }
@@ -568,16 +546,48 @@ class MOOSAServerManagerDialog : DialogFragment() {
             if (isAdded) {
                 discoverButton.isEnabled = true
                 discoverButton.text = "DISCOVER & TEST SERVERS"
+                progressBar.progress = total
+                progressText.text =
+                    "Finished • ${MOOSAServerRegistry.snapshot().size} server groups found"
                 rebuildList()
                 discoverButton.requestFocus()
 
                 Toast.makeText(
                     requireContext(),
-                    "Server discovery finished. Found ${MOOSAServerRegistry.snapshot().size} server groups.",
+                    "Server discovery finished.",
                     Toast.LENGTH_LONG
                 ).show()
             }
         }
+    }
+
+    private fun openSearchDialog() {
+        val input = EditText(requireContext()).apply {
+            hint = "Server name"
+            setSingleLine(true)
+            setText(query)
+        }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle("Search Servers")
+            .setView(input)
+            .setPositiveButton("Search") { _, _ ->
+                query = input.text?.toString()?.trim().orEmpty()
+                searchButton.text = if (query.isBlank()) {
+                    "SEARCH SERVERS…"
+                } else {
+                    "SEARCH: $query"
+                }
+                rebuildList()
+                searchButton.requestFocus()
+            }
+            .setNeutralButton("Clear") { _, _ ->
+                query = ""
+                searchButton.text = "SEARCH SERVERS…"
+                rebuildList()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun promptSaveProfile() {
@@ -586,7 +596,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             setSingleLine(true)
         }
 
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(requireContext())
             .setTitle("Save Server Profile")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
@@ -612,7 +622,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             return
         }
 
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+        AlertDialog.Builder(requireContext())
             .setTitle(if (load) "Load Server Profile" else "Delete Server Profile")
             .setItems(profiles) { _, which ->
                 val name = profiles[which]
