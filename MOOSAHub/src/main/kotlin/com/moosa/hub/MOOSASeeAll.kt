@@ -69,7 +69,7 @@ object MOOSASeeAll {
             .trimEnd('?', '&')
 
     fun open(url: String): Boolean {
-        val token = Regex("""(?:\\?|&)moosa_showmore=([^&]+)""")
+        val token = Regex("""(?:\?|&)moosa_showmore=([^&]+)""")
             .find(url)
             ?.groupValues
             ?.getOrNull(1)
