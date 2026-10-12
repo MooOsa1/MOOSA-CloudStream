@@ -93,6 +93,7 @@ object MOOSACatalog {
     }
 
     private suspend fun list(
+        api: MainAPI,
         path: String,
         page: Int,
         forceTv: Boolean,
@@ -114,13 +115,14 @@ object MOOSACatalog {
 
     suspend fun home(api: MainAPI, page: Int): HomePageResponse = coroutineScope {
         val trendingMovies = async {
-            list("/trending/movie/week", page, false)
+            list(api, "/trending/movie/week", page, false)
         }
         val trendingSeries = async {
-            list("/trending/tv/week", page, true)
+            list(api, "/trending/tv/week", page, true)
         }
         val arabicMovies = async {
             list(
+                api,
                 "/discover/movie",
                 page,
                 false,
@@ -132,6 +134,7 @@ object MOOSACatalog {
         }
         val arabicSeries = async {
             list(
+                api,
                 "/discover/tv",
                 page,
                 true,
@@ -143,6 +146,7 @@ object MOOSACatalog {
         }
         val indianMovies = async {
             list(
+                api,
                 "/discover/movie",
                 page,
                 false,
@@ -154,6 +158,7 @@ object MOOSACatalog {
         }
         val indianSeries = async {
             list(
+                api,
                 "/discover/tv",
                 page,
                 true,
@@ -164,10 +169,10 @@ object MOOSACatalog {
             )
         }
         val topMovies = async {
-            list("/movie/top_rated", page, false, mapOf("region" to "US"))
+            list(api, "/movie/top_rated", page, false, mapOf("region" to "US"))
         }
         val topSeries = async {
-            list("/tv/top_rated", page, true)
+            list(api, "/tv/top_rated", page, true)
         }
 
         newHomePageResponse(
