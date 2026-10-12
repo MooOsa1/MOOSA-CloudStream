@@ -1,18 +1,19 @@
 package com.moosa.hub
 
 import android.app.Activity
+import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.newMovieSearchResponse
 import java.util.concurrent.ConcurrentHashMap
 
 object MOOSASeeAll {
-    private const val MARKER = "moosa_showmore="
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private data class CategoryState(
@@ -26,60 +27,25 @@ object MOOSASeeAll {
 
     private val states = ConcurrentHashMap<String, CategoryState>()
 
-    fun makeButton(
+    fun register(
         api: MOOSAHubProvider,
         request: MainPageRequest,
         items: List<SearchResponse>,
-        hasNext: Boolean
-    ): SearchResponse {
-        val token = (
-            request.name + "|" + request.data
-            ).hashCode().toUInt().toString(16)
+        hasNext: Boolean,
+        horizontal: Boolean = false
+    ) {
+        if (!hasNext || items.isEmpty()) return
 
-        states[token] = CategoryState(
+        states[request.name] = CategoryState(
             api = api,
             request = request,
             page = 1,
             items = items,
             hasNext = hasNext,
-            horizontal = false
+            horizontal = horizontal
         )
 
-        val fallbackUrl = items.firstOrNull()?.url
-            ?: "https://www.themoviedb.org/movie/2"
-
-        val separator = if ("?" in fallbackUrl) "&" else "?"
-        return api.newMovieSearchResponse(
-            name = "Show More ›",
-            url = "${fallbackUrl}${separator}${MARKER}${token}",
-            type = TvType.Movie,
-            fix = false
-        ) {
-            this.year = null
-            this.posterUrl = null
-        }
-    }
-
-    fun isShowMoreUrl(url: String): Boolean =
-        MARKER in url
-
-    fun cleanUrl(url: String): String =
-        url.replace(Regex("""[?&]moosa_showmore=[^&]+"""), "")
-            .replace("?&", "?")
-            .trimEnd('?', '&')
-
-    fun open(url: String): Boolean {
-        val token = Regex("""(?:\?|&)moosa_showmore=([^&]+)""")
-            .find(url)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?: return false
-        val state = states[token] ?: return false
-
-        mainHandler.postDelayed({
-            openCategory(state)
-        }, 180L)
-        return true
+        mainHandler.postDelayed({ installHeaders(28) }, 180L)
     }
 
     private fun currentActivity(): Activity? {
@@ -93,6 +59,103 @@ object MOOSASeeAll {
                 ?.invoke(instance) as? Activity
         } catch (_: Throwable) {
             null
+        }
+    }
+
+    private fun collectHeaders(view: View, output: MutableList<TextView>) {
+        if (view is TextView) {
+            val entry = try {
+                if (view.id != View.NO_ID) {
+                    view.resources.getResourceEntryName(view.id)
+                } else {
+                    null
+                }
+            } catch (_: Throwable) {
+                null
+            }
+
+            if (entry == "home_child_more_info") {
+                output += view
+            }
+        }
+
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                collectHeaders(view.getChildAt(index), output)
+            }
+        }
+    }
+
+    private fun installHeaders(retries: Int) {
+        val activity = currentActivity()
+        val root = activity?.findViewById<ViewGroup>(android.R.id.content)
+
+        if (activity == null || root == null) {
+            if (retries > 0) {
+                mainHandler.postDelayed({ installHeaders(retries - 1) }, 220L)
+            }
+            return
+        }
+
+        val headers = mutableListOf<TextView>()
+        collectHeaders(root, headers)
+
+        var installed = 0
+
+        headers.forEach { header ->
+            val current = header.text?.toString().orEmpty()
+                .substringBefore("  SHOW MORE")
+                .trim()
+
+            val state = states[current]
+                ?: states.entries.firstOrNull {
+                    current.startsWith(it.key)
+                }?.value
+                ?: return@forEach
+
+            val title = state.request.name
+            header.text = "$title  SHOW MORE  ›"
+            header.contentDescription = "$title. Show more."
+            header.isClickable = true
+            header.isFocusable = true
+            header.isFocusableInTouchMode = true
+            header.alpha = 0.88f
+            header.setPadding(
+                header.paddingLeft,
+                header.paddingTop,
+                header.paddingRight,
+                header.paddingBottom
+            )
+
+            header.setOnFocusChangeListener { view, focused ->
+                view.alpha = if (focused) 1f else 0.88f
+                view.setBackgroundColor(
+                    if (focused) Color.argb(90, 30, 120, 205)
+                    else Color.TRANSPARENT
+                )
+            }
+
+            header.setOnClickListener {
+                openCategory(state)
+            }
+
+            val parent = header.parent as? ViewGroup
+            if (parent != null) {
+                val recyclerId = activity.resources.getIdentifier(
+                    "home_child_recyclerview",
+                    "id",
+                    activity.packageName
+                )
+                if (recyclerId != 0) {
+                    header.nextFocusDownId = recyclerId
+                }
+            }
+
+            installed++
+        }
+
+        if (installed < states.size && retries > 0) {
+            mainHandler.postDelayed({ installHeaders(retries - 1) }, 220L)
         }
     }
 
@@ -142,7 +205,6 @@ object MOOSASeeAll {
         }
 
         state.items = (state.items + nextList.list)
-            .filterNot { isShowMoreUrl(it.url) }
             .distinctBy { it.url }
         state.page = nextPage
         state.hasNext = response.hasNext
@@ -168,7 +230,9 @@ object MOOSASeeAll {
             val expandCallback: suspend (String) -> Any? = {
                 expandCategory(state)
             }
-            val dismissCallback: () -> Unit = {}
+            val dismissCallback: () -> Unit = {
+                mainHandler.postDelayed({ installHeaders(8) }, 150L)
+            }
 
             method.invoke(
                 companion,
