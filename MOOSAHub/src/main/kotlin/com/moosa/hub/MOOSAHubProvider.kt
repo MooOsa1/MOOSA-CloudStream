@@ -19,11 +19,10 @@ import com.lagradost.cloudstream3.syncproviders.SyncIdName
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import java.util.concurrent.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
+import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 
 class MOOSAHubProvider : TmdbProvider() {
     override var name = "MOOSA Hub"
@@ -40,8 +39,12 @@ class MOOSAHubProvider : TmdbProvider() {
         val data: String
     )
 
-    data class HubPlaybackData(
-        val targets: List<ProviderTarget> = emptyList()
+    data class HubPlaybackRequest(
+        val title: String,
+        val year: Int? = null,
+        val imdbId: String? = null,
+        val season: Int? = null,
+        val episode: Int? = null
     )
 
     private data class TimedMovieCache(
@@ -57,9 +60,9 @@ class MOOSAHubProvider : TmdbProvider() {
     private val movieCache = ConcurrentHashMap<String, TimedMovieCache>()
     private val seriesCache = ConcurrentHashMap<String, TimedSeriesCache>()
 
-    private val cacheLifetimeMs = 15 * 60 * 1000L
-    private val providerResolveTimeoutMs = 4500L
-    private val providerLinksTimeoutMs = 6000L
+    private val cacheLifetimeMs = 20 * 60 * 1000L
+    private val providerResolveTimeoutMs = 3500L
+    private val providerLinksTimeoutMs = 5000L
 
     private suspend fun <T> timed(
         timeoutMs: Long,
@@ -114,7 +117,7 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     private suspend fun searchProvider(api: MainAPI, title: String): List<SearchResponse> {
-        return timed(2500L) {
+        return timed(2000L) {
             api.search(title, 1)?.items.orEmpty()
         }.orEmpty()
     }
@@ -126,13 +129,12 @@ class MOOSAHubProvider : TmdbProvider() {
         imdbId: String?,
         wantSeries: Boolean
     ): LoadResponse? {
-        // Fast + exact path for providers that support IMDb IDs.
         if (!imdbId.isNullOrBlank() && api.supportedSyncNames.contains(SyncIdName.Imdb)) {
-            val directUrl = timed(1200L) {
+            val directUrl = timed(1000L) {
                 api.getLoadUrl(SyncIdName.Imdb, imdbId)
             }
             if (!directUrl.isNullOrBlank()) {
-                val direct = timed(2200L) { api.load(directUrl) }
+                val direct = timed(1600L) { api.load(directUrl) }
                 if (
                     (!wantSeries && direct is MovieLoadResponse) ||
                     (wantSeries && direct is TvSeriesLoadResponse)
@@ -159,7 +161,7 @@ class MOOSAHubProvider : TmdbProvider() {
             .toList()
 
         for ((match, _) in candidates) {
-            val loaded = timed(1800L) { api.load(match.url) } ?: continue
+            val loaded = timed(1600L) { api.load(match.url) } ?: continue
             if (
                 (!wantSeries && loaded is MovieLoadResponse) ||
                 (wantSeries && loaded is TvSeriesLoadResponse)
@@ -266,28 +268,29 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
+        // Opening the details page stays fast. Provider searching starts only after Play.
         val base = super.load(url) ?: return null
         val imdbId = base.getImdbId()
 
         return when (base) {
             is MovieLoadResponse -> {
-                val targets = resolveMovieTargets(base.name, base.year, imdbId)
-                base.dataUrl = HubPlaybackData(targets).toJson()
+                base.dataUrl = HubPlaybackRequest(
+                    title = base.name,
+                    year = base.year,
+                    imdbId = imdbId
+                ).toJson()
                 base
             }
 
             is TvSeriesLoadResponse -> {
-                val targetsByEpisode = resolveSeriesTargets(base.name, base.year, imdbId)
-
                 base.episodes.forEach { episode ->
-                    val season = episode.season
-                    val number = episode.episode
-                    val targets = if (season != null && number != null) {
-                        targetsByEpisode[season to number].orEmpty()
-                    } else {
-                        emptyList()
-                    }
-                    episode.data = HubPlaybackData(targets).toJson()
+                    episode.data = HubPlaybackRequest(
+                        title = base.name,
+                        year = base.year,
+                        imdbId = imdbId,
+                        season = episode.season,
+                        episode = episode.episode
+                    ).toJson()
                 }
                 base
             }
@@ -306,12 +309,61 @@ class MOOSAHubProvider : TmdbProvider() {
             text.contains("عرب")
     }
 
+    private fun isWeakArabicVariant(subtitle: SubtitleFile): Boolean {
+        val text = subtitle.lang.lowercase()
+        return "sdh" in text ||
+            "cc" in text ||
+            "hearing" in text ||
+            "forced" in text ||
+            "auto" in text ||
+            "machine" in text
+    }
+
     private fun subtitleScore(subtitle: SubtitleFile): Int {
         val text = subtitle.lang.lowercase()
-        var score = if (isArabicSubtitle(subtitle)) 100 else 0
-        if ("sdh" in text || "cc" in text || "hearing" in text) score -= 20
-        if ("forced" in text) score -= 10
+        val url = subtitle.url.lowercase()
+        var score = if (isArabicSubtitle(subtitle)) 1000 else 0
+
+        if (!isWeakArabicVariant(subtitle)) score += 120
+        if ("srt" in url) score += 20
+        if ("vtt" in url) score += 10
+        if ("sdh" in text || "cc" in text || "hearing" in text) score -= 80
+        if ("forced" in text) score -= 60
+        if ("auto" in text || "machine" in text) score -= 120
+
         return score
+    }
+
+    private fun inferQuality(link: ExtractorLink): Int {
+        if (link.quality >= 720) return link.quality
+
+        val text = "${link.name} ${link.source} ${link.url}".lowercase()
+        return when {
+            "2160" in text || "4k" in text || "uhd" in text -> 2160
+            "1440" in text || "qhd" in text || "2k" in text -> 1440
+            "1080" in text || "fhd" in text || "fullhd" in text || "full hd" in text -> 1080
+            "720" in text || Regex("""\bhd\b""").containsMatchIn(text) -> 720
+            else -> link.quality
+        }
+    }
+
+    private fun qualityRank(quality: Int): Int = when {
+        quality >= 2160 -> 4000
+        quality == 1080 -> 3000
+        quality == 1440 -> 2000
+        quality >= 720 -> 1000 + quality
+        else -> 0
+    }
+
+    private suspend fun targetsFor(request: HubPlaybackRequest): List<ProviderTarget> {
+        val season = request.season
+        val episode = request.episode
+
+        return if (season == null || episode == null) {
+            resolveMovieTargets(request.title, request.year, request.imdbId)
+        } else {
+            resolveSeriesTargets(request.title, request.year, request.imdbId)[season to episode].orEmpty()
+        }
     }
 
     override suspend fun loadLinks(
@@ -320,15 +372,16 @@ class MOOSAHubProvider : TmdbProvider() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val payload = tryParseJson<HubPlaybackData>(data) ?: return false
-        if (payload.targets.isEmpty()) return false
+        val request = tryParseJson<HubPlaybackRequest>(data) ?: return false
+        val targets = targetsFor(request)
+        if (targets.isEmpty()) return false
 
         val seenLinks = ConcurrentHashMap.newKeySet<String>()
         val seenSubtitles = ConcurrentHashMap.newKeySet<String>()
+        val links = Collections.synchronizedList(mutableListOf<Pair<ExtractorLink, Int>>())
         val subtitles = Collections.synchronizedList(mutableListOf<SubtitleFile>())
-        val emittedLink = AtomicBoolean(false)
 
-        payload.targets.amap { target ->
+        targets.amap { target ->
             val api = apis.firstOrNull { candidate ->
                 candidate !== this &&
                     candidate.name == target.providerName &&
@@ -345,18 +398,22 @@ class MOOSAHubProvider : TmdbProvider() {
                         }
                     },
                     { link ->
-                        if (link.url.isNotBlank() && seenLinks.add(link.url)) {
-                            emittedLink.set(true)
-                            callback(link)
+                        val quality = inferQuality(link)
+                        // Never expose anything below 720p.
+                        if (quality >= 720 && link.url.isNotBlank() && seenLinks.add(link.url)) {
+                            links += link to quality
                         }
                     }
                 )
             } ?: false
         }
 
-        // Arabic subtitles first, with normal Arabic preferred over SDH/forced variants.
+        // Arabic first. Normal Arabic beats SDH/CC/forced/auto variants.
         subtitles
-            .sortedByDescending(::subtitleScore)
+            .sortedWith(
+                compareByDescending<SubtitleFile> { isArabicSubtitle(it) }
+                    .thenByDescending { subtitleScore(it) }
+            )
             .forEach { subtitle ->
                 val normalized = if (isArabicSubtitle(subtitle)) {
                     subtitle.copy(lang = "Arabic")
@@ -366,6 +423,14 @@ class MOOSAHubProvider : TmdbProvider() {
                 subtitleCallback(normalized)
             }
 
-        return emittedLink.get()
+        // Requested priority inside MOOSA Hub: 4K, then FHD/1080p, then the rest (all >=720p).
+        links
+            .sortedWith(
+                compareByDescending<Pair<ExtractorLink, Int>> { (_, quality) -> qualityRank(quality) }
+                    .thenByDescending { (_, quality) -> quality }
+            )
+            .forEach { (link, _) -> callback(link) }
+
+        return links.isNotEmpty()
     }
 }
