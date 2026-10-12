@@ -220,8 +220,8 @@ class MOOSASettingsDialog : DialogFragment() {
             content,
             card(
                 "☰",
-                "Enable / Disable Sources",
-                "Toggle individual providers on or off"
+                "Select / Test Sources",
+                "Enable, disable, discover and test all sources"
             ) {
                 openSources()
             }
@@ -328,38 +328,7 @@ class MOOSASettingsDialog : DialogFragment() {
     }
 
     private fun openSources() {
-        val names = apis
-            .filter {
-                it.name != "MOOSA Hub" &&
-                    it.providerType == ProviderType.DirectProvider
-            }
-            .map { it.name }
-            .distinct()
-            .sorted()
-
-        if (names.isEmpty()) {
-            AlertDialog.Builder(requireContext())
-                .setTitle("Sources")
-                .setMessage("No external sources are currently loaded.")
-                .setPositiveButton("OK", null)
-                .show()
-            return
-        }
-
-        val disabled = MOOSASettingsStore.disabledSources().toMutableSet()
-        val checked = names.map { it !in disabled }.toBooleanArray()
-
-        AlertDialog.Builder(requireContext())
-            .setTitle("Enable / Disable Sources")
-            .setMultiChoiceItems(names.toTypedArray(), checked) { _, which, enabled ->
-                val name = names[which]
-                if (enabled) disabled.remove(name) else disabled.add(name)
-            }
-            .setPositiveButton("Save") { _, _ ->
-                MOOSASettingsStore.setDisabledSources(disabled)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        MOOSASourceTesterDialog.show(requireContext())
     }
 
     private fun openServerManager() {
