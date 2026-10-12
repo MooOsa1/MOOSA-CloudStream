@@ -220,13 +220,13 @@ open class PlutoTV : MainAPI() {
 
     data class BootResponse(
         val servers: Servers,
-        val session: Session,
-        val startingChannel: StartingChannel,
-        val stitcherParams: String,
-        val serverTime: String,
-        val refreshInSec: Long,
-        val isSuspicious: Boolean,
-        val sessionToken: String,
+        val sessionToken: String = "",
+        val session: Session? = null,
+        val startingChannel: StartingChannel? = null,
+        val stitcherParams: String? = null,
+        val serverTime: String? = null,
+        val refreshInSec: Long? = null,
+        val isSuspicious: Boolean? = null,
     )
 
     data class Servers(
