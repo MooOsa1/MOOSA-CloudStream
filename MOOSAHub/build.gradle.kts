@@ -1,8 +1,8 @@
-version = 13
+version = 14
 
 cloudstream {
-    language = "ar"
-    description = "واجهة MOOSA تبحث في كل المصادر المثبتة داخل CloudStream"
+    language = "en"
+    description = "English catalog, Arabic synopsis, and multi-source playback"
     authors = listOf("MOOSA")
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
