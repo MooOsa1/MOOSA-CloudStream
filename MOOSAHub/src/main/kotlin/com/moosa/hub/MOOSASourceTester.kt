@@ -4,6 +4,7 @@ import com.lagradost.cloudstream3.APIHolder.apis
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.ProviderType
+import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -99,181 +100,229 @@ object MOOSASourceTester {
     private fun normalize(value: String): String =
         value.lowercase().filter { it.isLetterOrDigit() }
 
-    private fun testQuery(api: MainAPI): String = when {
-        TvType.Movie in api.supportedTypes -> "Inception"
-        TvType.TvSeries in api.supportedTypes -> "Breaking Bad"
+    private fun testQueries(api: MainAPI): List<String> = when {
+        TvType.Movie in api.supportedTypes -> listOf(
+            "Inception",
+            "Avatar",
+            "The Dark Knight",
+            "Interstellar"
+        )
+        TvType.TvSeries in api.supportedTypes -> listOf(
+            "Breaking Bad",
+            "The Last of Us",
+            "Wednesday",
+            "Game of Thrones"
+        )
         TvType.Anime in api.supportedTypes ||
-            TvType.AnimeMovie in api.supportedTypes -> "Naruto"
-        else -> "Inception"
+            TvType.AnimeMovie in api.supportedTypes -> listOf(
+            "Naruto",
+            "One Piece",
+            "Attack on Titan",
+            "Demon Slayer"
+        )
+        else -> listOf("Inception", "Avatar")
+    }
+
+    private suspend fun candidateTargets(api: MainAPI): List<SearchResponse> {
+        val found = mutableListOf<SearchResponse>()
+
+        for (query in testQueries(api)) {
+            val search = try {
+                api.quickSearch(query)
+            } catch (_: Throwable) {
+                null
+            }.takeUnless { it.isNullOrEmpty() }
+                ?: try {
+                    api.search(query)
+                } catch (_: Throwable) {
+                    null
+                }
+                ?: emptyList()
+
+            val wanted = normalize(query)
+            val ranked = search
+                .map { result ->
+                    val candidate = normalize(result.name)
+                    val score = when {
+                        candidate == wanted -> 3
+                        candidate.contains(wanted) ||
+                            wanted.contains(candidate) -> 2
+                        else -> 0
+                    }
+                    result to score
+                }
+                .sortedByDescending { it.second }
+                .take(2)
+                .map { it.first }
+
+            found += ranked
+        }
+
+        if (found.isEmpty()) {
+            val page = api.mainPage.firstOrNull { it.data.isNotBlank() }
+            if (page != null) {
+                val homepage = try {
+                    api.getMainPage(
+                        1,
+                        com.lagradost.cloudstream3.MainPageRequest(
+                            page.name,
+                            page.data,
+                            page.horizontalImages
+                        )
+                    )
+                } catch (_: Throwable) {
+                    null
+                }
+
+                homepage
+                    ?.items
+                    ?.flatMap { it.list }
+                    ?.take(4)
+                    ?.let(found::addAll)
+            }
+        }
+
+        return found
+            .distinctBy { it.url }
+            .take(8)
+    }
+
+    private fun playbackData(
+        loaded: Any?
+    ): List<String> = when (loaded) {
+        is MovieLoadResponse ->
+            listOfNotNull(loaded.dataUrl.takeIf { it.isNotBlank() })
+
+        is TvSeriesLoadResponse ->
+            loaded.episodes
+                .mapNotNull { it.data?.takeIf(String::isNotBlank) }
+                .distinct()
+                .take(3)
+
+        else -> emptyList()
     }
 
     suspend fun test(
         api: MainAPI,
+        discoveryDepth: Int = 1,
         onUpdate: ((SourceState) -> Unit)? = null
     ): SourceState {
         val state = states.computeIfAbsent(key(api)) {
             MutableState(api.name, api.mainUrl)
         }
+
         state.status = Status.TESTING
         state.serverCount = 0
         onUpdate?.invoke(snapshot(api))
 
-        val result = withTimeoutOrNull(22000L) {
-            try {
-                val baseQuery = testQuery(api)
-                val queries = when (baseQuery) {
-                    "Inception" -> listOf("Inception", "Avatar", "The Dark Knight")
-                    "Breaking Bad" -> listOf("Breaking Bad", "The Last of Us", "Wednesday")
-                    "Naruto" -> listOf("Naruto", "One Piece", "Attack on Titan")
-                    else -> listOf(baseQuery)
-                }
+        val safeDepth = discoveryDepth.coerceIn(1, 3)
+        val timeoutMs = if (safeDepth > 1) 50000L else 28000L
 
-                var match = queries.firstNotNullOfOrNull { query ->
-                    val search = try {
-                        api.quickSearch(query)
-                    } catch (_: Throwable) {
-                        null
-                    }.takeUnless { it.isNullOrEmpty() }
-                        ?: try {
-                            api.search(query)
-                        } catch (_: Throwable) {
-                            null
-                        }
-                        ?: emptyList()
+        val working = withTimeoutOrNull(timeoutMs) {
+            val links = Collections.synchronizedList(
+                mutableListOf<ExtractorLink>()
+            )
 
-                    val wanted = normalize(query)
-                    search
-                        .sortedByDescending {
-                            val candidate = normalize(it.name)
-                            when {
-                                candidate == wanted -> 3
-                                candidate.contains(wanted) ||
-                                    wanted.contains(candidate) -> 2
-                                else -> 0
-                            }
-                        }
-                        .firstOrNull()
-                }
+            val targets = try {
+                candidateTargets(api)
+            } catch (_: Throwable) {
+                emptyList()
+            }
 
-                if (match == null) {
-                    val page = api.mainPage
-                        .firstOrNull { it.data.isNotBlank() }
-
-                    if (page != null) {
-                        val homepage = try {
-                            api.getMainPage(
-                                1,
-                                com.lagradost.cloudstream3.MainPageRequest(
-                                    page.name,
-                                    page.data,
-                                    page.horizontalImages
-                                )
-                            )
-                        } catch (_: Throwable) {
-                            null
-                        }
-
-                        match = homepage
-                            ?.items
-                            ?.firstOrNull()
-                            ?.list
-                            ?.firstOrNull()
-                    }
-                }
-
-                val target = match ?: return@withTimeoutOrNull false
-
+            for (target in targets.take(safeDepth + 1)) {
                 val loaded = try {
                     api.load(target.url)
                 } catch (_: Throwable) {
                     null
-                } ?: return@withTimeoutOrNull false
+                } ?: continue
 
-                val data = when (loaded) {
-                    is MovieLoadResponse -> loaded.dataUrl
-                    is TvSeriesLoadResponse -> loaded.episodes
-                        .firstOrNull { !it.data.isNullOrBlank() }
-                        ?.data
-                    else -> null
-                }?.takeIf { it.isNotBlank() }
-                    ?: return@withTimeoutOrNull false
-
-                val links = Collections.synchronizedList(
-                    mutableListOf<ExtractorLink>()
-                )
-
-                withTimeoutOrNull(12000L) {
-                    try {
-                        api.loadLinks(
-                            data,
-                            false,
-                            {},
-                            { link ->
-                                val label = "${link.name} ${link.source}".lowercase()
-                                if (
-                                    (
-                                        link.url.startsWith("http://", true) ||
-                                            link.url.startsWith("https://", true)
-                                        ) &&
-                                    "download" !in label &&
-                                    "تحميل" !in label
-                                ) {
-                                    MOOSAServerRegistry.record(link)
-                                    links += link
+                val dataItems = playbackData(loaded)
+                for (data in dataItems.take(if (safeDepth > 1) 2 else 1)) {
+                    withTimeoutOrNull(12000L) {
+                        try {
+                            api.loadLinks(
+                                data,
+                                false,
+                                {},
+                                { link ->
+                                    val label =
+                                        "${link.name} ${link.source}".lowercase()
+                                    if (
+                                        (
+                                            link.url.startsWith("http://", true) ||
+                                                link.url.startsWith("https://", true)
+                                            ) &&
+                                        "download" !in label &&
+                                        "تحميل" !in label
+                                    ) {
+                                        MOOSAServerRegistry.record(link)
+                                        links += link
+                                    }
                                 }
-                            }
-                        )
-                    } catch (_: Throwable) {
+                            )
+                        } catch (_: Throwable) {
+                        }
                     }
+
+                    if (safeDepth == 1 && links.isNotEmpty()) break
                 }
 
-                val unique = links.distinctBy {
-                    "${it.url}|${it.referer}|${it.headers.hashCode()}"
-                }
-                state.serverCount = unique.size
-
-                if (unique.isEmpty()) {
-                    return@withTimeoutOrNull false
-                }
-
-                var anyWorking = false
-
-                for (linkBatch in unique.chunked(8)) {
-                    val batchResults = coroutineScope {
-                        linkBatch.map { link ->
-                            async {
-                                val working = MOOSAServerRegistry.testLink(link)
-                                MOOSAServerRegistry.recordResult(link, working)
-                                working
-                            }
-                        }.awaitAll()
-                    }
-                    if (batchResults.any { it }) {
-                        anyWorking = true
-                    }
-                }
-
-                anyWorking
-            } catch (_: Throwable) {
-                false
+                if (safeDepth == 1 && links.isNotEmpty()) break
             }
+
+            val unique = links.distinctBy {
+                "${it.url}|${it.referer}|${it.headers.hashCode()}"
+            }
+
+            state.serverCount = unique.size
+
+            if (unique.isEmpty()) {
+                return@withTimeoutOrNull false
+            }
+
+            var anyWorking = false
+
+            for (linkBatch in unique.chunked(8)) {
+                val batchResults = coroutineScope {
+                    linkBatch.map { link ->
+                        async {
+                            val result = MOOSAServerRegistry.testLink(link)
+                            MOOSAServerRegistry.recordResult(link, result)
+                            result
+                        }
+                    }.awaitAll()
+                }
+
+                if (batchResults.any { it }) {
+                    anyWorking = true
+                }
+            }
+
+            anyWorking
         } ?: false
 
-        state.status = if (result) Status.ONLINE else Status.OFFLINE
+        state.status = if (working) Status.ONLINE else Status.OFFLINE
         state.lastTested = System.currentTimeMillis()
         onUpdate?.invoke(snapshot(api))
         return snapshot(api)
     }
 
     suspend fun testAll(
+        discoveryDepth: Int = 1,
         onUpdate: ((MainAPI, SourceState) -> Unit)? = null
     ) = coroutineScope {
         val all = sources()
+        val batchSize = MOOSASettingsStore
+            .providerConcurrency()
+            .coerceIn(4, 10)
 
-        for (batch in all.chunked(8)) {
+        for (batch in all.chunked(batchSize)) {
             batch.map { api ->
                 async {
-                    test(api) { state ->
+                    test(
+                        api = api,
+                        discoveryDepth = discoveryDepth
+                    ) { state ->
                         onUpdate?.invoke(api, state)
                     }
                 }
