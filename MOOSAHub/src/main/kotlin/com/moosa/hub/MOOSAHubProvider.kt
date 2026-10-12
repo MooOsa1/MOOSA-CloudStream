@@ -139,12 +139,12 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private val cacheLifetimeMs = 20 * 60 * 1000L
     private val providerResolveTimeoutMs = 8000L
-    private val providerLinksTimeoutMs = 6500L
+    private val providerLinksTimeoutMs = 9000L
+    private val streamPlayLinksTimeoutMs = 18000L
     private val subtitleTimeoutMs = 2200L
-    private val linkProbeTimeoutMs = 2200L
-    private val maxProvidersToTry = 18
-    private val desiredVerifiedLinks = 10
-    private val linksPerProviderToProbe = 3
+    private val linkProbeTimeoutMs = 2600L
+    private val providerBatchSize = 8
+    private val linkProbeBatchSize = 8
 
     private val tmdbApiKey = "e6333b32409e02a4a6eba6fb7ff866bb"
     private val tmdbApiUrl = "https://api.themoviedb.org/3"
@@ -748,6 +748,16 @@ class MOOSAHubProvider : TmdbProvider() {
         "${link.url}|${link.referer}|${link.headers.hashCode()}"
 
 
+    private fun linksTimeoutFor(api: MainAPI): Long {
+        val label = "${api.name} ${api.mainUrl}".lowercase()
+        return if ("streamplay" in label || "stream play" in label) {
+            streamPlayLinksTimeoutMs
+        } else {
+            providerLinksTimeoutMs
+        }
+    }
+
+
     private suspend fun verifyStreamingLink(link: ExtractorLink): Boolean {
         if (!validStreamingUrl(link.url)) return false
 
@@ -817,14 +827,14 @@ class MOOSAHubProvider : TmdbProvider() {
         callback: (ExtractorLink) -> Unit
     ): Boolean = coroutineScope {
         val request = tryParseJson<HubPlaybackRequest>(data) ?: return@coroutineScope false
-        val providers = playbackProviders(request).take(maxProvidersToTry)
+        val providers = playbackProviders(request)
 
         if (providers.isEmpty()) return@coroutineScope false
 
         MOOSAProgress.start(providers.size)
 
         val aliasesJob = async {
-            timed(1600L) {
+            timed(1800L) {
                 MOOSACatalog.aliases(
                     tmdbId = request.tmdbId,
                     isTv = request.isTv,
@@ -850,7 +860,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val aliases = aliasesJob.await()
 
-        for (batch in providers.chunked(6)) {
+        for (batch in providers.chunked(providerBatchSize)) {
             batch.amap { api ->
                 var providerWorked = false
 
@@ -861,7 +871,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         val candidateLinks =
                             Collections.synchronizedList(mutableListOf<ExtractorLink>())
 
-                        timed(providerLinksTimeoutMs) {
+                        timed(linksTimeoutFor(api)) {
                             api.loadLinks(
                                 target.data,
                                 isCasting,
@@ -907,17 +917,23 @@ class MOOSAHubProvider : TmdbProvider() {
                         val candidates = candidateLinks
                             .distinctBy(::linkKey)
                             .sortedByDescending(::inferQuality)
-                            .take(linksPerProviderToProbe)
 
-                        for (link in candidates) {
-                            val key = linkKey(link)
-                            if (seenLinks.contains(key)) continue
+                        for (linkBatch in candidates.chunked(linkProbeBatchSize)) {
+                            linkBatch.amap { link ->
+                                val key = linkKey(link)
+                                if (seenLinks.contains(key)) {
+                                    return@amap false
+                                }
 
-                            if (verifyStreamingLink(link) && seenLinks.add(key)) {
-                                providerWorked = true
-                                emittedLink.set(true)
-                                verifiedLinks.incrementAndGet()
-                                callback(link)
+                                if (verifyStreamingLink(link) && seenLinks.add(key)) {
+                                    providerWorked = true
+                                    emittedLink.set(true)
+                                    verifiedLinks.incrementAndGet()
+                                    callback(link)
+                                    true
+                                } else {
+                                    false
+                                }
                             }
                         }
                     }
@@ -946,13 +962,9 @@ class MOOSAHubProvider : TmdbProvider() {
 
                 providerWorked
             }
-
-            if (verifiedLinks.get() >= desiredVerifiedLinks) {
-                MOOSAProgress.serversReady(verifiedLinks.get())
-                break
-            }
         }
 
+        MOOSAProgress.serversReady(verifiedLinks.get())
         MOOSAProgress.subtitles()
 
         val externalSubtitles = externalSubtitleJob.await()
@@ -1044,11 +1056,7 @@ class MOOSAHubProvider : TmdbProvider() {
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
-    ): HomePageResponse {
-        val response = MOOSACatalog.home(this, page, request)
-        MOOSASeeAll.register(this, request, page, response)
-        return response
-    }
+    ): HomePageResponse = MOOSACatalog.home(this, page, request)
 
     override suspend fun search(
         query: String,
