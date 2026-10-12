@@ -43,9 +43,10 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class MOOSAHubProvider : TmdbProvider() {
     override var name = "MOOSA Hub"
-    override var lang = "ar"
+    override var lang = "en"
 
     override val useMetaLoadResponse = true
+    override val mainPage = MOOSACatalog.categories
     override val apiName = "MOOSA Hub"
     override val disableSeasonZero = true
     override val includeAdult = false
@@ -88,6 +89,8 @@ class MOOSAHubProvider : TmdbProvider() {
     private data class LegacySubtitleList(
         val all: List<StremioSubtitle> = emptyList()
     )
+
+    private data class TmdbOverview(val overview: String? = null)
 
     private data class TmdbExternalIds(
         @JsonProperty("imdb_id")
@@ -381,6 +384,17 @@ class MOOSAHubProvider : TmdbProvider() {
         val tmdbMatch = Regex("""themoviedb\.org/(movie|tv)/(\d+)""").find(url)
         val isTv = tmdbMatch?.groupValues?.getOrNull(1) == "tv"
         val tmdbId = tmdbMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
+
+        val arabicOverview = tmdbId?.let { id ->
+            val type = if (isTv) "tv" else "movie"
+            timed(2200L) {
+                app.get(
+                    "$tmdbApiUrl/$type/$id",
+                    params = mapOf("api_key" to tmdbApiKey, "language" to "ar-SA")
+                ).parsedSafe<TmdbOverview>()?.overview
+            }?.takeIf { it.isNotBlank() }
+        }
+        if (arabicOverview != null) base.plot = arabicOverview
 
         return when (base) {
             is MovieLoadResponse -> {
@@ -846,7 +860,7 @@ class MOOSAHubProvider : TmdbProvider() {
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
-    ): HomePageResponse = MOOSACatalog.home(this, page)
+    ): HomePageResponse = MOOSACatalog.home(this, page, request)
 
     override suspend fun search(
         query: String,
