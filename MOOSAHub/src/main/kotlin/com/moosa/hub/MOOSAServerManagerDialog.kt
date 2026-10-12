@@ -35,6 +35,9 @@ class MOOSAServerManagerDialog : DialogFragment() {
     private lateinit var selectAll: Button
     private lateinit var selectNone: Button
     private lateinit var disableOffline: Button
+    private lateinit var saveProfile: Button
+    private lateinit var loadProfile: Button
+    private lateinit var deleteProfile: Button
 
     private val rowFocusPairs = mutableListOf<Pair<View, Button>>()
     private var query = ""
@@ -200,6 +203,30 @@ class MOOSAServerManagerDialog : DialogFragment() {
         )
         content.addView(row2)
 
+        val row3 = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        saveProfile = button("SAVE PROFILE", Color.rgb(35, 120, 210))
+        loadProfile = button("LOAD PROFILE", Color.rgb(40, 155, 75))
+        deleteProfile = button("DELETE PROFILE", Color.rgb(205, 50, 55))
+        row3.addView(
+            saveProfile,
+            LinearLayout.LayoutParams(0, dp(62), 1f).apply { marginEnd = dp(5) }
+        )
+        row3.addView(
+            loadProfile,
+            LinearLayout.LayoutParams(0, dp(62), 1f).apply {
+                marginStart = dp(5)
+                marginEnd = dp(5)
+            }
+        )
+        row3.addView(
+            deleteProfile,
+            LinearLayout.LayoutParams(0, dp(62), 1f).apply { marginStart = dp(5) }
+        )
+        content.addView(row3)
+
         search = EditText(context).apply {
             id = View.generateViewId()
             hint = "Search servers..."
@@ -257,6 +284,18 @@ class MOOSAServerManagerDialog : DialogFragment() {
             discoverAndTest()
         }
 
+        saveProfile.setOnClickListener {
+            promptSaveProfile()
+        }
+
+        loadProfile.setOnClickListener {
+            chooseProfile(load = true)
+        }
+
+        deleteProfile.setOnClickListener {
+            chooseProfile(load = false)
+        }
+
         search.addTextChangedListener {
             query = it?.toString()?.trim().orEmpty()
             rebuildList()
@@ -290,13 +329,26 @@ class MOOSAServerManagerDialog : DialogFragment() {
 
         discoverButton.nextFocusUpId = selectAll.id
         discoverButton.nextFocusRightId = disableOffline.id
-        discoverButton.nextFocusDownId = search.id
+        discoverButton.nextFocusDownId = saveProfile.id
 
         disableOffline.nextFocusUpId = selectNone.id
         disableOffline.nextFocusLeftId = discoverButton.id
-        disableOffline.nextFocusDownId = search.id
+        disableOffline.nextFocusDownId = deleteProfile.id
 
-        search.nextFocusUpId = discoverButton.id
+        saveProfile.nextFocusUpId = discoverButton.id
+        saveProfile.nextFocusRightId = loadProfile.id
+        saveProfile.nextFocusDownId = search.id
+
+        loadProfile.nextFocusUpId = discoverButton.id
+        loadProfile.nextFocusLeftId = saveProfile.id
+        loadProfile.nextFocusRightId = deleteProfile.id
+        loadProfile.nextFocusDownId = search.id
+
+        deleteProfile.nextFocusUpId = disableOffline.id
+        deleteProfile.nextFocusLeftId = loadProfile.id
+        deleteProfile.nextFocusDownId = search.id
+
+        search.nextFocusUpId = loadProfile.id
     }
 
     override fun onStart() {
@@ -446,8 +498,11 @@ class MOOSAServerManagerDialog : DialogFragment() {
         val firstRow = rowFocusPairs.first().first
         val firstTest = rowFocusPairs.first().second
 
-        discoverButton.nextFocusDownId = firstRow.id
-        disableOffline.nextFocusDownId = firstTest.id
+        discoverButton.nextFocusDownId = saveProfile.id
+        disableOffline.nextFocusDownId = deleteProfile.id
+        saveProfile.nextFocusDownId = firstRow.id
+        loadProfile.nextFocusDownId = firstRow.id
+        deleteProfile.nextFocusDownId = firstTest.id
         search.nextFocusDownId = firstRow.id
 
         rowFocusPairs.forEachIndexed { index, pair ->
@@ -523,6 +578,53 @@ class MOOSAServerManagerDialog : DialogFragment() {
                 ).show()
             }
         }
+    }
+
+    private fun promptSaveProfile() {
+        val input = EditText(requireContext()).apply {
+            hint = "Profile name"
+            setSingleLine(true)
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Save Server Profile")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                input.text
+                    ?.toString()
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(MOOSASettingsStore::saveServerProfile)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun chooseProfile(load: Boolean) {
+        val profiles = MOOSASettingsStore.serverProfiles().keys.toTypedArray()
+
+        if (profiles.isEmpty()) {
+            Toast.makeText(
+                requireContext(),
+                "No server profiles saved.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle(if (load) "Load Server Profile" else "Delete Server Profile")
+            .setItems(profiles) { _, which ->
+                val name = profiles[which]
+                if (load) {
+                    MOOSASettingsStore.loadServerProfile(name)
+                    rebuildList()
+                } else {
+                    MOOSASettingsStore.deleteServerProfile(name)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     companion object {
