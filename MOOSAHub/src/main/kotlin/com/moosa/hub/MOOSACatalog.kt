@@ -22,7 +22,7 @@ object MOOSACatalog {
     private const val TMDB_API = "https://api.themoviedb.org/3"
     private const val TMDB_KEY = "e6333b32409e02a4a6eba6fb7ff866bb"
     private const val IMAGE = "https://image.tmdb.org/t/p/w500"
-    private const val PAGES_PER_BATCH = 3
+    private const val PAGES_PER_BATCH = 1
 
         data class Page(
         @JsonProperty("results")
@@ -138,7 +138,8 @@ object MOOSACatalog {
     suspend fun home(
         api: MainAPI,
         page: Int,
-        request: MainPageRequest
+        request: MainPageRequest,
+        showMoreButton: Boolean = true
     ): HomePageResponse = coroutineScope {
         val path = request.data.substringBefore("?")
         val query = request.data.substringAfter("?", "")
@@ -186,10 +187,33 @@ object MOOSACatalog {
             maxPage
         )
 
+        val canLoadMore =
+            allItems.isNotEmpty() && lastFetchedPage < maxPage
+
+        val visibleItems = if (
+            showMoreButton &&
+            page == 1 &&
+            canLoadMore &&
+            api is MOOSAHubProvider
+        ) {
+            allItems + MOOSASeeAll.makeButton(
+                api = api,
+                request = request,
+                items = allItems,
+                hasNext = true
+            )
+        } else {
+            allItems
+        }
+
         newHomePageResponse(
             request,
-            allItems,
-            hasNext = allItems.isNotEmpty() && lastFetchedPage < maxPage
+            visibleItems,
+            hasNext = if (showMoreButton && page == 1) {
+                false
+            } else {
+                canLoadMore
+            }
         )
     }
 
