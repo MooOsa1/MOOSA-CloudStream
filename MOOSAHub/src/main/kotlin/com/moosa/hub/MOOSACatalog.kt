@@ -247,23 +247,29 @@ object MOOSACatalog {
         val id = tmdbId ?: return listOf(fallback)
         val type = if (isTv) "tv" else "movie"
 
-        val detail = try {
-            tryParseJson<AliasDetail>(
-                get("/$type/$id", mapOf("language" to "en-US"))
-            )
-        } catch (_: Throwable) {
-            null
+        val details = listOf("en-US", "ar-SA").mapNotNull { language ->
+            try {
+                tryParseJson<AliasDetail>(
+                    get("/$type/$id", mapOf("language" to language))
+                )
+            } catch (_: Throwable) {
+                null
+            }
         }
 
-        return listOfNotNull(
-            fallback,
-            detail?.title,
-            detail?.name,
-            detail?.originalTitle,
-            detail?.originalName
-        ).map { it.trim() }
+        return buildList {
+            add(fallback)
+            details.forEach { detail ->
+                listOfNotNull(
+                    detail.title,
+                    detail.name,
+                    detail.originalTitle,
+                    detail.originalName
+                ).forEach(::add)
+            }
+        }.map { it.trim() }
             .filter { it.isNotBlank() }
             .distinctBy { it.lowercase() }
-            .take(4)
+            .take(6)
     }
 }
