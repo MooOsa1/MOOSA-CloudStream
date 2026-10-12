@@ -419,6 +419,79 @@ class MOOSAHubProvider : TmdbProvider() {
         return target
     }
 
+    private fun decodeJsonString(raw: String): String {
+        return tryParseJson<String>("\"$raw\"")
+            ?: raw.replace("\\n", "\n").replace("\\\"", "\"")
+    }
+
+    private suspend fun translateSynopsisToArabic(text: String): String? {
+        if (text.isBlank()) return null
+
+        val encoded = URLEncoder.encode(text, "UTF-8")
+        val response = timed(2600L) {
+            app.get(
+                "https://translate.googleapis.com/translate_a/single",
+                params = mapOf(
+                    "client" to "gtx",
+                    "sl" to "auto",
+                    "tl" to "ar",
+                    "dt" to "t",
+                    "q" to encoded
+                )
+            ).text
+        } ?: return null
+
+        val translatedSection = response.substringBefore("]],null")
+        val translated = Regex("""\["((?:\\.|[^"\\])*)",""")
+            .findAll(translatedSection)
+            .map { decodeJsonString(it.groupValues[1]) }
+            .joinToString("")
+            .trim()
+
+        return translated.takeIf {
+            it.isNotBlank() && it.any { ch -> ch in '\u0600'..'\u06FF' }
+        }
+    }
+
+    private suspend fun resolveArabicSynopsis(
+        tmdbId: Int?,
+        isTv: Boolean,
+        englishFallback: String?
+    ): String? {
+        val id = tmdbId ?: return null
+        val type = if (isTv) "tv" else "movie"
+        val cacheKey = "$type:$id"
+
+        synopsisCache[cacheKey]?.let { return it }
+
+        for (language in listOf("ar-SA", "ar-AE", "ar-EG", "ar")) {
+            val overview = timed(1800L) {
+                app.get(
+                    "$tmdbApiUrl/$type/$id",
+                    params = mapOf(
+                        "api_key" to tmdbApiKey,
+                        "language" to language
+                    )
+                ).parsedSafe<TmdbOverview>()?.overview
+            }?.takeIf { it.isNotBlank() }
+
+            if (!overview.isNullOrBlank()) {
+                synopsisCache[cacheKey] = overview
+                return overview
+            }
+        }
+
+        val translated = englishFallback
+            ?.takeIf { it.isNotBlank() }
+            ?.let { translateSynopsisToArabic(it) }
+
+        if (!translated.isNullOrBlank()) {
+            synopsisCache[cacheKey] = translated
+        }
+
+        return translated
+    }
+
     override suspend fun load(url: String): LoadResponse? {
         val base = super.load(url) ?: return null
         val imdbId = base.getImdbId()
@@ -426,26 +499,11 @@ class MOOSAHubProvider : TmdbProvider() {
         val isTv = tmdbMatch?.groupValues?.getOrNull(1) == "tv"
         val tmdbId = tmdbMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
 
-        val arabicOverview = tmdbId?.let { id ->
-            val type = if (isTv) "tv" else "movie"
-            var overview: String? = null
-
-            for (language in listOf("ar-SA", "ar")) {
-                overview = timed(2200L) {
-                    app.get(
-                        "$tmdbApiUrl/$type/$id",
-                        params = mapOf(
-                            "api_key" to tmdbApiKey,
-                            "language" to language
-                        )
-                    ).parsedSafe<TmdbOverview>()?.overview
-                }?.takeIf { it.isNotBlank() }
-
-                if (!overview.isNullOrBlank()) break
-            }
-
-            overview
-        }
+        val arabicOverview = resolveArabicSynopsis(
+            tmdbId = tmdbId,
+            isTv = isTv,
+            englishFallback = base.plot
+        )
         if (!arabicOverview.isNullOrBlank()) base.plot = arabicOverview
 
         return when (base) {
