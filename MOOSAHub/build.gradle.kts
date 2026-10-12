@@ -1,8 +1,8 @@
-version = 2
+version = 3
 
 cloudstream {
     language = "ar"
-    description = "واجهة MOOSA للأفلام والمسلسلات"
+    description = "واجهة MOOSA تبحث في كل المصادر المثبتة داخل CloudStream"
     authors = listOf("MOOSA")
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
