@@ -17,7 +17,7 @@ import com.lagradost.cloudstream3.toNewSearchResponseList
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.StringUtils.encodeUri
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.utils.tryParseJson
+import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 
 class ArchiveCatalogProvider(
     private val providerName: String,
