@@ -86,6 +86,27 @@ class MOOSAHubProvider : TmdbProvider() {
         @JsonProperty("language") val language: String? = null
     )
 
+    private data class SubDlResponse(
+        @JsonProperty("status") val status: Boolean = false,
+        @JsonProperty("subtitles") val subtitles: List<SubDlSubtitle> = emptyList()
+    )
+
+    private data class SubDlSubtitle(
+        @JsonProperty("language") val language: String? = null,
+        @JsonProperty("release_name") val releaseName: String? = null,
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("unpack_files") val unpackFiles: List<SubDlFile> = emptyList()
+    )
+
+    private data class SubDlFile(
+        @JsonProperty("language") val language: String? = null,
+        @JsonProperty("release_name") val releaseName: String? = null,
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("season") val season: Int? = null,
+        @JsonProperty("episode") val episode: Int? = null,
+        @JsonProperty("format") val format: String? = null
+    )
+
     private data class CachedSubtitleList(
         val createdAt: Long,
         val items: List<SubtitleFile>
@@ -880,65 +901,12 @@ class MOOSAHubProvider : TmdbProvider() {
 
 
     private suspend fun verifyStreamingLink(link: ExtractorLink): Boolean {
-        if (!validStreamingUrl(link.url)) return false
-
-        return timed(linkProbeTimeoutMs) {
-            val headers = link.getAllHeaders()
-
-            when {
-                link.isM3u8 -> {
-                    val response = app.get(
-                        link.url,
-                        headers = headers,
-                        referer = link.referer,
-                        verify = false
-                    )
-                    response.isSuccessful &&
-                        response.text.contains("#EXTM3U", ignoreCase = true)
-                }
-
-                link.isDash -> {
-                    val response = app.get(
-                        link.url,
-                        headers = headers,
-                        referer = link.referer,
-                        verify = false
-                    )
-                    response.isSuccessful &&
-                        response.text.contains("<MPD", ignoreCase = true)
-                }
-
-                else -> {
-                    val head = app.head(
-                        link.url,
-                        headers = headers,
-                        referer = link.referer,
-                        verify = false
-                    )
-                    if (head.isSuccessful) {
-                        val contentType =
-                            head.headers["Content-Type"].orEmpty().lowercase()
-                        contentType.isBlank() ||
-                            (
-                                !contentType.contains("text/html") &&
-                                    !contentType.contains("application/json")
-                                )
-                    } else {
-                        val ranged = app.get(
-                            link.url,
-                            headers = headers + mapOf("Range" to "bytes=0-1023"),
-                            referer = link.referer,
-                            verify = false
-                        )
-                        val contentType =
-                            ranged.headers["Content-Type"].orEmpty().lowercase()
-                        ranged.isSuccessful &&
-                            !contentType.contains("text/html") &&
-                            !contentType.contains("application/json")
-                    }
-                }
-            }
+        val result = timed(linkProbeTimeoutMs) {
+            MOOSAServerRegistry.testLink(link)
         } ?: false
+
+        MOOSAServerRegistry.recordResult(link, result)
+        return result
     }
 
     override suspend fun loadLinks(
@@ -1023,16 +991,15 @@ class MOOSAHubProvider : TmdbProvider() {
                                     }
                                 },
                                 { link ->
-                                    val quality = inferQuality(link)
-                                    val acceptableQuality =
-                                        quality <= 0 || quality >= 720
-
                                     if (
-                                        acceptableQuality &&
                                         validStreamingUrl(link.url) &&
                                         !isDownloadLabeled(link)
                                     ) {
-                                        candidateLinks += link
+                                        MOOSAServerRegistry.record(link)
+
+                                        if (!MOOSAServerRegistry.isDisabled(link)) {
+                                            candidateLinks += link
+                                        }
                                     }
                                 }
                             )
