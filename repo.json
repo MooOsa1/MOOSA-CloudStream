@@ -1,0 +1,8 @@
+{
+  "name": "MOOSA CloudStream",
+  "description": "Personal CloudStream repository (extensions not yet added)",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/main/plugins.json"
+  ]
+}
