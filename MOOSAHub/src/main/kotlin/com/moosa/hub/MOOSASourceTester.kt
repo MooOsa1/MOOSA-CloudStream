@@ -20,6 +20,7 @@ object MOOSASourceTester {
         UNKNOWN,
         TESTING,
         ONLINE,
+        UNVERIFIED,
         OFFLINE
     }
 
@@ -216,9 +217,9 @@ object MOOSASourceTester {
         onUpdate?.invoke(snapshot(api))
 
         val safeDepth = discoveryDepth.coerceIn(1, 3)
-        val timeoutMs = if (safeDepth > 1) 50000L else 28000L
+        val timeoutMs = if (safeDepth > 1) 60000L else 32000L
 
-        val working = withTimeoutOrNull(timeoutMs) {
+        val finalStatus = withTimeoutOrNull(timeoutMs) {
             val links = Collections.synchronizedList(
                 mutableListOf<ExtractorLink>()
             )
@@ -229,16 +230,24 @@ object MOOSASourceTester {
                 emptyList()
             }
 
-            for (target in targets.take(safeDepth + 1)) {
+            if (targets.isEmpty()) {
+                return@withTimeoutOrNull Status.OFFLINE
+            }
+
+            var anyLoaded = false
+
+            for (target in targets.take(safeDepth + 2)) {
                 val loaded = try {
                     api.load(target.url)
                 } catch (_: Throwable) {
                     null
                 } ?: continue
 
+                anyLoaded = true
                 val dataItems = playbackData(loaded)
-                for (data in dataItems.take(if (safeDepth > 1) 2 else 1)) {
-                    withTimeoutOrNull(12000L) {
+
+                for (data in dataItems.take(if (safeDepth > 1) 3 else 1)) {
+                    withTimeoutOrNull(14000L) {
                         try {
                             api.loadLinks(
                                 data,
@@ -247,6 +256,7 @@ object MOOSASourceTester {
                                 { link ->
                                     val label =
                                         "${link.name} ${link.source}".lowercase()
+
                                     if (
                                         (
                                             link.url.startsWith("http://", true) ||
@@ -277,7 +287,11 @@ object MOOSASourceTester {
             state.serverCount = unique.size
 
             if (unique.isEmpty()) {
-                return@withTimeoutOrNull false
+                return@withTimeoutOrNull if (anyLoaded) {
+                    Status.UNVERIFIED
+                } else {
+                    Status.OFFLINE
+                }
             }
 
             var anyWorking = false
@@ -298,10 +312,10 @@ object MOOSASourceTester {
                 }
             }
 
-            anyWorking
-        } ?: false
+            if (anyWorking) Status.ONLINE else Status.UNVERIFIED
+        } ?: Status.UNVERIFIED
 
-        state.status = if (working) Status.ONLINE else Status.OFFLINE
+        state.status = finalStatus
         state.lastTested = System.currentTimeMillis()
         onUpdate?.invoke(snapshot(api))
         return snapshot(api)
