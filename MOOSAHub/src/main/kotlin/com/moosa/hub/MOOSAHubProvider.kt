@@ -80,6 +80,17 @@ class MOOSAHubProvider : TmdbProvider() {
         val lang: String? = null
     )
 
+    private data class WyzieSubtitle(
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("display") val display: String? = null,
+        @JsonProperty("language") val language: String? = null
+    )
+
+    private data class CachedSubtitleList(
+        val createdAt: Long,
+        val items: List<SubtitleFile>
+    )
+
     private data class LegacySubtitleResult(
         val result: LegacySubtitleList? = null
     )
@@ -136,15 +147,17 @@ class MOOSAHubProvider : TmdbProvider() {
     private val targetCache = ConcurrentHashMap<String, CachedTarget>()
     private val providerHealth = ConcurrentHashMap<String, Int>()
     private val synopsisCache = ConcurrentHashMap<String, String>()
+    private val subtitleCache = ConcurrentHashMap<String, CachedSubtitleList>()
 
     private val cacheLifetimeMs = 20 * 60 * 1000L
-    private val providerResolveTimeoutMs = 8000L
-    private val providerLinksTimeoutMs = 9000L
-    private val streamPlayLinksTimeoutMs = 18000L
+    private val subtitleCacheLifetimeMs = 15 * 60 * 1000L
+    private val providerResolveTimeoutMs = 10000L
+    private val providerLinksTimeoutMs = 12000L
+    private val streamPlayLinksTimeoutMs = 24000L
     private val subtitleTimeoutMs = 2200L
-    private val linkProbeTimeoutMs = 2600L
-    private val providerBatchSize = 8
-    private val linkProbeBatchSize = 8
+    private val fastSubtitleTimeoutMs = 1350L
+    private val linkProbeTimeoutMs = 2800L
+    private val linkProbeBatchSize = 10
 
     private val tmdbApiKey = "e6333b32409e02a4a6eba6fb7ff866bb"
     private val tmdbApiUrl = "https://api.themoviedb.org/3"
@@ -243,7 +256,7 @@ class MOOSAHubProvider : TmdbProvider() {
         val results = mutableListOf<SearchResponse>()
 
         for (alias in aliases.take(3)) {
-            val page = timed(1800L) {
+            val page = timed(2300L) {
                 api.search(alias, 1)?.items.orEmpty()
             }.orEmpty()
 
@@ -281,7 +294,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 api.getLoadUrl(SyncIdName.Imdb, request.imdbId)
             }
             if (!directUrl.isNullOrBlank()) {
-                val direct = timed(2200L) { api.load(directUrl) }
+                val direct = timed(3000L) { api.load(directUrl) }
                 if (correctType(direct) && direct != null) {
                     val loadedImdb = direct.getImdbId()
                     val imdbMatches =
@@ -318,7 +331,7 @@ class MOOSAHubProvider : TmdbProvider() {
             .toList()
 
         for ((match, _) in candidates) {
-            val loaded = timed(2200L) { api.load(match.url) } ?: continue
+            val loaded = timed(3000L) { api.load(match.url) } ?: continue
             if (!correctType(loaded)) continue
 
             if (loadedScore(loaded, aliases, request.year) >= 90) {
@@ -329,10 +342,15 @@ class MOOSAHubProvider : TmdbProvider() {
         return null
     }
 
-    private fun playbackProviders(request: HubPlaybackRequest): List<MainAPI> =
-        apis
+    private fun playbackProviders(request: HubPlaybackRequest): List<MainAPI> {
+        val disabled = MOOSASettingsStore.disabledSources()
+        return apis
             .filter { api ->
-                api !== this && api.providerType == ProviderType.DirectProvider
+                api !== this &&
+                    api.providerType == ProviderType.DirectProvider &&
+                    disabled.none { blocked ->
+                        blocked.equals(api.name, ignoreCase = true)
+                    }
             }
             .sortedWith(
                 compareByDescending<MainAPI> {
@@ -344,6 +362,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     ) 1 else 0
                 }
             )
+    }
 
     private fun providerCacheKey(
         request: HubPlaybackRequest,
@@ -628,6 +647,22 @@ class MOOSAHubProvider : TmdbProvider() {
         }
     }
 
+    private fun currentSubtitleTimeoutMs(): Long =
+        if (MOOSASettingsStore.arabicFastMode()) {
+            fastSubtitleTimeoutMs
+        } else {
+            subtitleTimeoutMs
+        }
+
+    private fun subtitleCacheKey(
+        request: HubPlaybackRequest,
+        imdb: String
+    ): String = listOf(
+        imdb,
+        request.season?.toString().orEmpty(),
+        request.episode?.toString().orEmpty()
+    ).joinToString("|")
+
     private suspend fun fetchOpenSubtitlesV3(
         request: HubPlaybackRequest,
         imdb: String
@@ -640,7 +675,7 @@ class MOOSAHubProvider : TmdbProvider() {
             imdb
         }
 
-        val response = timed(subtitleTimeoutMs) {
+        val response = timed(currentSubtitleTimeoutMs()) {
             app.get(
                 "https://opensubtitles-v3.strem.io/subtitles/$type/$id.json",
                 headers = mapOf("Accept" to "application/json")
@@ -669,7 +704,7 @@ class MOOSAHubProvider : TmdbProvider() {
             """{"id":1,"jsonrpc":"2.0","method":"subtitles.find","params":[null,{"query":{"itemHash":"$query"}}]}""".toByteArray()
         )
 
-        val response = timed(subtitleTimeoutMs) {
+        val response = timed(currentSubtitleTimeoutMs()) {
             app.get(
                 "https://opensubtitles.strem.io/stremio/v1/q.json?b=$payload"
             ).parsedSafe<LegacySubtitleResult>()
@@ -682,36 +717,109 @@ class MOOSAHubProvider : TmdbProvider() {
             .distinctBy { it.url }
     }
 
+    private suspend fun fetchWyzieSubtitles(
+        request: HubPlaybackRequest,
+        imdb: String
+    ): List<SubtitleFile> {
+        val key = MOOSASettingsStore.wyzieKey() ?: return emptyList()
+        val params = buildMap {
+            put("id", imdb)
+            put("source", "all")
+            put("key", key)
+            request.season?.let { put("season", it.toString()) }
+            request.episode?.let { put("episode", it.toString()) }
+        }
+
+        val response = timed(currentSubtitleTimeoutMs()) {
+            app.get(
+                "https://sub.wyzie.ru/search",
+                params = params,
+                headers = mapOf("Accept" to "application/json")
+            ).parsedSafe<Array<WyzieSubtitle>>()
+        } ?: return emptyList()
+
+        return response.mapNotNull { item ->
+            val url = item.url?.takeIf { it.startsWith("http") } ?: return@mapNotNull null
+            val lang = item.language.orEmpty()
+            when (subtitleLanguage(lang, lang)) {
+                PreferredSubtitleLanguage.ARABIC ->
+                    SubtitleFile(item.display ?: "Arabic • Wyzie", url)
+                PreferredSubtitleLanguage.ENGLISH ->
+                    SubtitleFile(item.display ?: "English • Wyzie", url)
+                PreferredSubtitleLanguage.OTHER -> null
+            }
+        }.distinctBy { it.url }
+    }
+
     private suspend fun fetchExternalSubtitles(
         request: HubPlaybackRequest,
         onArabic: (SubtitleFile) -> Unit
     ): List<SubtitleFile> = coroutineScope {
         val imdb = resolveSubtitleImdb(request) ?: return@coroutineScope emptyList()
+        val cacheKey = subtitleCacheKey(request, imdb)
+
+        subtitleCache[cacheKey]?.let { cached ->
+            if (System.currentTimeMillis() - cached.createdAt < subtitleCacheLifetimeMs) {
+                cached.items
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+                return@coroutineScope cached.items
+            }
+            subtitleCache.remove(cacheKey)
+        }
 
         val v3 = async {
             fetchOpenSubtitlesV3(request, imdb).also { subtitles ->
                 subtitles
                     .filter {
-                        subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ARABIC
-                    }
-                    .sortedByDescending(::subtitleScore)
-                    .forEach(onArabic)
-            }
-        }
-        val legacy = async {
-            fetchOpenSubtitlesLegacy(request, imdb).also { subtitles ->
-                subtitles
-                    .filter {
-                        subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ARABIC
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
                     }
                     .sortedByDescending(::subtitleScore)
                     .forEach(onArabic)
             }
         }
 
-        (v3.await() + legacy.await())
+        val legacy = async {
+            fetchOpenSubtitlesLegacy(request, imdb).also { subtitles ->
+                subtitles
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+            }
+        }
+
+        val wyzie = async {
+            fetchWyzieSubtitles(request, imdb).also { subtitles ->
+                subtitles
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+            }
+        }
+
+        val all = (v3.await() + legacy.await() + wyzie.await())
             .distinctBy { it.url }
             .sortedByDescending(::subtitleScore)
+
+        if (all.isNotEmpty()) {
+            subtitleCache[cacheKey] = CachedSubtitleList(
+                createdAt = System.currentTimeMillis(),
+                items = all
+            )
+        }
+
+        all
     }
 
     private fun normalizeNativeSubtitle(
@@ -738,6 +846,11 @@ class MOOSAHubProvider : TmdbProvider() {
             "720" in text || Regex("""\bhd\b""").containsMatchIn(text) -> 720
             else -> link.quality
         }
+    }
+
+    private fun isDownloadLabeled(link: ExtractorLink): Boolean {
+        val label = "${link.name} ${link.source}".lowercase()
+        return "download" in label || "تحميل" in label
     }
 
     private fun validStreamingUrl(url: String): Boolean =
@@ -860,6 +973,8 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val aliases = aliasesJob.await()
 
+        val providerBatchSize = MOOSASettingsStore.providerConcurrency()
+
         for (batch in providers.chunked(providerBatchSize)) {
             batch.amap { api ->
                 var providerWorked = false
@@ -906,7 +1021,8 @@ class MOOSAHubProvider : TmdbProvider() {
 
                                     if (
                                         acceptableQuality &&
-                                        validStreamingUrl(link.url)
+                                        validStreamingUrl(link.url) &&
+                                        !isDownloadLabeled(link)
                                     ) {
                                         candidateLinks += link
                                     }
@@ -925,7 +1041,11 @@ class MOOSAHubProvider : TmdbProvider() {
                                     return@amap false
                                 }
 
-                                if (verifyStreamingLink(link) && seenLinks.add(key)) {
+                                val verified =
+                                    !MOOSASettingsStore.verifyLinks() ||
+                                        verifyStreamingLink(link)
+
+                                if (verified && seenLinks.add(key)) {
                                     providerWorked = true
                                     emittedLink.set(true)
                                     verifiedLinks.incrementAndGet()
