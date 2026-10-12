@@ -37,7 +37,7 @@ class MOOSAHubPlugin : BasePlugin() {
             "${activity.packageName}_preferences",
             Context.MODE_PRIVATE
         )
-        val recoveryKey = "moosa_tv_layout_recovery_v17"
+        val recoveryKey = "moosa_tv_layout_recovery_v18"
 
         if (prefs.getBoolean(recoveryKey, false)) return
 
