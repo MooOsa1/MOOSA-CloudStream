@@ -27,6 +27,7 @@ class MOOSAHubProvider : TmdbProvider() {
         "Plex Free",
         "Filmzie",
         "DistroTV",
+        "DistroTV On Demand",
         "InternetArchive",
         "YouTube",
         "Dailymotion"
@@ -51,7 +52,11 @@ class MOOSAHubProvider : TmdbProvider() {
         }.amap { api ->
             try {
                 val match = api.search(title)?.firstOrNull { result ->
-                    normalizeTitle(result.name) == wantedTitle &&
+                    (
+                            normalizeTitle(result.name) == wantedTitle ||
+                            normalizeTitle(result.name).contains(wantedTitle) ||
+                            wantedTitle.contains(normalizeTitle(result.name))
+                        ) &&
                         if (meta.season == null || meta.episode == null) {
                             result is MovieSearchResponse
                         } else {
