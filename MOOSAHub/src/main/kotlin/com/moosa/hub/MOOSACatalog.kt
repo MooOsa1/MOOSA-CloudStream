@@ -215,6 +215,72 @@ object MOOSACatalog {
         )
     }
 
+    data class BrowseBatch(
+        val items: List<SearchResponse>,
+        val lastPage: Int,
+        val hasNext: Boolean
+    )
+
+    suspend fun browseBatch(
+        api: MainAPI,
+        request: MainPageRequest,
+        startPage: Int,
+        pageCount: Int
+    ): BrowseBatch = coroutineScope {
+        val path = request.data.substringBefore("?")
+        val query = request.data.substringAfter("?", "")
+        val extras = query.split("&").filter { "=" in it }.associate {
+            val parts = it.split("=", limit = 2)
+            parts[0] to parts[1]
+        }
+        val isTv = path.contains("/tv/") || path == "/discover/tv"
+        val options = if (path == "/movie/top_rated") {
+            extras + ("region" to "US")
+        } else {
+            extras
+        }
+
+        val safeStart = startPage.coerceAtLeast(1)
+        val first = listPage(api, path, safeStart, isTv, options)
+        val maxPage = minOf(first.totalPages, 500)
+
+        if (first.items.isEmpty() || safeStart > maxPage) {
+            return@coroutineScope BrowseBatch(
+                items = emptyList(),
+                lastPage = safeStart,
+                hasNext = false
+            )
+        }
+
+        val lastPage = minOf(
+            safeStart + pageCount.coerceAtLeast(1) - 1,
+            maxPage
+        )
+
+        val rest = if (lastPage > safeStart) {
+            ((safeStart + 1)..lastPage).map { tmdbPage ->
+                async {
+                    listPage(api, path, tmdbPage, isTv, options)
+                }
+            }
+        } else {
+            emptyList()
+        }
+
+        val items = buildList {
+            addAll(first.items)
+            rest.forEach { deferred ->
+                addAll(deferred.await().items)
+            }
+        }.distinctBy { it.url }
+
+        BrowseBatch(
+            items = items,
+            lastPage = lastPage,
+            hasNext = lastPage < maxPage
+        )
+    }
+
     suspend fun search(api: MainAPI, query: String, page: Int): SearchResponseList? {
         val data = tryParseJson<Page>(
             get(
