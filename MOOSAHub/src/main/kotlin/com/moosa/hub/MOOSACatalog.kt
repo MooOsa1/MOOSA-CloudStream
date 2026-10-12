@@ -201,7 +201,7 @@ object MOOSACatalog {
                 request = request,
                 items = allItems,
                 hasNext = true,
-                horizontal = false
+                horizontal = request.horizontalImages
             )
         }
 
