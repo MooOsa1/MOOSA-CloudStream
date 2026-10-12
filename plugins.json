@@ -21,6 +21,27 @@
         "name": "DistroTV"
     },
     {
+        "iconUrl": "https://www.google.com/s2/favicons?domain=filmzie.com&sz=%size%",
+        "fileHash": "sha256-4f2c5b3ad8348238a0ba5e9a225a2f8d7830527fc7d85587d8009e695b8b3ee5",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
+        "fileSize": 28906,
+        "status": 1,
+        "language": "en",
+        "authors": [
+            "MOOSA"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "Filmzie",
+        "description": "Free movies and TV shows from Filmzie",
+        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/Filmzie.cs3",
+        "name": "Filmzie"
+    },
+    {
         "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
         "fileHash": "sha256-3b5fbf2d9bde1c8e3ee2de18d336a094cae3dd576febef78cadccbca396b0996",
         "apiVersion": 1,
