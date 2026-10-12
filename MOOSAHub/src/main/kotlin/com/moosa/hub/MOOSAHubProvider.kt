@@ -387,14 +387,25 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val arabicOverview = tmdbId?.let { id ->
             val type = if (isTv) "tv" else "movie"
-            timed(2200L) {
-                app.get(
-                    "$tmdbApiUrl/$type/$id",
-                    params = mapOf("api_key" to tmdbApiKey, "language" to "ar-SA")
-                ).parsedSafe<TmdbOverview>()?.overview
-            }?.takeIf { it.isNotBlank() }
+            var overview: String? = null
+
+            for (language in listOf("ar-SA", "ar")) {
+                overview = timed(2200L) {
+                    app.get(
+                        "$tmdbApiUrl/$type/$id",
+                        params = mapOf(
+                            "api_key" to tmdbApiKey,
+                            "language" to language
+                        )
+                    ).parsedSafe<TmdbOverview>()?.overview
+                }?.takeIf { it.isNotBlank() }
+
+                if (!overview.isNullOrBlank()) break
+            }
+
+            overview
         }
-        if (arabicOverview != null) base.plot = arabicOverview
+        if (!arabicOverview.isNullOrBlank()) base.plot = arabicOverview
 
         return when (base) {
             is MovieLoadResponse -> {
