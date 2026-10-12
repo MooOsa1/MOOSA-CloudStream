@@ -16,6 +16,7 @@ object MOOSAProgress {
     private const val CONTAINER_TAG = "moosa_server_progress_container"
     private const val BAR_TAG = "moosa_server_progress_bar"
     private const val TEXT_TAG = "moosa_server_progress_text"
+    private const val FALLBACK_TAG = "moosa_server_progress_fallback"
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -82,9 +83,15 @@ object MOOSAProgress {
             return
         }
 
-        var rendered = false
-        rendered = renderPlayerOverlay(act) || rendered
-        rendered = renderResultLoadingDialog(act) || rendered
+        var rendered = renderPlayerOverlay(act)
+
+        if (!rendered) {
+            rendered = renderResultLoadingDialog(act)
+        }
+
+        if (!rendered) {
+            rendered = renderActivityFallback(act)
+        }
 
         if (!rendered) retry(retries)
     }
@@ -106,6 +113,90 @@ object MOOSAProgress {
 
             val overlay = act.findViewById<ViewGroup>(overlayId) ?: return false
             val container = findOrCreateContainer(overlay, act)
+            applyProgress(container)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun renderActivityFallback(act: Activity): Boolean {
+        return try {
+            val root = act.findViewById<ViewGroup>(android.R.id.content) ?: return false
+
+            var container = root.findViewWithTag<LinearLayout>(FALLBACK_TAG)
+            if (container == null) {
+                container = LinearLayout(act).apply {
+                    tag = FALLBACK_TAG
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    setPadding(
+                        dp(act, 24),
+                        dp(act, 12),
+                        dp(act, 24),
+                        dp(act, 12)
+                    )
+                    setBackgroundColor(0xE61A1A1A.toInt())
+                    elevation = dp(act, 8).toFloat()
+                }
+
+                val label = TextView(act).apply {
+                    tag = TEXT_TAG
+                    gravity = Gravity.CENTER
+                    textSize = 15f
+                    setTextColor(0xFFFFFFFF.toInt())
+                    setPadding(0, 0, 0, dp(act, 8))
+                }
+
+                val bar = ProgressBar(
+                    act,
+                    null,
+                    android.R.attr.progressBarStyleHorizontal
+                ).apply {
+                    tag = BAR_TAG
+                    isIndeterminate = false
+                    max = 100
+                }
+
+                container.addView(
+                    label,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                )
+                container.addView(
+                    bar,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(act, 10)
+                    )
+                )
+
+                if (root is FrameLayout) {
+                    root.addView(
+                        container,
+                        FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                            FrameLayout.LayoutParams.WRAP_CONTENT,
+                            Gravity.BOTTOM
+                        ).apply {
+                            leftMargin = dp(act, 36)
+                            rightMargin = dp(act, 36)
+                            bottomMargin = dp(act, 32)
+                        }
+                    )
+                } else {
+                    root.addView(
+                        container,
+                        ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                    )
+                }
+            }
+
             applyProgress(container)
             true
         } catch (_: Throwable) {
@@ -235,6 +326,13 @@ object MOOSAProgress {
                     ?.findViewWithTag<View>(CONTAINER_TAG)
                     ?.visibility = View.GONE
             }
+        } catch (_: Throwable) {
+        }
+
+        try {
+            act.findViewById<ViewGroup>(android.R.id.content)
+                ?.findViewWithTag<View>(FALLBACK_TAG)
+                ?.visibility = View.GONE
         } catch (_: Throwable) {
         }
     }

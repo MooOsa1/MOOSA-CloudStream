@@ -89,6 +89,11 @@ class MOOSAHubProvider : TmdbProvider() {
         val all: List<StremioSubtitle> = emptyList()
     )
 
+    private data class TmdbExternalIds(
+        @JsonProperty("imdb_id")
+        val imdbId: String? = null
+    )
+
     private data class TmdbHomePage(
         @JsonProperty("results")
         val results: List<TmdbHomeItem> = emptyList()
@@ -481,10 +486,30 @@ class MOOSAHubProvider : TmdbProvider() {
         }
     }
 
-    private suspend fun fetchOpenSubtitlesV3(
+    private suspend fun resolveSubtitleImdb(
         request: HubPlaybackRequest
+    ): String? {
+        request.imdbId
+            ?.takeIf { it.startsWith("tt") }
+            ?.let { return it }
+
+        val tmdbId = request.tmdbId ?: return null
+        val type = if (request.isTv || request.season != null) "tv" else "movie"
+
+        return timed(1800L) {
+            app.get(
+                "$tmdbApiUrl/$type/$tmdbId/external_ids",
+                params = mapOf("api_key" to tmdbApiKey)
+            ).parsedSafe<TmdbExternalIds>()
+                ?.imdbId
+                ?.takeIf { it.startsWith("tt") }
+        }
+    }
+
+    private suspend fun fetchOpenSubtitlesV3(
+        request: HubPlaybackRequest,
+        imdb: String
     ): List<SubtitleFile> {
-        val imdb = request.imdbId?.takeIf { it.startsWith("tt") } ?: return emptyList()
         val isSeries = request.season != null && request.episode != null
         val type = if (isSeries) "series" else "movie"
         val id = if (isSeries) {
@@ -506,9 +531,9 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     private suspend fun fetchOpenSubtitlesLegacy(
-        request: HubPlaybackRequest
+        request: HubPlaybackRequest,
+        imdb: String
     ): List<SubtitleFile> {
-        val imdb = request.imdbId?.takeIf { it.startsWith("tt") } ?: return emptyList()
         val query = if (
             request.season != null &&
             request.episode != null
@@ -536,10 +561,31 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     private suspend fun fetchExternalSubtitles(
-        request: HubPlaybackRequest
+        request: HubPlaybackRequest,
+        onArabic: (SubtitleFile) -> Unit
     ): List<SubtitleFile> = coroutineScope {
-        val v3 = async { fetchOpenSubtitlesV3(request) }
-        val legacy = async { fetchOpenSubtitlesLegacy(request) }
+        val imdb = resolveSubtitleImdb(request) ?: return@coroutineScope emptyList()
+
+        val v3 = async {
+            fetchOpenSubtitlesV3(request, imdb).also { subtitles ->
+                subtitles
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+            }
+        }
+        val legacy = async {
+            fetchOpenSubtitlesLegacy(request, imdb).also { subtitles ->
+                subtitles
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+            }
+        }
 
         (v3.await() + legacy.await())
             .distinctBy { it.url }
@@ -610,22 +656,13 @@ class MOOSAHubProvider : TmdbProvider() {
         val workingProviders = AtomicInteger(0)
 
         // Start subtitle services immediately, before provider/server discovery.
+        // Each Arabic source is emitted as soon as that source finishes.
         val externalSubtitleJob = async {
-            val external = fetchExternalSubtitles(request)
-
-            // Arabic is emitted immediately when it arrives. English waits until the end.
-            external
-                .filter {
-                    subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ARABIC
+            fetchExternalSubtitles(request) { subtitle ->
+                if (seenSubtitles.add(subtitle.url)) {
+                    subtitleCallback(subtitle)
                 }
-                .sortedByDescending(::subtitleScore)
-                .forEach { subtitle ->
-                    if (seenSubtitles.add(subtitle.url)) {
-                        subtitleCallback(subtitle)
-                    }
-                }
-
-            external
+            }
         }
 
         val aliases = aliasesJob.await()
@@ -647,8 +684,25 @@ class MOOSAHubProvider : TmdbProvider() {
                         isCasting,
                         { subtitle ->
                             normalizeNativeSubtitle(subtitle, api.name)?.let { normalized ->
-                                if (normalized.url.isNotBlank()) {
-                                    nativeSubtitles += normalized
+                                if (normalized.url.isBlank()) return@let
+
+                                when (
+                                    subtitleLanguage(
+                                        normalized.lang,
+                                        normalized.langTag
+                                    )
+                                ) {
+                                    PreferredSubtitleLanguage.ARABIC -> {
+                                        if (seenSubtitles.add(normalized.url)) {
+                                            subtitleCallback(normalized)
+                                        }
+                                    }
+
+                                    PreferredSubtitleLanguage.ENGLISH -> {
+                                        nativeSubtitles += normalized
+                                    }
+
+                                    PreferredSubtitleLanguage.OTHER -> Unit
                                 }
                             }
                         },
@@ -656,8 +710,10 @@ class MOOSAHubProvider : TmdbProvider() {
                             val quality = inferQuality(link)
                             val key = linkKey(link)
 
+                            val acceptableQuality = quality <= 0 || quality >= 720
+
                             if (
-                                quality >= 720 &&
+                                acceptableQuality &&
                                 validStreamingUrl(link.url) &&
                                 seenLinks.add(key)
                             ) {
@@ -702,7 +758,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val externalSubtitles = externalSubtitleJob.await()
 
-        // Native Arabic is next, then English. Everything else is discarded.
+        // Arabic has already been emitted early. Emit English last; discard other languages.
         val remainingSubtitles = (
             nativeSubtitles +
                 externalSubtitles.filter {
