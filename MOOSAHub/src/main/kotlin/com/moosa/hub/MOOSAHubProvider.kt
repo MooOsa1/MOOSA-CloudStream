@@ -780,6 +780,99 @@ class MOOSAHubProvider : TmdbProvider() {
         }.distinctBy { it.url }
     }
 
+    private suspend fun fetchSubDlSubtitles(
+        request: HubPlaybackRequest,
+        imdb: String
+    ): List<SubtitleFile> {
+        val key = MOOSASettingsStore.subdlKey() ?: return emptyList()
+        val isSeries = request.season != null && request.episode != null
+
+        val params = buildMap {
+            put("api_key", key)
+            put("imdb_id", imdb)
+            put("type", if (isSeries) "tv" else "movie")
+            put("languages", "AR,EN")
+            put("unpack", "1")
+            put("subs_per_page", "30")
+            put("client", "custom_integration")
+            request.season?.let { put("season_number", it.toString()) }
+            request.episode?.let { put("episode_number", it.toString()) }
+        }
+
+        val response = timed(2200L) {
+            app.get(
+                "https://api.subdl.com/api/v1/subtitles",
+                params = params,
+                headers = mapOf(
+                    "Accept" to "application/json",
+                    "Authorization" to "Bearer $key"
+                )
+            ).parsedSafe<SubDlResponse>()
+        } ?: return emptyList()
+
+        if (!response.status) return emptyList()
+
+        return response.subtitles.flatMap { subtitle ->
+            val parentLang = subtitle.language.orEmpty()
+
+            if (subtitle.unpackFiles.isNotEmpty()) {
+                subtitle.unpackFiles.mapNotNull { file ->
+                    if (
+                        isSeries &&
+                        request.season != null &&
+                        request.episode != null &&
+                        file.season != null &&
+                        file.episode != null &&
+                        (file.season != request.season || file.episode != request.episode)
+                    ) return@mapNotNull null
+
+                    val raw = file.url ?: return@mapNotNull null
+                    val url = if (raw.startsWith("http")) raw
+                    else "https://dl.subdl.com$raw"
+
+                    val language = file.language?.takeIf { it.isNotBlank() } ?: parentLang
+                    val label = when (subtitleLanguage(language, language)) {
+                        PreferredSubtitleLanguage.ARABIC -> "Arabic • SubDL"
+                        PreferredSubtitleLanguage.ENGLISH -> "English • SubDL"
+                        PreferredSubtitleLanguage.OTHER -> return@mapNotNull null
+                    }
+
+                    val detail = file.releaseName
+                        ?: subtitle.releaseName
+                        ?: file.format
+                        ?: "subtitle"
+
+                    SubtitleFile(
+                        lang = "${label} • ${detail}",
+                        url = url
+                    )
+                }
+            } else {
+                val raw = subtitle.url ?: return@flatMap emptyList()
+                if (
+                    raw.endsWith(".zip", ignoreCase = true) ||
+                    raw.endsWith(".rar", ignoreCase = true)
+                ) return@flatMap emptyList()
+
+                val url = if (raw.startsWith("http")) raw
+                else "https://dl.subdl.com$raw"
+
+                val label = when (subtitleLanguage(parentLang, parentLang)) {
+                    PreferredSubtitleLanguage.ARABIC -> "Arabic • SubDL"
+                    PreferredSubtitleLanguage.ENGLISH -> "English • SubDL"
+                    PreferredSubtitleLanguage.OTHER -> return@flatMap emptyList()
+                }
+
+                listOf(
+                    SubtitleFile(
+                        lang = "${label} • ${subtitle.releaseName ?: "subtitle"}",
+                        url = url
+                    )
+                )
+            }
+        }.distinctBy { it.url }
+    }
+
     private suspend fun fetchExternalSubtitles(
         request: HubPlaybackRequest,
         onArabic: (SubtitleFile) -> Unit
@@ -837,7 +930,24 @@ class MOOSAHubProvider : TmdbProvider() {
             }
         }
 
-        val all = (v3.await() + legacy.await() + wyzie.await())
+        val subDl = async {
+            fetchSubDlSubtitles(request, imdb).also { subtitles ->
+                subtitles
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+            }
+        }
+
+        val all = (
+            v3.await() +
+                legacy.await() +
+                wyzie.await() +
+                subDl.await()
+            )
             .distinctBy { it.url }
             .sortedByDescending(::subtitleScore)
 
