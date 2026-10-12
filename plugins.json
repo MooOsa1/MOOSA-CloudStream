@@ -1,5 +1,26 @@
 [
     {
+        "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
+        "fileHash": "sha256-0e61f6acefb3703f20c4a53b7202a200ceb4964eb05e89504f575b0ce53f310d",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
+        "fileSize": 1753,
+        "status": 1,
+        "language": "en",
+        "authors": [
+            "MOOSA"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "MOOSAMovies",
+        "description": "Modern movie and TV catalog powered by TMDB metadata",
+        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAMovies.cs3",
+        "name": "MOOSAMovies"
+    },
+    {
         "iconUrl": "https://www.google.com/s2/favicons?domain=plex.tv&sz=%size%",
         "fileHash": "sha256-d35c8fe6f53168e22b6952d338e552e749610dfe17efb8f3b1b1152fcb3d66f6",
         "apiVersion": 1,
