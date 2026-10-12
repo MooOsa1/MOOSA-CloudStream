@@ -15,11 +15,14 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.toNewSearchResponseList
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 object MOOSACatalog {
     private const val TMDB_API = "https://api.themoviedb.org/3"
     private const val TMDB_KEY = "e6333b32409e02a4a6eba6fb7ff866bb"
     private const val IMAGE = "https://image.tmdb.org/t/p/w500"
+    private const val PAGES_PER_BATCH = 3
 
         data class Page(
         @JsonProperty("results")
@@ -132,7 +135,11 @@ object MOOSACatalog {
         "/tv/top_rated" to "Top Rated Series"
     )
 
-    suspend fun home(api: MainAPI, page: Int, request: MainPageRequest): HomePageResponse {
+    suspend fun home(
+        api: MainAPI,
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse = coroutineScope {
         val path = request.data.substringBefore("?")
         val query = request.data.substringAfter("?", "")
         val extras = query.split("&").filter { "=" in it }.associate {
@@ -146,11 +153,43 @@ object MOOSACatalog {
             extras
         }
 
-        val result = listPage(api, path, page, isTv, options)
-        return newHomePageResponse(
+        val firstTmdbPage = ((page.coerceAtLeast(1) - 1) * PAGES_PER_BATCH) + 1
+        val first = listPage(api, path, firstTmdbPage, isTv, options)
+        val maxPage = minOf(first.totalPages, 500)
+
+        if (first.items.isEmpty() || firstTmdbPage > maxPage) {
+            return@coroutineScope newHomePageResponse(
+                request,
+                emptyList(),
+                hasNext = false
+            )
+        }
+
+        val extraPages = ((firstTmdbPage + 1)..minOf(
+            firstTmdbPage + PAGES_PER_BATCH - 1,
+            maxPage
+        )).map { tmdbPage ->
+            async {
+                listPage(api, path, tmdbPage, isTv, options)
+            }
+        }
+
+        val allItems = buildList {
+            addAll(first.items)
+            extraPages.forEach { deferred ->
+                addAll(deferred.await().items)
+            }
+        }.distinctBy { it.url }
+
+        val lastFetchedPage = minOf(
+            firstTmdbPage + PAGES_PER_BATCH - 1,
+            maxPage
+        )
+
+        newHomePageResponse(
             request,
-            result.items,
-            hasNext = result.items.isNotEmpty() && page < minOf(result.totalPages, 500)
+            allItems,
+            hasNext = allItems.isNotEmpty() && lastFetchedPage < maxPage
         )
     }
 
