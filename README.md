@@ -23,3 +23,9 @@ Settings > Extensions > Repositories > Add Repository
 
 ## Before adding any provider
 Check source rights, Fire TV compatibility, playable titles, original audio, Arabic subtitle sync, quality and fallback servers. No server reliability is guaranteed.
+
+
+## TMDB attribution
+MOOSAMovies uses TMDB metadata through CloudStream's built-in TMDB provider.
+
+This product uses the TMDB API but is not endorsed or certified by TMDB.
