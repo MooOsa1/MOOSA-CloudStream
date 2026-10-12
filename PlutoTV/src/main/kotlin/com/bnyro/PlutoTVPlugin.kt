@@ -1,14 +1,11 @@
-
 package com.bnyro
 
+import com.lagradost.cloudstream3.plugins.BasePlugin
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
-import com.lagradost.cloudstream3.plugins.Plugin
-import android.content.Context
 
 @CloudstreamPlugin
-class PlutoTVPlugin: Plugin() {
-    override fun load(context: Context) {
-        // All providers should be added in this manner. Please don't edit the providers list directly.
+class PlutoTVPlugin : BasePlugin() {
+    override fun load() {
         registerMainAPI(PlutoTV())
     }
 }
