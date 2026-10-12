@@ -19,6 +19,7 @@ Target device: Fire TV Stick 4K. No paid subscription or Real-Debrid.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | YouTube (official extensions catalog) | Varies | Varies | Varies | Varies | Varies | Varies | Varies | User confirmed playback | Playback only confirmed |
 | Internet Archive (official extensions catalog) | Some public-domain/archive titles | Some archived Arabic content | Some archived Indian content | Varies by item | Varies by item | Varies | Varies | User confirmed playback | Playback only confirmed |
+| Dailymotion (official extensions catalog) | Varies | Varies | Varies | Varies | Varies | Varies | Varies | User confirmed playback | Playback only confirmed |
 
 A successful extension installation is **not** proof of legal availability, a complete film catalog, correct subtitles, reliable streams or 4K quality.
 
