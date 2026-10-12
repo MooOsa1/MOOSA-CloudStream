@@ -82,6 +82,12 @@ object MOOSAServerRegistry {
                 )
             }
 
+    fun recordResult(link: ExtractorLink, result: Boolean) {
+        val key = keyFor(link)
+        record(link)
+        entries[key]?.lastResult = result
+    }
+
     fun setDisabled(key: String, disabled: Boolean) {
         val set = MOOSASettingsStore.disabledServers().toMutableSet()
         if (disabled) set += key else set -= key
