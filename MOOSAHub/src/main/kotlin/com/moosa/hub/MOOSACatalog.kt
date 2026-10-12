@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SearchResponseList
@@ -104,7 +106,7 @@ object MOOSACatalog {
                 path,
                 mapOf(
                     "page" to page.toString(),
-                    "language" to "ar-SA",
+                    "language" to "en-US",
                     "include_adult" to "false"
                 ) + extra
             )
@@ -113,7 +115,35 @@ object MOOSACatalog {
         return response.results.mapNotNull { it.toResponse(api, forceTv) }
     }
 
-    suspend fun home(api: MainAPI, page: Int): HomePageResponse = coroutineScope {
+    val categories = mainPageOf(
+        "/trending/movie/week" to "Trending Movies",
+        "/trending/tv/week" to "Trending Series",
+        "/discover/movie?with_original_language=ar" to "Arabic Movies",
+        "/discover/tv?with_original_language=ar" to "Arabic Series",
+        "/discover/movie?with_origin_country=IN" to "Indian Movies",
+        "/discover/tv?with_origin_country=IN" to "Indian Series",
+        "/movie/top_rated" to "Top Rated Movies",
+        "/tv/top_rated" to "Top Rated Series"
+    )
+
+    suspend fun home(api: MainAPI, page: Int, request: MainPageRequest): HomePageResponse {
+        val path = request.data.substringBefore("?")
+        val query = request.data.substringAfter("?", "")
+        val extras = query.split("&").filter { "=" in it }.associate {
+            val parts = it.split("=", limit = 2)
+            parts[0] to parts[1]
+        }
+        val isTv = path.contains("/tv/") || path == "/discover/tv"
+        val options = if (path.startsWith("/discover/")) {
+            extras + ("sort_by" to "popularity.desc")
+        } else if (path == "/movie/top_rated") {
+            extras + ("region" to "US")
+        } else extras
+        val items = list(api, path, page, isTv, options)
+        return newHomePageResponse(request, items, hasNext = items.isNotEmpty() && page < 500)
+    }
+
+    suspend fun homeLegacy(api: MainAPI, page: Int): HomePageResponse = coroutineScope {
         val trendingMovies = async {
             list(api, "/trending/movie/week", page, false)
         }
@@ -177,14 +207,14 @@ object MOOSACatalog {
 
         newHomePageResponse(
             listOf(
-                HomePageList("أفلام رائجة", trendingMovies.await()),
-                HomePageList("مسلسلات رائجة", trendingSeries.await()),
-                HomePageList("أفلام عربية", arabicMovies.await()),
-                HomePageList("مسلسلات عربية", arabicSeries.await()),
-                HomePageList("أفلام هندية", indianMovies.await()),
-                HomePageList("مسلسلات هندية", indianSeries.await()),
-                HomePageList("أفضل الأفلام", topMovies.await()),
-                HomePageList("أفضل المسلسلات", topSeries.await())
+                HomePageList("Trending Movies", trendingMovies.await()),
+                HomePageList("Trending Series", trendingSeries.await()),
+                HomePageList("Arabic Movies", arabicMovies.await()),
+                HomePageList("Arabic Series", arabicSeries.await()),
+                HomePageList("Indian Movies", indianMovies.await()),
+                HomePageList("Indian Series", indianSeries.await()),
+                HomePageList("Top Rated Movies", topMovies.await()),
+                HomePageList("Top Rated Series", topSeries.await())
             ).filter { it.list.isNotEmpty() }
         )
     }
@@ -196,7 +226,7 @@ object MOOSACatalog {
                 mapOf(
                     "query" to query,
                     "page" to page.toString(),
-                    "language" to "ar-SA",
+                    "language" to "en-US",
                     "include_adult" to "false"
                 )
             )
@@ -219,7 +249,7 @@ object MOOSACatalog {
 
         val detail = try {
             tryParseJson<AliasDetail>(
-                get("/$type/$id", mapOf("language" to "ar-SA"))
+                get("/$type/$id", mapOf("language" to "en-US"))
             )
         } catch (_: Throwable) {
             null
