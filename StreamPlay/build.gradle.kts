@@ -1,8 +1,8 @@
-version = 269
+version = 270
 
 cloudstream {
     language = "en"
-    description = "TMDB movie and TV catalog with trailers. Unlicensed playback sources removed."
+    description = "MOOSA Hub for movies and TV"
     authors = listOf("MOOSA")
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
