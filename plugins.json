@@ -1,10 +1,10 @@
 [
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=https://pluto.tv&sz=%size%",
-        "fileHash": "sha256-f208be4c989a06f09b198130f473ae17e30e5d472e60c3dadd3327c53a15f49b",
+        "fileHash": "sha256-e09b1c173801016cfe59e2903001f791a11632381c76d0611f3d44e8d806aa39",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 43713,
+        "fileSize": 43714,
         "status": 1,
         "language": "en",
         "authors": [
@@ -16,7 +16,7 @@
             "TvSeries",
             "Live"
         ],
-        "version": 1,
+        "version": 2,
         "internalName": "PlutoTV",
         "description": "Free movies, TV series and live channels from Pluto TV",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/PlutoTV.cs3",
