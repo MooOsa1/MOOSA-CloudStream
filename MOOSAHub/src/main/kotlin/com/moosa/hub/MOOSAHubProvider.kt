@@ -144,7 +144,7 @@ class MOOSAHubProvider : TmdbProvider() {
     private val linkProbeTimeoutMs = 2200L
     private val maxProvidersToTry = 18
     private val desiredVerifiedLinks = 10
-    private val linksPerProviderToProbe = 4
+    private val linksPerProviderToProbe = 3
 
     private val tmdbApiKey = "e6333b32409e02a4a6eba6fb7ff866bb"
     private val tmdbApiUrl = "https://api.themoviedb.org/3"
@@ -747,6 +747,69 @@ class MOOSAHubProvider : TmdbProvider() {
     private fun linkKey(link: ExtractorLink): String =
         "${link.url}|${link.referer}|${link.headers.hashCode()}"
 
+
+    private suspend fun verifyStreamingLink(link: ExtractorLink): Boolean {
+        if (!validStreamingUrl(link.url)) return false
+
+        return timed(linkProbeTimeoutMs) {
+            val headers = link.getAllHeaders()
+
+            when {
+                link.isM3u8 -> {
+                    val response = app.get(
+                        link.url,
+                        headers = headers,
+                        referer = link.referer,
+                        verify = false
+                    )
+                    response.isSuccessful &&
+                        response.text.contains("#EXTM3U", ignoreCase = true)
+                }
+
+                link.isDash -> {
+                    val response = app.get(
+                        link.url,
+                        headers = headers,
+                        referer = link.referer,
+                        verify = false
+                    )
+                    response.isSuccessful &&
+                        response.text.contains("<MPD", ignoreCase = true)
+                }
+
+                else -> {
+                    val head = app.head(
+                        link.url,
+                        headers = headers,
+                        referer = link.referer,
+                        verify = false
+                    )
+                    if (head.isSuccessful) {
+                        val contentType =
+                            head.headers["Content-Type"].orEmpty().lowercase()
+                        contentType.isBlank() ||
+                            (
+                                !contentType.contains("text/html") &&
+                                    !contentType.contains("application/json")
+                                )
+                    } else {
+                        val ranged = app.get(
+                            link.url,
+                            headers = headers + mapOf("Range" to "bytes=0-1023"),
+                            referer = link.referer,
+                            verify = false
+                        )
+                        val contentType =
+                            ranged.headers["Content-Type"].orEmpty().lowercase()
+                        ranged.isSuccessful &&
+                            !contentType.contains("text/html") &&
+                            !contentType.contains("application/json")
+                    }
+                }
+            }
+        } ?: false
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -754,14 +817,14 @@ class MOOSAHubProvider : TmdbProvider() {
         callback: (ExtractorLink) -> Unit
     ): Boolean = coroutineScope {
         val request = tryParseJson<HubPlaybackRequest>(data) ?: return@coroutineScope false
-        val providers = playbackProviders(request)
+        val providers = playbackProviders(request).take(maxProvidersToTry)
 
         if (providers.isEmpty()) return@coroutineScope false
 
         MOOSAProgress.start(providers.size)
 
         val aliasesJob = async {
-            timed(1400L) {
+            timed(1600L) {
                 MOOSACatalog.aliases(
                     tmdbId = request.tmdbId,
                     isTv = request.isTv,
@@ -775,10 +838,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val nativeSubtitles = Collections.synchronizedList(mutableListOf<SubtitleFile>())
         val emittedLink = AtomicBoolean(false)
         val completedProviders = AtomicInteger(0)
-        val workingProviders = AtomicInteger(0)
+        val verifiedLinks = AtomicInteger(0)
 
-        // Start subtitle services immediately, before provider/server discovery.
-        // Each Arabic source is emitted as soon as that source finishes.
         val externalSubtitleJob = async {
             fetchExternalSubtitles(request) { subtitle ->
                 if (seenSubtitles.add(subtitle.url)) {
@@ -788,91 +849,107 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         val aliases = aliasesJob.await()
-        val providerSemaphore = Semaphore(6)
 
-        providers.amap { api ->
-            providerSemaphore.withPermit {
+        for (batch in providers.chunked(6)) {
+            batch.amap { api ->
                 var providerWorked = false
 
                 try {
                     val target = resolveTargetForProvider(request, api, aliases)
-                        ?: return@withPermit false
 
-                val hasUsableLink = AtomicBoolean(false)
+                    if (target != null) {
+                        val candidateLinks =
+                            Collections.synchronizedList(mutableListOf<ExtractorLink>())
 
-                timed(providerLinksTimeoutMs) {
-                    api.loadLinks(
-                        target.data,
-                        isCasting,
-                        { subtitle ->
-                            normalizeNativeSubtitle(subtitle, api.name)?.let { normalized ->
-                                if (normalized.url.isBlank()) return@let
+                        timed(providerLinksTimeoutMs) {
+                            api.loadLinks(
+                                target.data,
+                                isCasting,
+                                { subtitle ->
+                                    normalizeNativeSubtitle(subtitle, api.name)?.let { normalized ->
+                                        if (normalized.url.isBlank()) return@let
 
-                                when (
-                                    subtitleLanguage(
-                                        normalized.lang,
-                                        normalized.langTag
-                                    )
-                                ) {
-                                    PreferredSubtitleLanguage.ARABIC -> {
-                                        if (seenSubtitles.add(normalized.url)) {
-                                            subtitleCallback(normalized)
+                                        when (
+                                            subtitleLanguage(
+                                                normalized.lang,
+                                                normalized.langTag
+                                            )
+                                        ) {
+                                            PreferredSubtitleLanguage.ARABIC -> {
+                                                if (seenSubtitles.add(normalized.url)) {
+                                                    subtitleCallback(normalized)
+                                                }
+                                            }
+
+                                            PreferredSubtitleLanguage.ENGLISH -> {
+                                                nativeSubtitles += normalized
+                                            }
+
+                                            PreferredSubtitleLanguage.OTHER -> Unit
                                         }
                                     }
+                                },
+                                { link ->
+                                    val quality = inferQuality(link)
+                                    val acceptableQuality =
+                                        quality <= 0 || quality >= 720
 
-                                    PreferredSubtitleLanguage.ENGLISH -> {
-                                        nativeSubtitles += normalized
+                                    if (
+                                        acceptableQuality &&
+                                        validStreamingUrl(link.url)
+                                    ) {
+                                        candidateLinks += link
                                     }
-
-                                    PreferredSubtitleLanguage.OTHER -> Unit
                                 }
-                            }
-                        },
-                        { link ->
-                            val quality = inferQuality(link)
+                            )
+                        }
+
+                        val candidates = candidateLinks
+                            .distinctBy(::linkKey)
+                            .sortedByDescending(::inferQuality)
+                            .take(linksPerProviderToProbe)
+
+                        for (link in candidates) {
                             val key = linkKey(link)
+                            if (seenLinks.contains(key)) continue
 
-                            val acceptableQuality = quality <= 0 || quality >= 720
-
-                            if (
-                                acceptableQuality &&
-                                validStreamingUrl(link.url) &&
-                                seenLinks.add(key)
-                            ) {
-                                hasUsableLink.set(true)
+                            if (verifyStreamingLink(link) && seenLinks.add(key)) {
+                                providerWorked = true
                                 emittedLink.set(true)
+                                verifiedLinks.incrementAndGet()
                                 callback(link)
                             }
                         }
-                    )
-                }
-
-                providerWorked = hasUsableLink.get()
-                if (providerWorked) {
-                    workingProviders.incrementAndGet()
-                    providerHealth.merge(api.name, 2) { old, add ->
-                        (old + add).coerceAtMost(20)
                     }
-                } else {
-                    providerHealth.merge(api.name, -1) { old, add ->
-                        (old + add).coerceAtLeast(-10)
-                    }
-                }
 
-                providerWorked
+                    if (providerWorked) {
+                        providerHealth.merge(api.name, 3) { old, add ->
+                            (old + add).coerceAtMost(24)
+                        }
+                    } else {
+                        providerHealth.merge(api.name, -2) { old, add ->
+                            (old + add).coerceAtLeast(-12)
+                        }
+                    }
                 } catch (error: Throwable) {
                     logError(error)
-                    providerHealth.merge(api.name, -1) { old, add ->
-                        (old + add).coerceAtLeast(-10)
+                    providerHealth.merge(api.name, -2) { old, add ->
+                        (old + add).coerceAtLeast(-12)
                     }
-                    false
                 } finally {
                     MOOSAProgress.providerProgress(
                         completedProviders.incrementAndGet(),
                         providers.size,
-                        workingProviders.get()
+                        verifiedLinks.get()
                     )
                 }
+
+                providerWorked
+            }
+
+            if (verifiedLinks.get() >= desiredVerifiedLinks) {
+                MOOSAProgress.serversReady(verifiedLinks.get())
+                break
             }
         }
 
@@ -880,7 +957,6 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val externalSubtitles = externalSubtitleJob.await()
 
-        // Arabic has already been emitted early. Emit English last; discard other languages.
         val remainingSubtitles = (
             nativeSubtitles +
                 externalSubtitles.filter {
@@ -899,7 +975,7 @@ class MOOSAHubProvider : TmdbProvider() {
             }
         }
 
-        MOOSAProgress.finish()
+        MOOSAProgress.finish(verifiedLinks.get())
         emittedLink.get()
     }
 
