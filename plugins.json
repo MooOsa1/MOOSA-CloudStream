@@ -1,10 +1,10 @@
 [
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=https://pluto.tv&sz=%size%",
-        "fileHash": "sha256-da576801d6ae55f3bf58dbcc71fcaf2e4cebaa13d5c49326c48480d2286d379f",
+        "fileHash": "sha256-f208be4c989a06f09b198130f473ae17e30e5d472e60c3dadd3327c53a15f49b",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 43535,
+        "fileSize": 43713,
         "status": 1,
         "language": "en",
         "authors": [
