@@ -32,6 +32,8 @@ import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
 import java.util.concurrent.CancellationException
@@ -627,13 +629,15 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         val aliases = aliasesJob.await()
+        val providerSemaphore = Semaphore(6)
 
         providers.amap { api ->
-            var providerWorked = false
+            providerSemaphore.withPermit {
+                var providerWorked = false
 
-            try {
-                val target = resolveTargetForProvider(request, api, aliases)
-                    ?: return@amap false
+                try {
+                    val target = resolveTargetForProvider(request, api, aliases)
+                        ?: return@withPermit false
 
                 val hasUsableLink = AtomicBoolean(false)
 
@@ -678,18 +682,19 @@ class MOOSAHubProvider : TmdbProvider() {
                 }
 
                 providerWorked
-            } catch (error: Throwable) {
-                logError(error)
-                providerHealth.merge(api.name, -1) { old, add ->
-                    (old + add).coerceAtLeast(-10)
+                } catch (error: Throwable) {
+                    logError(error)
+                    providerHealth.merge(api.name, -1) { old, add ->
+                        (old + add).coerceAtLeast(-10)
+                    }
+                    false
+                } finally {
+                    MOOSAProgress.providerProgress(
+                        completedProviders.incrementAndGet(),
+                        providers.size,
+                        workingProviders.get()
+                    )
                 }
-                false
-            } finally {
-                MOOSAProgress.providerProgress(
-                    completedProviders.incrementAndGet(),
-                    providers.size,
-                    workingProviders.get()
-                )
             }
         }
 
