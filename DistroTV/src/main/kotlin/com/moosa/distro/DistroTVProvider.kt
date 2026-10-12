@@ -1,12 +1,12 @@
 package com.moosa.distro
 
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import java.util.UUID
 
 class DistroTVProvider : MainAPI() {
     override var mainUrl = "https://www.distro.tv"
@@ -15,7 +15,12 @@ class DistroTVProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override val hasMainPage = true
 
-    private val feedUrl = "https://tv.jsrdn.com/tv_v5/getfeed.php"
+    private val feedUrl = "https://tv.jsrdn.com/tv_v5/getfeed.php?type=vod"
+    private val androidUa =
+        "Dalvik/2.1.0 (Linux; U; Android 9; AFTT Build/STT9.221129.002) GTV/AFTT DistroTV/2.0.9"
+    private val browserUa =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
     private var cachedFeed: DistroFeed? = null
 
     data class DistroFeed(
@@ -26,6 +31,8 @@ class DistroTVProvider : MainAPI() {
         val title: String? = null,
         val description: String? = null,
         val type: String? = null,
+        val img_thumbh: String? = null,
+        val img_logo: String? = null,
         val seasons: List<DistroSeason> = emptyList()
     )
 
@@ -37,6 +44,7 @@ class DistroTVProvider : MainAPI() {
         val id: String? = null,
         val title: String? = null,
         val description: String? = null,
+        val img_thumbh: String? = null,
         val content: DistroContent? = null
     )
 
@@ -55,16 +63,30 @@ class DistroTVProvider : MainAPI() {
         cachedFeed?.let { return it }
 
         val parsed = tryParseJson<DistroFeed>(
-            app.get(feedUrl, headers = mapOf("Accept" to "application/json")).text
+            app.get(
+                feedUrl,
+                headers = mapOf(
+                    "User-Agent" to androidUa,
+                    "Accept" to "application/json,*/*"
+                )
+            ).text
         ) ?: DistroFeed()
 
         cachedFeed = parsed
         return parsed
     }
 
-    private fun DistroShow.validEpisodes(): List<DistroEpisode> =
-        seasons.firstOrNull()?.episodes.orEmpty()
-            .filter { !it.content?.url.isNullOrBlank() }
+    private fun DistroShow.validEpisodes(): List<Pair<Int, DistroEpisode>> {
+        val out = mutableListOf<Pair<Int, DistroEpisode>>()
+        seasons.forEachIndexed { seasonIndex, season ->
+            season.episodes.forEach { ep ->
+                if (!ep.content?.url.isNullOrBlank()) {
+                    out += (seasonIndex + 1) to ep
+                }
+            }
+        }
+        return out
+    }
 
     private fun DistroShow.isOnDemand(): Boolean =
         !type.equals("live", ignoreCase = true) && validEpisodes().isNotEmpty()
@@ -75,11 +97,16 @@ class DistroTVProvider : MainAPI() {
         if (episodes.isEmpty()) return null
 
         val payload = DistroPayload(key, showTitle, description).toJson()
+        val poster = img_thumbh ?: img_logo ?: episodes.firstOrNull()?.second?.img_thumbh
 
         return if (episodes.size == 1) {
-            newMovieSearchResponse(showTitle, payload, TvType.Movie)
+            newMovieSearchResponse(showTitle, payload, TvType.Movie) {
+                posterUrl = poster
+            }
         } else {
-            newTvSeriesSearchResponse(showTitle, payload, TvType.TvSeries)
+            newTvSeriesSearchResponse(showTitle, payload, TvType.TvSeries) {
+                posterUrl = poster
+            }
         }
     }
 
@@ -88,7 +115,7 @@ class DistroTVProvider : MainAPI() {
             .asSequence()
             .filter { it.value.isOnDemand() }
             .mapNotNull { it.value.toSearchResponse(it.key) }
-            .take(150)
+            .take(200)
             .toList()
 
         return newHomePageResponse(
@@ -118,8 +145,10 @@ class DistroTVProvider : MainAPI() {
         val episodes = show.validEpisodes()
         if (episodes.isEmpty()) return null
 
+        val poster = show.img_thumbh ?: show.img_logo ?: episodes.firstOrNull()?.second?.img_thumbh
+
         if (episodes.size == 1) {
-            val ep = episodes.first()
+            val ep = episodes.first().second
             val stream = ep.content?.url ?: return null
 
             return newMovieLoadResponse(
@@ -128,18 +157,24 @@ class DistroTVProvider : MainAPI() {
                 TvType.Movie,
                 stream
             ) {
+                posterUrl = poster
                 plot = payload.description ?: ep.description
                 duration = ep.content.duration?.let { (it / 60L).toInt() }
             }
         }
 
-        val mappedEpisodes = episodes.mapIndexed { index, ep ->
-            val stream = ep.content?.url.orEmpty()
-            newEpisode(stream) {
-                name = ep.title ?: "Episode ${index + 1}"
-                episode = index + 1
+        val seasonCounters = mutableMapOf<Int, Int>()
+        val mappedEpisodes = episodes.map { (seasonNumber, ep) ->
+            val episodeNumber = (seasonCounters[seasonNumber] ?: 0) + 1
+            seasonCounters[seasonNumber] = episodeNumber
+
+            newEpisode(ep.content?.url.orEmpty()) {
+                name = ep.title ?: "Episode $episodeNumber"
+                season = seasonNumber
+                episode = episodeNumber
+                posterUrl = ep.img_thumbh ?: poster
                 description = ep.description
-                runTime = ep.content?.duration?.toInt()
+                runTime = ep.content?.duration?.let { (it / 60L).toInt() }
             }
         }
 
@@ -149,8 +184,50 @@ class DistroTVProvider : MainAPI() {
             TvType.TvSeries,
             mappedEpisodes
         ) {
+            posterUrl = poster
             plot = payload.description
         }
+    }
+
+    private fun sanitizeStreamUrl(rawUrl: String): String {
+        var url = rawUrl
+
+        val replacements = mapOf(
+            "__CACHE_BUSTER__" to System.currentTimeMillis().toString(),
+            "__DEVICE_ID__" to UUID.randomUUID().toString(),
+            "__LIMIT_AD_TRACKING__" to "0",
+            "__IS_GDPR__" to "0",
+            "__IS_CCPA__" to "0",
+            "__GEO_COUNTRY__" to "",
+            "__LATITUDE__" to "",
+            "__LONGITUDE__" to "",
+            "__GEO_DMA__" to "",
+            "__GEO_TYPE__" to "",
+            "__PAGEURL_ESC__" to "https%3A%2F%2Fdistro.tv%2F",
+            "__STORE_URL__" to "https%3A%2F%2Fdistro.tv%2F",
+            "__APP_BUNDLE__" to "distro.tv",
+            "__APP_VERSION__" to "2.0.9",
+            "__APP_CATEGORY__" to "",
+            "__WIDTH__" to "1920",
+            "__HEIGHT__" to "1080",
+            "__DEVICE__" to "AFTT",
+            "__DEVICE_ID_TYPE__" to "uuid",
+            "__DEVICE_CONNECTION_TYPE__" to "",
+            "__DEVICE_CATEGORY__" to "tv",
+            "__env.i__" to "app",
+            "__env.u__" to "app",
+            "__PALN__" to "",
+            "__GDPR_CONSENT__" to "",
+            "__ADVERTISING_ID__" to "",
+            "__CLIENT_IP__" to ""
+        )
+
+        replacements.forEach { (macro, value) ->
+            url = url.replace(macro, value)
+        }
+
+        url = Regex("__[^_].*?__").replace(url, "")
+        return url
     }
 
     override suspend fun loadLinks(
@@ -161,7 +238,11 @@ class DistroTVProvider : MainAPI() {
     ): Boolean {
         if (data.isBlank()) return false
 
-        val type = if (data.contains(".m3u8", ignoreCase = true)) {
+        val streamUrl = sanitizeStreamUrl(data)
+        val type = if (
+            streamUrl.contains(".m3u8", ignoreCase = true) ||
+            streamUrl.contains("/hls/", ignoreCase = true)
+        ) {
             ExtractorLinkType.M3U8
         } else {
             ExtractorLinkType.VIDEO
@@ -170,10 +251,17 @@ class DistroTVProvider : MainAPI() {
         callback(
             newExtractorLink(
                 source = name,
-                name = name,
-                url = data,
+                name = "DistroTV",
+                url = streamUrl,
                 type = type
-            )
+            ) {
+                referer = "https://distro.tv/"
+                headers = mapOf(
+                    "User-Agent" to browserUa,
+                    "Referer" to "https://distro.tv/",
+                    "Origin" to "https://distro.tv"
+                )
+            }
         )
 
         return true
