@@ -13,6 +13,7 @@ import com.lagradost.cloudstream3.MovieSearchResponse
 import com.lagradost.cloudstream3.ProviderType
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SearchResponseList
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.TvSeriesSearchResponse
@@ -57,6 +58,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val title: String,
         val year: Int? = null,
         val imdbId: String? = null,
+        val tmdbId: Int? = null,
+        val isTv: Boolean = false,
         val season: Int? = null,
         val episode: Int? = null
     )
@@ -182,28 +185,55 @@ class MOOSAHubProvider : TmdbProvider() {
         }
     }
 
-    private suspend fun searchProvider(api: MainAPI, title: String): List<SearchResponse> {
-        val paged = timed(2600L) {
-            api.search(title, 1)?.items.orEmpty()
-        }.orEmpty()
+    private fun aliasScore(
+        result: SearchResponse,
+        aliases: List<String>,
+        year: Int?
+    ): Int = aliases.maxOfOrNull { alias ->
+        matchScore(result, normalizeTitle(alias), year)
+    } ?: 0
 
-        if (paged.isNotEmpty()) return paged
+    private suspend fun searchProvider(
+        api: MainAPI,
+        aliases: List<String>,
+        year: Int?,
+        wantSeries: Boolean
+    ): List<SearchResponse> {
+        val results = mutableListOf<SearchResponse>()
 
-        return timed(2600L) {
-            api.search(title).orEmpty()
-        }.orEmpty()
+        for (alias in aliases.take(3)) {
+            val page = timed(1800L) {
+                api.search(alias, 1)?.items.orEmpty()
+            }.orEmpty()
+
+            results += page
+
+            val strongMatch = page.any { result ->
+                (
+                    (wantSeries && result is TvSeriesSearchResponse) ||
+                        (!wantSeries && result is MovieSearchResponse)
+                    ) && aliasScore(result, aliases, year) >= 90
+            }
+
+            if (strongMatch) break
+        }
+
+        return results.distinctBy { it.url }
     }
 
     private suspend fun loadBestMatch(
         api: MainAPI,
-        title: String,
-        year: Int?,
-        imdbId: String?,
-        wantSeries: Boolean
+        request: HubPlaybackRequest,
+        aliases: List<String>
     ): LoadResponse? {
-        if (!imdbId.isNullOrBlank() && api.supportedSyncNames.contains(SyncIdName.Imdb)) {
+        val wantSeries = request.season != null && request.episode != null
+
+        if (
+            !request.imdbId.isNullOrBlank() &&
+            api.supportedSyncNames.contains(SyncIdName.Imdb)
+        ) {
             val directUrl = timed(1200L) {
-                api.getLoadUrl(SyncIdName.Imdb, imdbId)
+                api.getLoadUrl(SyncIdName.Imdb, request.imdbId)
             }
             if (!directUrl.isNullOrBlank()) {
                 val direct = timed(2200L) { api.load(directUrl) }
@@ -216,8 +246,12 @@ class MOOSAHubProvider : TmdbProvider() {
             }
         }
 
-        val wantedTitle = normalizeTitle(title)
-        val candidates = searchProvider(api, title)
+        val candidates = searchProvider(
+            api = api,
+            aliases = aliases,
+            year = request.year,
+            wantSeries = wantSeries
+        )
             .asSequence()
             .filter { result ->
                 if (wantSeries) {
@@ -226,7 +260,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     result is MovieSearchResponse
                 }
             }
-            .map { it to matchScore(it, wantedTitle, year) }
+            .map { it to aliasScore(it, aliases, request.year) }
             .filter { (_, score) -> score > 0 }
             .sortedByDescending { (_, score) -> score }
             .take(5)
@@ -245,41 +279,28 @@ class MOOSAHubProvider : TmdbProvider() {
         return null
     }
 
-    private fun playbackProviders(request: HubPlaybackRequest): List<MainAPI> {
-        val isSeries = request.season != null && request.episode != null
-
-        val providers = apis.filter { api ->
-            if (api === this || api.providerType != ProviderType.DirectProvider) {
-                return@filter false
+    private fun playbackProviders(request: HubPlaybackRequest): List<MainAPI> =
+        apis
+            .filter { api ->
+                api !== this && api.providerType == ProviderType.DirectProvider
             }
-
-            if (isSeries) {
-                api.supportedTypes.any {
-                    it == TvType.TvSeries ||
-                        it == TvType.Anime ||
-                        it == TvType.AsianDrama ||
-                        it == TvType.Cartoon ||
-                        it == TvType.OVA ||
-                        it == TvType.Documentary
+            .sortedWith(
+                compareByDescending<MainAPI> {
+                    providerHealth[it.name] ?: 0
+                }.thenByDescending {
+                    if (
+                        !request.imdbId.isNullOrBlank() &&
+                        it.supportedSyncNames.contains(SyncIdName.Imdb)
+                    ) 1 else 0
                 }
-            } else {
-                api.supportedTypes.any {
-                    it == TvType.Movie ||
-                        it == TvType.AnimeMovie ||
-                        it == TvType.Documentary ||
-                        it == TvType.Video
-                }
-            }
-        }
-
-        return providers.sortedByDescending { providerHealth[it.name] ?: 0 }
-    }
+            )
 
     private fun providerCacheKey(
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
         request.imdbId.orEmpty(),
+        request.tmdbId?.toString().orEmpty(),
         normalizeTitle(request.title),
         request.year?.toString().orEmpty(),
         request.season?.toString().orEmpty(),
@@ -290,7 +311,8 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private suspend fun resolveTargetForProvider(
         request: HubPlaybackRequest,
-        api: MainAPI
+        api: MainAPI,
+        aliases: List<String>
     ): ProviderTarget? {
         val cacheKey = providerCacheKey(request, api)
         targetCache[cacheKey]?.let { cached ->
@@ -304,10 +326,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val loaded = timed(providerResolveTimeoutMs) {
             loadBestMatch(
                 api = api,
-                title = request.title,
-                year = request.year,
-                imdbId = request.imdbId,
-                wantSeries = isSeries
+                request = request,
+                aliases = aliases
             )
         } ?: return null
 
@@ -351,13 +371,18 @@ class MOOSAHubProvider : TmdbProvider() {
     override suspend fun load(url: String): LoadResponse? {
         val base = super.load(url) ?: return null
         val imdbId = base.getImdbId()
+        val tmdbMatch = Regex("""themoviedb\.org/(movie|tv)/(\d+)""").find(url)
+        val isTv = tmdbMatch?.groupValues?.getOrNull(1) == "tv"
+        val tmdbId = tmdbMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
 
         return when (base) {
             is MovieLoadResponse -> {
                 base.dataUrl = HubPlaybackRequest(
                     title = base.name,
                     year = base.year,
-                    imdbId = imdbId
+                    imdbId = imdbId,
+                    tmdbId = tmdbId,
+                    isTv = false
                 ).toJson()
                 base
             }
@@ -368,6 +393,8 @@ class MOOSAHubProvider : TmdbProvider() {
                         title = base.name,
                         year = base.year,
                         imdbId = imdbId,
+                        tmdbId = tmdbId,
+                        isTv = isTv,
                         season = episode.season,
                         episode = episode.episode
                     ).toJson()
@@ -563,6 +590,16 @@ class MOOSAHubProvider : TmdbProvider() {
 
         MOOSAProgress.start(providers.size)
 
+        val aliasesJob = async {
+            timed(1400L) {
+                MOOSACatalog.aliases(
+                    tmdbId = request.tmdbId,
+                    isTv = request.isTv,
+                    fallback = request.title
+                )
+            } ?: listOf(request.title)
+        }
+
         val seenLinks = ConcurrentHashMap.newKeySet<String>()
         val seenSubtitles = ConcurrentHashMap.newKeySet<String>()
         val nativeSubtitles = Collections.synchronizedList(mutableListOf<SubtitleFile>())
@@ -589,11 +626,13 @@ class MOOSAHubProvider : TmdbProvider() {
             external
         }
 
+        val aliases = aliasesJob.await()
+
         providers.amap { api ->
             var providerWorked = false
 
             try {
-                val target = resolveTargetForProvider(request, api)
+                val target = resolveTargetForProvider(request, api, aliases)
                     ?: return@amap false
 
                 val hasUsableLink = AtomicBoolean(false)
@@ -746,78 +785,10 @@ class MOOSAHubProvider : TmdbProvider() {
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
-    ): HomePageResponse = coroutineScope {
-        val trendingMovies = async {
-            tmdbHome("/trending/movie/week", page, false)
-        }
-        val trendingSeries = async {
-            tmdbHome("/trending/tv/week", page, true)
-        }
-        val topMovies = async {
-            tmdbHome("/movie/top_rated", page, false)
-        }
-        val topSeries = async {
-            tmdbHome("/tv/top_rated", page, true)
-        }
-        val arabicMovies = async {
-            tmdbHome(
-                "/discover/movie",
-                page,
-                false,
-                language = "ar-SA",
-                extra = mapOf(
-                    "with_original_language" to "ar",
-                    "sort_by" to "popularity.desc"
-                )
-            )
-        }
-        val arabicSeries = async {
-            tmdbHome(
-                "/discover/tv",
-                page,
-                true,
-                language = "ar-SA",
-                extra = mapOf(
-                    "with_original_language" to "ar",
-                    "sort_by" to "popularity.desc"
-                )
-            )
-        }
-        val indianMovies = async {
-            tmdbHome(
-                "/discover/movie",
-                page,
-                false,
-                extra = mapOf(
-                    "with_original_language" to "hi",
-                    "sort_by" to "popularity.desc"
-                )
-            )
-        }
-        val indianSeries = async {
-            tmdbHome(
-                "/discover/tv",
-                page,
-                true,
-                extra = mapOf(
-                    "with_original_language" to "hi",
-                    "sort_by" to "popularity.desc"
-                )
-            )
-        }
+    ): HomePageResponse = MOOSACatalog.home(this, page)
 
-        newHomePageResponse(
-            listOf(
-                HomePageList("🔥 أفلام رائجة", trendingMovies.await()),
-                HomePageList("🔥 مسلسلات رائجة", trendingSeries.await()),
-                HomePageList("🇸🇦 أفلام عربية", arabicMovies.await()),
-                HomePageList("🇸🇦 مسلسلات عربية", arabicSeries.await()),
-                HomePageList("🇮🇳 أفلام هندية", indianMovies.await()),
-                HomePageList("🇮🇳 مسلسلات هندية", indianSeries.await()),
-                HomePageList("⭐ أفضل الأفلام", topMovies.await()),
-                HomePageList("⭐ أفضل المسلسلات", topSeries.await())
-            ),
-            hasNext = true
-        )
-    }
+    override suspend fun search(
+        query: String,
+        page: Int
+    ): SearchResponseList? = MOOSACatalog.search(this, query, page)
 }
