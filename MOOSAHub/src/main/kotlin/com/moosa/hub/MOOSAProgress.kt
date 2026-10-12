@@ -1,5 +1,6 @@
 package com.moosa.hub
 
+import android.app.Activity
 import android.app.Dialog
 import android.os.Handler
 import android.os.Looper
@@ -8,7 +9,6 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import com.lagradost.cloudstream3.CommonActivity.activity
 
 object MOOSAProgress {
     private const val TEXT_TAG = "moosa_server_progress_text"
@@ -19,6 +19,18 @@ object MOOSAProgress {
 
     @Volatile
     private var lastText: String = ""
+
+    fun setArabicSubtitleDefault() {
+        try {
+            val appClass = Class.forName("com.lagradost.cloudstream3.CloudStreamApp")
+            val companion = appClass.getField("Companion").get(null)
+            val method = companion.javaClass.methods.firstOrNull {
+                it.name == "setKey" && it.parameterCount == 2
+            } ?: return
+            method.invoke(companion, "subs_auto_select", "ar")
+        } catch (_: Throwable) {
+        }
+    }
 
     fun start(totalProviders: Int) {
         val total = totalProviders.coerceAtLeast(1)
@@ -53,8 +65,20 @@ object MOOSAProgress {
         mainHandler.post { render(retries = 6) }
     }
 
+    private fun currentActivity(): Activity? {
+        return try {
+            val cls = Class.forName("com.lagradost.cloudstream3.CommonActivity")
+            val instance = cls.getField("INSTANCE").get(null)
+            cls.methods
+                .firstOrNull { it.name == "getActivity" && it.parameterCount == 0 }
+                ?.invoke(instance) as? Activity
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private fun render(retries: Int) {
-        val act = activity
+        val act = currentActivity()
         if (act == null) {
             if (retries > 0) mainHandler.postDelayed({ render(retries - 1) }, 120)
             return
@@ -98,7 +122,6 @@ object MOOSAProgress {
             label.text = "$lastText • $lastPercent%"
             label.visibility = View.VISIBLE
         } catch (_: Throwable) {
-            // CloudStream UI can change between versions. The normal loader remains as fallback.
         }
     }
 
