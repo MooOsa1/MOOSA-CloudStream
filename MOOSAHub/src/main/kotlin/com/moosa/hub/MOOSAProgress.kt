@@ -1,17 +1,20 @@
 package com.moosa.hub
 
 import android.app.Activity
-import android.app.Dialog
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 
 object MOOSAProgress {
-    private const val TEXT_TAG = "moosa_server_progress_text"
+    private const val CONTAINER_TAG = "moosa_progress_container"
+    private const val TEXT_TAG = "moosa_progress_text"
+    private const val BAR_TAG = "moosa_progress_bar"
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
@@ -34,25 +37,18 @@ object MOOSAProgress {
 
     fun start(totalProviders: Int) {
         val total = totalProviders.coerceAtLeast(1)
-        update(0, "جاري البحث عن السيرفرات • باقي $total")
+        update(0, "جاري تجهيز السيرفرات • باقي $total")
     }
 
-    fun searchProgress(done: Int, total: Int) {
+    fun providerProgress(done: Int, total: Int) {
         val safeTotal = total.coerceAtLeast(1)
-        val percent = ((done.toDouble() / safeTotal) * 65.0).toInt().coerceIn(0, 65)
+        val percent = ((done.toDouble() / safeTotal) * 92.0).toInt().coerceIn(0, 92)
         val remaining = (safeTotal - done).coerceAtLeast(0)
-        update(percent, "البحث عن السيرفرات • باقي $remaining من $safeTotal")
-    }
-
-    fun linksProgress(done: Int, total: Int) {
-        val safeTotal = total.coerceAtLeast(1)
-        val percent = (65 + ((done.toDouble() / safeTotal) * 30.0).toInt()).coerceIn(65, 95)
-        val remaining = (safeTotal - done).coerceAtLeast(0)
-        update(percent, "تجهيز روابط التشغيل • باقي $remaining من $safeTotal")
+        update(percent, "فحص السيرفرات • باقي $remaining من $safeTotal")
     }
 
     fun subtitles() {
-        update(97, "اختيار أفضل ترجمة عربية…")
+        update(96, "تجهيز الترجمة العربية…")
     }
 
     fun finish() {
@@ -62,7 +58,7 @@ object MOOSAProgress {
     private fun update(percent: Int, text: String) {
         lastPercent = percent.coerceIn(0, 100)
         lastText = text
-        mainHandler.post { render(retries = 6) }
+        mainHandler.post { render(8) }
     }
 
     private fun currentActivity(): Activity? {
@@ -77,96 +73,100 @@ object MOOSAProgress {
         }
     }
 
+    private fun Activity.dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
     private fun render(retries: Int) {
         val act = currentActivity()
         if (act == null) {
-            if (retries > 0) mainHandler.postDelayed({ render(retries - 1) }, 120)
-            return
-        }
-
-        val dialog = findLoadingDialog(act)
-        if (dialog == null) {
-            if (retries > 0) mainHandler.postDelayed({ render(retries - 1) }, 120)
+            if (retries > 0) mainHandler.postDelayed({ render(retries - 1) }, 100)
             return
         }
 
         try {
-            val progressId = act.resources.getIdentifier("progressBar", "id", act.packageName)
-            if (progressId == 0) return
+            val overlayId = act.resources.getIdentifier(
+                "player_loading_overlay",
+                "id",
+                act.packageName
+            )
+            val overlay = if (overlayId != 0) {
+                act.window.decorView.findViewById<ViewGroup>(overlayId)
+            } else null
 
-            val progress = dialog.findViewById<ProgressBar>(progressId) ?: return
-            progress.visibility = View.VISIBLE
-            progress.isIndeterminate = false
-            progress.max = 100
-            progress.progress = lastPercent
+            if (overlay != null && overlay.visibility == View.VISIBLE) {
+                renderPlayerOverlay(act, overlay)
+                return
+            }
 
-            val parent = progress.parent as? LinearLayout ?: return
-            var label = parent.findViewWithTag<TextView>(TEXT_TAG)
-            if (label == null) {
-                label = TextView(act).apply {
-                    tag = TEXT_TAG
-                    gravity = Gravity.CENTER
-                    textSize = 14f
-                    setPadding(12, 10, 12, 6)
-                }
-                val index = parent.indexOfChild(progress).coerceAtLeast(0)
-                parent.addView(
-                    label,
-                    index,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
+            if (retries > 0) {
+                mainHandler.postDelayed({ render(retries - 1) }, 120)
+            }
+        } catch (_: Throwable) {
+            if (retries > 0) mainHandler.postDelayed({ render(retries - 1) }, 120)
+        }
+    }
+
+    private fun renderPlayerOverlay(act: Activity, overlay: ViewGroup) {
+        val mainLoadId = act.resources.getIdentifier("main_load", "id", act.packageName)
+        if (mainLoadId != 0) {
+            overlay.findViewById<View>(mainLoadId)?.visibility = View.GONE
+        }
+
+        var container = overlay.findViewWithTag<LinearLayout>(CONTAINER_TAG)
+        if (container == null) {
+            container = LinearLayout(act).apply {
+                tag = CONTAINER_TAG
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(act.dp(32), act.dp(10), act.dp(32), act.dp(10))
+            }
+
+            val label = TextView(act).apply {
+                tag = TEXT_TAG
+                gravity = Gravity.CENTER
+                textSize = 15f
+                setPadding(0, 0, 0, act.dp(10))
+            }
+
+            val bar = ProgressBar(
+                act,
+                null,
+                android.R.attr.progressBarStyleHorizontal
+            ).apply {
+                tag = BAR_TAG
+                isIndeterminate = false
+                max = 100
+            }
+
+            container.addView(
+                label,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
                 )
+            )
+            container.addView(
+                bar,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    act.dp(14)
+                )
+            )
+
+            val params = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+            ).apply {
+                leftMargin = act.dp(90)
+                rightMargin = act.dp(90)
             }
-            label.text = "$lastText • $lastPercent%"
-            label.visibility = View.VISIBLE
-        } catch (_: Throwable) {
-        }
-    }
-
-    private fun findLoadingDialog(host: Any): Dialog? {
-        return try {
-            val manager = host.javaClass.methods
-                .firstOrNull { it.name == "getSupportFragmentManager" && it.parameterCount == 0 }
-                ?.invoke(host)
-            findDialogInManager(manager)
-        } catch (_: Throwable) {
-            null
-        }
-    }
-
-    private fun findDialogInManager(manager: Any?): Dialog? {
-        if (manager == null) return null
-
-        val fragments = try {
-            manager.javaClass.methods
-                .firstOrNull { it.name == "getFragments" && it.parameterCount == 0 }
-                ?.invoke(manager) as? List<*>
-        } catch (_: Throwable) {
-            null
-        } ?: return null
-
-        for (fragment in fragments.asReversed()) {
-            if (fragment == null) continue
-
-            try {
-                val dialog = fragment.javaClass.methods
-                    .firstOrNull { it.name == "getLoadingDialog" && it.parameterCount == 0 }
-                    ?.invoke(fragment) as? Dialog
-                if (dialog?.isShowing == true) return dialog
-            } catch (_: Throwable) {
-            }
-
-            try {
-                val childManager = fragment.javaClass.methods
-                    .firstOrNull { it.name == "getChildFragmentManager" && it.parameterCount == 0 }
-                    ?.invoke(fragment)
-                findDialogInManager(childManager)?.let { return it }
-            } catch (_: Throwable) {
-            }
+            overlay.addView(container, params)
         }
 
-        return null
+        container.findViewWithTag<TextView>(TEXT_TAG)?.text =
+            "$lastText • $lastPercent%"
+        container.findViewWithTag<ProgressBar>(BAR_TAG)?.progress = lastPercent
+        container.visibility = View.VISIBLE
     }
 }
