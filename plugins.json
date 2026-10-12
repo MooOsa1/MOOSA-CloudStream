@@ -1,7 +1,7 @@
 [
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-05c0a6a1726f504f5219a8ba06e7f2508792ba9f7ba88798b08150a0d6a1446c",
+        "fileHash": "sha256-eecfacba1fbf27bbdc1045cc3e05f36c6fd8c69e4afed47ba8e063498caf8174",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
         "fileSize": 17228,
@@ -14,7 +14,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 4,
+        "version": 5,
         "internalName": "MOOSAHub",
         "description": "\u0648\u0627\u062c\u0647\u0629 MOOSA \u062a\u0628\u062d\u062b \u0641\u064a \u0643\u0644 \u0627\u0644\u0645\u0635\u0627\u062f\u0631 \u0627\u0644\u0645\u062b\u0628\u062a\u0629 \u062f\u0627\u062e\u0644 CloudStream",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAHub.cs3",
