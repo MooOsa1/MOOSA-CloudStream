@@ -1,7 +1,7 @@
 [
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=distro.tv&sz=%size%",
-        "fileHash": "sha256-2d95e9392a520871ae1942de63d50a198b781dccc03f2814cab40953d71c31a8",
+        "fileHash": "sha256-2ea2ffee0a749050db05973dfb8fa2b3f0fa439faaa09155c338a29979d28920",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
         "fileSize": 21526,
@@ -14,7 +14,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 1,
+        "version": 2,
         "internalName": "DistroTV",
         "description": "Free on-demand movies and shows from DistroTV",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/DistroTV.cs3",
