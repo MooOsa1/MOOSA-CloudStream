@@ -531,12 +531,6 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        if (MOOSASeeAll.isShowMoreUrl(url)) {
-            MOOSASeeAll.open(url)
-            val fallbackUrl = MOOSASeeAll.cleanUrl(url)
-            return super.load(fallbackUrl)
-        }
-
         val base = super.load(url) ?: return null
         val imdbId = base.getImdbId()
         val tmdbMatch = Regex("""themoviedb\.org/(movie|tv)/(\d+)""").find(url)
