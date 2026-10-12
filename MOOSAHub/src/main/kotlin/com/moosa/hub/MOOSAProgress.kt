@@ -40,21 +40,31 @@ object MOOSAProgress {
 
     fun start(totalProviders: Int) {
         val total = totalProviders.coerceAtLeast(1)
-        update(1, "Finding servers • 0/$total")
+        update(4, "Checking servers • 0/$total • 0 verified")
     }
 
-    fun providerProgress(done: Int, total: Int, working: Int) {
+    fun providerProgress(done: Int, total: Int, verified: Int) {
         val safeTotal = total.coerceAtLeast(1)
-        val percent = ((done.toDouble() / safeTotal) * 92.0).toInt().coerceIn(1, 92)
-        update(percent, "Checking servers • $done/$safeTotal • Working $working")
+        val checked = done.coerceIn(0, safeTotal)
+        val percent = (
+            5.0 + (checked.toDouble() / safeTotal) * 82.0
+            ).toInt().coerceIn(5, 87)
+        update(
+            percent,
+            "Checking servers • $checked/$safeTotal • $verified verified"
+        )
+    }
+
+    fun serversReady(verified: Int) {
+        update(91, "$verified verified servers ready")
     }
 
     fun subtitles() {
         update(96, "Preparing Arabic subtitles…")
     }
 
-    fun finish() {
-        update(100, "Ready")
+    fun finish(verified: Int) {
+        update(100, "Ready • $verified verified servers")
         mainHandler.postDelayed({ hide() }, 650)
     }
 
