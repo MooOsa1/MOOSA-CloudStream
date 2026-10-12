@@ -270,6 +270,10 @@ class MOOSAHubProvider : TmdbProvider() {
     ): LoadResponse? {
         val wantSeries = request.season != null && request.episode != null
 
+        fun correctType(response: LoadResponse?): Boolean =
+            (!wantSeries && response is MovieLoadResponse) ||
+                (wantSeries && response is TvSeriesLoadResponse)
+
         if (
             !request.imdbId.isNullOrBlank() &&
             api.supportedSyncNames.contains(SyncIdName.Imdb)
@@ -279,11 +283,17 @@ class MOOSAHubProvider : TmdbProvider() {
             }
             if (!directUrl.isNullOrBlank()) {
                 val direct = timed(2200L) { api.load(directUrl) }
-                if (
-                    (!wantSeries && direct is MovieLoadResponse) ||
-                    (wantSeries && direct is TvSeriesLoadResponse)
-                ) {
-                    return direct
+                if (correctType(direct) && direct != null) {
+                    val loadedImdb = direct.getImdbId()
+                    val imdbMatches =
+                        !loadedImdb.isNullOrBlank() &&
+                            loadedImdb.equals(request.imdbId, ignoreCase = true)
+                    val titleMatches =
+                        loadedScore(direct, aliases, request.year) >= 90
+
+                    if (imdbMatches || (loadedImdb.isNullOrBlank() && titleMatches)) {
+                        return direct
+                    }
                 }
             }
         }
@@ -303,17 +313,16 @@ class MOOSAHubProvider : TmdbProvider() {
                 }
             }
             .map { it to aliasScore(it, aliases, request.year) }
-            .filter { (_, score) -> score > 0 }
+            .filter { (_, score) -> score >= 90 }
             .sortedByDescending { (_, score) -> score }
-            .take(5)
+            .take(3)
             .toList()
 
         for ((match, _) in candidates) {
             val loaded = timed(2200L) { api.load(match.url) } ?: continue
-            if (
-                (!wantSeries && loaded is MovieLoadResponse) ||
-                (wantSeries && loaded is TvSeriesLoadResponse)
-            ) {
+            if (!correctType(loaded)) continue
+
+            if (loadedScore(loaded, aliases, request.year) >= 90) {
                 return loaded
             }
         }
