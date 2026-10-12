@@ -193,14 +193,13 @@ object MOOSACatalog {
         if (
             showMoreButton &&
             page == 1 &&
-            canLoadMore &&
             api is MOOSAHubProvider
         ) {
             MOOSASeeAll.register(
                 api = api,
                 request = request,
                 items = allItems,
-                hasNext = true,
+                hasNext = canLoadMore,
                 horizontal = request.horizontalImages
             )
         }
