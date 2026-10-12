@@ -9,6 +9,7 @@ object MOOSASettingsStore {
     private const val KEY_DISABLED_SOURCES = "disabled_sources"
     private const val KEY_VERIFY_LINKS = "verify_links"
     private const val KEY_ARABIC_FAST = "arabic_fast_mode"
+    private const val KEY_WYZIE_KEY = "wyzie_key"
 
     @Volatile
     private var prefs: SharedPreferences? = null
@@ -21,7 +22,7 @@ object MOOSASettingsStore {
     }
 
     fun providerConcurrency(): Int =
-        prefs?.getInt(KEY_CONCURRENCY, 8)?.coerceIn(2, 16) ?: 8
+        prefs?.getInt(KEY_CONCURRENCY, 10)?.coerceIn(2, 16) ?: 10
 
     fun setProviderConcurrency(value: Int) {
         prefs?.edit()?.putInt(KEY_CONCURRENCY, value.coerceIn(2, 16))?.apply()
@@ -48,5 +49,14 @@ object MOOSASettingsStore {
 
     fun setArabicFastMode(enabled: Boolean) {
         prefs?.edit()?.putBoolean(KEY_ARABIC_FAST, enabled)?.apply()
+    }
+
+    fun wyzieKey(): String? =
+        prefs?.getString(KEY_WYZIE_KEY, null)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+    fun setWyzieKey(value: String?) {
+        prefs?.edit()?.putString(KEY_WYZIE_KEY, value?.trim().orEmpty())?.apply()
     }
 }
