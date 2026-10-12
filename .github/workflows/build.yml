@@ -1,0 +1,64 @@
+name: Build CloudStream plugins
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "*.md"
+      - "repo.json"
+      - "plugins.json"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Checkout builds branch
+        uses: actions/checkout@v4
+        with:
+          ref: builds
+          path: builds
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build plugins
+        run: |
+          cd "$GITHUB_WORKSPACE/src"
+          gradle make makePluginsJson
+          gradle ensureJarCompatibility
+          rm -f "$GITHUB_WORKSPACE/builds"/*.cs3 "$GITHUB_WORKSPACE/builds"/plugins.json
+          cp **/build/*.cs3 "$GITHUB_WORKSPACE/builds"/
+          cp build/plugins.json "$GITHUB_WORKSPACE/builds"/plugins.json
+
+      - name: Publish builds
+        run: |
+          cd "$GITHUB_WORKSPACE/builds"
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add .
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Build $GITHUB_SHA"
+          git push
