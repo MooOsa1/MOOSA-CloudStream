@@ -1,10 +1,9 @@
 package com.moosa.hub
 
+import android.app.Activity
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import androidx.preference.PreferenceManager
-import com.lagradost.cloudstream3.CloudStreamApp.Companion.context
 import com.lagradost.cloudstream3.plugins.BasePlugin
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 
@@ -16,9 +15,28 @@ class MOOSAHubPlugin : BasePlugin() {
         registerMainAPI(MOOSAHubProvider())
     }
 
+    private fun currentActivity(): Activity? {
+        return try {
+            val common = Class.forName(
+                "com.lagradost.cloudstream3.CommonActivity"
+            )
+            val instance = common.getField("INSTANCE").get(null)
+            common.methods
+                .firstOrNull {
+                    it.name == "getActivity" && it.parameterCount == 0
+                }
+                ?.invoke(instance) as? Activity
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     private fun forceTvLayoutOnce() {
-        val appContext = context ?: return
-        val prefs = PreferenceManager.getDefaultSharedPreferences(appContext)
+        val activity = currentActivity() ?: return
+        val prefs = activity.getSharedPreferences(
+            "${activity.packageName}_preferences",
+            Context.MODE_PRIVATE
+        )
         val recoveryKey = "moosa_tv_layout_recovery_v17"
 
         if (prefs.getBoolean(recoveryKey, false)) return
@@ -28,14 +46,17 @@ class MOOSAHubPlugin : BasePlugin() {
             .putBoolean(recoveryKey, true)
             .apply()
 
-        updateCloudStreamLayout(appContext)
+        updateCloudStreamLayout(activity)
 
         Handler(Looper.getMainLooper()).postDelayed({
-            recreateCurrentActivity()
+            try {
+                activity.recreate()
+            } catch (_: Throwable) {
+            }
         }, 450)
     }
 
-    private fun updateCloudStreamLayout(appContext: Context) {
+    private fun updateCloudStreamLayout(context: Context) {
         try {
             val globals = Class.forName(
                 "com.lagradost.cloudstream3.ui.settings.Globals"
@@ -44,30 +65,11 @@ class MOOSAHubPlugin : BasePlugin() {
             globals.methods
                 .firstOrNull {
                     it.name == "updateTv" &&
-                        it.parameterCount == 1 &&
-                        Context::class.java.isAssignableFrom(it.parameterTypes[0])
+                        it.parameterCount == 1
                 }
-                ?.invoke(instance, appContext)
+                ?.invoke(instance, context)
         } catch (_: Throwable) {
-            // The saved preference will still take effect on the next app launch.
-        }
-    }
-
-    private fun recreateCurrentActivity() {
-        try {
-            val common = Class.forName(
-                "com.lagradost.cloudstream3.CommonActivity"
-            )
-            val instance = common.getField("INSTANCE").get(null)
-            val activity = common.methods
-                .firstOrNull {
-                    it.name == "getActivity" && it.parameterCount == 0
-                }
-                ?.invoke(instance) as? android.app.Activity
-
-            activity?.recreate()
-        } catch (_: Throwable) {
-            // If recreation is unavailable, restarting CloudStream applies TV layout.
+            // Saved preference will still apply after restarting CloudStream.
         }
     }
 }
