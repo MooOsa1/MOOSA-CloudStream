@@ -201,54 +201,54 @@ internal object MOOSAArabicBridge {
         request: MOOSAHubProvider.HubPlaybackRequest,
         aliases: List<String>
     ): List<String> {
-        val season = request.season
-
-        val arabic =
-            aliases.filter {
-                Regex("""[\u0600-\u06FF]""")
-                    .containsMatchIn(it)
-            }
-
-        val base =
-            (arabic + aliases + request.title)
+        val rawTitles =
+            (listOf(request.title) + aliases)
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
                 .distinctBy(::normalize)
 
-        if (!request.isTv || season == null) {
-            return buildList {
-                base.take(8).forEach { title ->
-                    if (
-                        request.year != null &&
-                        Regex("""[\u0600-\u06FF]""")
-                            .containsMatchIn(title)
-                    ) {
-                        add("$title ${request.year}")
-                    }
-                    add(title)
-                }
+        val arabicTitles =
+            rawTitles.filter {
+                Regex("""[\u0600-\u06FF]""")
+                    .containsMatchIn(it)
             }
+
+        val plainTitles =
+            rawTitles.filterNot {
+                Regex(
+                    """(?:الموسم|موسم|season)\s*\d+""",
+                    RegexOption.IGNORE_CASE
+                ).containsMatchIn(normalize(it))
+            }
+
+        val base =
+            (arabicTitles + plainTitles)
+                .distinctBy(::normalize)
+                .take(8)
+
+        val season = request.season
+        if (!request.isTv || season == null) {
+            val yearVariants =
+                if (request.year == null) {
+                    emptyList()
+                } else {
+                    base.map { "$it ${request.year}" }
+                }
+
+            return (base + yearVariants)
                 .distinctBy(::normalize)
                 .take(12)
         }
 
-        val preferred = mutableListOf<String>()
-
-        base.take(8).forEach { title ->
-            if (
-                request.year != null &&
-                Regex("""[\u0600-\u06FF]""")
-                    .containsMatchIn(title)
-            ) {
-                preferred += "$title ${request.year}"
+        val seasonVariants =
+            base.flatMap { title ->
+                listOf(
+                    "$title $season",
+                    "$title الموسم $season"
+                )
             }
 
-            preferred += "$title $season"
-            preferred += "$title الموسم $season"
-            preferred += title
-        }
-
-        return preferred
+        return (base + seasonVariants)
             .distinctBy(::normalize)
             .take(14)
     }
@@ -278,7 +278,23 @@ internal object MOOSAArabicBridge {
                 .filter { it > 0 }
                 .distinct()
 
-        if (knownSeasons.isNotEmpty() || season != 1) {
+        if (knownSeasons.isNotEmpty()) {
+            return null
+        }
+
+        val seasonIsProven =
+            season == 1 ||
+                Regex(
+                    """(?:الموسم|موسم|season)\s*$season\b""",
+                    RegexOption.IGNORE_CASE
+                ).containsMatchIn(normalize(candidateTitle)) ||
+                aliases.any {
+                    val normalizedAlias = normalize(it)
+                    normalizedAlias.contains(Regex("""\b$season\b""")) &&
+                        scoreTitle(candidateTitle, listOf(it)) >= 90
+                }
+
+        if (!seasonIsProven) {
             return null
         }
 
