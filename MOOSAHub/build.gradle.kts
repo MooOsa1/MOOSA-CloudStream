@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 47
+version = 48
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v47: Arabic season title matching and current ArabSeed domain
+// v48: normalize Arabic episode labels and follow nested player frames
