@@ -33,7 +33,7 @@ class AkwamProvider : MainAPI() {
         val poster = anchor.selectFirst("img")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }
         } ?: anchor.parents().firstOrNull { it.selectFirst("img") != null }
-            ?.selectFirst("img")?.let { it.attr("data-src").ifEmpty { imgSrc -> imgSrc } }
+            ?.selectFirst("img")?.let { it.attr("data-src").ifEmpty { it.attr("src") } }
         val tvType = if (href.contains("/series/")) TvType.TvSeries else TvType.Movie
         return if (tvType == TvType.TvSeries) {
             newTvSeriesSearchResponse(title, href, tvType) { posterUrl = poster }
