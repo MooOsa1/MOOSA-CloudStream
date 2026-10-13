@@ -867,15 +867,23 @@ class MOOSAHubProvider : TmdbProvider() {
             return true
         }
 
+        val loadedYear =
+            result.year
+
+        val requestedYear =
+            request.year
+
         if (
             request.originalLanguage.equals(
                 "ar",
                 ignoreCase = true
             ) &&
             request.isTv &&
-            request.year != null &&
-            result.year != null &&
-            abs(result.year - request.year) > 1
+            loadedYear != null &&
+            requestedYear != null &&
+            abs(
+                loadedYear - requestedYear
+            ) > 1
         ) {
             return false
         }
