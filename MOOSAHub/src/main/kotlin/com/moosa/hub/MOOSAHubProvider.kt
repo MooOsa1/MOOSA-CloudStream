@@ -701,10 +701,12 @@ class MOOSAHubProvider : TmdbProvider() {
 
     override suspend fun load(
         url: String
-    ): LoadResponse? = coroutineScope {
+    ): LoadResponse? {
         val base =
-            super@MOOSAHubProvider.load(url)
-                ?: return@coroutineScope null
+            super.load(url)
+                ?: return null
+
+        return coroutineScope {
 
         val imdbId = base.getImdbId()
         val tmdbMatch =
@@ -815,6 +817,7 @@ class MOOSAHubProvider : TmdbProvider() {
             }
 
             else -> base
+        }
         }
     }
 
