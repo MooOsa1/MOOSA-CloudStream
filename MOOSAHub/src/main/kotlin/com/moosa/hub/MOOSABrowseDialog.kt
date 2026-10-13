@@ -16,6 +16,8 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
+import androidx.navigation.NavController
+import androidx.navigation.fragment.NavHostFragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -45,6 +47,11 @@ class MOOSABrowseDialog : DialogFragment() {
     private var lastPage = 0
     private var hasNext = true
     private var loading = false
+    private var waitingForResult = false
+    private var resultDestinationSeen = false
+    private var returnPosition = 0
+    private var navController: NavController? = null
+    private var destinationListener: NavController.OnDestinationChangedListener? = null
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -175,13 +182,17 @@ class MOOSABrowseDialog : DialogFragment() {
             recycler,
             request.horizontalImages
         ) { callback ->
-            handleSearchClickCallback(callback)
             if (
                 callback.action == SEARCH_ACTION_LOAD ||
                 callback.action == SEARCH_ACTION_PLAY_FILE
             ) {
-                dismissAllowingStateLoss()
+                returnPosition = callback.position.coerceAtLeast(0)
+                waitingForResult = true
+                resultDestinationSeen = false
+                dialog?.hide()
             }
+
+            handleSearchClickCallback(callback)
         }
         recycler.adapter = adapter
         recycler.setRecycledViewPool(SearchAdapter.sharedPool)
@@ -221,6 +232,8 @@ class MOOSABrowseDialog : DialogFragment() {
             dismissAllowingStateLoss()
         }
 
+        installNavigationReturnWatcher()
+
         lifecycleScope.launch {
             loadInitial()
         }
@@ -230,6 +243,66 @@ class MOOSABrowseDialog : DialogFragment() {
             setContentView(root)
             setCanceledOnTouchOutside(true)
         }
+    }
+
+    private fun installNavigationReturnWatcher() {
+        val hostActivity = activity as? AppCompatActivity ?: return
+        val navHostId = hostActivity.resources.getIdentifier(
+            "nav_host_fragment",
+            "id",
+            hostActivity.packageName
+        )
+        if (navHostId == 0) return
+
+        val host = hostActivity.supportFragmentManager
+            .findFragmentById(navHostId) as? NavHostFragment
+            ?: return
+
+        val controller = host.navController
+        navController = controller
+
+        val listener = NavController.OnDestinationChangedListener {
+                _, destination, _ ->
+            if (!waitingForResult) {
+                return@OnDestinationChangedListener
+            }
+
+            val entryName = try {
+                hostActivity.resources.getResourceEntryName(destination.id)
+            } catch (_: Throwable) {
+                ""
+            }.lowercase()
+
+            val isResultDestination =
+                "result" in entryName || "navigation_results" in entryName
+
+            if (isResultDestination) {
+                resultDestinationSeen = true
+            } else if (resultDestinationSeen) {
+                waitingForResult = false
+                resultDestinationSeen = false
+
+                dialog?.show()
+                recycler.post {
+                    recycler.scrollToPosition(returnPosition)
+                    recycler.layoutManager
+                        ?.findViewByPosition(returnPosition)
+                        ?.requestFocus()
+                }
+            }
+        }
+
+        destinationListener = listener
+        controller.addOnDestinationChangedListener(listener)
+    }
+
+    override fun onDestroy() {
+        destinationListener?.let { listener ->
+            navController?.removeOnDestinationChangedListener(listener)
+        }
+        destinationListener = null
+        navController = null
+        super.onDestroy()
     }
 
     override fun onStart() {
