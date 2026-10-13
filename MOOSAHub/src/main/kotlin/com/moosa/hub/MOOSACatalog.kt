@@ -62,6 +62,7 @@ object MOOSACatalog {
         @JsonProperty("original_title") val originalTitle: String? = null,
         @JsonProperty("name") val name: String? = null,
         @JsonProperty("original_name") val originalName: String? = null,
+        @JsonProperty("original_language") val originalLanguage: String? = null,
         @JsonProperty("poster_path") val posterPath: String? = null,
         @JsonProperty("backdrop_path") val backdropPath: String? = null,
         @JsonProperty("release_date") val releaseDate: String? = null,
@@ -71,7 +72,32 @@ object MOOSACatalog {
         @JsonProperty("media_type") val mediaType: String? = null
     ) {
         val displayName: String
-            get() = title ?: name ?: originalTitle ?: originalName ?: ""
+            get() {
+                val original =
+                    originalTitle
+                        ?: originalName
+
+                val localized =
+                    title
+                        ?: name
+
+                return if (
+                    originalLanguage.equals(
+                        "ar",
+                        ignoreCase = true
+                    )
+                ) {
+                    original
+                        ?.takeIf { it.isNotBlank() }
+                        ?: localized
+                        .orEmpty()
+                } else {
+                    localized
+                        ?.takeIf { it.isNotBlank() }
+                        ?: original
+                        .orEmpty()
+                }
+            }
 
         val year: Int?
             get() = (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull()
@@ -81,7 +107,20 @@ object MOOSACatalog {
         @JsonProperty("title") val title: String? = null,
         @JsonProperty("original_title") val originalTitle: String? = null,
         @JsonProperty("name") val name: String? = null,
-        @JsonProperty("original_name") val originalName: String? = null
+        @JsonProperty("original_name") val originalName: String? = null,
+        @JsonProperty("original_language") val originalLanguage: String? = null
+    )
+
+    private data class AlternativeTitles(
+        @JsonProperty("titles")
+        val titles: List<AlternativeTitle> = emptyList(),
+        @JsonProperty("results")
+        val results: List<AlternativeTitle> = emptyList()
+    )
+
+    private data class AlternativeTitle(
+        @JsonProperty("title")
+        val title: String? = null
     )
 
     private suspend fun get(path: String, params: Map<String, String> = emptyMap()): String {
@@ -446,22 +485,61 @@ object MOOSACatalog {
         tmdbId: Int?,
         isTv: Boolean,
         fallback: String
-    ): List<String> {
-        val id = tmdbId ?: return listOf(fallback)
-        val type = if (isTv) "tv" else "movie"
+    ): List<String> = coroutineScope {
+        val id =
+            tmdbId ?: return@coroutineScope listOf(
+                fallback
+            )
 
-        val details = listOf("en-US", "ar-SA").mapNotNull { language ->
+        val type =
+            if (isTv) "tv" else "movie"
+
+        val detailJobs =
+            listOf(
+                "en-US",
+                "ar-SA",
+                "ar",
+                "en"
+            ).map { language ->
+                async {
+                    try {
+                        tryParseJson<AliasDetail>(
+                            get(
+                                "/$type/$id",
+                                mapOf(
+                                    "language" to language
+                                )
+                            )
+                        )
+                    } catch (_: Throwable) {
+                        null
+                    }
+                }
+            }
+
+        val alternativeJob = async {
             try {
-                tryParseJson<AliasDetail>(
-                    get("/$type/$id", mapOf("language" to language))
+                tryParseJson<AlternativeTitles>(
+                    get(
+                        "/$type/$id/alternative_titles"
+                    )
                 )
             } catch (_: Throwable) {
                 null
             }
         }
 
-        return buildList {
+        val details =
+            detailJobs.mapNotNull {
+                it.await()
+            }
+
+        val alternatives =
+            alternativeJob.await()
+
+        buildList {
             add(fallback)
+
             details.forEach { detail ->
                 listOfNotNull(
                     detail.title,
@@ -470,9 +548,25 @@ object MOOSACatalog {
                     detail.originalName
                 ).forEach(::add)
             }
-        }.map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinctBy { it.lowercase() }
-            .take(6)
+
+            alternatives
+                ?.let {
+                    it.titles + it.results
+                }
+                ?.mapNotNull {
+                    it.title
+                }
+                ?.forEach(::add)
+        }
+            .map {
+                it.trim()
+            }
+            .filter {
+                it.isNotBlank()
+            }
+            .distinctBy {
+                it.lowercase()
+            }
+            .take(14)
     }
 }
