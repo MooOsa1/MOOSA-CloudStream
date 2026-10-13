@@ -254,8 +254,16 @@ object MOOSACatalog {
         }
 
         return CatalogPage(
-            items = enriched.mapNotNull {
-                it.toResponse(api, forceTv)
+            items = enriched.mapNotNull { item ->
+                val hasArtwork =
+                    !item.posterPath.isNullOrBlank() ||
+                        !item.backdropPath.isNullOrBlank()
+
+                if (hasArtwork) {
+                    item.toResponse(api, forceTv)
+                } else {
+                    null
+                }
             },
             totalPages =
                 response.totalPages.coerceAtLeast(1)
@@ -265,11 +273,11 @@ object MOOSACatalog {
     val categories = mainPageOf(
         "/trending/movie/week" to "Trending Movies",
         "/trending/tv/week" to "Trending Series",
+        "/movie/top_rated" to "Top Rated Movies",
+        "/tv/top_rated" to "Top Rated Series",
         "/discover/movie?with_original_language=ar&sort_by=popularity.desc" to "Arabic Movies",
         "/discover/tv?with_original_language=ar&sort_by=popularity.desc" to "Arabic Series",
-        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200" to "Top Indian Movies",
-        "/movie/top_rated" to "Top Rated Movies",
-        "/tv/top_rated" to "Top Rated Series"
+        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200" to "Top Indian Movies"
     )
 
     suspend fun home(
