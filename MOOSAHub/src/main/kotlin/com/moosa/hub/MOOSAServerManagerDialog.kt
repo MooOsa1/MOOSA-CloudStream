@@ -444,11 +444,17 @@ class MOOSAServerManagerDialog : DialogFragment() {
     private fun refreshRow(refs: RowRefs) {
         val entry = currentEntry(refs.key) ?: return
         val (text, color) = when (entry.lastResult) {
-            true -> "• ONLINE ✓" to Color.rgb(25, 165, 82)
-            false -> "• OFFLINE ×2" to Color.rgb(205, 58, 62)
-            null -> "• UNKNOWN" to Color.rgb(90, 100, 112)
+            true -> "ONLINE" to Color.rgb(34, 158, 104)
+            false -> "OFFLINE" to Color.rgb(190, 72, 78)
+            null -> "UNKNOWN" to Color.rgb(82, 96, 112)
         }
-        refs.status.text = text
+
+        refs.status.text =
+            if (entry.variants > 1) {
+                "$text • ${entry.variants}"
+            } else {
+                text
+            }
         refs.status.background = rounded(color, 8)
     }
 
@@ -507,44 +513,89 @@ class MOOSAServerManagerDialog : DialogFragment() {
         if (scanRunning) return
         scanRunning = true
 
-        val total = MOOSASourceTester.sources().size.coerceAtLeast(1)
-        val done = AtomicInteger(0)
+        val sourceTotal =
+            MOOSASourceTester.sources().size.coerceAtLeast(1)
+        val sourceDone = AtomicInteger(0)
 
-        progressBar.max = total
+        progressBar.max = sourceTotal
         progressBar.progress = 0
         progressBar.visibility = View.VISIBLE
         progressText.visibility = View.VISIBLE
-        progressText.text = "Sources 0/$total • Servers ${MOOSAServerRegistry.snapshot().size}"
+        progressText.text = "Discovering sources 0/$sourceTotal"
         discoverButton.text = "DISCOVERING…"
 
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
-                MOOSASourceTester.testAll(discoveryDepth = 2) { _, state ->
-                    if (state.status == MOOSASourceTester.Status.TESTING) {
+                MOOSASourceTester.testAll(
+                    discoveryDepth = 2
+                ) { _, state ->
+                    if (
+                        state.status ==
+                        MOOSASourceTester.Status.TESTING
+                    ) {
                         return@testAll
                     }
 
-                    val completed = done.incrementAndGet()
+                    val completed =
+                        sourceDone.incrementAndGet()
+
                     progressBar.post {
+                        progressBar.max = sourceTotal
                         progressBar.progress = completed
                         progressText.text =
-                            "Sources $completed/$total • Servers ${MOOSAServerRegistry.snapshot().size}"
+                            "Discovering $completed/$sourceTotal • " +
+                                "${MOOSAServerRegistry.snapshot().size} servers"
+                    }
+                }
+
+                val serverTotal =
+                    MOOSAServerRegistry.snapshot().size
+
+                progressBar.post {
+                    progressBar.max =
+                        serverTotal.coerceAtLeast(1)
+                    progressBar.progress = 0
+                    progressText.text =
+                        "Testing servers 0/$serverTotal"
+                    discoverButton.text = "TESTING SERVERS…"
+                }
+
+                MOOSAServerRegistry.testAll(
+                    concurrency = 8
+                ) { done, total ->
+                    progressBar.post {
+                        progressBar.max =
+                            total.coerceAtLeast(1)
+                        progressBar.progress = done
+                        progressText.text =
+                            "Testing servers $done/$total"
                     }
                 }
             }
 
             if (isAdded) {
                 scanRunning = false
-                discoverButton.text = "DISCOVER & TEST SERVERS"
-                progressBar.progress = total
+                discoverButton.text =
+                    "DISCOVER & TEST SERVERS"
+
+                val all = MOOSAServerRegistry.snapshot()
+                val online =
+                    all.count { it.lastResult == true }
+                val offline =
+                    all.count { it.lastResult == false }
+
+                progressBar.max =
+                    all.size.coerceAtLeast(1)
+                progressBar.progress = all.size
                 progressText.text =
-                    "Finished • ${MOOSAServerRegistry.snapshot().size} server groups"
+                    "Finished • ${all.size} servers • " +
+                        "$online online • $offline offline"
 
                 rebuildList()
 
                 Toast.makeText(
                     requireContext(),
-                    "Server discovery finished.",
+                    "Server scan finished.",
                     Toast.LENGTH_SHORT
                 ).show()
             }
