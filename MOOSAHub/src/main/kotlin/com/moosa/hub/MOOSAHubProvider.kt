@@ -556,7 +556,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private fun explicitSeasonNumber(value: String): Int? {
         val text = normalizeArabicOrthography(normalizeTitle(value))
-        val markers = Regex("""(?:^|\\s)(?:الموسم|موسم|season|الجزء|جزء|part|ج|s)\\s*([\\p{L}\\d]+)""", RegexOption.IGNORE_CASE)
+        val markers = Regex("""(?:^|\s)(?:الموسم|موسم|season|الجزء|جزء|part|ج|s)\s*([\p{L}\d]+)""", RegexOption.IGNORE_CASE)
         val ordinals = mapOf(
             "الاول" to 1, "الاولى" to 1, "اول" to 1,
             "الثاني" to 2, "الثانيه" to 2, "ثاني" to 2,
