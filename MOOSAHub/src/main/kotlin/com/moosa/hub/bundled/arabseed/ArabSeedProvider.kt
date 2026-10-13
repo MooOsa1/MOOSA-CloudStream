@@ -240,9 +240,9 @@ class ArabSeedProvider : MainAPI() {
                                 name = "${this.name} Stream",
                                 url = absolute
                             ) {
-                                referer = url
-                                quality = Qualities.P720.value
-                                type = ExtractorLinkType.VIDEO
+                                this.referer = url
+                                this.quality = Qualities.P720.value
+                                this.type = ExtractorLinkType.VIDEO
                             }
                         )
                         emitted = true
