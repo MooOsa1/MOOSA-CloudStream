@@ -93,14 +93,19 @@ object MOOSAProgress {
             return
         }
 
-        var rendered = renderPlayerOverlay(act)
+        // Update every visible CloudStream loading surface. Previously the mere
+        // existence of player_loading_overlay short-circuited rendering even
+        // after that overlay became hidden, which could leave the visible
+        // progress UI frozen at 87%.
+        val playerRendered = renderPlayerOverlay(act)
+        val dialogRendered = renderResultLoadingDialog(act)
+        val primaryRendered = playerRendered || dialogRendered
 
-        if (!rendered) {
-            rendered = renderResultLoadingDialog(act)
-        }
-
-        if (!rendered) {
-            rendered = renderActivityFallback(act)
+        val rendered = if (primaryRendered) {
+            hideFallback(act)
+            true
+        } else {
+            renderActivityFallback(act)
         }
 
         if (!rendered) retry(retries)
@@ -122,6 +127,13 @@ object MOOSAProgress {
             if (overlayId == 0) return false
 
             val overlay = act.findViewById<ViewGroup>(overlayId) ?: return false
+            if (
+                overlay.visibility != View.VISIBLE ||
+                !overlay.isShown
+            ) {
+                return false
+            }
+
             val container = findOrCreateContainer(overlay, act)
             applyProgress(container)
             true
@@ -339,6 +351,10 @@ object MOOSAProgress {
         } catch (_: Throwable) {
         }
 
+        hideFallback(act)
+    }
+
+    private fun hideFallback(act: Activity) {
         try {
             act.findViewById<ViewGroup>(android.R.id.content)
                 ?.findViewWithTag<View>(FALLBACK_TAG)
