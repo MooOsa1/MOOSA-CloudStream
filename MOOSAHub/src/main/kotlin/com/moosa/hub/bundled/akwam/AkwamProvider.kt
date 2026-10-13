@@ -83,7 +83,7 @@ class AkwamProvider : MainAPI() {
 
     private fun String.seasonNumber(): Int? {
         val text = normalizedDigits().lowercase()
-        Regex("(?:الموسم|موسم|season|s)[\\s:_-]*(\\d{1,2})", RegexOption.IGNORE_CASE)
+        Regex("(?:الموسم|موسم|season|s|ج|جزء|الجزء)[\\s:_-]*(\\d{1,2})", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
         val words = listOf(
             "الاول" to 1, "الأول" to 1, "الثاني" to 2, "الثالث" to 3,
