@@ -14,7 +14,7 @@ on:
       - "plugins.json"
 
 concurrency:
-  group: cloudstream-build-v6
+  group: cloudstream-build-v7
   cancel-in-progress: true
 
 jobs:
