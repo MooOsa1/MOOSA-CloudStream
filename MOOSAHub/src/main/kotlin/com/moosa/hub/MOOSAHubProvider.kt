@@ -1419,6 +1419,14 @@ class MOOSAHubProvider : TmdbProvider() {
                             "ar",
                             ignoreCase = true
                         ) &&
+                        MOOSAArabicBridge.supports(it)
+                    ) {
+                        2
+                    } else if (
+                        request.originalLanguage.equals(
+                            "ar",
+                            ignoreCase = true
+                        ) &&
                         it.lang.equals(
                             "ar",
                             ignoreCase = true
@@ -1449,7 +1457,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v8",
+        "strict-v9",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -1474,13 +1482,45 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         targetCache[cacheKey]?.let { cached ->
-            if (System.currentTimeMillis() - cached.createdAt < cacheLifetimeMs) {
+            if (
+                System.currentTimeMillis() -
+                    cached.createdAt <
+                    cacheLifetimeMs
+            ) {
                 return cached.target
             }
             targetCache.remove(cacheKey)
         }
 
-        val isSeries = request.season != null && request.episode != null
+        if (
+            request.originalLanguage.equals(
+                "ar",
+                ignoreCase = true
+            ) &&
+            MOOSAArabicBridge.supports(api)
+        ) {
+            val bridged =
+                MOOSAArabicBridge.resolve(
+                    api = api,
+                    request = request,
+                    aliases = aliases
+                )
+
+            if (bridged != null) {
+                targetCache[cacheKey] =
+                    CachedTarget(
+                        createdAt =
+                            System.currentTimeMillis(),
+                        target = bridged
+                    )
+
+                return bridged
+            }
+        }
+
+        val isSeries =
+            request.season != null &&
+                request.episode != null
         val loaded = timed(
             providerResolveTimeoutFor(
                 api,
@@ -2582,21 +2622,44 @@ class MOOSAHubProvider : TmdbProvider() {
     private fun linksTimeoutFor(
         api: MainAPI,
         request: HubPlaybackRequest
-    ): Long =
-        when {
+    ): Long {
+        val label =
+            "${api.name} ${api.mainUrl} ${api.javaClass.name}"
+                .lowercase()
+
+        return when {
             isStreamPlayProvider(api) ->
                 streamPlayLinksTimeoutMs
 
+            "fasel" in label ||
+                "فاصل" in label ->
+                75_000L
+
+            "topcinema" in label ||
+                "top cinema" in label ->
+                55_000L
+
+            "akwam" in label ||
+                "اكوام" in label ->
+                45_000L
+
+            "wecima" in label ||
+                "we cima" in label ||
+                "cimaclub" in label ||
+                "cima club" in label ->
+                45_000L
+
             isArabicProvider(api) &&
                 request.isTv ->
-                35000L
+                40_000L
 
             isArabicProvider(api) ->
-                26000L
+                30_000L
 
             else ->
                 providerLinksTimeoutMs
         }
+    }
 
 
     private suspend fun verifyStreamingLink(link: ExtractorLink): Boolean {
