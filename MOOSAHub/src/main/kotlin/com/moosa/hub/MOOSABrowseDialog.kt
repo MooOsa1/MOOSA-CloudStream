@@ -30,7 +30,6 @@ import com.lagradost.cloudstream3.ui.search.SearchHelper.handleSearchClickCallba
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.lang.reflect.Proxy
 
 class MOOSABrowseDialog : DialogFragment() {
     private lateinit var api: MOOSAHubProvider
@@ -46,11 +45,7 @@ class MOOSABrowseDialog : DialogFragment() {
     private var lastPage = 0
     private var hasNext = true
     private var loading = false
-    private var waitingForResult = false
-    private var resultDestinationSeen = false
-    private var returnPosition = 0
-    private var navController: Any? = null
-    private var destinationListener: Any? = null
+    private var launchingContent = false
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -185,10 +180,8 @@ class MOOSABrowseDialog : DialogFragment() {
                 callback.action == SEARCH_ACTION_LOAD ||
                 callback.action == SEARCH_ACTION_PLAY_FILE
             ) {
-                returnPosition = callback.position.coerceAtLeast(0)
-                waitingForResult = true
-                resultDestinationSeen = false
-                dialog?.hide()
+                launchingContent = true
+                dismissAllowingStateLoss()
             }
 
             handleSearchClickCallback(callback)
@@ -231,8 +224,6 @@ class MOOSABrowseDialog : DialogFragment() {
             dismissAllowingStateLoss()
         }
 
-        installNavigationReturnWatcher()
-
         lifecycleScope.launch {
             loadInitial()
         }
@@ -244,117 +235,11 @@ class MOOSABrowseDialog : DialogFragment() {
         }
     }
 
-    private fun installNavigationReturnWatcher() {
-        val hostActivity = activity as? AppCompatActivity ?: return
-        val navHostId = hostActivity.resources.getIdentifier(
-            "nav_host_fragment",
-            "id",
-            hostActivity.packageName
-        )
-        if (navHostId == 0) return
-
-        val host = hostActivity.supportFragmentManager
-            .findFragmentById(navHostId)
-            ?: return
-
-        val controller = try {
-            host.javaClass.methods
-                .firstOrNull {
-                    it.name == "getNavController" &&
-                        it.parameterCount == 0
-                }
-                ?.invoke(host)
-        } catch (_: Throwable) {
-            null
-        } ?: return
-
-        val listenerClass = try {
-            Class.forName(
-                "androidx.navigation.NavController\$OnDestinationChangedListener"
-            )
-        } catch (_: Throwable) {
-            return
-        }
-
-        val listener = Proxy.newProxyInstance(
-            listenerClass.classLoader,
-            arrayOf(listenerClass)
-        ) { _, method, args ->
-            if (
-                method.name == "onDestinationChanged" &&
-                waitingForResult
-            ) {
-                val destination = args?.getOrNull(1)
-                val destinationId = try {
-                    destination
-                        ?.javaClass
-                        ?.methods
-                        ?.firstOrNull {
-                            it.name == "getId" &&
-                                it.parameterCount == 0
-                        }
-                        ?.invoke(destination) as? Int
-                } catch (_: Throwable) {
-                    null
-                } ?: 0
-
-                val entryName = try {
-                    if (destinationId != 0) {
-                        hostActivity.resources
-                            .getResourceEntryName(destinationId)
-                    } else {
-                        ""
-                    }
-                } catch (_: Throwable) {
-                    ""
-                }.lowercase()
-
-                val isContentDestination =
-                    "result" in entryName ||
-                        "navigation_results" in entryName ||
-                        "navigation_player" in entryName
-
-                val isHomeDestination =
-                    entryName == "navigation_home" ||
-                        entryName.endsWith("_home")
-
-                if (isContentDestination) {
-                    resultDestinationSeen = true
-                } else if (resultDestinationSeen && isHomeDestination) {
-                    waitingForResult = false
-                    resultDestinationSeen = false
-
-                    dialog?.show()
-                    recycler.post {
-                        recycler.scrollToPosition(returnPosition)
-                        recycler.layoutManager
-                            ?.findViewByPosition(returnPosition)
-                            ?.requestFocus()
-                    }
-                }
-            }
-            null
-        }
-
-        try {
-            controller.javaClass.methods
-                .firstOrNull {
-                    it.name == "addOnDestinationChangedListener" &&
-                        it.parameterCount == 1
-                }
-                ?.invoke(controller, listener)
-
-            navController = controller
-            destinationListener = listener
-        } catch (_: Throwable) {
-            navController = null
-            destinationListener = null
-        }
-    }
-
     override fun onDismiss(dialog: android.content.DialogInterface) {
         super.onDismiss(dialog)
-        MOOSASeeAll.restoreFocus(request.name)
+        if (!launchingContent) {
+            MOOSASeeAll.restoreFocus(request.name)
+        }
     }
 
     override fun onDestroy() {
