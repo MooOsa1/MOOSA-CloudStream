@@ -9,7 +9,7 @@ import java.net.URLEncoder
 
 class ArabSeedProvider : MainAPI() {
     override var lang = "ar"
-    override var mainUrl = "https://arabseeds.watch"
+    override var mainUrl = "https://arabseed.sabaq.news"
     override var name = "ArabSeed"
     override val usesWebView = false
     override val hasMainPage = true
@@ -173,7 +173,7 @@ class ArabSeedProvider : MainAPI() {
                     val absolute = el.attr("abs:href").ifEmpty { el.attr("abs:src") }.ifEmpty { fixUrl(raw) }
                     val host = absolute.substringAfter("://", "").substringBefore('/').lowercase()
                     if (absolute.contains(".m3u8") || absolute.contains(".mp4") ||
-                        (host.isNotBlank() && !host.contains("arabseeds.watch"))
+                        (host.isNotBlank() && !host.contains("arabseed.sabaq.news"))
                     ) links.add(absolute)
                 }
                 for (link in links) {
