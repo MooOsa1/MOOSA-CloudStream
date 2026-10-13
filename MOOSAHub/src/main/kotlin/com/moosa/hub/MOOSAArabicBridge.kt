@@ -84,6 +84,10 @@ internal object MOOSAArabicBridge {
     private fun cleanIdentity(value: String): String =
         normalize(value)
             .replace(
+                Regex("""(?:الموسم|موسم|season)\s*\d+"""),
+                " "
+            )
+            .replace(
                 Regex(
                     """(^|\s)(?:فيلم|مسلسل|مسلسلات|مشاهده|تحميل|مترجم|مدبلج|كامل|اونلاين|اون لاين)(?=\s|$)"""
                 ),
@@ -126,6 +130,20 @@ internal object MOOSAArabicBridge {
             val a = cleanIdentity(alias)
             if (a.isBlank()) return@forEach
 
+            fun identityNumbers(value: String): Set<String> =
+                Regex("""\b\d+\b""")
+                    .findAll(value)
+                    .map { it.value }
+                    .filterNot {
+                        val number = it.toIntOrNull()
+                        number != null && number in 1900..2099
+                    }
+                    .toSet()
+
+            if (identityNumbers(c) != identityNumbers(a)) {
+                return@forEach
+            }
+
             if (c == a) {
                 best = maxOf(best, 100)
                 return@forEach
@@ -142,34 +160,7 @@ internal object MOOSAArabicBridge {
             val maxSize = maxOf(cw.size, aw.size)
 
             if (common == minSize && (maxSize == minSize || common >= 2 && maxSize <= minSize + 1)) {
-                val numericA =
-                    Regex("""\b\d+\b""")
-                        .findAll(a)
-                        .map { it.value }
-                        .toSet()
-
-                val numericC =
-                    Regex("""\b\d+\b""")
-                        .findAll(c)
-                        .map { it.value }
-                        .toSet()
-
-                val numberPenalty =
-                    if (
-                        numericA.isNotEmpty() &&
-                        numericC.isNotEmpty() &&
-                        numericA.intersect(numericC).isEmpty()
-                    ) {
-                        25
-                    } else {
-                        0
-                    }
-
-                best =
-                    maxOf(
-                        best,
-                        92 - numberPenalty
-                    )
+                best = maxOf(best, 92)
             } else {
                 val ratio =
                     common.toDouble() /
@@ -287,30 +278,7 @@ internal object MOOSAArabicBridge {
                 .filter { it > 0 }
                 .distinct()
 
-        if (knownSeasons.isNotEmpty()) {
-            return null
-        }
-
-        val seasonIsProven =
-            season == 1 ||
-                Regex(
-                    """(?:الموسم|season)\s*$season\b""",
-                    RegexOption.IGNORE_CASE
-                ).containsMatchIn(
-                    normalize(candidateTitle)
-                ) ||
-                aliases.any {
-                    val n = normalize(it)
-                    n.contains(
-                        Regex("""\b$season\b""")
-                    ) &&
-                        scoreTitle(
-                            candidateTitle,
-                            listOf(it)
-                        ) >= 90
-                }
-
-        if (!seasonIsProven) {
+        if (knownSeasons.isNotEmpty() || season != 1) {
             return null
         }
 
@@ -428,7 +396,7 @@ internal object MOOSAArabicBridge {
                     if (
                         scoreTitle(
                             series.name,
-                            aliases + query
+                            aliases
                         ) < 88
                     ) {
                         MOOSAPlaybackDiagnostics.update(
@@ -464,7 +432,7 @@ internal object MOOSAArabicBridge {
                             request = request,
                             candidateTitle =
                                 candidate.name,
-                            aliases = aliases + query
+                            aliases = aliases
                         )
 
                     if (data.isNullOrBlank()) {
@@ -502,7 +470,7 @@ internal object MOOSAArabicBridge {
                     !movieMatches(
                         movie,
                         request,
-                        aliases + query
+                        aliases
                     )
                 ) {
                     MOOSAPlaybackDiagnostics.update(
