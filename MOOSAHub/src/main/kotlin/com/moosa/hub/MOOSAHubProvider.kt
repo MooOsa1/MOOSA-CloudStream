@@ -131,6 +131,16 @@ class MOOSAHubProvider : TmdbProvider() {
     private data class TmdbDetail(
         @JsonProperty("overview")
         val overview: String? = null,
+        @JsonProperty("title")
+        val title: String? = null,
+        @JsonProperty("name")
+        val name: String? = null,
+        @JsonProperty("original_title")
+        val originalTitle: String? = null,
+        @JsonProperty("original_name")
+        val originalName: String? = null,
+        @JsonProperty("original_language")
+        val originalLanguage: String? = null,
         @JsonProperty("poster_path")
         val posterPath: String? = null,
         @JsonProperty("backdrop_path")
@@ -1098,6 +1108,36 @@ class MOOSAHubProvider : TmdbProvider() {
         val detail = detailJob.await()
         val effectiveImdbId = imdbJob.await()
         val arabicOverview = synopsisJob.await()
+
+        detail?.let { meta ->
+            val originalName =
+                meta.originalTitle
+                    ?: meta.originalName
+
+            val localizedName =
+                meta.title
+                    ?: meta.name
+
+            val preferredName =
+                if (
+                    meta.originalLanguage.equals(
+                        "ar",
+                        ignoreCase = true
+                    )
+                ) {
+                    originalName
+                        ?.takeIf { it.isNotBlank() }
+                        ?: localizedName
+                } else {
+                    localizedName
+                        ?.takeIf { it.isNotBlank() }
+                        ?: originalName
+                }
+
+            if (!preferredName.isNullOrBlank()) {
+                base.name = preferredName
+            }
+        }
 
         if (!arabicOverview.isNullOrBlank()) {
             base.plot = arabicOverview
