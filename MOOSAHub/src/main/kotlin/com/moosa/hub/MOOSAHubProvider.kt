@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.getImdbId
+import com.lagradost.cloudstream3.LoadResponse.Companion.getTMDbId
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.MovieLoadResponse
@@ -39,6 +40,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONArray
+import kotlin.math.abs
 
 class MOOSAHubProvider : TmdbProvider() {
     override var name = "MOOSA Hub"
@@ -205,12 +207,12 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private val cacheLifetimeMs = 20 * 60 * 1000L
     private val subtitleCacheLifetimeMs = 15 * 60 * 1000L
-    private val providerResolveTimeoutMs = 10000L
-    private val providerLinksTimeoutMs = 12000L
+    private val providerResolveTimeoutMs = 18000L
+    private val providerLinksTimeoutMs = 16000L
     private val streamPlayLinksTimeoutMs = 24000L
     private val subtitleTimeoutMs = 2200L
     private val fastSubtitleTimeoutMs = 1350L
-    private val linkProbeTimeoutMs = 2800L
+    private val linkProbeTimeoutMs = 10500L
     private val linkProbeBatchSize = 10
 
     private val tmdbApiKey = "e6333b32409e02a4a6eba6fb7ff866bb"
@@ -241,65 +243,147 @@ class MOOSAHubProvider : TmdbProvider() {
         else -> null
     }
 
-    private fun titleMatchScore(
+    private fun exactTitleMatch(
         candidate: String,
         aliases: List<String>
-    ): Int {
+    ): Boolean {
         val normalized = normalizeTitle(candidate)
-        if (normalized.isBlank()) return 0
+        if (normalized.isBlank()) return false
 
-        return aliases.maxOfOrNull { alias ->
+        return aliases.any { alias ->
             val wanted = normalizeTitle(alias)
-            if (wanted.isBlank()) {
-                0
-            } else when {
-                normalized == wanted -> 100
-                wanted.length >= 5 &&
-                    (normalized.contains(wanted) || wanted.contains(normalized)) -> 65
-                else -> 0
-            }
-        } ?: 0
-    }
-
-    private fun contentMatchScore(
-        candidateName: String,
-        candidateYear: Int?,
-        aliases: List<String>,
-        wantedYear: Int?
-    ): Int {
-        val titleScore = titleMatchScore(candidateName, aliases)
-        if (titleScore == 0) return 0
-
-        return when {
-            wantedYear != null && candidateYear != null && wantedYear == candidateYear ->
-                titleScore + 25
-            wantedYear != null && candidateYear != null && wantedYear != candidateYear ->
-                titleScore - 60
-            else -> titleScore
+            wanted.isNotBlank() &&
+                normalized == wanted
         }
     }
 
-    private fun aliasScore(
+    private fun yearCompatible(
+        candidateYear: Int?,
+        wantedYear: Int?
+    ): Boolean {
+        if (
+            candidateYear == null ||
+            wantedYear == null
+        ) {
+            return true
+        }
+
+        return abs(candidateYear - wantedYear) <= 1
+    }
+
+    private fun searchTypeMatches(
+        result: SearchResponse,
+        wantSeries: Boolean
+    ): Boolean {
+        if (wantSeries) {
+            if (result is TvSeriesSearchResponse) {
+                return true
+            }
+
+            return result.type in setOf(
+                TvType.TvSeries,
+                TvType.Cartoon,
+                TvType.Anime,
+                TvType.OVA,
+                TvType.AsianDrama
+            )
+        }
+
+        if (result is MovieSearchResponse) {
+            return true
+        }
+
+        return result.type in setOf(
+            TvType.Movie,
+            TvType.AnimeMovie,
+            TvType.Documentary
+        )
+    }
+
+    private fun strictSearchScore(
         result: SearchResponse,
         aliases: List<String>,
-        year: Int?
-    ): Int = contentMatchScore(
-        candidateName = result.name,
-        candidateYear = resultYear(result),
-        aliases = aliases,
-        wantedYear = year
-    )
+        year: Int?,
+        wantSeries: Boolean
+    ): Int {
+        if (!searchTypeMatches(result, wantSeries)) {
+            return 0
+        }
 
-    private fun loadedScore(
+        if (!exactTitleMatch(result.name, aliases)) {
+            return 0
+        }
+
+        val candidateYear = resultYear(result)
+        if (!yearCompatible(candidateYear, year)) {
+            return 0
+        }
+
+        return when {
+            year != null &&
+                candidateYear != null &&
+                candidateYear == year -> 130
+
+            year != null &&
+                candidateYear != null -> 115
+
+            else -> 100
+        }
+    }
+
+    private fun loadedIdentityMatches(
         result: LoadResponse,
-        aliases: List<String>,
-        year: Int?
-    ): Int = contentMatchScore(
-        candidateName = result.name,
-        candidateYear = result.year,
-        aliases = aliases,
-        wantedYear = year
-    )
+        request: HubPlaybackRequest,
+        aliases: List<String>
+    ): Boolean {
+        val loadedImdb = result.getImdbId()
+        val loadedTmdb =
+            result.getTMDbId()?.toIntOrNull()
+
+        if (
+            !request.imdbId.isNullOrBlank() &&
+            !loadedImdb.isNullOrBlank() &&
+            !loadedImdb.equals(
+                request.imdbId,
+                ignoreCase = true
+            )
+        ) {
+            return false
+        }
+
+        if (
+            request.tmdbId != null &&
+            loadedTmdb != null &&
+            loadedTmdb != request.tmdbId
+        ) {
+            return false
+        }
+
+        val idMatched =
+            (
+                !request.imdbId.isNullOrBlank() &&
+                    !loadedImdb.isNullOrBlank() &&
+                    loadedImdb.equals(
+                        request.imdbId,
+                        ignoreCase = true
+                    )
+                ) ||
+                (
+                    request.tmdbId != null &&
+                        loadedTmdb != null &&
+                        loadedTmdb == request.tmdbId
+                    )
+
+        if (idMatched) return true
+
+        return exactTitleMatch(
+            result.name,
+            aliases
+        ) && yearCompatible(
+            result.year,
+            request.year
+        )
+    }
 
     private suspend fun searchProvider(
         api: MainAPI,
@@ -307,26 +391,70 @@ class MOOSAHubProvider : TmdbProvider() {
         year: Int?,
         wantSeries: Boolean
     ): List<SearchResponse> {
-        val results = mutableListOf<SearchResponse>()
+        val cleanAliases = aliases
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy(::normalizeTitle)
+            .take(6)
 
-        for (alias in aliases.take(3)) {
-            val page = timed(2300L) {
-                api.search(alias, 1)?.items.orEmpty()
+        val queryVariants = buildList {
+            cleanAliases.forEach { alias ->
+                add(alias)
+                if (year != null) {
+                    add("$alias $year")
+                }
+            }
+        }.distinct().take(8)
+
+        val results =
+            mutableListOf<SearchResponse>()
+
+        for ((index, query) in queryVariants.withIndex()) {
+            val first = timed(3400L) {
+                api.search(query, 1)
+                    ?.items
+                    .orEmpty()
             }.orEmpty()
 
-            results += page
+            results += first
 
-            val strongMatch = page.any { result ->
-                (
-                    (wantSeries && result is TvSeriesSearchResponse) ||
-                        (!wantSeries && result is MovieSearchResponse)
-                    ) && aliasScore(result, aliases, year) >= 90
+            val hasStrict = first.any {
+                strictSearchScore(
+                    it,
+                    aliases,
+                    year,
+                    wantSeries
+                ) >= 100
             }
 
-            if (strongMatch) break
+            if (hasStrict) break
+
+            if (index < 2) {
+                val second = timed(3200L) {
+                    api.search(query, 2)
+                        ?.items
+                        .orEmpty()
+                }.orEmpty()
+
+                results += second
+
+                if (
+                    second.any {
+                        strictSearchScore(
+                            it,
+                            aliases,
+                            year,
+                            wantSeries
+                        ) >= 100
+                    }
+                ) {
+                    break
+                }
+            }
         }
 
-        return results.distinctBy { it.url }
+        return results
+            .distinctBy { it.url }
     }
 
     private suspend fun loadBestMatch(
@@ -334,32 +462,47 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         aliases: List<String>
     ): LoadResponse? {
-        val wantSeries = request.season != null && request.episode != null
+        val wantSeries =
+            request.season != null &&
+                request.episode != null
 
-        fun correctType(response: LoadResponse?): Boolean =
-            (!wantSeries && response is MovieLoadResponse) ||
-                (wantSeries && response is TvSeriesLoadResponse)
+        fun correctType(
+            response: LoadResponse?
+        ): Boolean =
+            if (wantSeries) {
+                response is TvSeriesLoadResponse
+            } else {
+                response is MovieLoadResponse
+            }
 
         if (
             !request.imdbId.isNullOrBlank() &&
-            api.supportedSyncNames.contains(SyncIdName.Imdb)
+            api.supportedSyncNames.contains(
+                SyncIdName.Imdb
+            )
         ) {
-            val directUrl = timed(1200L) {
-                api.getLoadUrl(SyncIdName.Imdb, request.imdbId)
+            val directUrl = timed(1800L) {
+                api.getLoadUrl(
+                    SyncIdName.Imdb,
+                    request.imdbId
+                )
             }
-            if (!directUrl.isNullOrBlank()) {
-                val direct = timed(3000L) { api.load(directUrl) }
-                if (correctType(direct) && direct != null) {
-                    val loadedImdb = direct.getImdbId()
-                    val imdbMatches =
-                        !loadedImdb.isNullOrBlank() &&
-                            loadedImdb.equals(request.imdbId, ignoreCase = true)
-                    val titleMatches =
-                        loadedScore(direct, aliases, request.year) >= 90
 
-                    if (imdbMatches || (loadedImdb.isNullOrBlank() && titleMatches)) {
-                        return direct
-                    }
+            if (!directUrl.isNullOrBlank()) {
+                val direct = timed(4500L) {
+                    api.load(directUrl)
+                }
+
+                if (
+                    correctType(direct) &&
+                    direct != null &&
+                    loadedIdentityMatches(
+                        direct,
+                        request,
+                        aliases
+                    )
+                ) {
+                    return direct
                 }
             }
         }
@@ -371,24 +514,37 @@ class MOOSAHubProvider : TmdbProvider() {
             wantSeries = wantSeries
         )
             .asSequence()
-            .filter { result ->
-                if (wantSeries) {
-                    result is TvSeriesSearchResponse
-                } else {
-                    result is MovieSearchResponse
-                }
+            .map {
+                it to strictSearchScore(
+                    it,
+                    aliases,
+                    request.year,
+                    wantSeries
+                )
             }
-            .map { it to aliasScore(it, aliases, request.year) }
-            .filter { (_, score) -> score >= 90 }
-            .sortedByDescending { (_, score) -> score }
-            .take(3)
+            .filter { (_, score) ->
+                score >= 100
+            }
+            .sortedByDescending {
+                (_, score) -> score
+            }
+            .take(6)
             .toList()
 
         for ((match, _) in candidates) {
-            val loaded = timed(3000L) { api.load(match.url) } ?: continue
+            val loaded = timed(4500L) {
+                api.load(match.url)
+            } ?: continue
+
             if (!correctType(loaded)) continue
 
-            if (loadedScore(loaded, aliases, request.year) >= 90) {
+            if (
+                loadedIdentityMatches(
+                    loaded,
+                    request,
+                    aliases
+                )
+            ) {
                 return loaded
             }
         }
@@ -422,6 +578,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
+        "strict-v2",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         normalizeTitle(request.title),
