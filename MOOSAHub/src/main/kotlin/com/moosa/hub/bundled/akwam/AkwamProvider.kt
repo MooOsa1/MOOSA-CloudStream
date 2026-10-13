@@ -66,11 +66,15 @@ class AkwamProvider : MainAPI() {
             .mapNotNull { it.toSearchResponse() }
     }
 
-    private fun String.normalizedDigits(): String = map {
-        when (it) {
-            '٠', '۰' -> '0'; '١', '۱' -> '1'; '٢', '۲' -> '2'; '٣', '۳' -> '3'
-            '٤', '۴' -> '4'; '٥', '۵' -> '5'; '٦', '۶' -> '6'; '٧', '۷' -> '7'
-            '٨', '۸' -> '8'; '٩', '۹' -> '9'; else -> it
+    private fun String.normalizedDigits(): String = buildString {
+        for (digit in this@normalizedDigits) {
+            append(
+                when (digit) {
+                    '٠', '۰' -> '0'; '١', '۱' -> '1'; '٢', '۲' -> '2'; '٣', '۳' -> '3'
+                    '٤', '۴' -> '4'; '٥', '۵' -> '5'; '٦', '۶' -> '6'; '٧', '۷' -> '7'
+                    '٨', '۸' -> '8'; '٩', '۹' -> '9'; else -> digit
+                }
+            )
         }
     }
 
