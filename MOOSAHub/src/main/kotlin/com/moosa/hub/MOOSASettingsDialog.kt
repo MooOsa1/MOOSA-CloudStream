@@ -3,6 +3,7 @@ package com.moosa.hub
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
@@ -20,6 +21,13 @@ import androidx.fragment.app.DialogFragment
 class MOOSASettingsDialog : DialogFragment() {
     private val cards = mutableListOf<View>()
 
+    private val bg = Color.rgb(10, 20, 31)
+    private val panel = Color.rgb(22, 34, 48)
+    private val panelFocus = Color.rgb(29, 71, 108)
+    private val accent = Color.rgb(64, 151, 220)
+    private val primary = Color.WHITE
+    private val secondary = Color.rgb(174, 191, 207)
+
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
@@ -35,23 +43,24 @@ class MOOSASettingsDialog : DialogFragment() {
             stroke?.let { setStroke(dp(strokeDp), it) }
         }
 
-    private fun label(
+    private fun text(
         value: String,
         size: Float,
-        color: Int = Color.WHITE,
+        color: Int = primary,
         bold: Boolean = false
     ) = TextView(requireContext()).apply {
         text = value
         textSize = size
         setTextColor(color)
-        if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+        if (bold) {
+            setTypeface(typeface, Typeface.BOLD)
+        }
     }
 
     private fun card(
         icon: String,
         title: String,
-        description: String,
-        baseColor: Int,
+        subtitle: String,
         action: () -> Unit
     ): View {
         val context = requireContext()
@@ -60,51 +69,65 @@ class MOOSASettingsDialog : DialogFragment() {
             id = View.generateViewId()
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(13), dp(9), dp(12), dp(9))
+            setPadding(dp(12), dp(9), dp(12), dp(9))
             isFocusable = true
             isFocusableInTouchMode = false
             isClickable = true
             background = rounded(
-                baseColor,
-                14,
-                Color.argb(80, 255, 255, 255)
+                panel,
+                12,
+                Color.argb(65, 255, 255, 255)
             )
 
             val iconView = TextView(context).apply {
                 text = icon
-                textSize = 21f
+                textSize = 18f
                 gravity = Gravity.CENTER
-                setTextColor(Color.WHITE)
+                setTextColor(primary)
+                setTypeface(typeface, Typeface.BOLD)
                 background = rounded(
-                    Color.argb(115, 255, 255, 255),
-                    999
+                    Color.rgb(31, 88, 132),
+                    10
                 )
             }
             addView(
                 iconView,
-                LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                LinearLayout.LayoutParams(
+                    dp(40),
+                    dp(40)
+                ).apply {
                     marginEnd = dp(10)
                 }
             )
 
-            val textHolder = LinearLayout(context).apply {
+            val holder = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
             }
-            textHolder.addView(
-                label(title, 16f, Color.WHITE, true)
+
+            holder.addView(
+                text(
+                    title,
+                    15.5f,
+                    primary,
+                    true
+                )
             )
-            textHolder.addView(
-                label(
-                    description,
+            holder.addView(
+                text(
+                    subtitle,
                     11.5f,
-                    Color.rgb(210, 225, 240)
+                    secondary
                 ).apply {
-                    setPadding(0, dp(3), 0, 0)
-                    maxLines = 2
+                    maxLines = 1
+                    ellipsize =
+                        android.text.TextUtils.TruncateAt.END
+                    setPadding(0, dp(2), 0, 0)
                 }
             )
+
             addView(
-                textHolder,
+                holder,
                 LinearLayout.LayoutParams(
                     0,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -112,17 +135,32 @@ class MOOSASettingsDialog : DialogFragment() {
                 )
             )
 
-            setOnClickListener { action() }
+            val arrow = text(
+                "›",
+                24f,
+                Color.rgb(155, 191, 220),
+                true
+            )
+            addView(
+                arrow,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            setOnClickListener {
+                action()
+            }
 
             setOnFocusChangeListener { view, focused ->
-                view.scaleX = if (focused) 1.02f else 1f
-                view.scaleY = if (focused) 1.02f else 1f
+                view.scaleX = if (focused) 1.015f else 1f
+                view.scaleY = if (focused) 1.015f else 1f
                 view.background = rounded(
-                    if (focused) Color.rgb(42, 117, 190)
-                    else baseColor,
-                    14,
-                    if (focused) Color.WHITE
-                    else Color.argb(80, 255, 255, 255),
+                    if (focused) panelFocus else panel,
+                    12,
+                    if (focused) accent
+                    else Color.argb(65, 255, 255, 255),
                     if (focused) 2 else 1
                 )
             }
@@ -138,77 +176,105 @@ class MOOSASettingsDialog : DialogFragment() {
             orientation = LinearLayout.HORIZONTAL
         }
 
+        val height = dp(66)
+
         row.addView(
             left,
             LinearLayout.LayoutParams(
                 0,
-                dp(72),
+                height,
                 1f
             ).apply {
-                marginEnd = dp(6)
-                bottomMargin = dp(8)
+                marginEnd = dp(5)
+                bottomMargin = dp(7)
             }
         )
+
         row.addView(
             right,
             LinearLayout.LayoutParams(
                 0,
-                dp(92),
+                height,
                 1f
             ).apply {
-                marginStart = dp(6)
-                bottomMargin = dp(8)
+                marginStart = dp(5)
+                bottomMargin = dp(7)
             }
         )
+
         container.addView(row)
     }
 
-    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
+    override fun onCreateDialog(
+        savedInstanceState: Bundle?
+    ): Dialog {
         val context = requireContext()
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(16))
+            setPadding(
+                dp(17),
+                dp(14),
+                dp(17),
+                dp(15)
+            )
             background = rounded(
-                Color.rgb(12, 36, 62),
-                20,
-                Color.rgb(88, 165, 225),
-                2
+                bg,
+                18,
+                Color.rgb(56, 102, 137),
+                1
             )
         }
 
         root.addView(
-            label("MOOSA HUB", 13f, Color.rgb(145, 215, 255), true)
+            text(
+                "MOOSA HUB",
+                11.5f,
+                accent,
+                true
+            )
         )
+
         root.addView(
-            label("Settings", 25f, Color.WHITE, true).apply {
-                setPadding(0, dp(2), 0, dp(14))
+            text(
+                "Settings",
+                24f,
+                primary,
+                true
+            ).apply {
+                setPadding(
+                    0,
+                    dp(1),
+                    0,
+                    dp(11)
+                )
             }
         )
 
         val sources = card(
-            "☰",
+            "S",
             "Sources",
-            "Enable and accurately test providers",
-            Color.rgb(22, 85, 125)
+            sourceSummary()
         ) {
-            MOOSASourceTesterDialog.show(requireContext())
+            MOOSASourceTesterDialog.show(
+                requireContext()
+            )
         }
 
         val servers = card(
             "◉",
             "Servers",
-            "Discover and test final stream servers",
-            Color.rgb(40, 72, 128)
+            serverSummary()
         ) {
-            MOOSAServerManagerDialog.show(requireContext())
+            MOOSAServerManagerDialog.show(
+                requireContext()
+            )
         }
 
         val performance = card(
-            "◴",
+            "⚡",
             "Performance",
-            "Set provider concurrency",
-            Color.rgb(74, 69, 125)
+            "${MOOSASettingsStore.providerConcurrency()} simultaneous providers"
         ) {
             openPerformance()
         }
@@ -216,17 +282,15 @@ class MOOSASettingsDialog : DialogFragment() {
         val playback = card(
             "▶",
             "Playback",
-            "Verification and Arabic fast mode",
-            Color.rgb(31, 103, 97)
+            playbackSummary()
         ) {
             openPlaybackOptions()
         }
 
         val subtitles = card(
-            "ع",
+            "CC",
             "Subtitles",
-            "Wyzie and SubDL integrations",
-            Color.rgb(102, 72, 108)
+            subtitleSummary()
         ) {
             openSubtitleSources()
         }
@@ -234,8 +298,7 @@ class MOOSASettingsDialog : DialogFragment() {
         val close = card(
             "×",
             "Close",
-            "Apply settings and return",
-            Color.rgb(75, 75, 82)
+            "Return to CloudStream"
         ) {
             dismiss()
         }
@@ -255,12 +318,16 @@ class MOOSASettingsDialog : DialogFragment() {
 
         wireFocus()
 
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
+        android.os.Handler(
+            android.os.Looper.getMainLooper()
+        ).post {
             sources.requestFocus()
         }
 
         return Dialog(context).apply {
-            requestWindowFeature(Window.FEATURE_NO_TITLE)
+            requestWindowFeature(
+                Window.FEATURE_NO_TITLE
+            )
             setContentView(root)
             setCanceledOnTouchOutside(true)
         }
@@ -268,14 +335,73 @@ class MOOSASettingsDialog : DialogFragment() {
 
     override fun onStart() {
         super.onStart()
+
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
-                (metrics.widthPixels * 0.72f).toInt(),
+                (metrics.widthPixels * 0.68f).toInt(),
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            setBackgroundDrawableResource(android.R.color.transparent)
+            setBackgroundDrawableResource(
+                android.R.color.transparent
+            )
         }
+    }
+
+    private fun sourceSummary(): String {
+        val all = MOOSASourceTester.sources()
+        val enabled = all.count {
+            MOOSASourceTester.isEnabled(it)
+        }
+        return "$enabled / ${all.size} enabled"
+    }
+
+    private fun serverSummary(): String {
+        val all = MOOSAServerRegistry.snapshot()
+        if (all.isEmpty()) {
+            return "No scan yet"
+        }
+
+        val online = all.count {
+            it.lastResult == true
+        }
+        return "${all.size} servers • $online online"
+    }
+
+    private fun playbackSummary(): String {
+        val verify =
+            if (MOOSASettingsStore.verifyLinks()) {
+                "Verify on"
+            } else {
+                "Verify off"
+            }
+
+        val arabic =
+            if (MOOSASettingsStore.arabicFastMode()) {
+                "Arabic fast"
+            } else {
+                "Arabic normal"
+            }
+
+        return "$verify • $arabic"
+    }
+
+    private fun subtitleSummary(): String {
+        val wyzie =
+            if (MOOSASettingsStore.wyzieKey() != null) {
+                "Wyzie on"
+            } else {
+                "Wyzie off"
+            }
+
+        val subDl =
+            if (MOOSASettingsStore.subdlKey() != null) {
+                "SubDL on"
+            } else {
+                "SubDL off"
+            }
+
+        return "$wyzie • $subDl"
     }
 
     private fun wireFocus() {
@@ -310,15 +436,22 @@ class MOOSASettingsDialog : DialogFragment() {
     }
 
     private fun openPerformance() {
-        val values = intArrayOf(4, 6, 8, 10, 12, 16)
+        val values =
+            intArrayOf(4, 6, 8, 10, 12, 16)
+
         val labels = values
-            .map { "$it simultaneous providers" }
+            .map {
+                "$it simultaneous providers"
+            }
             .toTypedArray()
 
-        val current = MOOSASettingsStore.providerConcurrency()
-        val selected = values.indexOf(current)
-            .takeIf { it >= 0 }
-            ?: 3
+        val current =
+            MOOSASettingsStore.providerConcurrency()
+
+        val selected =
+            values.indexOf(current)
+                .takeIf { it >= 0 }
+                ?: 3
 
         AlertDialog.Builder(requireContext())
             .setTitle("Performance")
@@ -326,15 +459,23 @@ class MOOSASettingsDialog : DialogFragment() {
                 labels,
                 selected
             ) { dialog, which ->
-                MOOSASettingsStore.setProviderConcurrency(values[which])
+                MOOSASettingsStore
+                    .setProviderConcurrency(
+                        values[which]
+                    )
+
                 Toast.makeText(
                     requireContext(),
-                    "Saved: ${values[which]} simultaneous providers",
+                    "Saved: ${values[which]} providers",
                     Toast.LENGTH_SHORT
                 ).show()
+
                 dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(
+                "Cancel",
+                null
+            )
             .show()
     }
 
@@ -343,6 +484,7 @@ class MOOSASettingsDialog : DialogFragment() {
             "Verify stream links before showing them",
             "Fast Arabic subtitle mode"
         )
+
         val checked = booleanArrayOf(
             MOOSASettingsStore.verifyLinks(),
             MOOSASettingsStore.arabicFastMode()
@@ -356,16 +498,29 @@ class MOOSASettingsDialog : DialogFragment() {
             ) { _, which, enabled ->
                 checked[which] = enabled
             }
-            .setPositiveButton("Save") { _, _ ->
-                MOOSASettingsStore.setVerifyLinks(checked[0])
-                MOOSASettingsStore.setArabicFastMode(checked[1])
+            .setPositiveButton(
+                "Save"
+            ) { _, _ ->
+                MOOSASettingsStore
+                    .setVerifyLinks(
+                        checked[0]
+                    )
+
+                MOOSASettingsStore
+                    .setArabicFastMode(
+                        checked[1]
+                    )
+
                 Toast.makeText(
                     requireContext(),
                     "Playback settings saved",
                     Toast.LENGTH_SHORT
                 ).show()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(
+                "Cancel",
+                null
+            )
             .show()
     }
 
@@ -382,26 +537,42 @@ class MOOSASettingsDialog : DialogFragment() {
                 when (which) {
                     0 -> editKey(
                         title = "Wyzie Key",
-                        current = MOOSASettingsStore.wyzieKey(),
-                        onSave = MOOSASettingsStore::setWyzieKey
+                        current =
+                            MOOSASettingsStore.wyzieKey(),
+                        onSave =
+                            MOOSASettingsStore::setWyzieKey
                     )
+
                     1 -> editKey(
                         title = "SubDL Key",
-                        current = MOOSASettingsStore.subdlKey(),
-                        onSave = MOOSASettingsStore::setSubdlKey
+                        current =
+                            MOOSASettingsStore.subdlKey(),
+                        onSave =
+                            MOOSASettingsStore::setSubdlKey
                     )
+
                     2 -> {
-                        AlertDialog.Builder(requireContext())
-                            .setTitle("Arabic subtitle priority")
+                        AlertDialog.Builder(
+                            requireContext()
+                        )
+                            .setTitle(
+                                "Arabic subtitle priority"
+                            )
                             .setMessage(
                                 "Arabic subtitles are requested first and emitted before English whenever available."
                             )
-                            .setPositiveButton("OK", null)
+                            .setPositiveButton(
+                                "OK",
+                                null
+                            )
                             .show()
                     }
                 }
             }
-            .setNegativeButton("Close", null)
+            .setNegativeButton(
+                "Close",
+                null
+            )
             .show()
     }
 
@@ -410,7 +581,9 @@ class MOOSASettingsDialog : DialogFragment() {
         current: String?,
         onSave: (String?) -> Unit
     ) {
-        val input = EditText(requireContext()).apply {
+        val input = EditText(
+            requireContext()
+        ).apply {
             hint = title
             setSingleLine(true)
             setText(current.orEmpty())
@@ -419,30 +592,49 @@ class MOOSASettingsDialog : DialogFragment() {
         AlertDialog.Builder(requireContext())
             .setTitle(title)
             .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                onSave(input.text?.toString())
+            .setPositiveButton(
+                "Save"
+            ) { _, _ ->
+                onSave(
+                    input.text?.toString()
+                )
+
                 Toast.makeText(
                     requireContext(),
                     "$title saved",
                     Toast.LENGTH_SHORT
                 ).show()
             }
-            .setNeutralButton("Clear") { _, _ ->
+            .setNeutralButton(
+                "Clear"
+            ) { _, _ ->
                 onSave(null)
+
                 Toast.makeText(
                     requireContext(),
                     "$title cleared",
                     Toast.LENGTH_SHORT
                 ).show()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(
+                "Cancel",
+                null
+            )
             .show()
     }
 
     companion object {
         fun show(context: Context) {
-            val activity = context as? AppCompatActivity ?: return
-            if (activity.isFinishing || activity.isDestroyed) return
+            val activity =
+                context as? AppCompatActivity
+                    ?: return
+
+            if (
+                activity.isFinishing ||
+                activity.isDestroyed
+            ) {
+                return
+            }
 
             MOOSASettingsDialog().show(
                 activity.supportFragmentManager,
