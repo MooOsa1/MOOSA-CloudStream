@@ -19,6 +19,8 @@ object MOOSAProgress {
     private const val FALLBACK_TAG = "moosa_server_progress_fallback"
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val sessionId =
+        java.util.concurrent.atomic.AtomicInteger(0)
 
     @Volatile
     private var lastPercent: Int = 0
@@ -39,33 +41,106 @@ object MOOSAProgress {
     }
 
     fun start(totalProviders: Int) {
-        val total = totalProviders.coerceAtLeast(1)
-        update(4, "Checking servers • 0/$total • 0 verified")
+        val total =
+            totalProviders.coerceAtLeast(1)
+
+        val token =
+            sessionId.incrementAndGet()
+
+        update(
+            4,
+            "Checking servers • 0/$total • 0 verified"
+        )
+
+        // Never leave a stale custom progress bar on screen forever,
+        // even if CloudStream cancels the provider coroutine unexpectedly.
+        mainHandler.postDelayed({
+            if (
+                sessionId.get() == token &&
+                lastPercent < 100
+            ) {
+                hide()
+            }
+        }, 60000L)
     }
 
-    fun providerProgress(done: Int, total: Int, verified: Int) {
-        val safeTotal = total.coerceAtLeast(1)
-        val checked = done.coerceIn(0, safeTotal)
+    fun providerProgress(
+        done: Int,
+        total: Int,
+        verified: Int
+    ) {
+        val safeTotal =
+            total.coerceAtLeast(1)
+
+        val checked =
+            done.coerceIn(
+                0,
+                safeTotal
+            )
+
+        if (checked >= safeTotal) {
+            val token = sessionId.get()
+
+            update(
+                91,
+                "Servers checked • $verified ready • Finalizing…"
+            )
+
+            // Subtitle finalization is bounded separately. If Android keeps
+            // an old loading surface alive, remove only our custom overlay.
+            mainHandler.postDelayed({
+                if (
+                    sessionId.get() == token &&
+                    lastPercent in 91..99
+                ) {
+                    hide()
+                }
+            }, 9000L)
+
+            return
+        }
+
         val percent = (
-            5.0 + (checked.toDouble() / safeTotal) * 82.0
-            ).toInt().coerceIn(5, 87)
+            5.0 +
+                (
+                    checked.toDouble() /
+                        safeTotal
+                    ) * 82.0
+            ).toInt()
+            .coerceIn(5, 86)
+
         update(
             percent,
-            "Checking servers • $checked/$safeTotal • $verified verified"
+            "Checking servers • $checked/$safeTotal • $verified ready"
         )
     }
 
     fun serversReady(verified: Int) {
-        update(91, "$verified verified servers ready")
+        update(
+            94,
+            "$verified servers ready"
+        )
     }
 
     fun subtitles() {
-        update(96, "Preparing Arabic subtitles…")
+        update(
+            97,
+            "Preparing Arabic subtitles…"
+        )
     }
 
     fun finish(verified: Int) {
-        update(100, "Ready • $verified verified servers")
-        mainHandler.postDelayed({ hide() }, 650)
+        sessionId.incrementAndGet()
+
+        update(
+            100,
+            "Ready • $verified servers"
+        )
+
+        mainHandler.postDelayed(
+            { hide() },
+            650
+        )
     }
 
     private fun update(percent: Int, text: String) {
