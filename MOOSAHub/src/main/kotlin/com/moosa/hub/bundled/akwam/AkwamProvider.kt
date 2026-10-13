@@ -160,27 +160,64 @@ class AkwamProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val doc = app.get(data).document
-        val watchUrls = doc.select("a[href*='/watch/']").map {
-            it.attr("abs:href").ifEmpty { fixUrl(it.attr("href")) }
-        }.filter { it.isNotBlank() }.distinct()
-        val initialUrls = if (watchUrls.isNotEmpty()) watchUrls else listOf(data)
-        for (url in initialUrls) {
-            val page = app.get(url, headers = mapOf("Referer" to data)).document
-            val links = linkedSetOf<String>()
-            page.select("a[href],iframe[src],video[src],video source[src]").forEach { el ->
-                val raw = if (el.hasAttr("href")) el.attr("href") else el.attr("src")
-                if (raw.isBlank()) return@forEach
-                val absolute = el.attr("abs:href").ifEmpty { el.attr("abs:src") }.ifEmpty { fixUrl(raw) }
-                val host = absolute.substringAfter("://", "").substringBefore('/').lowercase()
-                if (absolute.contains(".m3u8") || absolute.contains(".mp4") ||
-                    (host.isNotBlank() && !host.contains("akwam.ss") && !host.contains("akwam.net"))
-                ) links.add(absolute)
+        val visited = linkedSetOf<String>()
+        val pending = mutableListOf(Triple(data, 0, mainUrl))
+        var cursor = 0
+        var emitted = false
+        val ownHost = runCatching { java.net.URI(mainUrl).host.lowercase() }.getOrNull().orEmpty()
+
+        while (cursor < pending.size && cursor < 20) {
+            val (url, depth, referer) = pending[cursor++]
+            if (!visited.add(url)) continue
+            val page = try {
+                app.get(url, headers = mapOf("Referer" to referer)).document
+            } catch (_: Exception) {
+                continue
             }
-            for (link in links) {
-                try { loadExtractor(link, url, subtitleCallback, callback) } catch (_: Exception) { }
+
+            val selectors = "li[data-link],a.watchBTn,a[data-link],a[href*='/watch/'],a[href*='/download/'],div.tab-content.quality a[href],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]"
+
+            for (element in page.select(selectors)) {
+                val raw = element.attr("data-link")
+                    .ifBlank { element.attr("data-src") }
+                    .ifBlank { element.attr("data-lazy-src") }
+                    .ifBlank { element.attr("src") }
+                    .ifBlank { element.attr("href") }
+                    .trim()
+                if (raw.isBlank() || raw.startsWith("#") || raw.startsWith("javascript:", true)) continue
+                val absolute = try {
+                    if (raw.startsWith("http://", true) || raw.startsWith("https://", true)) raw
+                    else java.net.URI(url).resolve(raw).toString()
+                } catch (_: Exception) {
+                    continue
+                }
+                if (absolute == url) continue
+                val host = runCatching { java.net.URI(absolute).host?.lowercase().orEmpty() }.getOrNull().orEmpty()
+                if (host.isBlank()) continue
+                val isOwnHost = host == ownHost || host.endsWith(".akwam.ss") || host.endsWith(".akwam.net") || host.endsWith(".ak.sv")
+                val isKnownWrapper = false
+                val isIframe = element.tagName().equals("iframe", ignoreCase = true)
+
+                if (depth < 3 && (isOwnHost || isKnownWrapper)) {
+                    pending.add(Triple(absolute, depth + 1, url))
+                    continue
+                }
+
+                try {
+                    loadExtractor(absolute, url, subtitleCallback) { link ->
+                        emitted = true
+                        callback(link)
+                    }
+                } catch (_: Exception) {
+                    // Keep trying the other server entries.
+                }
+
+                if (depth < 3 && isIframe && !visited.contains(absolute)) {
+                    pending.add(Triple(absolute, depth + 1, url))
+                }
             }
         }
-        return true
+        return emitted
     }
+}
 }
