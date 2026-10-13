@@ -595,9 +595,15 @@ class MOOSAHubProvider : TmdbProvider() {
     private suspend fun resolveTargetForProvider(
         request: HubPlaybackRequest,
         api: MainAPI,
-        aliases: List<String>
+        aliases: List<String>,
+        forceRefresh: Boolean = false
     ): ProviderTarget? {
         val cacheKey = providerCacheKey(request, api)
+
+        if (forceRefresh) {
+            targetCache.remove(cacheKey)
+        }
+
         targetCache[cacheKey]?.let { cached ->
             if (System.currentTimeMillis() - cached.createdAt < cacheLifetimeMs) {
                 return cached.target
@@ -1543,6 +1549,82 @@ class MOOSAHubProvider : TmdbProvider() {
                                     }
                                 }
                             )
+                        }
+
+                        if (candidateLinks.isEmpty()) {
+                            val freshTarget =
+                                resolveTargetForProvider(
+                                    request = request,
+                                    api = api,
+                                    aliases = aliases,
+                                    forceRefresh = true
+                                )
+
+                            if (freshTarget != null) {
+                                timed(linksTimeoutFor(api)) {
+                                    api.loadLinks(
+                                        freshTarget.data,
+                                        isCasting,
+                                        { subtitle ->
+                                            normalizeNativeSubtitle(
+                                                subtitle,
+                                                api.name
+                                            )?.let { normalized ->
+                                                if (
+                                                    normalized.url.isBlank()
+                                                ) {
+                                                    return@let
+                                                }
+
+                                                when (
+                                                    subtitleLanguage(
+                                                        normalized.lang,
+                                                        normalized.langTag
+                                                    )
+                                                ) {
+                                                    PreferredSubtitleLanguage.ARABIC -> {
+                                                        if (
+                                                            seenSubtitles.add(
+                                                                normalized.url
+                                                            )
+                                                        ) {
+                                                            subtitleCallback(
+                                                                normalized
+                                                            )
+                                                        }
+                                                    }
+
+                                                    PreferredSubtitleLanguage.ENGLISH -> {
+                                                        nativeSubtitles +=
+                                                            normalized
+                                                    }
+
+                                                    PreferredSubtitleLanguage.OTHER ->
+                                                        Unit
+                                                }
+                                            }
+                                        },
+                                        { link ->
+                                            if (
+                                                validStreamingUrl(
+                                                    link.url
+                                                ) &&
+                                                !isDownloadLabeled(link)
+                                            ) {
+                                                MOOSAServerRegistry
+                                                    .record(link)
+
+                                                if (
+                                                    !MOOSAServerRegistry
+                                                        .isDisabled(link)
+                                                ) {
+                                                    candidateLinks += link
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
                         }
 
                         val candidates = candidateLinks
