@@ -123,7 +123,7 @@ class ArabSeedProvider : MainAPI() {
 
     private fun String.seasonNumber(): Int? {
         val text = normalizedDigits().lowercase()
-        Regex("(?:الموسم|موسم|season|s)[\\s:_-]*(\\d{1,2})", RegexOption.IGNORE_CASE)
+        Regex("(?:الموسم|موسم|season|s)[\s:_-]*(\\d{1,2})", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
         val words = listOf(
             "الأول" to 1, "الاول" to 1, "الثاني" to 2, "الثالث" to 3,
@@ -198,22 +198,22 @@ class ArabSeedProvider : MainAPI() {
         }
 
         val mediaPattern = Regex(
-            """(?i)https?://[^\\s"'<>]+?\\.(?:m3u8|mp4|webm|mov)(?:\\?[^\\s"'<>]*)?"""
+            """(?i)https?://[^\s"'<>]+?\.(?:m3u8|mp4|webm|mov)(?:\?[^\s"'<>]*)?"""
         )
         val propertyPattern = Regex(
-            """(?i)(?:file|src|source|hls|playlist)\\s*[:=]\\s*["']([^"']+)["']"""
+            """(?i)(?:file|src|source|hls|playlist)\s*[:=]\s*["']([^"']+)["']"""
         )
         for (body in bodies) {
             val normalized = body
-                .replace("\\\\/", "/")
-                .replace("\\\\u0026", "&")
+                .replace("\\/", "/")
+                .replace("\\u0026", "&")
                 .replace("&amp;", "&")
             mediaPattern.findAll(normalized).forEach { match ->
                 candidates += match.value.trimEnd(')', ']', '}', ',')
             }
             propertyPattern.findAll(normalized).forEach { match ->
                 val value = match.groupValues[1].trim()
-                if (Regex("""(?i)\\.(?:m3u8|mp4|webm|mov)(?:[?#]|$)""").containsMatchIn(value)) {
+                if (Regex("""(?i)\.(?:m3u8|mp4|webm|mov)(?:[?#]|$)""").containsMatchIn(value)) {
                     candidates += value
                 }
             }
@@ -321,7 +321,7 @@ class ArabSeedProvider : MainAPI() {
                 val isIframe = element.tagName().equals("iframe", ignoreCase = true)
                 val isDirectMedia = element.tagName().equals("video", true) ||
                     element.tagName().equals("source", true) ||
-                    Regex("""(?i)\\.(?:m3u8|mp4|webm|mov)(?:[?#]|$)""").containsMatchIn(absolute)
+                    Regex("""(?i)\.(?:m3u8|mp4|webm|mov)(?:[?#]|$)""").containsMatchIn(absolute)
 
                 if (isDirectMedia) {
                     emitMedia(absolute, url)
