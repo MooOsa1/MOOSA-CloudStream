@@ -6,6 +6,9 @@ import android.os.Handler
 import android.os.Looper
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
+import com.moosa.hub.bundled.akwam.AkwamProvider
+import com.moosa.hub.bundled.arabseed.ArabSeedProvider
+import com.moosa.hub.bundled.topcinema.TopCinemaProvider
 
 @CloudstreamPlugin
 class MOOSAHubPlugin : Plugin() {
@@ -16,6 +19,9 @@ class MOOSAHubPlugin : Plugin() {
         openSettings = { ctx ->
             MOOSASettingsDialog.show(ctx)
         }
+        registerMainAPI(AkwamProvider())
+        registerMainAPI(ArabSeedProvider())
+        registerMainAPI(TopCinemaProvider())
         registerMainAPI(MOOSAHubProvider())
     }
 
