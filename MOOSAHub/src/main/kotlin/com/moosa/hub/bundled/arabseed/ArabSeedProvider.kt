@@ -95,6 +95,24 @@ class ArabSeedProvider : MainAPI() {
     private fun String.firstNumber(): Int? =
         Regex("\\d+").find(normalizedDigits())?.value?.toIntOrNull()
 
+    private fun String.episodeNumber(): Int? {
+        val text = normalizedDigits().lowercase()
+        Regex("""(?:s\s*\d{1,2}\s*e|الحلقه|حلقه|episode|ep)[\s:_-]*(\d{1,4})""")
+            .find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
+        val ordinal = listOf(
+            "الاولى" to 1, "الاول" to 1, "الثانيه" to 2, "الثاني" to 2,
+            "الثالثه" to 3, "الثالث" to 3, "الرابعه" to 4, "الرابع" to 4,
+            "الخامسه" to 5, "الخامس" to 5, "السادسه" to 6, "السادس" to 6,
+            "السابعه" to 7, "السابع" to 7, "الثامنه" to 8, "الثامن" to 8,
+            "التاسعه" to 9, "التاسع" to 9, "العاشره" to 10, "العاشر" to 10
+        )
+        if (text.matches(Regex("""\d{1,4}"""))) return text.toIntOrNull()
+        ordinal.firstOrNull { text.contains(it.first) }?.let { return it.second }
+        Regex("""(?:^|[-_/])(?:episode|ep|الحلقه|حلقه)[-_ ]*(\d{1,4})(?:\D.*)?$""")
+            .find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
+        return null
+    }
+
     private fun String.seasonNumber(): Int? {
         val text = normalizedDigits().lowercase()
         Regex("(?:الموسم|موسم|season|s)[\\s:_-]*(\\d{1,2})", RegexOption.IGNORE_CASE)
@@ -140,7 +158,7 @@ class ArabSeedProvider : MainAPI() {
                 val epName = a.text().ifBlank { context }
                 newEpisode(href) {
                     name = epName
-                    episode = epName.firstNumber() ?: a.attr("href").firstNumber()
+                    episode = epName.episodeNumber() ?: href.episodeNumber()
                     season = context.seasonNumber() ?: pageSeason
                 }
             }
