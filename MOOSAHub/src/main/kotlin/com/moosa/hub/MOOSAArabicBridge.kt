@@ -83,21 +83,21 @@ internal object MOOSAArabicBridge {
 
     private fun cleanIdentity(value: String): String =
         normalize(value)
-            .replace(Regex("""(?:الموسم|موسم|season|الجزء|جزء|part|ج|s)\\s*(?:\\d+|الاولى?|الثانيه?|الثالثه?|الرابعه?|الخامسه?|السادسه?|السابعه?|الثامنه?|التاسعه?|العاشره?)"""), " ")
-            .replace(Regex("""(?:الحلقه|حلقه)\\s*\\d+(?:\\s+(?:الاولى|الاول|الثانيه|الثاني|الثالثه|الثالث|الرابعه|الرابع|الخامسه|الخامس))?"""), " ")
+            .replace(Regex("""(?:الموسم|موسم|season|الجزء|جزء|part|ج|s)\s*(?:\d+|الاولى?|الثانيه?|الثالثه?|الرابعه?|الخامسه?|السادسه?|السابعه?|الثامنه?|التاسعه?|العاشره?)"""), " ")
+            .replace(Regex("""(?:الحلقه|حلقه)\s*\d+(?:\s+(?:الاولى|الاول|الثانيه|الثاني|الثالثه|الثالث|الرابعه|الرابع|الخامسه|الخامس))?"""), " ")
             .replace(
-                Regex("""(^|\\s)(?:فيلم|مسلسل|مسلسلات|مشاهده|تحميل|مترجم|مدبلج|كامل|اونلاين|اون لاين)(?=\\s|$)"""),
+                Regex("""(^|\s)(?:فيلم|مسلسل|مسلسلات|مشاهده|تحميل|مترجم|مدبلج|كامل|اونلاين|اون لاين)(?=\s|$)"""),
                 " "
             )
             .replace(
-                Regex("""\\b(?:movie|series|show|watch|download|subbed|dubbed|complete|online)\\b"""),
+                Regex("""\b(?:movie|series|show|watch|download|subbed|dubbed|complete|online)\b"""),
                 " "
             )
             .replace(
-                Regex("""\\b(?:2160p|1440p|1080p|720p|480p|4k|uhd|fhd|hdr|hevc|x264|x265|web ?dl|webrip|bluray)\\b"""),
+                Regex("""\b(?:2160p|1440p|1080p|720p|480p|4k|uhd|fhd|hdr|hevc|x264|x265|web ?dl|webrip|bluray)\b"""),
                 " "
             )
-            .replace(Regex("""\\s+"""), " ")
+            .replace(Regex("""\s+"""), " ")
             .trim()
 
     private fun words(value: String): Set<String> =
