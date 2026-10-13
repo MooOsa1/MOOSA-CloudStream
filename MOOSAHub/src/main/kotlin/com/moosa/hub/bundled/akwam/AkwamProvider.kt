@@ -3,6 +3,7 @@ package com.moosa.hub.bundled.akwam
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
@@ -175,7 +176,7 @@ class AkwamProvider : MainAPI() {
                 continue
             }
 
-            val selectors = "li[data-link],a.watchBTn,a[data-link],a[href*='/watch/'],a[href*='/download/'],div.btn-loader > a[href],a.download-link[href],div.tab-content.quality a[href],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]"
+            val selectors = "li[data-link],a.watchBTn,a.link-show,a[data-link],a[href*='/watch/'],a[href*='/download/'],a.link-download[href],a.link-btn[href],a[href*='downet.net'],a[href*='.mp4'],div.btn-loader > a[href],a.download-link[href],div.tab-content.quality a[href],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]"
 
             for (element in page.select(selectors)) {
                 val raw = element.attr("data-link")
@@ -203,13 +204,35 @@ class AkwamProvider : MainAPI() {
                     continue
                 }
 
-                try {
-                    loadExtractor(absolute, url, subtitleCallback) { link ->
+                val isDirectMedia = element.tagName().equals("video", true) ||
+                    element.tagName().equals("source", true) ||
+                    absolute.contains(".mp4", true) ||
+                    absolute.contains(".m3u8", true)
+                if (isDirectMedia) {
+                    val isHls = absolute.contains(".m3u8", true) ||
+                        element.attr("type").contains("mpegurl", true)
+                    try {
+                        callback(
+                            ExtractorLink(
+                                this.name,
+                                "${this.name} Stream",
+                                absolute,
+                                url,
+                                Qualities.P720.value,
+                                isHls
+                            )
+                        )
                         emitted = true
-                        callback(link)
+                    } catch (_: Exception) { }
+                } else {
+                    try {
+                        loadExtractor(absolute, url, subtitleCallback) { link ->
+                            emitted = true
+                            callback(link)
+                        }
+                    } catch (_: Exception) {
+                        // Keep trying the other server entries.
                     }
-                } catch (_: Exception) {
-                    // Keep trying the other server entries.
                 }
 
                 if (depth < 3 && isIframe && !visited.contains(absolute)) {
