@@ -43,10 +43,10 @@
     },
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=plex.tv&sz=%size%",
-        "fileHash": "sha256-d35c8fe6f53168e22b6952d338e552e749610dfe17efb8f3b1b1152fcb3d66f6",
+        "fileHash": "sha256-3d6774dcc4293c11440d841576066104a8d152b6db93af6e9c2d862b6c8a265c",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 26715,
+        "fileSize": 30015,
         "status": 1,
         "language": "en",
         "authors": [
