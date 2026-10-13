@@ -4,6 +4,7 @@ package com.moosa.hub.bundled.arabseed
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.JsUnpacker
+import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
@@ -306,7 +307,7 @@ class ArabSeedProvider : MainAPI() {
                     1440 -> Qualities.P1440.value
                     1080 -> Qualities.P1080.value
                     720 -> Qualities.P720.value
-                    576 -> Qualities.P576.value
+                    576 -> Qualities.Unknown.value
                     480 -> Qualities.P480.value
                     360 -> Qualities.P360.value
                     else -> Qualities.Unknown.value
@@ -389,8 +390,7 @@ class ArabSeedProvider : MainAPI() {
 
                 try {
                     loadExtractor(absolute, url, subtitleCallback) { link ->
-                        emitted = true
-                        callback(link)
+                        emitLink(link)
                     }
                 } catch (_: Exception) {
                     // Keep traversing the server page even when CloudStream has no extractor for its host.
