@@ -16,8 +16,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
-import androidx.navigation.NavController
-import androidx.navigation.fragment.NavHostFragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -32,6 +30,7 @@ import com.lagradost.cloudstream3.ui.search.SearchHelper.handleSearchClickCallba
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.lang.reflect.Proxy
 
 class MOOSABrowseDialog : DialogFragment() {
     private lateinit var api: MOOSAHubProvider
@@ -50,8 +49,8 @@ class MOOSABrowseDialog : DialogFragment() {
     private var waitingForResult = false
     private var resultDestinationSeen = false
     private var returnPosition = 0
-    private var navController: NavController? = null
-    private var destinationListener: NavController.OnDestinationChangedListener? = null
+    private var navController: Any? = null
+    private var destinationListener: Any? = null
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -255,51 +254,115 @@ class MOOSABrowseDialog : DialogFragment() {
         if (navHostId == 0) return
 
         val host = hostActivity.supportFragmentManager
-            .findFragmentById(navHostId) as? NavHostFragment
+            .findFragmentById(navHostId)
             ?: return
 
-        val controller = host.navController
-        navController = controller
-
-        val listener = NavController.OnDestinationChangedListener {
-                _, destination, _ ->
-            if (!waitingForResult) {
-                return@OnDestinationChangedListener
-            }
-
-            val entryName = try {
-                hostActivity.resources.getResourceEntryName(destination.id)
-            } catch (_: Throwable) {
-                ""
-            }.lowercase()
-
-            val isResultDestination =
-                "result" in entryName || "navigation_results" in entryName
-
-            if (isResultDestination) {
-                resultDestinationSeen = true
-            } else if (resultDestinationSeen) {
-                waitingForResult = false
-                resultDestinationSeen = false
-
-                dialog?.show()
-                recycler.post {
-                    recycler.scrollToPosition(returnPosition)
-                    recycler.layoutManager
-                        ?.findViewByPosition(returnPosition)
-                        ?.requestFocus()
+        val controller = try {
+            host.javaClass.methods
+                .firstOrNull {
+                    it.name == "getNavController" &&
+                        it.parameterCount == 0
                 }
-            }
+                ?.invoke(host)
+        } catch (_: Throwable) {
+            null
+        } ?: return
+
+        val listenerClass = try {
+            Class.forName(
+                "androidx.navigation.NavController\$OnDestinationChangedListener"
+            )
+        } catch (_: Throwable) {
+            return
         }
 
-        destinationListener = listener
-        controller.addOnDestinationChangedListener(listener)
+        val listener = Proxy.newProxyInstance(
+            listenerClass.classLoader,
+            arrayOf(listenerClass)
+        ) { _, method, args ->
+            if (
+                method.name == "onDestinationChanged" &&
+                waitingForResult
+            ) {
+                val destination = args?.getOrNull(1)
+                val destinationId = try {
+                    destination
+                        ?.javaClass
+                        ?.methods
+                        ?.firstOrNull {
+                            it.name == "getId" &&
+                                it.parameterCount == 0
+                        }
+                        ?.invoke(destination) as? Int
+                } catch (_: Throwable) {
+                    null
+                } ?: 0
+
+                val entryName = try {
+                    if (destinationId != 0) {
+                        hostActivity.resources
+                            .getResourceEntryName(destinationId)
+                    } else {
+                        ""
+                    }
+                } catch (_: Throwable) {
+                    ""
+                }.lowercase()
+
+                val isResultDestination =
+                    "result" in entryName ||
+                        "navigation_results" in entryName
+
+                if (isResultDestination) {
+                    resultDestinationSeen = true
+                } else if (resultDestinationSeen) {
+                    waitingForResult = false
+                    resultDestinationSeen = false
+
+                    dialog?.show()
+                    recycler.post {
+                        recycler.scrollToPosition(returnPosition)
+                        recycler.layoutManager
+                            ?.findViewByPosition(returnPosition)
+                            ?.requestFocus()
+                    }
+                }
+            }
+            null
+        }
+
+        try {
+            controller.javaClass.methods
+                .firstOrNull {
+                    it.name == "addOnDestinationChangedListener" &&
+                        it.parameterCount == 1
+                }
+                ?.invoke(controller, listener)
+
+            navController = controller
+            destinationListener = listener
+        } catch (_: Throwable) {
+            navController = null
+            destinationListener = null
+        }
     }
 
     override fun onDestroy() {
-        destinationListener?.let { listener ->
-            navController?.removeOnDestinationChangedListener(listener)
+        val controller = navController
+        val listener = destinationListener
+
+        if (controller != null && listener != null) {
+            try {
+                controller.javaClass.methods
+                    .firstOrNull {
+                        it.name == "removeOnDestinationChangedListener" &&
+                            it.parameterCount == 1
+                    }
+                    ?.invoke(controller, listener)
+            } catch (_: Throwable) {
+            }
         }
+
         destinationListener = null
         navController = null
         super.onDestroy()
