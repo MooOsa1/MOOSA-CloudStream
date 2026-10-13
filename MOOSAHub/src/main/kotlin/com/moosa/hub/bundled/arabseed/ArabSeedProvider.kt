@@ -3,6 +3,8 @@ package com.moosa.hub.bundled.arabseed
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
@@ -228,19 +230,20 @@ class ArabSeedProvider : MainAPI() {
                     element.tagName().equals("source", true) ||
                     absolute.contains(".mp4", true) ||
                     absolute.contains(".m3u8", true)
-                if (isDirectMedia) {
-                    val isHls = absolute.contains(".m3u8", true) ||
-                        element.attr("type").contains("mpegurl", true)
+                val isHls = absolute.contains(".m3u8", true) ||
+                    element.attr("type").contains("mpegurl", true)
+                if (isDirectMedia && !isHls) {
                     try {
                         callback(
-                            ExtractorLink(
-                                this.name,
-                                "${this.name} Stream",
-                                absolute,
-                                url,
-                                Qualities.P720.value,
-                                isHls
-                            )
+                            newExtractorLink(
+                                source = this.name,
+                                name = "${this.name} Stream",
+                                url = absolute
+                            ) {
+                                referer = url
+                                quality = Qualities.P720.value
+                                type = ExtractorLinkType.VIDEO
+                            }
                         )
                         emitted = true
                     } catch (_: Exception) { }
