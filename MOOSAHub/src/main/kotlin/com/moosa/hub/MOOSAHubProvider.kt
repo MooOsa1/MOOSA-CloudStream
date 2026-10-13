@@ -252,8 +252,47 @@ class MOOSAHubProvider : TmdbProvider() {
             .replace(Regex("""\s+"""), " ")
             .trim()
 
+    private fun normalizeArabicOrthography(
+        value: String
+    ): String = buildString {
+        value.forEach { ch ->
+            append(
+                when (ch) {
+                    '٠', '۰' -> '0'
+                    '١', '۱' -> '1'
+                    '٢', '۲' -> '2'
+                    '٣', '۳' -> '3'
+                    '٤', '۴' -> '4'
+                    '٥', '۵' -> '5'
+                    '٦', '۶' -> '6'
+                    '٧', '۷' -> '7'
+                    '٨', '۸' -> '8'
+                    '٩', '۹' -> '9'
+                    'أ', 'إ', 'آ', 'ٱ' -> 'ا'
+                    'ى' -> 'ي'
+                    'ؤ' -> 'و'
+                    'ئ' -> 'ي'
+                    'ة' -> 'ه'
+                    'ـ' -> Unit
+                    else -> {
+                        if (
+                            ch !in '\u064B'..'\u065F' &&
+                            ch != '\u0670'
+                        ) {
+                            append(ch)
+                        }
+                        continue
+                    }
+                }
+            )
+        }
+    }
+
     private fun canonicalTitle(value: String): String {
-        var text = normalizeTitle(value)
+        var text =
+            normalizeArabicOrthography(
+                normalizeTitle(value)
+            )
 
         text = text
             .replace(
@@ -590,9 +629,34 @@ class MOOSAHubProvider : TmdbProvider() {
             return true
         }
 
+        val candidateHasArabic =
+            Regex("""[\u0600-\u06FF]""")
+                .containsMatchIn(result.name)
+
+        val identityAliases =
+            if (
+                request.originalLanguage.equals(
+                    "ar",
+                    ignoreCase = true
+                ) &&
+                candidateHasArabic
+            ) {
+                (
+                    listOf(request.title) +
+                        aliases.filter {
+                            Regex("""[\u0600-\u06FF]""")
+                                .containsMatchIn(it)
+                        }
+                    )
+                    .distinctBy(::canonicalTitle)
+                    .take(10)
+            } else {
+                aliases
+            }
+
         return safeTitleMatch(
             candidate = result.name,
-            aliases = aliases,
+            aliases = identityAliases,
             candidateYear = result.year,
             wantedYear =
                 if (
@@ -843,7 +907,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v4",
+        "strict-v5",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -890,69 +954,113 @@ class MOOSAHubProvider : TmdbProvider() {
             val season = request.season ?: return null
             val episode = request.episode ?: return null
 
-            fun normalizedNumber(
+            fun normalizeDigits(
+                value: String
+            ): String = buildString {
+                value.forEach { ch ->
+                    append(
+                        when (ch) {
+                            '٠', '۰' -> '0'
+                            '١', '۱' -> '1'
+                            '٢', '۲' -> '2'
+                            '٣', '۳' -> '3'
+                            '٤', '۴' -> '4'
+                            '٥', '۵' -> '5'
+                            '٦', '۶' -> '6'
+                            '٧', '۷' -> '7'
+                            '٨', '۸' -> '8'
+                            '٩', '۹' -> '9'
+                            else -> ch
+                        }
+                    )
+                }
+            }
+
+            fun explicitEpisodeNumber(
                 value: String?
             ): Int? {
                 if (value.isNullOrBlank()) {
                     return null
                 }
 
-                val normalized = buildString {
-                    value.forEach { ch ->
-                        append(
-                            when (ch) {
-                                '٠', '۰' -> '0'
-                                '١', '۱' -> '1'
-                                '٢', '۲' -> '2'
-                                '٣', '۳' -> '3'
-                                '٤', '۴' -> '4'
-                                '٥', '۵' -> '5'
-                                '٦', '۶' -> '6'
-                                '٧', '۷' -> '7'
-                                '٨', '۸' -> '8'
-                                '٩', '۹' -> '9'
-                                else -> ch
-                            }
-                        )
-                    }
+                val normalized =
+                    normalizeDigits(value)
+
+                val patterns = listOf(
+                    Regex(
+                        """(?:الحلقة|الحلقه|حلقة|حلقه)\s*[:#\-]?\s*(\d{1,4})"""
+                    ),
+                    Regex(
+                        """(\d{1,4})\s*(?:الحلقة|الحلقه|حلقة|حلقه)"""
+                    ),
+                    Regex(
+                        """\b(?:episode|ep)\s*[:#\-]?\s*(\d{1,4})\b""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    Regex(
+                        """\bs\d{1,3}\s*e(\d{1,4})\b""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    Regex(
+                        """[?&](?:episode|ep)=(\d{1,4})(?:&|$)""",
+                        RegexOption.IGNORE_CASE
+                    )
+                )
+
+                patterns.forEach { pattern ->
+                    pattern.find(normalized)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.toIntOrNull()
+                        ?.let { return it }
                 }
 
-                return Regex("""\d{1,4}""")
-                    .find(normalized)
-                    ?.value
+                return normalized
+                    .trim()
+                    .takeIf {
+                        it.matches(
+                            Regex("""\d{1,4}""")
+                        )
+                    }
                     ?.toIntOrNull()
             }
+
+            fun providerSeason(
+                item: Episode
+            ): Int? =
+                item.season
+                    ?.takeIf {
+                        it in 1..200
+                    }
 
             fun episodeNumber(
                 item: Episode
             ): Int? =
                 item.episode
-                    ?: normalizedNumber(item.name)
-                    ?: normalizedNumber(item.data)
+                    ?.takeIf { it > 0 }
+                    ?: explicitEpisodeNumber(
+                        item.name
+                    )
+                    ?: explicitEpisodeNumber(
+                        item.data
+                    )
 
             val exact =
                 series.episodes.firstOrNull {
-                    it.season == season &&
+                    providerSeason(it) == season &&
                         episodeNumber(it) == episode
                 }
 
             val explicitSeasons =
                 series.episodes
-                    .mapNotNull {
-                        it.season?.takeIf { number ->
-                            number > 0
-                        }
-                    }
+                    .mapNotNull(::providerSeason)
                     .distinct()
 
             val seasonless =
                 if (exact == null) {
                     series.episodes.firstOrNull {
                         episodeNumber(it) == episode &&
-                            (
-                                it.season == null ||
-                                    it.season == 0
-                                )
+                            providerSeason(it) == null
                     }
                 } else {
                     null
@@ -978,9 +1086,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     series.episodes.firstOrNull {
                         episodeNumber(it) == episode &&
                             (
-                                it.season == null ||
-                                    it.season == 0 ||
-                                    it.season == 1
+                                providerSeason(it) == null ||
+                                    providerSeason(it) == 1
                                 )
                     }
                 } else {
