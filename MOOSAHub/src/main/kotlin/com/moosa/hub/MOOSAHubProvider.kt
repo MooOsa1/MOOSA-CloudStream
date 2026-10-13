@@ -867,27 +867,8 @@ class MOOSAHubProvider : TmdbProvider() {
             return true
         }
 
-        val loadedYear =
-            result.year
-
-        val requestedYear =
-            request.year
-
-        if (
-            request.originalLanguage.equals(
-                "ar",
-                ignoreCase = true
-            ) &&
-            request.isTv &&
-            loadedYear != null &&
-            requestedYear != null &&
-            abs(
-                loadedYear - requestedYear
-            ) > 1
-        ) {
-            return false
-        }
-
+        // Series premiere dates vary by season across Arabic providers.
+        // Match the series identity and exact requested episode instead.
         val candidateHasArabic =
             Regex("""[\u0600-\u06FF]""")
                 .containsMatchIn(result.name)
@@ -2743,6 +2724,7 @@ class MOOSAHubProvider : TmdbProvider() {
         val emittedLink = AtomicBoolean(false)
         val completedProviders = AtomicInteger(0)
         val shownLinks = AtomicInteger(0)
+        val callbackLock = Any()
 
         val externalSubtitleJob = async {
             timed(6500L) {
@@ -2944,7 +2926,9 @@ class MOOSAHubProvider : TmdbProvider() {
                                     shownLinks.incrementAndGet()
                                     MOOSAProgress.linkAvailable()
 
-                                    callback(link)
+                                    synchronized(callbackLock) {
+                                        callback(link)
+                                    }
                                     true
                                 } else {
                                     if (
@@ -3000,6 +2984,8 @@ class MOOSAHubProvider : TmdbProvider() {
                             (old + add).coerceAtLeast(-12)
                         }
                     }
+                } catch (error: CancellationException) {
+                    throw error
                 } catch (error: Throwable) {
                     logError(error)
 
