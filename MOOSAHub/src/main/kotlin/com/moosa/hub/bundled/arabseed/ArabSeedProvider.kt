@@ -249,7 +249,7 @@ class ArabSeedProvider : MainAPI() {
 
         val emittedMediaUrls = linkedSetOf<String>()
 
-        suspend fun emitLink(link: ExtractorLink) {
+        fun emitLink(link: ExtractorLink) {
             if (emittedMediaUrls.add(link.url.trim())) {
                 callback(link)
                 emitted = true
