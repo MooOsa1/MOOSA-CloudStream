@@ -157,6 +157,61 @@ class AkwamProvider : MainAPI() {
         }
     }
 
+
+    private fun extractEmbeddedMediaUrls(html: String, pageUrl: String): List<String> {
+        val document = org.jsoup.Jsoup.parse(html, pageUrl)
+        val candidates = linkedSetOf<String>()
+        document.select("video[src],video source[src],source[src]").forEach { element ->
+            element.attr("abs:src").takeIf { it.isNotBlank() }?.let(candidates::add)
+        }
+
+        val bodies = mutableListOf(html)
+        document.select("script").forEach { script ->
+            val text = script.data().ifBlank { script.html() }
+            if (text.length <= 250_000) {
+                bodies += text
+                runCatching { JsUnpacker(text).unpack() }
+                    .getOrNull()
+                    ?.takeIf { it.isNotBlank() && it.length <= 500_000 }
+                    ?.let(bodies::add)
+            }
+        }
+
+        val mediaPattern = Regex(
+            """(?i)https?://[^\\s"'<>]+?\\.(?:m3u8|mp4|webm|mov)(?:\\?[^\\s"'<>]*)?"""
+        )
+        val propertyPattern = Regex(
+            """(?i)(?:file|src|source|hls|playlist)\\s*[:=]\\s*["']([^"']+)["']"""
+        )
+        for (body in bodies) {
+            val normalized = body
+                .replace("\\\\/", "/")
+                .replace("\\\\u0026", "&")
+                .replace("&amp;", "&")
+            mediaPattern.findAll(normalized).forEach { match ->
+                candidates += match.value.trimEnd(')', ']', '}', ',')
+            }
+            propertyPattern.findAll(normalized).forEach { match ->
+                val value = match.groupValues[1].trim()
+                if (Regex("""(?i)\\.(?:m3u8|mp4|webm|mov)(?:[?#]|$)""").containsMatchIn(value)) {
+                    candidates += value
+                }
+            }
+        }
+
+        return candidates.mapNotNull { raw ->
+            try {
+                when {
+                    raw.startsWith("http://", true) || raw.startsWith("https://", true) -> raw
+                    raw.startsWith("//") -> "https:$raw"
+                    else -> java.net.URI(pageUrl).resolve(raw).toString()
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }.distinct()
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -168,17 +223,57 @@ class AkwamProvider : MainAPI() {
         var cursor = 0
         var emitted = false
         val ownHost = runCatching { java.net.URI(mainUrl).host.lowercase() }.getOrNull().orEmpty()
+        val desktopUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
-        while (cursor < pending.size && cursor < 20) {
+        fun emitMedia(mediaUrl: String, referer: String) {
+            val isHls = mediaUrl.contains(".m3u8", true) ||
+                mediaUrl.contains("playlist", true)
+            callback(
+                newExtractorLink(
+                    source = this.name,
+                    name = if (isHls) "${this.name} HLS" else "${this.name} Stream",
+                    url = mediaUrl,
+                    type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                ) {
+                    this.referer = referer
+                    this.quality = when {
+                        mediaUrl.contains("1080", true) -> Qualities.P1080.value
+                        mediaUrl.contains("480", true) -> Qualities.P480.value
+                        else -> Qualities.P720.value
+                    }
+                    this.type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    this.headers = mapOf(
+                        "User-Agent" to desktopUa,
+                        "Referer" to referer,
+                        "Accept" to "*/*"
+                    )
+                }
+            )
+            emitted = true
+        }
+
+        while (cursor < pending.size && cursor < 40) {
             val (url, depth, referer) = pending[cursor++]
             if (!visited.add(url)) continue
-            val page = try {
-                app.get(url, headers = mapOf("Referer" to referer)).document
+            val response = try {
+                app.get(
+                    url,
+                    headers = mapOf(
+                        "User-Agent" to desktopUa,
+                        "Referer" to referer,
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    ),
+                    referer = referer
+                )
             } catch (_: Exception) {
                 continue
             }
+            val page = response.document
+            extractEmbeddedMediaUrls(response.text, url).forEach { media ->
+                emitMedia(media, url)
+            }
 
-            val selectors = "li[data-link],a.watchBTn,a.link-show,a[data-link],a[href*='/watch/'],a[href*='/download/'],a.link-download[href],a.link-btn[href],a[href*='downet.net'],a[href*='.mp4'],div.btn-loader > a[href],a.download-link[href],div.tab-content.quality a[href],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]"
+            val selectors = "li[data-link],a.watchBTn,a.link-show,a.aplr-link,a[data-link],a[href*='/watch/'],a[href*='/download/'],a[href*='serv='],a.link-download[href],a.link-btn[href],a[href*='downet.net'],a[href*='.mp4'],div.btn-loader > a[href],a.download-link[href],div.tab-content.quality a[href],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]";
 
             for (element in page.select(selectors)) {
                 val raw = element.attr("data-link")
@@ -189,56 +284,52 @@ class AkwamProvider : MainAPI() {
                     .trim()
                 if (raw.isBlank() || raw.startsWith("#") || raw.startsWith("javascript:", true)) continue
                 val absolute = try {
-                    if (raw.startsWith("http://", true) || raw.startsWith("https://", true)) raw
-                    else java.net.URI(url).resolve(raw).toString()
+                    when {
+                        raw.startsWith("http://", true) || raw.startsWith("https://", true) -> raw
+                        raw.startsWith("//") -> "https:$raw"
+                        else -> java.net.URI(url).resolve(raw).toString()
+                    }
                 } catch (_: Exception) {
                     continue
                 }
                 if (absolute == url) continue
                 val host = runCatching { java.net.URI(absolute).host?.lowercase().orEmpty() }.getOrNull().orEmpty()
                 if (host.isBlank()) continue
-                val isOwnHost = host == ownHost || host.endsWith(".akwam.ss") || host.endsWith(".akwam.net") || host.endsWith(".ak.sv")
+                val isOwnHost = host == ownHost ||
+                    host.endsWith(".akwam.ss") || host.endsWith(".akwam.net") || host.endsWith(".ak.sv")
                 val isKnownWrapper = false
                 val isIframe = element.tagName().equals("iframe", ignoreCase = true)
+                val isDirectMedia = element.tagName().equals("video", true) ||
+                    element.tagName().equals("source", true) ||
+                    Regex("""(?i)\\.(?:m3u8|mp4|webm|mov)(?:[?#]|$)""").containsMatchIn(absolute)
 
-                if (depth < 3 && (isOwnHost || isKnownWrapper)) {
+                if (isDirectMedia) {
+                    emitMedia(absolute, url)
+                    continue
+                }
+
+                if (depth < 4 && (isOwnHost || isKnownWrapper)) {
                     pending.add(Triple(absolute, depth + 1, url))
                     continue
                 }
 
-                val isDirectMedia = element.tagName().equals("video", true) ||
-                    element.tagName().equals("source", true) ||
-                    absolute.contains(".mp4", true) ||
-                    absolute.contains(".m3u8", true)
-                val isHls = absolute.contains(".m3u8", true) ||
-                    element.attr("type").contains("mpegurl", true)
-                if (isDirectMedia && !isHls) {
-                    try {
-                        callback(
-                            newExtractorLink(
-                                source = this.name,
-                                name = "${this.name} Stream",
-                                url = absolute
-                            ) {
-                                this.referer = url
-                                this.quality = Qualities.P720.value
-                                this.type = ExtractorLinkType.VIDEO
-                            }
-                        )
+                try {
+                    loadExtractor(absolute, url, subtitleCallback) { link ->
                         emitted = true
-                    } catch (_: Exception) { }
-                } else {
-                    try {
-                        loadExtractor(absolute, url, subtitleCallback) { link ->
-                            emitted = true
-                            callback(link)
-                        }
-                    } catch (_: Exception) {
-                        // Keep trying the other server entries.
+                        callback(link)
                     }
+                } catch (_: Exception) {
+                    // Keep traversing the server page even when CloudStream has no extractor for its host.
                 }
 
-                if (depth < 3 && isIframe && !visited.contains(absolute)) {
+                // Server tab URLs (for example ?serv=1), iframe sources, and data-link URLs
+                // are page hops. Follow them even when loadExtractor has no matching extractor.
+                val isServerTarget = isIframe ||
+                    element.hasAttr("data-link") ||
+                    absolute.contains("serv=", true) ||
+                    absolute.contains("server=", true) ||
+                    absolute.contains("/watch/", true) || absolute.contains("/download/", true)
+                if (depth < 4 && isServerTarget && !visited.contains(absolute)) {
                     pending.add(Triple(absolute, depth + 1, url))
                 }
             }
