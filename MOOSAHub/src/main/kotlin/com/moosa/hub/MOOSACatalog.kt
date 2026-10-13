@@ -108,7 +108,7 @@ object MOOSACatalog {
         forceTv: Boolean,
         extra: Map<String, String> = emptyMap()
     ): CatalogPage {
-        val response = tryParseJson<Page>(
+        val body = try {
             get(
                 path,
                 mapOf(
@@ -117,11 +117,20 @@ object MOOSACatalog {
                     "include_adult" to "false"
                 ) + extra
             )
-        ) ?: return CatalogPage(emptyList(), 1)
+        } catch (_: Throwable) {
+            return CatalogPage(emptyList(), 1)
+        }
+
+        val response =
+            tryParseJson<Page>(body)
+                ?: return CatalogPage(emptyList(), 1)
 
         return CatalogPage(
-            items = response.results.mapNotNull { it.toResponse(api, forceTv) },
-            totalPages = response.totalPages.coerceAtLeast(1)
+            items = response.results.mapNotNull {
+                it.toResponse(api, forceTv)
+            },
+            totalPages =
+                response.totalPages.coerceAtLeast(1)
         )
     }
 
