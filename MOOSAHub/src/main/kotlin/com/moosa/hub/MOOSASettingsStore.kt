@@ -31,7 +31,7 @@ object MOOSASettingsStore {
         prefs?.getInt(KEY_CONCURRENCY, 10)?.coerceIn(2, 16) ?: 10
 
     fun setProviderConcurrency(value: Int) {
-        prefs?.edit()?.putInt(KEY_CONCURRENCY, value.coerceIn(2, 16))?.apply()
+        prefs?.edit()?.putInt(KEY_CONCURRENCY, value.coerceIn(2, 16))?.commit()
     }
 
     fun disabledSources(): Set<String> =
@@ -40,21 +40,21 @@ object MOOSASettingsStore {
             .orEmpty()
 
     fun setDisabledSources(values: Set<String>) {
-        prefs?.edit()?.putStringSet(KEY_DISABLED_SOURCES, values.toSet())?.apply()
+        prefs?.edit()?.putStringSet(KEY_DISABLED_SOURCES, values.toSet())?.commit()
     }
 
     fun verifyLinks(): Boolean =
         prefs?.getBoolean(KEY_VERIFY_LINKS, true) ?: true
 
     fun setVerifyLinks(enabled: Boolean) {
-        prefs?.edit()?.putBoolean(KEY_VERIFY_LINKS, enabled)?.apply()
+        prefs?.edit()?.putBoolean(KEY_VERIFY_LINKS, enabled)?.commit()
     }
 
     fun arabicFastMode(): Boolean =
         prefs?.getBoolean(KEY_ARABIC_FAST, true) ?: true
 
     fun setArabicFastMode(enabled: Boolean) {
-        prefs?.edit()?.putBoolean(KEY_ARABIC_FAST, enabled)?.apply()
+        prefs?.edit()?.putBoolean(KEY_ARABIC_FAST, enabled)?.commit()
     }
 
     fun wyzieKey(): String? =
@@ -63,7 +63,7 @@ object MOOSASettingsStore {
             ?.takeIf { it.isNotBlank() }
 
     fun setWyzieKey(value: String?) {
-        prefs?.edit()?.putString(KEY_WYZIE_KEY, value?.trim().orEmpty())?.apply()
+        prefs?.edit()?.putString(KEY_WYZIE_KEY, value?.trim().orEmpty())?.commit()
     }
 
     fun subdlKey(): String? =
@@ -72,7 +72,7 @@ object MOOSASettingsStore {
             ?.takeIf { it.isNotBlank() }
 
     fun setSubdlKey(value: String?) {
-        prefs?.edit()?.putString(KEY_SUBDL_KEY, value?.trim().orEmpty())?.apply()
+        prefs?.edit()?.putString(KEY_SUBDL_KEY, value?.trim().orEmpty())?.commit()
     }
 
     fun disabledServers(): Set<String> =
@@ -81,7 +81,7 @@ object MOOSASettingsStore {
             .orEmpty()
 
     fun setDisabledServers(values: Set<String>) {
-        prefs?.edit()?.putStringSet(KEY_DISABLED_SERVERS, values.toSet())?.apply()
+        prefs?.edit()?.putStringSet(KEY_DISABLED_SERVERS, values.toSet())?.commit()
     }
 
     fun saveSourceProfile(name: String) {
@@ -94,7 +94,7 @@ object MOOSASettingsStore {
         val array = JSONArray()
         disabledSources().sorted().forEach { array.put(it) }
         root.put(clean, array)
-        prefs?.edit()?.putString(KEY_SOURCE_PROFILES, root.toString())?.apply()
+        prefs?.edit()?.putString(KEY_SOURCE_PROFILES, root.toString())?.commit()
     }
 
     fun sourceProfiles(): Map<String, Set<String>> {
@@ -137,7 +137,7 @@ object MOOSASettingsStore {
         }
         if (!root.has(name)) return false
         root.remove(name)
-        prefs?.edit()?.putString(KEY_SOURCE_PROFILES, root.toString())?.apply()
+        prefs?.edit()?.putString(KEY_SOURCE_PROFILES, root.toString())?.commit()
         return true
     }
 
@@ -151,7 +151,7 @@ object MOOSASettingsStore {
         val array = JSONArray()
         disabledServers().sorted().forEach { array.put(it) }
         root.put(clean, array)
-        prefs?.edit()?.putString(KEY_SERVER_PROFILES, root.toString())?.apply()
+        prefs?.edit()?.putString(KEY_SERVER_PROFILES, root.toString())?.commit()
     }
 
     fun serverProfiles(): Map<String, Set<String>> {
@@ -194,7 +194,7 @@ object MOOSASettingsStore {
         }
         if (!root.has(name)) return false
         root.remove(name)
-        prefs?.edit()?.putString(KEY_SERVER_PROFILES, root.toString())?.apply()
+        prefs?.edit()?.putString(KEY_SERVER_PROFILES, root.toString())?.commit()
         return true
     }
 
