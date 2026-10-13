@@ -1,6 +1,7 @@
 package com.moosa.hub
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.Dialog
 import android.os.Handler
 import android.os.Looper
@@ -141,6 +142,24 @@ object MOOSAProgress {
             { hide() },
             650
         )
+    }
+
+    fun failureReport(report: String) {
+        sessionId.incrementAndGet()
+        hide()
+
+        mainHandler.postDelayed({
+            val act = currentActivity() ?: return@postDelayed
+
+            try {
+                AlertDialog.Builder(act)
+                    .setTitle("MOOSA Arabic diagnostics")
+                    .setMessage(report)
+                    .setPositiveButton("OK", null)
+                    .show()
+            } catch (_: Throwable) {
+            }
+        }, 350L)
     }
 
     private fun update(percent: Int, text: String) {
