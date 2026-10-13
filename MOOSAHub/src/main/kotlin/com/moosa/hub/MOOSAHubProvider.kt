@@ -235,9 +235,134 @@ class MOOSAHubProvider : TmdbProvider() {
     private fun normalizeTitle(value: String): String =
         value.lowercase()
             .replace("&", "and")
-            .filter { it.isLetterOrDigit() }
+            .replace(Regex("""[’'\u2018\u2019]"""), "")
+            .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
 
-    private fun resultYear(result: SearchResponse): Int? = when (result) {
+    private fun canonicalTitle(value: String): String {
+        var text = normalizeTitle(value)
+
+        text = text
+            .replace(
+                Regex("""\b(?:19|20)\d{2}\b"""),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\b(?:2160p|1440p|1080p|720p|480p|4k|uhd|fhd|hdr|hevc|x264|x265|web[- ]?dl|webrip|bluray|blu[- ]?ray|dvdrip|hdtv)\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\bseason\s*\d{1,2}\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\bs\d{1,2}\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\b(?:complete|all episodes|full series)\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex("""\s+"""),
+                " "
+            )
+            .trim()
+
+        return text
+    }
+
+    private fun titleTokens(value: String): Set<String> =
+        canonicalTitle(value)
+            .split(" ")
+            .map { it.trim() }
+            .filter { it.length >= 2 }
+            .toSet()
+
+    private fun titleSimilarity(
+        candidate: String,
+        aliases: List<String>
+    ): Double {
+        val candidateCanonical =
+            canonicalTitle(candidate)
+
+        if (candidateCanonical.isBlank()) {
+            return 0.0
+        }
+
+        var best = 0.0
+
+        for (alias in aliases) {
+            val wanted =
+                canonicalTitle(alias)
+
+            if (wanted.isBlank()) continue
+
+            if (candidateCanonical == wanted) {
+                return 1.0
+            }
+
+            val a = titleTokens(candidateCanonical)
+            val b = titleTokens(wanted)
+
+            if (a.isEmpty() || b.isEmpty()) continue
+
+            val common =
+                a.intersect(b).size.toDouble()
+
+            val union =
+                a.union(b).size.toDouble()
+
+            val jaccard =
+                if (union > 0.0) {
+                    common / union
+                } else {
+                    0.0
+                }
+
+            val containment =
+                common /
+                    minOf(
+                        a.size,
+                        b.size
+                    ).coerceAtLeast(1)
+
+            val lengthRatio =
+                minOf(
+                    candidateCanonical.length,
+                    wanted.length
+                ).toDouble() /
+                    maxOf(
+                        candidateCanonical.length,
+                        wanted.length
+                    ).coerceAtLeast(1).toDouble()
+
+            val score =
+                maxOf(
+                    jaccard,
+                    containment * lengthRatio
+                )
+
+            if (score > best) {
+                best = score
+            }
+        }
+
+        return best
+    }
+
+    private fun resultYear(
+        result: SearchResponse
+    ): Int? = when (result) {
         is MovieSearchResponse -> result.year
         is TvSeriesSearchResponse -> result.year
         else -> null
@@ -246,15 +371,42 @@ class MOOSAHubProvider : TmdbProvider() {
     private fun exactTitleMatch(
         candidate: String,
         aliases: List<String>
-    ): Boolean {
-        val normalized = normalizeTitle(candidate)
-        if (normalized.isBlank()) return false
+    ): Boolean =
+        titleSimilarity(
+            candidate,
+            aliases
+        ) >= 0.999
 
-        return aliases.any { alias ->
-            val wanted = normalizeTitle(alias)
-            wanted.isNotBlank() &&
-                normalized == wanted
+    private fun safeTitleMatch(
+        candidate: String,
+        aliases: List<String>,
+        candidateYear: Int?,
+        wantedYear: Int?
+    ): Boolean {
+        val similarity =
+            titleSimilarity(
+                candidate,
+                aliases
+            )
+
+        if (similarity >= 0.999) {
+            return yearCompatible(
+                candidateYear,
+                wantedYear
+            )
         }
+
+        if (
+            candidateYear != null &&
+            wantedYear != null
+        ) {
+            return abs(
+                candidateYear - wantedYear
+            ) <= 1 &&
+                similarity >= 0.82
+        }
+
+        return similarity >= 0.94
     }
 
     private fun yearCompatible(
@@ -268,7 +420,9 @@ class MOOSAHubProvider : TmdbProvider() {
             return true
         }
 
-        return abs(candidateYear - wantedYear) <= 1
+        return abs(
+            candidateYear - wantedYear
+        ) <= 1
     }
 
     private fun searchTypeMatches(
@@ -276,7 +430,9 @@ class MOOSAHubProvider : TmdbProvider() {
         wantSeries: Boolean
     ): Boolean {
         if (wantSeries) {
-            if (result is TvSeriesSearchResponse) {
+            if (
+                result is TvSeriesSearchResponse
+            ) {
                 return true
             }
 
@@ -289,7 +445,9 @@ class MOOSAHubProvider : TmdbProvider() {
             )
         }
 
-        if (result is MovieSearchResponse) {
+        if (
+            result is MovieSearchResponse
+        ) {
             return true
         }
 
@@ -306,26 +464,45 @@ class MOOSAHubProvider : TmdbProvider() {
         year: Int?,
         wantSeries: Boolean
     ): Int {
-        if (!searchTypeMatches(result, wantSeries)) {
+        if (
+            !searchTypeMatches(
+                result,
+                wantSeries
+            )
+        ) {
             return 0
         }
 
-        if (!exactTitleMatch(result.name, aliases)) {
+        val candidateYear =
+            resultYear(result)
+
+        if (
+            !safeTitleMatch(
+                result.name,
+                aliases,
+                candidateYear,
+                year
+            )
+        ) {
             return 0
         }
 
-        val candidateYear = resultYear(result)
-        if (!yearCompatible(candidateYear, year)) {
-            return 0
-        }
+        val similarity =
+            titleSimilarity(
+                result.name,
+                aliases
+            )
 
         return when {
-            year != null &&
-                candidateYear != null &&
-                candidateYear == year -> 130
+            similarity >= 0.999 &&
+                year != null &&
+                candidateYear == year -> 140
+
+            similarity >= 0.999 -> 125
 
             year != null &&
-                candidateYear != null -> 115
+                candidateYear != null &&
+                candidateYear == year -> 112
 
             else -> 100
         }
@@ -336,9 +513,12 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         aliases: List<String>
     ): Boolean {
-        val loadedImdb = result.getImdbId()
+        val loadedImdb =
+            result.getImdbId()
+
         val loadedTmdb =
-            result.getTMDbId()?.toIntOrNull()
+            result.getTMDbId()
+                ?.toIntOrNull()
 
         if (
             !request.imdbId.isNullOrBlank() &&
@@ -374,14 +554,15 @@ class MOOSAHubProvider : TmdbProvider() {
                         loadedTmdb == request.tmdbId
                     )
 
-        if (idMatched) return true
+        if (idMatched) {
+            return true
+        }
 
-        return exactTitleMatch(
-            result.name,
-            aliases
-        ) && yearCompatible(
-            result.year,
-            request.year
+        return safeTitleMatch(
+            candidate = result.name,
+            aliases = aliases,
+            candidateYear = result.year,
+            wantedYear = request.year
         )
     }
 
@@ -581,7 +762,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v2",
+        "strict-v3",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         normalizeTitle(request.title),
