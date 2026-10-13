@@ -3,6 +3,7 @@ package com.moosa.hub.bundled.arabseed
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
@@ -223,13 +224,35 @@ class ArabSeedProvider : MainAPI() {
                     continue
                 }
 
-                try {
-                    loadExtractor(absolute, url, subtitleCallback) { link ->
+                val isDirectMedia = element.tagName().equals("video", true) ||
+                    element.tagName().equals("source", true) ||
+                    absolute.contains(".mp4", true) ||
+                    absolute.contains(".m3u8", true)
+                if (isDirectMedia) {
+                    val isHls = absolute.contains(".m3u8", true) ||
+                        element.attr("type").contains("mpegurl", true)
+                    try {
+                        callback(
+                            ExtractorLink(
+                                this.name,
+                                "${this.name} Stream",
+                                absolute,
+                                url,
+                                Qualities.P720.value,
+                                isHls
+                            )
+                        )
                         emitted = true
-                        callback(link)
+                    } catch (_: Exception) { }
+                } else {
+                    try {
+                        loadExtractor(absolute, url, subtitleCallback) { link ->
+                            emitted = true
+                            callback(link)
+                        }
+                    } catch (_: Exception) {
+                        // Keep trying the other server entries.
                     }
-                } catch (_: Exception) {
-                    // Keep trying the other server entries.
                 }
 
                 if (depth < 3 && isIframe && !visited.contains(absolute)) {
