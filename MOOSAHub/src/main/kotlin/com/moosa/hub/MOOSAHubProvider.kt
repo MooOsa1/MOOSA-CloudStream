@@ -1178,20 +1178,59 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private suspend fun tmdbFallbackPoster(
         tmdbId: Int?,
-        isTv: Boolean
+        isTv: Boolean,
+        preferredLanguage: String? = null
     ): String? {
         val id = tmdbId ?: return null
         val type = if (isTv) "tv" else "movie"
 
-        val images = timed(2200L) {
+        val preferred =
+            preferredLanguage
+                ?.lowercase()
+                ?.takeIf {
+                    it == "ar" ||
+                        it == "en"
+                }
+
+        val includeLanguages =
+            buildList {
+                preferred?.let(::add)
+                add("null")
+                if (preferred != "en") {
+                    add("en")
+                }
+            }
+                .distinct()
+                .joinToString(",")
+
+        val images = timed(2600L) {
             app.get(
                 "$tmdbApiUrl/$type/$id/images",
                 params = mapOf(
                     "api_key" to tmdbApiKey,
-                    "include_image_language" to "en,null"
+                    "include_image_language" to
+                        includeLanguages
                 )
             ).parsedSafe<TmdbImageResponse>()
         } ?: return null
+
+        fun rank(language: String?): Int =
+            when {
+                preferred != null &&
+                    language.equals(
+                        preferred,
+                        ignoreCase = true
+                    ) -> 4
+
+                language == null -> 3
+
+                language.equals(
+                    "en",
+                    ignoreCase = true
+                ) -> 2
+
+                else -> 1
+            }
 
         return images.posters
             .asSequence()
@@ -1200,11 +1239,7 @@ class MOOSAHubProvider : TmdbProvider() {
             }
             .sortedWith(
                 compareByDescending<TmdbImage> {
-                    when (it.language) {
-                        "en" -> 2
-                        null -> 1
-                        else -> 0
-                    }
+                    rank(it.language)
                 }.thenByDescending {
                     it.voteAverage ?: 0.0
                 }
@@ -1279,19 +1314,24 @@ class MOOSAHubProvider : TmdbProvider() {
                     ?: meta.name
 
             val preferredName =
-                if (
-                    meta.originalLanguage.equals(
-                        "ar",
-                        ignoreCase = true
-                    )
+                when (
+                    meta.originalLanguage
+                        ?.lowercase()
                 ) {
-                    originalName
-                        ?.takeIf { it.isNotBlank() }
-                        ?: localizedName
-                } else {
-                    localizedName
-                        ?.takeIf { it.isNotBlank() }
-                        ?: originalName
+                    "ar",
+                    "en" ->
+                        originalName
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?: localizedName
+
+                    else ->
+                        localizedName
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?: originalName
                 }
 
             if (!preferredName.isNullOrBlank()) {
@@ -1318,16 +1358,38 @@ class MOOSAHubProvider : TmdbProvider() {
             base.score = reliableScore
         }
 
+        val originalPoster =
+            if (
+                detail?.originalLanguage.equals(
+                    "ar",
+                    ignoreCase = true
+                )
+            ) {
+                tmdbFallbackPoster(
+                    tmdbId = tmdbId,
+                    isTv = isTv,
+                    preferredLanguage =
+                        detail?.originalLanguage
+                )
+            } else {
+                null
+            }
+
         val poster =
-            detail?.posterPath
-                ?.takeIf { it.isNotBlank() }
-                ?.let {
-                    "https://image.tmdb.org/t/p/w500$it"
-                }
+            originalPoster
+                ?: detail?.posterPath
+                    ?.takeIf {
+                        it.isNotBlank()
+                    }
+                    ?.let {
+                        "https://image.tmdb.org/t/p/w500$it"
+                    }
                 ?: base.posterUrl
                 ?: tmdbFallbackPoster(
                     tmdbId = tmdbId,
-                    isTv = isTv
+                    isTv = isTv,
+                    preferredLanguage =
+                        detail?.originalLanguage
                 )
 
         if (!poster.isNullOrBlank()) {
@@ -1367,6 +1429,8 @@ class MOOSAHubProvider : TmdbProvider() {
                         imdbId = effectiveImdbId,
                         tmdbId = tmdbId,
                         isTv = isTv,
+                        originalLanguage =
+                            detail?.originalLanguage,
                         season = episode.season,
                         episode = episode.episode
                     ).toJson()
