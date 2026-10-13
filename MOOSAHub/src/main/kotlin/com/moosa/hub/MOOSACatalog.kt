@@ -207,11 +207,7 @@ object MOOSACatalog {
         newHomePageResponse(
             request,
             allItems,
-            hasNext = if (showMoreButton && page == 1) {
-                false
-            } else {
-                canLoadMore
-            }
+            hasNext = canLoadMore
         )
     }
 
