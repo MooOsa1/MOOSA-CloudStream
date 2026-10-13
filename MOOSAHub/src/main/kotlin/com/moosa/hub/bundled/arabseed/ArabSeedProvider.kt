@@ -195,7 +195,7 @@ class ArabSeedProvider : MainAPI() {
                 continue
             }
 
-            val selectors = "li[data-link],a.watchBTn,a[data-link],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]"
+            val selectors = "li[data-link],a.watchBTn,a[data-link],a[href*='serv='],a[href*='server='],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]"
 
             for (element in page.select(selectors)) {
                 val raw = element.attr("data-link")
