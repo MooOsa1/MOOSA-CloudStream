@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 49
+version = 50
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v49: follow external player tabs and extract direct or unpacked media URLs
+// v50: parse actual HLS variants and deduplicate extracted sources
