@@ -51,6 +51,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
     private val rows = mutableListOf<RowRefs>()
     private val rowsByName = ConcurrentHashMap<String, RowRefs>()
     private var query = ""
+    private val runningTests = ConcurrentHashMap.newKeySet<String>()
+    private var scanRunning = false
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -287,8 +289,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
-                (metrics.widthPixels * 0.95f).toInt(),
-                (metrics.heightPixels * 0.95f).toInt()
+                (metrics.widthPixels * 0.82f).toInt(),
+                (metrics.heightPixels * 0.86f).toInt()
             )
             setBackgroundDrawableResource(android.R.color.transparent)
         }
@@ -465,34 +467,37 @@ class MOOSASourceTesterDialog : DialogFragment() {
     }
 
     private fun runSingleTest(refs: RowRefs) {
-        refs.test.isEnabled = false
+        if (!runningTests.add(refs.api.name)) return
+
         refs.test.text = "…"
 
         lifecycleScope.launch {
-            refreshRow(refs)
+            refs.status.text = "• TESTING"
+            refs.status.background = rounded(Color.rgb(45, 105, 190), 8)
 
             withContext(Dispatchers.IO) {
                 MOOSASourceTester.test(
                     api = refs.api,
                     discoveryDepth = 2
-                ) { state ->
+                ) {
                     refs.status.post {
                         refreshRow(refs)
                     }
                 }
             }
 
+            runningTests.remove(refs.api.name)
+
             if (isAdded) {
-                refs.test.isEnabled = true
                 refs.test.text = "TEST"
                 refreshRow(refs)
-                refs.test.requestFocus()
             }
         }
     }
 
     private fun runAllTests() {
-        testAllButton.isEnabled = false
+        if (scanRunning) return
+        scanRunning = true
 
         val total = MOOSASourceTester.sources().size.coerceAtLeast(1)
         val done = AtomicInteger(0)
@@ -540,13 +545,11 @@ class MOOSASourceTesterDialog : DialogFragment() {
             }
 
             if (isAdded) {
-                testAllButton.isEnabled = true
+                scanRunning = false
                 testAllButton.text = "TEST ALL SOURCES"
                 progressBar.progress = total
                 progressText.text =
                     "Finished • Online ${online.get()} • Unverified ${unverified.get()} • Offline ${offline.get()}"
-                testAllButton.requestFocus()
-
                 Toast.makeText(
                     requireContext(),
                     "Source test finished.",
