@@ -15,7 +15,8 @@ internal object MOOSAArabicBridge {
         TOP_CINEMA,
         FASEL_HD,
         WECIMA,
-        CIMA_CLUB
+        CIMA_CLUB,
+        ARAB_SEED
     }
 
     fun supports(api: MainAPI): Boolean =
@@ -41,6 +42,10 @@ internal object MOOSAArabicBridge {
 
             "cimaclub" in label ||
                 "cima club" in label -> Kind.CIMA_CLUB
+
+            "arabseed" in label ||
+                "arab seed" in label ||
+                "عرب سيد" in label -> Kind.ARAB_SEED
 
             else -> null
         }
@@ -187,6 +192,7 @@ internal object MOOSAArabicBridge {
             Kind.TOP_CINEMA -> 12_000L
             Kind.WECIMA -> 12_000L
             Kind.CIMA_CLUB -> 12_000L
+            Kind.ARAB_SEED -> 14_000L
         }
 
     private fun loadTimeout(kind: Kind): Long =
@@ -196,6 +202,7 @@ internal object MOOSAArabicBridge {
             Kind.TOP_CINEMA -> 40_000L
             Kind.WECIMA -> 35_000L
             Kind.CIMA_CLUB -> 35_000L
+            Kind.ARAB_SEED -> 50_000L
         }
 
     private fun queryList(
@@ -217,12 +224,33 @@ internal object MOOSAArabicBridge {
                 .distinctBy(::normalize)
 
         if (!request.isTv || season == null) {
-            return base.take(8)
+            return buildList {
+                base.take(8).forEach { title ->
+                    if (
+                        request.year != null &&
+                        Regex("""[\u0600-\u06FF]""")
+                            .containsMatchIn(title)
+                    ) {
+                        add("$title ${request.year}")
+                    }
+                    add(title)
+                }
+            }
+                .distinctBy(::normalize)
+                .take(12)
         }
 
         val preferred = mutableListOf<String>()
 
         base.take(8).forEach { title ->
+            if (
+                request.year != null &&
+                Regex("""[\u0600-\u06FF]""")
+                    .containsMatchIn(title)
+            ) {
+                preferred += "$title ${request.year}"
+            }
+
             preferred += "$title $season"
             preferred += "$title الموسم $season"
             preferred += title
@@ -405,6 +433,18 @@ internal object MOOSAArabicBridge {
                         MOOSAPlaybackDiagnostics.update(
                             api,
                             "Loaded wrong title • ${series.name}"
+                        )
+                        continue
+                    }
+
+                    if (
+                        request.year != null &&
+                        series.year != null &&
+                        abs(series.year - request.year) > 1
+                    ) {
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "Wrong series year • ${series.year} != ${request.year}"
                         )
                         continue
                     }
