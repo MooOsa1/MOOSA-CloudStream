@@ -1453,7 +1453,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v11",
+        "strict-v12",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -1493,6 +1493,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 "ar",
                 ignoreCase = true
             ) &&
+            !isBundledArabicProvider(api) &&
             MOOSAArabicBridge.supports(api)
         ) {
             val bridged =
