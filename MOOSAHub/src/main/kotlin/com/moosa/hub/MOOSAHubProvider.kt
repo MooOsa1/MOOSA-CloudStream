@@ -867,6 +867,19 @@ class MOOSAHubProvider : TmdbProvider() {
             return true
         }
 
+        if (
+            request.originalLanguage.equals(
+                "ar",
+                ignoreCase = true
+            ) &&
+            request.isTv &&
+            request.year != null &&
+            result.year != null &&
+            abs(result.year - request.year) > 1
+        ) {
+            return false
+        }
+
         val candidateHasArabic =
             Regex("""[\u0600-\u06FF]""")
                 .containsMatchIn(result.name)
@@ -1457,7 +1470,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v9",
+        "strict-v10",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -2642,6 +2655,10 @@ class MOOSAHubProvider : TmdbProvider() {
             "akwam" in label ||
                 "اكوام" in label ->
                 45_000L
+
+            "arabseed" in label ||
+                "arab seed" in label ->
+                60_000L
 
             "wecima" in label ||
                 "we cima" in label ||
