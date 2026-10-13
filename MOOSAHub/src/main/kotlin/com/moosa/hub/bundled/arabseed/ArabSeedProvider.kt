@@ -240,4 +240,3 @@ class ArabSeedProvider : MainAPI() {
         return emitted
     }
 }
-}
