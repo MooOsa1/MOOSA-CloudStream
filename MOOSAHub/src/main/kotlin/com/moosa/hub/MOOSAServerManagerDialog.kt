@@ -48,6 +48,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
 
     private val rows = mutableListOf<RowRefs>()
     private var query = ""
+    private val runningTests = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private var scanRunning = false
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -296,8 +298,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
-                (metrics.widthPixels * 0.95f).toInt(),
-                (metrics.heightPixels * 0.95f).toInt()
+                (metrics.widthPixels * 0.82f).toInt(),
+                (metrics.heightPixels * 0.86f).toInt()
             )
             setBackgroundDrawableResource(android.R.color.transparent)
         }
@@ -442,8 +444,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
     private fun refreshRow(refs: RowRefs) {
         val entry = currentEntry(refs.key) ?: return
         val (text, color) = when (entry.lastResult) {
-            true -> "• ONLINE" to Color.rgb(25, 165, 82)
-            false -> "• OFFLINE" to Color.rgb(205, 58, 62)
+            true -> "• ONLINE ✓" to Color.rgb(25, 165, 82)
+            false -> "• OFFLINE ×2" to Color.rgb(205, 58, 62)
             null -> "• UNKNOWN" to Color.rgb(90, 100, 112)
         }
         refs.status.text = text
@@ -481,9 +483,10 @@ class MOOSAServerManagerDialog : DialogFragment() {
     }
 
     private fun testServer(refs: RowRefs) {
-        refs.test.isEnabled = false
+        if (!runningTests.add(refs.key)) return
+
         refs.test.text = "…"
-        refs.status.text = "• TESTING"
+        refs.status.text = "• TESTING…"
         refs.status.background = rounded(Color.rgb(45, 105, 190), 8)
 
         lifecycleScope.launch {
@@ -491,17 +494,18 @@ class MOOSAServerManagerDialog : DialogFragment() {
                 MOOSAServerRegistry.test(refs.key)
             }
 
+            runningTests.remove(refs.key)
+
             if (isAdded) {
-                refs.test.isEnabled = true
                 refs.test.text = "TEST"
                 refreshRow(refs)
-                refs.test.requestFocus()
             }
         }
     }
 
     private fun discoverAndTest() {
-        discoverButton.isEnabled = false
+        if (scanRunning) return
+        scanRunning = true
 
         val total = MOOSASourceTester.sources().size.coerceAtLeast(1)
         val done = AtomicInteger(0)
@@ -530,14 +534,13 @@ class MOOSAServerManagerDialog : DialogFragment() {
             }
 
             if (isAdded) {
-                discoverButton.isEnabled = true
+                scanRunning = false
                 discoverButton.text = "DISCOVER & TEST SERVERS"
                 progressBar.progress = total
                 progressText.text =
                     "Finished • ${MOOSAServerRegistry.snapshot().size} server groups"
 
                 rebuildList()
-                discoverButton.requestFocus()
 
                 Toast.makeText(
                     requireContext(),
