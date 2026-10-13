@@ -180,32 +180,64 @@ class ArabSeedProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val doc = app.get(data).document
-        val viewLinks = doc.select("a[href]").map { a ->
-            a.attr("abs:href").ifEmpty { fixUrl(a.attr("href")) }
-        }.filter { it.contains("/watch/") || it == data && data.contains("/watch/") }
-            .distinct()
-        val startUrls = if (viewLinks.isNotEmpty()) viewLinks else listOf(data)
-        for (url in startUrls) {
-            try {
-                val page = app.get(url, headers = mapOf("Referer" to data)).document
-                val links = linkedSetOf<String>()
-                page.select("a[href],iframe[src],video[src],video source[src]").forEach { el ->
-                    val raw = if (el.hasAttr("href")) el.attr("href") else el.attr("src")
-                    if (raw.isBlank()) return@forEach
-                    val absolute = el.attr("abs:href").ifEmpty { el.attr("abs:src") }.ifEmpty { fixUrl(raw) }
-                    val host = absolute.substringAfter("://", "").substringBefore('/').lowercase()
-                    if (absolute.contains(".m3u8") || absolute.contains(".mp4") ||
-                        (host.isNotBlank() && !host.contains("arabseed.sabaq.news"))
-                    ) links.add(absolute)
-                }
-                for (link in links) {
-                    try { loadExtractor(link, url, subtitleCallback, callback) } catch (_: Exception) { }
-                }
+        val visited = linkedSetOf<String>()
+        val pending = mutableListOf(Triple(data, 0, mainUrl))
+        var cursor = 0
+        var emitted = false
+        val ownHost = runCatching { java.net.URI(mainUrl).host.lowercase() }.getOrNull().orEmpty()
+
+        while (cursor < pending.size && cursor < 20) {
+            val (url, depth, referer) = pending[cursor++]
+            if (!visited.add(url)) continue
+            val page = try {
+                app.get(url, headers = mapOf("Referer" to referer)).document
             } catch (_: Exception) {
-                // A failed page/host is isolated so other server links can still be tried.
+                continue
+            }
+
+            val selectors = "li[data-link],a.watchBTn,a[data-link],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]"
+
+            for (element in page.select(selectors)) {
+                val raw = element.attr("data-link")
+                    .ifBlank { element.attr("data-src") }
+                    .ifBlank { element.attr("data-lazy-src") }
+                    .ifBlank { element.attr("src") }
+                    .ifBlank { element.attr("href") }
+                    .trim()
+                if (raw.isBlank() || raw.startsWith("#") || raw.startsWith("javascript:", true)) continue
+                val absolute = try {
+                    if (raw.startsWith("http://", true) || raw.startsWith("https://", true)) raw
+                    else java.net.URI(url).resolve(raw).toString()
+                } catch (_: Exception) {
+                    continue
+                }
+                if (absolute == url) continue
+                val host = runCatching { java.net.URI(absolute).host?.lowercase().orEmpty() }.getOrNull().orEmpty()
+                if (host.isBlank()) continue
+                val isOwnHost = host == ownHost || host.endsWith(".arabseed.sabaq.news")
+                val isKnownWrapper = host == "w.froozla.pro"
+                val isIframe = element.tagName().equals("iframe", ignoreCase = true)
+
+                if (depth < 3 && (isOwnHost || isKnownWrapper)) {
+                    pending.add(Triple(absolute, depth + 1, url))
+                    continue
+                }
+
+                try {
+                    loadExtractor(absolute, url, subtitleCallback) { link ->
+                        emitted = true
+                        callback(link)
+                    }
+                } catch (_: Exception) {
+                    // Keep trying the other server entries.
+                }
+
+                if (depth < 3 && isIframe && !visited.contains(absolute)) {
+                    pending.add(Triple(absolute, depth + 1, url))
+                }
             }
         }
-        return viewLinks.isNotEmpty()
+        return emitted
     }
+}
 }
