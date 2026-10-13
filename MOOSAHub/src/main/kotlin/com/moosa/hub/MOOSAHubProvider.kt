@@ -1384,6 +1384,9 @@ class MOOSAHubProvider : TmdbProvider() {
         return null
     }
 
+    private fun isBundledArabicProvider(api: MainAPI): Boolean =
+        api.javaClass.name.startsWith("com.moosa.hub.bundled.")
+
     private fun playbackProviders(
         request: HubPlaybackRequest
     ): List<MainAPI> {
@@ -1399,7 +1402,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 false
             }
 
-        return apis
+        val available = apis
             .filter { api ->
                 api !== this &&
                     (
@@ -1414,9 +1417,24 @@ class MOOSAHubProvider : TmdbProvider() {
                         )
                     }
             }
+
+        // Prefer the copies shipped inside MOOSA Hub and avoid running two
+        // implementations with the same provider name.
+        val bundledNames = available
+            .filter(::isBundledArabicProvider)
+            .map { it.name.lowercase() }
+            .toSet()
+
+        return available
+            .filter { api ->
+                isBundledArabicProvider(api) ||
+                    api.name.lowercase() !in bundledNames
+            }
             .sortedWith(
                 compareByDescending<MainAPI> {
-                    if (
+                    if (isBundledArabicProvider(it)) {
+                        3
+                    } else if (
                         request.originalLanguage.equals(
                             "ar",
                             ignoreCase = true
