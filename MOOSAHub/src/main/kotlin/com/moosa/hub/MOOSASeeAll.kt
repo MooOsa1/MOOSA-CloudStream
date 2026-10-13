@@ -10,6 +10,7 @@ import android.widget.TextView
 import com.lagradost.cloudstream3.CommonActivity.activity
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
+import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 
@@ -24,6 +25,8 @@ object MOOSASeeAll {
     private val states = ConcurrentHashMap<String, CategoryState>()
     private val observedRoots =
         WeakHashMap<ViewGroup, ViewTreeObserver.OnGlobalLayoutListener>()
+    private val headerRefs =
+        ConcurrentHashMap<String, WeakReference<TextView>>()
 
     fun register(
         api: MOOSAHubProvider,
@@ -123,7 +126,10 @@ object MOOSASeeAll {
                 )
             }
 
+            headerRefs[state.request.name] = WeakReference(header)
+
             val open = {
+                headerRefs[state.request.name] = WeakReference(header)
                 MOOSABrowseDialog.show(
                     currentActivity,
                     state.api,
@@ -154,4 +160,24 @@ object MOOSASeeAll {
             }
         }
     }
+
+    fun restoreFocus(categoryName: String) {
+        mainHandler.postDelayed({
+            val header = headerRefs[categoryName]?.get()
+            if (header != null && header.isAttachedToWindow) {
+                header.requestFocus()
+                return@postDelayed
+            }
+
+            applyHeaders()
+
+            mainHandler.postDelayed({
+                headerRefs[categoryName]
+                    ?.get()
+                    ?.takeIf { it.isAttachedToWindow }
+                    ?.requestFocus()
+            }, 120L)
+        }, 90L)
+    }
+
 }
