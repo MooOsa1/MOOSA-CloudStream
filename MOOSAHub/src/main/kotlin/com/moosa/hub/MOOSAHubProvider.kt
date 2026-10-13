@@ -64,6 +64,7 @@ class MOOSAHubProvider : TmdbProvider() {
         val imdbId: String? = null,
         val tmdbId: Int? = null,
         val isTv: Boolean = false,
+        val originalLanguage: String? = null,
         val season: Int? = null,
         val episode: Int? = null
     )
@@ -217,7 +218,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private val cacheLifetimeMs = 20 * 60 * 1000L
     private val subtitleCacheLifetimeMs = 15 * 60 * 1000L
-    private val providerResolveTimeoutMs = 18000L
+    private val providerResolveTimeoutMs = 30000L
     private val providerLinksTimeoutMs = 16000L
     private val streamPlayLinksTimeoutMs = 24000L
     private val subtitleTimeoutMs = 2200L
@@ -278,7 +279,19 @@ class MOOSAHubProvider : TmdbProvider() {
             )
             .replace(
                 Regex(
-                    """\b(?:complete|all episodes|full series)\b"""
+                    """\b(?:movie|series|show|watch|download|subbed|dubbed|translated|complete|all episodes|full series|online)\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """(^|\s)(?:فيلم|مسلسل|مسلسلات|برنامج|مشاهدة|تحميل|مترجم|مدبلج|اونلاين|اون لاين|كامل)(?=\s|$)"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """(^|\s)الموسم\s*(?:\d{1,2}|الاول|الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)(?=\s|$)"""
                 ),
                 " "
             )
@@ -474,24 +487,18 @@ class MOOSAHubProvider : TmdbProvider() {
         year: Int?,
         wantSeries: Boolean
     ): Int {
-        if (
-            !searchTypeMatches(
-                result,
-                wantSeries
-            )
-        ) {
-            return 0
-        }
-
         val candidateYear =
             resultYear(result)
+
+        val wantedYear =
+            if (wantSeries) null else year
 
         if (
             !safeTitleMatch(
                 result.name,
                 aliases,
                 candidateYear,
-                year
+                wantedYear
             )
         ) {
             return 0
@@ -503,19 +510,33 @@ class MOOSAHubProvider : TmdbProvider() {
                 aliases
             )
 
-        return when {
+        val typeBonus =
+            if (
+                searchTypeMatches(
+                    result,
+                    wantSeries
+                )
+            ) {
+                10
+            } else {
+                -10
+            }
+
+        val base = when {
             similarity >= 0.999 &&
-                year != null &&
-                candidateYear == year -> 140
+                wantedYear != null &&
+                candidateYear == wantedYear -> 140
 
             similarity >= 0.999 -> 125
 
-            year != null &&
+            wantedYear != null &&
                 candidateYear != null &&
-                candidateYear == year -> 112
+                candidateYear == wantedYear -> 112
 
             else -> 100
         }
+
+        return base + typeBonus
     }
 
     private fun loadedIdentityMatches(
@@ -572,7 +593,15 @@ class MOOSAHubProvider : TmdbProvider() {
             candidate = result.name,
             aliases = aliases,
             candidateYear = result.year,
-            wantedYear = request.year
+            wantedYear =
+                if (
+                    request.season != null &&
+                    request.episode != null
+                ) {
+                    null
+                } else {
+                    request.year
+                }
         )
     }
 
@@ -586,7 +615,7 @@ class MOOSAHubProvider : TmdbProvider() {
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinctBy(::normalizeTitle)
-            .take(6)
+            .take(10)
 
         val queryVariants = buildList {
             addAll(cleanAliases)
@@ -598,7 +627,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         add("$alias $year")
                     }
             }
-        }.distinct().take(9)
+        }.distinct().take(12)
 
         val results =
             mutableListOf<SearchResponse>()
@@ -618,7 +647,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     aliases,
                     year,
                     wantSeries
-                ) >= 100
+                ) >= 90
             }
 
             if (hasStrict) break
@@ -639,7 +668,7 @@ class MOOSAHubProvider : TmdbProvider() {
                             aliases,
                             year,
                             wantSeries
-                        ) >= 100
+                        ) >= 90
                     }
                 ) {
                     break
@@ -717,7 +746,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 )
             }
             .filter { (_, score) ->
-                score >= 100
+                score >= 90
             }
             .sortedByDescending {
                 (_, score) -> score
@@ -746,24 +775,65 @@ class MOOSAHubProvider : TmdbProvider() {
         return null
     }
 
-    private fun playbackProviders(request: HubPlaybackRequest): List<MainAPI> {
-        val disabled = MOOSASettingsStore.disabledSources()
+    private fun playbackProviders(
+        request: HubPlaybackRequest
+    ): List<MainAPI> {
+        val disabled =
+            MOOSASettingsStore.disabledSources()
+
+        fun hasOwnLoadLinks(api: MainAPI): Boolean =
+            try {
+                api.javaClass.declaredMethods.any {
+                    it.name == "loadLinks"
+                }
+            } catch (_: Throwable) {
+                false
+            }
+
         return apis
             .filter { api ->
                 api !== this &&
-                    api.providerType == ProviderType.DirectProvider &&
+                    (
+                        api.providerType ==
+                            ProviderType.DirectProvider ||
+                            hasOwnLoadLinks(api)
+                        ) &&
                     disabled.none { blocked ->
-                        blocked.equals(api.name, ignoreCase = true)
+                        blocked.equals(
+                            api.name,
+                            ignoreCase = true
+                        )
                     }
             }
             .sortedWith(
                 compareByDescending<MainAPI> {
+                    if (
+                        request.originalLanguage.equals(
+                            "ar",
+                            ignoreCase = true
+                        ) &&
+                        it.lang.equals(
+                            "ar",
+                            ignoreCase = true
+                        )
+                    ) {
+                        1
+                    } else {
+                        0
+                    }
+                }.thenByDescending {
                     providerHealth[it.name] ?: 0
                 }.thenByDescending {
                     if (
                         !request.imdbId.isNullOrBlank() &&
-                        it.supportedSyncNames.contains(SyncIdName.Imdb)
-                    ) 1 else 0
+                        it.supportedSyncNames.contains(
+                            SyncIdName.Imdb
+                        )
+                    ) {
+                        1
+                    } else {
+                        0
+                    }
                 }
             )
     }
@@ -772,9 +842,10 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v3",
+        "strict-v4",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
+        request.originalLanguage.orEmpty(),
         normalizeTitle(request.title),
         request.year?.toString().orEmpty(),
         request.season?.toString().orEmpty(),
@@ -818,20 +889,109 @@ class MOOSAHubProvider : TmdbProvider() {
             val season = request.season ?: return null
             val episode = request.episode ?: return null
 
-            val exact = series.episodes.firstOrNull {
-                it.season == season && it.episode == episode
-            }
-
-            val tolerant = if (exact == null && season == 1) {
-                series.episodes.firstOrNull {
-                    it.episode == episode &&
-                        (it.season == null || it.season == 1)
+            fun normalizedNumber(
+                value: String?
+            ): Int? {
+                if (value.isNullOrBlank()) {
+                    return null
                 }
-            } else {
-                null
+
+                val normalized = buildString {
+                    value.forEach { ch ->
+                        append(
+                            when (ch) {
+                                '٠', '۰' -> '0'
+                                '١', '۱' -> '1'
+                                '٢', '۲' -> '2'
+                                '٣', '۳' -> '3'
+                                '٤', '۴' -> '4'
+                                '٥', '۵' -> '5'
+                                '٦', '۶' -> '6'
+                                '٧', '۷' -> '7'
+                                '٨', '۸' -> '8'
+                                '٩', '۹' -> '9'
+                                else -> ch
+                            }
+                        )
+                    }
+                }
+
+                return Regex("""\d{1,4}""")
+                    .find(normalized)
+                    ?.value
+                    ?.toIntOrNull()
             }
 
-            (exact ?: tolerant)?.data
+            fun episodeNumber(
+                item: Episode
+            ): Int? =
+                item.episode
+                    ?: normalizedNumber(item.name)
+                    ?: normalizedNumber(item.data)
+
+            val exact =
+                series.episodes.firstOrNull {
+                    it.season == season &&
+                        episodeNumber(it) == episode
+                }
+
+            val explicitSeasons =
+                series.episodes
+                    .mapNotNull {
+                        it.season?.takeIf { number ->
+                            number > 0
+                        }
+                    }
+                    .distinct()
+
+            val seasonless =
+                if (exact == null) {
+                    series.episodes.firstOrNull {
+                        episodeNumber(it) == episode &&
+                            (
+                                it.season == null ||
+                                    it.season == 0
+                                )
+                    }
+                } else {
+                    null
+                }
+
+            val unknownSeasonFallback =
+                if (
+                    exact == null &&
+                    explicitSeasons.isEmpty()
+                ) {
+                    series.episodes.firstOrNull {
+                        episodeNumber(it) == episode
+                    }
+                } else {
+                    null
+                }
+
+            val firstSeasonFallback =
+                if (
+                    exact == null &&
+                    season == 1
+                ) {
+                    series.episodes.firstOrNull {
+                        episodeNumber(it) == episode &&
+                            (
+                                it.season == null ||
+                                    it.season == 0 ||
+                                    it.season == 1
+                                )
+                    }
+                } else {
+                    null
+                }
+
+            (
+                exact
+                    ?: seasonless
+                    ?: unknownSeasonFallback
+                    ?: firstSeasonFallback
+                )?.data
         }?.takeIf { it.isNotBlank() } ?: return null
 
         val target = ProviderTarget(
@@ -1192,7 +1352,9 @@ class MOOSAHubProvider : TmdbProvider() {
                     year = base.year,
                     imdbId = effectiveImdbId,
                     tmdbId = tmdbId,
-                    isTv = false
+                    isTv = false,
+                    originalLanguage =
+                        detail?.originalLanguage
                 ).toJson()
                 base
             }
