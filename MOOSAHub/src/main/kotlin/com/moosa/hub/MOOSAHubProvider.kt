@@ -1414,6 +1414,41 @@ class MOOSAHubProvider : TmdbProvider() {
                     ?.toIntOrNull()
             }
 
+            fun explicitSeasonNumber(
+                value: String?
+            ): Int? {
+                if (value.isNullOrBlank()) {
+                    return null
+                }
+
+                val normalized =
+                    normalizeDigits(value)
+
+                val patterns = listOf(
+                    Regex(
+                        """(?:الموسم|موسم)\s*[:#\-]?\s*(\d{1,3})"""
+                    ),
+                    Regex(
+                        """\bs(\d{1,3})\s*e\d{1,4}\b""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    Regex(
+                        """[?&](?:season|s)=(\d{1,3})(?:&|$)""",
+                        RegexOption.IGNORE_CASE
+                    )
+                )
+
+                patterns.forEach { pattern ->
+                    pattern.find(normalized)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.toIntOrNull()
+                        ?.let { return it }
+                }
+
+                return null
+            }
+
             fun providerSeason(
                 item: Episode
             ): Int? =
@@ -1421,6 +1456,12 @@ class MOOSAHubProvider : TmdbProvider() {
                     ?.takeIf {
                         it in 1..200
                     }
+                    ?: explicitSeasonNumber(
+                        item.name
+                    )
+                    ?: explicitSeasonNumber(
+                        item.data
+                    )
 
             fun episodeNumber(
                 item: Episode
@@ -1445,20 +1486,21 @@ class MOOSAHubProvider : TmdbProvider() {
                     .mapNotNull(::providerSeason)
                     .distinct()
 
-            val seasonless =
-                if (exact == null) {
-                    series.episodes.firstOrNull {
-                        episodeNumber(it) == episode &&
-                            providerSeason(it) == null
-                    }
-                } else {
-                    null
-                }
+            val pageProvesSeason =
+                seasonSpecificTitleMatch(
+                    series.name,
+                    aliases,
+                    season
+                )
 
-            val unknownSeasonFallback =
+            val seasonless =
                 if (
                     exact == null &&
-                    explicitSeasons.isEmpty()
+                    explicitSeasons.isEmpty() &&
+                    (
+                        season == 1 ||
+                            pageProvesSeason
+                        )
                 ) {
                     series.episodes.firstOrNull {
                         episodeNumber(it) == episode
@@ -1486,7 +1528,6 @@ class MOOSAHubProvider : TmdbProvider() {
             (
                 exact
                     ?: seasonless
-                    ?: unknownSeasonFallback
                     ?: firstSeasonFallback
                 )?.data
         }?.takeIf { it.isNotBlank() } ?: return null
@@ -2680,7 +2721,11 @@ class MOOSAHubProvider : TmdbProvider() {
 
         remainingSubtitles.forEach { subtitle ->
             if (seenSubtitles.add(subtitle.url)) {
-                subtitleCallback(subtitle)
+                try {
+                    subtitleCallback(subtitle)
+                } catch (error: Throwable) {
+                    logError(error)
+                }
             }
         }
 
