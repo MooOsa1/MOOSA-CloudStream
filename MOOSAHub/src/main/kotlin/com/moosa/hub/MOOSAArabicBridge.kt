@@ -83,29 +83,21 @@ internal object MOOSAArabicBridge {
 
     private fun cleanIdentity(value: String): String =
         normalize(value)
+            .replace(Regex("""(?:الموسم|موسم|season|الجزء|جزء|part|ج|s)\\s*(?:\\d+|الاولى?|الثانيه?|الثالثه?|الرابعه?|الخامسه?|السادسه?|السابعه?|الثامنه?|التاسعه?|العاشره?)"""), " ")
+            .replace(Regex("""(?:الحلقه|حلقه)\\s*\\d+(?:\\s+(?:الاولى|الاول|الثانيه|الثاني|الثالثه|الثالث|الرابعه|الرابع|الخامسه|الخامس))?"""), " ")
             .replace(
-                Regex("""(?:الموسم|موسم|season)\s*\d+"""),
+                Regex("""(^|\\s)(?:فيلم|مسلسل|مسلسلات|مشاهده|تحميل|مترجم|مدبلج|كامل|اونلاين|اون لاين)(?=\\s|$)"""),
                 " "
             )
             .replace(
-                Regex(
-                    """(^|\s)(?:فيلم|مسلسل|مسلسلات|مشاهده|تحميل|مترجم|مدبلج|كامل|اونلاين|اون لاين)(?=\s|$)"""
-                ),
+                Regex("""\\b(?:movie|series|show|watch|download|subbed|dubbed|complete|online)\\b"""),
                 " "
             )
             .replace(
-                Regex(
-                    """\b(?:movie|series|show|watch|download|subbed|dubbed|complete|online)\b"""
-                ),
+                Regex("""\\b(?:2160p|1440p|1080p|720p|480p|4k|uhd|fhd|hdr|hevc|x264|x265|web ?dl|webrip|bluray)\\b"""),
                 " "
             )
-            .replace(
-                Regex(
-                    """\b(?:2160p|1440p|1080p|720p|480p|4k|uhd|fhd|hdr|hevc|x264|x265|web ?dl|webrip|bluray)\b"""
-                ),
-                " "
-            )
-            .replace(Regex("""\s+"""), " ")
+            .replace(Regex("""\\s+"""), " ")
             .trim()
 
     private fun words(value: String): Set<String> =
@@ -180,11 +172,11 @@ internal object MOOSAArabicBridge {
     private fun searchTimeout(kind: Kind): Long =
         when (kind) {
             Kind.FASEL_HD -> 18_000L
-            Kind.AKWAM -> 10_000L
+            Kind.AKWAM -> 18_000L
             Kind.TOP_CINEMA -> 12_000L
             Kind.WECIMA -> 12_000L
             Kind.CIMA_CLUB -> 12_000L
-            Kind.ARAB_SEED -> 14_000L
+            Kind.ARAB_SEED -> 25_000L
         }
 
     private fun loadTimeout(kind: Kind): Long =
