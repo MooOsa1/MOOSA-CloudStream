@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v45 release trigger
+// v46: current Akwam and ArabSeed routes
