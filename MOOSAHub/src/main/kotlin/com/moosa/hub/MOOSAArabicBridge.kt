@@ -151,7 +151,15 @@ internal object MOOSAArabicBridge {
             val minSize = minOf(cw.size, aw.size)
             val maxSize = maxOf(cw.size, aw.size)
 
-            if (common == minSize && (maxSize == minSize || common >= 2 && maxSize <= minSize + 1)) {
+            val hasSeasonMarker = Regex(
+                """(?:^|\s)(?:الموسم|موسم|season|الجزء|جزء|part|ج|s)\s*(?:\d+|الاولى?|الثانيه?|الثالثه?|الرابعه?|الخامسه?|السادسه?|السابعه?|الثامنه?|التاسعه?|العاشره?)""",
+                RegexOption.IGNORE_CASE
+            ).containsMatchIn(normalize(candidate))
+
+            if (
+                common == minSize &&
+                (maxSize == minSize || common >= 2 && maxSize <= minSize + 1 || hasSeasonMarker)
+            ) {
                 best = maxOf(best, 92)
             } else {
                 val ratio =
