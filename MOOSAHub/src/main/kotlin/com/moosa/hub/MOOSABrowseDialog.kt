@@ -309,13 +309,18 @@ class MOOSABrowseDialog : DialogFragment() {
                     ""
                 }.lowercase()
 
-                val isResultDestination =
+                val isContentDestination =
                     "result" in entryName ||
-                        "navigation_results" in entryName
+                        "navigation_results" in entryName ||
+                        "navigation_player" in entryName
 
-                if (isResultDestination) {
+                val isHomeDestination =
+                    entryName == "navigation_home" ||
+                        entryName.endsWith("_home")
+
+                if (isContentDestination) {
                     resultDestinationSeen = true
-                } else if (resultDestinationSeen) {
+                } else if (resultDestinationSeen && isHomeDestination) {
                     waitingForResult = false
                     resultDestinationSeen = false
 
@@ -345,6 +350,11 @@ class MOOSABrowseDialog : DialogFragment() {
             navController = null
             destinationListener = null
         }
+    }
+
+    override fun onDismiss(dialog: android.content.DialogInterface) {
+        super.onDismiss(dialog)
+        MOOSASeeAll.restoreFocus(request.name)
     }
 
     override fun onDestroy() {
