@@ -59,6 +59,11 @@ class MOOSAHubProvider : TmdbProvider() {
         val data: String
     )
 
+    private data class DirectTmdbRequest(
+        val id: Int,
+        val type: String
+    )
+
     data class HubPlaybackRequest(
         val title: String,
         val year: Int? = null,
@@ -1147,6 +1152,43 @@ class MOOSAHubProvider : TmdbProvider() {
                 response is MovieLoadResponse
             }
 
+        val isStreamPlay =
+            api.name.contains(
+                "streamplay",
+                ignoreCase = true
+            ) ||
+                api.javaClass.name.contains(
+                    "streamplay",
+                    ignoreCase = true
+                )
+
+        if (
+            isStreamPlay &&
+            request.tmdbId != null
+        ) {
+            val directPayload =
+                DirectTmdbRequest(
+                    id = request.tmdbId,
+                    type =
+                        if (wantSeries) {
+                            "tv"
+                        } else {
+                            "movie"
+                        }
+                ).toJson()
+
+            val direct = timed(15000L) {
+                api.load(directPayload)
+            }
+
+            if (
+                direct != null &&
+                correctType(direct)
+            ) {
+                return direct
+            }
+        }
+
         if (
             !request.imdbId.isNullOrBlank() &&
             api.supportedSyncNames.contains(
@@ -1296,7 +1338,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v6",
+        "strict-v7",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
