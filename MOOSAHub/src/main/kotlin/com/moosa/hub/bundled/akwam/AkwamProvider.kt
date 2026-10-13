@@ -3,6 +3,7 @@ package com.moosa.hub.bundled.akwam
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.JsUnpacker
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
@@ -186,7 +187,7 @@ class AkwamProvider : MainAPI() {
         for (body in bodies) {
             val normalized = body
                 .replace("\\/", "/")
-                .replace("\\u0026", "&")
+                .replace("\\" + "u0026", "&")
                 .replace("&amp;", "&")
             mediaPattern.findAll(normalized).forEach { match ->
                 candidates += match.value.trimEnd(')', ']', '}', ',')
@@ -225,7 +226,7 @@ class AkwamProvider : MainAPI() {
         val ownHost = runCatching { java.net.URI(mainUrl).host.lowercase() }.getOrNull().orEmpty()
         val desktopUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
-        fun emitMedia(mediaUrl: String, referer: String) {
+        suspend fun emitMedia(mediaUrl: String, referer: String) {
             val isHls = mediaUrl.contains(".m3u8", true) ||
                 mediaUrl.contains("playlist", true)
             callback(
@@ -269,7 +270,7 @@ class AkwamProvider : MainAPI() {
                 continue
             }
             val page = response.document
-            extractEmbeddedMediaUrls(response.text, url).forEach { media ->
+            for (media in extractEmbeddedMediaUrls(response.text, url)) {
                 emitMedia(media, url)
             }
 
