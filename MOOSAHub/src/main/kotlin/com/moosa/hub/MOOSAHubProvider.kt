@@ -130,6 +130,13 @@ class MOOSAHubProvider : TmdbProvider() {
         val overview: String? = null
     )
 
+    private data class TmdbSeasonDetail(
+        @JsonProperty("name")
+        val name: String? = null,
+        @JsonProperty("season_number")
+        val seasonNumber: Int? = null
+    )
+
     private data class TmdbDetail(
         @JsonProperty("overview")
         val overview: String? = null,
@@ -305,6 +312,18 @@ class MOOSAHubProvider : TmdbProvider() {
             )
             .replace(
                 Regex(
+                    """\b(?:episode|ep)\s*\d{1,4}\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\be\d{1,4}\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
                     """\bs\d{1,2}\b"""
                 ),
                 " "
@@ -324,6 +343,12 @@ class MOOSAHubProvider : TmdbProvider() {
             .replace(
                 Regex(
                     """(^|\s)الموسم\s*(?:\d{1,2}|الاول|الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)(?=\s|$)"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """(^|\s)الحلقه\s*\d{1,4}(?=\s|$)"""
                 ),
                 " "
             )
@@ -662,6 +687,132 @@ class MOOSAHubProvider : TmdbProvider() {
         )
     }
 
+    private fun arabicSeasonWord(
+        season: Int
+    ): String? = when (season) {
+        1 -> "الأول"
+        2 -> "الثاني"
+        3 -> "الثالث"
+        4 -> "الرابع"
+        5 -> "الخامس"
+        6 -> "السادس"
+        7 -> "السابع"
+        8 -> "الثامن"
+        9 -> "التاسع"
+        10 -> "العاشر"
+        else -> null
+    }
+
+    private suspend fun tmdbSeasonNames(
+        request: HubPlaybackRequest
+    ): List<String> {
+        val id = request.tmdbId ?: return emptyList()
+        val season = request.season ?: return emptyList()
+        if (!request.isTv) return emptyList()
+
+        return coroutineScope {
+            listOf(
+                "ar-SA",
+                "ar",
+                "en-US"
+            ).map { language ->
+                async {
+                    timed(2200L) {
+                        app.get(
+                            "$tmdbApiUrl/tv/$id/season/$season",
+                            params = mapOf(
+                                "api_key" to tmdbApiKey,
+                                "language" to language
+                            )
+                        ).parsedSafe<TmdbSeasonDetail>()
+                            ?.name
+                            ?.trim()
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                    }
+                }
+            }.mapNotNull { it.await() }
+                .distinctBy(::canonicalTitle)
+        }
+    }
+
+    private suspend fun playbackAliases(
+        request: HubPlaybackRequest
+    ): List<String> {
+        val base = timed(5200L) {
+            MOOSACatalog.aliases(
+                tmdbId = request.tmdbId,
+                isTv = request.isTv,
+                fallback = request.title
+            )
+        } ?: listOf(request.title)
+
+        val season = request.season
+        if (
+            !request.isTv ||
+            season == null
+        ) {
+            return base
+                .distinctBy(::canonicalTitle)
+                .take(16)
+        }
+
+        val seasonNames =
+            tmdbSeasonNames(request)
+
+        val arabicBase =
+            base.filter {
+                Regex("""[\u0600-\u06FF]""")
+                    .containsMatchIn(it)
+            }
+
+        val preferredBase =
+            if (
+                request.originalLanguage.equals(
+                    "ar",
+                    ignoreCase = true
+                ) &&
+                arabicBase.isNotEmpty()
+            ) {
+                arabicBase + base
+            } else {
+                base
+            }
+
+        val generated = buildList {
+            addAll(seasonNames)
+
+            preferredBase
+                .take(8)
+                .forEach { title ->
+                    add("$title $season")
+                    add("$title - $season")
+                    add("$title Season $season")
+
+                    if (
+                        Regex("""[\u0600-\u06FF]""")
+                            .containsMatchIn(title)
+                    ) {
+                        add("$title الموسم $season")
+                        arabicSeasonWord(season)
+                            ?.let { word ->
+                                add("$title الموسم $word")
+                            }
+                    }
+                }
+        }
+
+        return (
+            generated +
+                preferredBase
+            )
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy(::canonicalTitle)
+            .take(24)
+    }
+
     private suspend fun searchProvider(
         api: MainAPI,
         aliases: List<String>,
@@ -671,8 +822,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val cleanAliases = aliases
             .map { it.trim() }
             .filter { it.isNotBlank() }
-            .distinctBy(::normalizeTitle)
-            .take(10)
+            .distinctBy(::canonicalTitle)
+            .take(16)
 
         val queryVariants = buildList {
             addAll(cleanAliases)
@@ -684,7 +835,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         add("$alias $year")
                     }
             }
-        }.distinct().take(12)
+        }.distinct().take(18)
 
         val results =
             mutableListOf<SearchResponse>()
@@ -2016,13 +2167,7 @@ class MOOSAHubProvider : TmdbProvider() {
         MOOSAProgress.start(providers.size)
 
         val aliasesJob = async {
-            timed(4200L) {
-                MOOSACatalog.aliases(
-                    tmdbId = request.tmdbId,
-                    isTv = request.isTv,
-                    fallback = request.title
-                )
-            } ?: listOf(request.title)
+            playbackAliases(request)
         }
 
         val seenLinks = ConcurrentHashMap.newKeySet<String>()
@@ -2038,14 +2183,21 @@ class MOOSAHubProvider : TmdbProvider() {
         val emittedLink = AtomicBoolean(false)
         val completedProviders = AtomicInteger(0)
         val shownLinks = AtomicInteger(0)
-        val verifiedLinks = AtomicInteger(0)
 
         val externalSubtitleJob = async {
-            fetchExternalSubtitles(request) { subtitle ->
-                if (seenSubtitles.add(subtitle.url)) {
-                    subtitleCallback(subtitle)
+            timed(6500L) {
+                fetchExternalSubtitles(request) { subtitle ->
+                    if (
+                        seenSubtitles.add(
+                            subtitle.url
+                        )
+                    ) {
+                        subtitleCallback(
+                            subtitle
+                        )
+                    }
                 }
-            }
+            } ?: emptyList()
         }
 
         val aliases = aliasesJob.await()
@@ -2203,7 +2355,6 @@ class MOOSAHubProvider : TmdbProvider() {
                                 ) {
                                     providerWorked = true
                                     emittedLink.set(true)
-                                    verifiedLinks.incrementAndGet()
                                     shownLinks.incrementAndGet()
                                     callback(link)
                                     true
