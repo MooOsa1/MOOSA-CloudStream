@@ -62,7 +62,7 @@ object MOOSAProgress {
             ) {
                 hide()
             }
-        }, 60000L)
+        }, 120000L)
     }
 
     fun providerProgress(
