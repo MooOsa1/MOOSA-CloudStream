@@ -2680,7 +2680,24 @@ class MOOSAHubProvider : TmdbProvider() {
         val request = tryParseJson<HubPlaybackRequest>(data) ?: return@coroutineScope false
         val providers = playbackProviders(request)
 
-        if (providers.isEmpty()) return@coroutineScope false
+        MOOSAPlaybackDiagnostics.start(
+            request,
+            providers
+        )
+
+        if (providers.isEmpty()) {
+            if (
+                request.originalLanguage.equals(
+                    "ar",
+                    ignoreCase = true
+                )
+            ) {
+                MOOSAProgress.failureReport(
+                    MOOSAPlaybackDiagnostics.report()
+                )
+            }
+            return@coroutineScope false
+        }
 
         MOOSAProgress.start(providers.size)
 
@@ -2727,9 +2744,27 @@ class MOOSAHubProvider : TmdbProvider() {
                 var providerWorked = false
 
                 try {
-                    val target = resolveTargetForProvider(request, api, aliases)
+                    MOOSAPlaybackDiagnostics.update(
+                        api,
+                        if (MOOSAArabicBridge.supports(api)) {
+                            "Starting Arabic bridge"
+                        } else {
+                            "Resolving provider"
+                        }
+                    )
+
+                    val target =
+                        resolveTargetForProvider(
+                            request,
+                            api,
+                            aliases
+                        )
 
                     if (target != null) {
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "Target found • requesting links"
+                        )
                         val candidateLinks =
                             Collections.synchronizedList(mutableListOf<ExtractorLink>())
 
@@ -2855,6 +2890,11 @@ class MOOSAHubProvider : TmdbProvider() {
                             }
                         }
 
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "Provider returned ${candidateLinks.size} link(s)"
+                        )
+
                         val candidates = candidateLinks
                             .distinctBy(::linkKey)
                             .sortedByDescending(::inferQuality)
@@ -2890,19 +2930,48 @@ class MOOSAHubProvider : TmdbProvider() {
                                 }
                             }
                         }
+                    } else {
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "No matching page or episode"
+                        )
                     }
 
                     if (providerWorked) {
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "Playback ready"
+                        )
+
                         providerHealth.merge(api.name, 3) { old, add ->
                             (old + add).coerceAtMost(24)
                         }
                     } else {
+                        if (
+                            !MOOSAPlaybackDiagnostics
+                                .report()
+                                .contains(
+                                    "${api.name}: No matching page or episode"
+                                )
+                        ) {
+                            MOOSAPlaybackDiagnostics.update(
+                                api,
+                                "No usable playback links"
+                            )
+                        }
+
                         providerHealth.merge(api.name, -2) { old, add ->
                             (old + add).coerceAtLeast(-12)
                         }
                     }
                 } catch (error: Throwable) {
                     logError(error)
+
+                    MOOSAPlaybackDiagnostics.update(
+                        api,
+                        "Error • ${error.javaClass.simpleName}"
+                    )
+
                     providerHealth.merge(api.name, -2) { old, add ->
                         (old + add).coerceAtLeast(-12)
                     }
@@ -2964,6 +3033,19 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         MOOSAProgress.finish(shownLinks.get())
+
+        if (
+            shownLinks.get() == 0 &&
+            request.originalLanguage.equals(
+                "ar",
+                ignoreCase = true
+            )
+        ) {
+            MOOSAProgress.failureReport(
+                MOOSAPlaybackDiagnostics.report()
+            )
+        }
+
         emittedLink.get()
     }
 
