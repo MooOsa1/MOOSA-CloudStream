@@ -13,7 +13,6 @@ import android.view.Window
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
@@ -27,25 +26,31 @@ import com.lagradost.cloudstream3.MainAPI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 class MOOSASourceTesterDialog : DialogFragment() {
+    private data class RowRefs(
+        val api: MainAPI,
+        val row: View,
+        val check: CheckBox,
+        val status: TextView,
+        val test: Button
+    )
+
     private lateinit var listContainer: LinearLayout
     private lateinit var countText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var progressText: TextView
     private lateinit var testAllButton: Button
     private lateinit var searchButton: Button
-
     private lateinit var selectAll: Button
     private lateinit var selectNone: Button
     private lateinit var disableOffline: Button
-    private lateinit var saveProfile: Button
-    private lateinit var loadProfile: Button
-    private lateinit var deleteProfile: Button
 
-    private val rowFocusPairs = mutableListOf<Pair<View, Button>>()
-    private var query: String = ""
+    private val rows = mutableListOf<RowRefs>()
+    private val rowsByName = ConcurrentHashMap<String, RowRefs>()
+    private var query = ""
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -75,18 +80,28 @@ class MOOSASourceTesterDialog : DialogFragment() {
         if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
     }
 
-    private fun decorateFocusable(view: View, baseColor: Int) {
+    private fun styleFocusable(
+        view: View,
+        baseColor: Int,
+        radius: Int = 10
+    ) {
         view.id = View.generateViewId()
         view.isFocusable = true
         view.isFocusableInTouchMode = false
+        view.background = rounded(
+            baseColor,
+            radius,
+            Color.argb(85, 255, 255, 255)
+        )
+
         view.setOnFocusChangeListener { focused, hasFocus ->
             focused.scaleX = if (hasFocus) 1.025f else 1f
             focused.scaleY = if (hasFocus) 1.025f else 1f
-            focused.alpha = if (hasFocus) 1f else 0.92f
             focused.background = rounded(
-                if (hasFocus) Color.rgb(42, 117, 190) else baseColor,
-                11,
-                if (hasFocus) Color.WHITE else Color.argb(70, 255, 255, 255),
+                if (hasFocus) Color.rgb(35, 110, 190) else baseColor,
+                radius,
+                if (hasFocus) Color.WHITE
+                else Color.argb(85, 255, 255, 255),
                 if (hasFocus) 2 else 1
             )
         }
@@ -99,106 +114,75 @@ class MOOSASourceTesterDialog : DialogFragment() {
             textSize = 13f
             minWidth = 0
             minimumWidth = 0
-            decorateFocusable(this, color)
+            styleFocusable(this, color)
         }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
 
-        val root = FrameLayout(context).apply {
-            setPadding(dp(20), dp(16), dp(20), dp(18))
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(14), dp(18), dp(16))
             background = rounded(
-                Color.rgb(16, 25, 35),
-                20,
-                Color.rgb(120, 135, 150),
+                Color.rgb(13, 29, 47),
+                18,
+                Color.rgb(75, 143, 205),
                 2
             )
         }
-
-        val scroll = ScrollView(context).apply {
-            isFillViewport = true
-            isFocusable = false
-            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
-        }
-
-        val content = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
-        }
-
-        scroll.addView(
-            content,
-            ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        )
-        root.addView(
-            scroll,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        )
 
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         header.addView(
-            label("Select / Test Sources", 27f, Color.WHITE, true),
+            label("Source Tester", 27f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
         countText = label("", 15f, Color.LTGRAY, true)
         header.addView(countText)
-        content.addView(header)
+        root.addView(header)
 
-        content.addView(
+        root.addView(
             label(
-                "ONLINE = a playable server was verified.  UNVERIFIED = the source responded, but no playable link was confirmed.",
-                14f,
+                "ONLINE = verified playable link • UNVERIFIED = source responded but playback could not be confirmed",
+                13f,
                 Color.LTGRAY
             ).apply {
-                setPadding(0, dp(6), 0, dp(12))
+                setPadding(0, dp(4), 0, dp(10))
             }
         )
 
-        val row1 = LinearLayout(context).apply {
+        val controls1 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        selectAll = actionButton("SELECT ALL", Color.rgb(35, 180, 75))
-        selectNone = actionButton("SELECT NONE", Color.rgb(210, 45, 55))
-        row1.addView(
+        selectAll = actionButton("SELECT ALL", Color.rgb(28, 150, 78))
+        selectNone = actionButton("SELECT NONE", Color.rgb(185, 52, 60))
+        controls1.addView(
             selectAll,
-            LinearLayout.LayoutParams(0, dp(64), 1f).apply { marginEnd = dp(8) }
+            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) }
         )
-        row1.addView(
+        controls1.addView(
             selectNone,
-            LinearLayout.LayoutParams(0, dp(64), 1f).apply { marginStart = dp(8) }
+            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
-        content.addView(row1)
+        root.addView(controls1)
 
-        val row2 = LinearLayout(context).apply {
+        val controls2 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, dp(8))
+            setPadding(0, dp(7), 0, 0)
         }
-        testAllButton = actionButton(
-            "DISCOVER & TEST ALL",
-            Color.rgb(30, 105, 180)
-        )
-        disableOffline = actionButton(
-            "DISABLE OFFLINE",
-            Color.rgb(80, 80, 90)
-        )
-        row2.addView(
+        testAllButton = actionButton("TEST ALL SOURCES", Color.rgb(24, 95, 180))
+        disableOffline = actionButton("DISABLE OFFLINE", Color.rgb(90, 70, 120))
+        controls2.addView(
             testAllButton,
-            LinearLayout.LayoutParams(0, dp(60), 1f).apply { marginEnd = dp(8) }
+            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) }
         )
-        row2.addView(
+        controls2.addView(
             disableOffline,
-            LinearLayout.LayoutParams(0, dp(60), 1f).apply { marginStart = dp(8) }
+            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
-        content.addView(row2)
+        root.addView(controls2)
 
         progressBar = ProgressBar(
             context,
@@ -209,88 +193,86 @@ class MOOSASourceTesterDialog : DialogFragment() {
             progress = 0
             visibility = View.GONE
         }
-        content.addView(
+        root.addView(
             progressBar,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(10)
-            ).apply {
-                topMargin = dp(4)
-            }
+                dp(9)
+            ).apply { topMargin = dp(8) }
         )
 
         progressText = label("", 13f, Color.LTGRAY, true).apply {
             visibility = View.GONE
-            setPadding(0, dp(4), 0, dp(8))
+            setPadding(0, dp(3), 0, dp(7))
         }
-        content.addView(progressText)
+        root.addView(progressText)
 
-        val row3 = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        saveProfile = actionButton("SAVE PROFILE", Color.rgb(35, 120, 210))
-        loadProfile = actionButton("LOAD PROFILE", Color.rgb(40, 155, 75))
-        deleteProfile = actionButton("DELETE PROFILE", Color.rgb(205, 50, 55))
-        row3.addView(
-            saveProfile,
-            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(5) }
-        )
-        row3.addView(
-            loadProfile,
-            LinearLayout.LayoutParams(0, dp(58), 1f).apply {
-                marginStart = dp(5)
-                marginEnd = dp(5)
-            }
-        )
-        row3.addView(
-            deleteProfile,
-            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(5) }
-        )
-        content.addView(row3)
-
-        searchButton = actionButton(
-            "SEARCH SOURCES…",
-            Color.rgb(35, 45, 55)
-        )
-        content.addView(
+        searchButton = actionButton("SEARCH SOURCES…", Color.rgb(50, 60, 72))
+        root.addView(
             searchButton,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(58)
-            ).apply {
-                topMargin = dp(10)
-            }
+                dp(54)
+            ).apply { topMargin = dp(8) }
         )
 
+        val scroll = ScrollView(context).apply {
+            isFillViewport = true
+            isFocusable = false
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        }
         listContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(10), 0, dp(12))
+            setPadding(0, dp(8), 0, dp(10))
         }
-        content.addView(listContainer)
+        scroll.addView(
+            listContainer,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
 
         selectAll.setOnClickListener {
             MOOSASourceTester.setAll(true)
-            rebuildList()
+            rows.forEach { refs ->
+                refs.check.isChecked = true
+            }
+            updateCountOnly()
         }
+
         selectNone.setOnClickListener {
             MOOSASourceTester.setAll(false)
-            rebuildList()
+            rows.forEach { refs ->
+                refs.check.isChecked = false
+            }
+            updateCountOnly()
         }
+
         disableOffline.setOnClickListener {
             MOOSASourceTester.disableOffline()
-            rebuildList()
+            rows.forEach { refs ->
+                refs.check.isChecked = MOOSASourceTester.isEnabled(refs.api)
+            }
+            updateCountOnly()
         }
+
         testAllButton.setOnClickListener { runAllTests() }
-        saveProfile.setOnClickListener { promptSaveProfile() }
-        loadProfile.setOnClickListener { chooseProfile(load = true) }
-        deleteProfile.setOnClickListener { chooseProfile(load = false) }
         searchButton.setOnClickListener { openSearchDialog() }
 
         wireTopFocus()
         rebuildList()
 
         android.os.Handler(android.os.Looper.getMainLooper()).post {
-            selectAll.requestFocus()
+            testAllButton.requestFocus()
         }
 
         return Dialog(context).apply {
@@ -305,8 +287,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
-                (metrics.widthPixels * 0.94f).toInt(),
-                (metrics.heightPixels * 0.94f).toInt()
+                (metrics.widthPixels * 0.95f).toInt(),
+                (metrics.heightPixels * 0.95f).toInt()
             )
             setBackgroundDrawableResource(android.R.color.transparent)
         }
@@ -321,33 +303,19 @@ class MOOSASourceTesterDialog : DialogFragment() {
 
         testAllButton.nextFocusUpId = selectAll.id
         testAllButton.nextFocusRightId = disableOffline.id
-        testAllButton.nextFocusDownId = saveProfile.id
+        testAllButton.nextFocusDownId = searchButton.id
 
         disableOffline.nextFocusUpId = selectNone.id
         disableOffline.nextFocusLeftId = testAllButton.id
-        disableOffline.nextFocusDownId = deleteProfile.id
+        disableOffline.nextFocusDownId = searchButton.id
 
-        saveProfile.nextFocusUpId = testAllButton.id
-        saveProfile.nextFocusRightId = loadProfile.id
-        saveProfile.nextFocusDownId = searchButton.id
-
-        loadProfile.nextFocusUpId = testAllButton.id
-        loadProfile.nextFocusLeftId = saveProfile.id
-        loadProfile.nextFocusRightId = deleteProfile.id
-        loadProfile.nextFocusDownId = searchButton.id
-
-        deleteProfile.nextFocusUpId = disableOffline.id
-        deleteProfile.nextFocusLeftId = loadProfile.id
-        deleteProfile.nextFocusDownId = searchButton.id
-
-        searchButton.nextFocusUpId = loadProfile.id
+        searchButton.nextFocusUpId = testAllButton.id
     }
 
     private fun rebuildList() {
-        if (!::listContainer.isInitialized) return
-
         listContainer.removeAllViews()
-        rowFocusPairs.clear()
+        rows.clear()
+        rowsByName.clear()
 
         val all = MOOSASourceTester.sources()
         countText.text =
@@ -360,23 +328,22 @@ class MOOSASourceTesterDialog : DialogFragment() {
         }
 
         visible.forEach { api ->
-            val pair = buildSourceRow(api)
-            rowFocusPairs += pair
+            val refs = buildSourceRow(api)
+            rows += refs
+            rowsByName[api.name] = refs
             listContainer.addView(
-                pair.first,
+                refs.row,
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    dp(70)
-                ).apply {
-                    bottomMargin = dp(5)
-                }
+                    dp(68)
+                ).apply { bottomMargin = dp(5) }
             )
         }
 
-        wireListFocus()
+        wireRows()
     }
 
-    private fun buildSourceRow(api: MainAPI): Pair<View, Button> {
+    private fun buildSourceRow(api: MainAPI): RowRefs {
         val context = requireContext()
 
         val row = LinearLayout(context).apply {
@@ -384,7 +351,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), dp(5), dp(8), dp(5))
             isClickable = true
-            decorateFocusable(this, Color.rgb(24, 31, 40))
+            styleFocusable(this, Color.rgb(24, 39, 55), 9)
         }
 
         val check = CheckBox(context).apply {
@@ -395,7 +362,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
         }
         row.addView(
             check,
-            LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT)
+            LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.MATCH_PARENT)
         )
 
         row.addView(
@@ -403,30 +370,11 @@ class MOOSASourceTesterDialog : DialogFragment() {
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
 
-        val state = MOOSASourceTester.snapshot(api)
         val status = TextView(context).apply {
-            val pair = when (state.status) {
-                MOOSASourceTester.Status.ONLINE ->
-                    "• ONLINE" to Color.rgb(30, 180, 85)
-                MOOSASourceTester.Status.UNVERIFIED ->
-                    "• UNVERIFIED" to Color.rgb(215, 145, 35)
-                MOOSASourceTester.Status.OFFLINE ->
-                    "• OFFLINE" to Color.rgb(220, 55, 55)
-                MOOSASourceTester.Status.TESTING ->
-                    "• TESTING" to Color.rgb(70, 125, 210)
-                MOOSASourceTester.Status.UNKNOWN ->
-                    "• UNKNOWN" to Color.rgb(95, 105, 115)
-            }
-            text = if (state.serverCount > 0) {
-                "${pair.first}  ${state.serverCount}"
-            } else {
-                pair.first
-            }
             textSize = 12f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             setPadding(dp(9), dp(6), dp(9), dp(6))
-            background = rounded(pair.second, 8)
             isFocusable = false
         }
         row.addView(
@@ -437,51 +385,77 @@ class MOOSASourceTesterDialog : DialogFragment() {
             ).apply { marginEnd = dp(10) }
         )
 
-        val test = actionButton("TEST", Color.rgb(45, 55, 65))
+        val test = actionButton("TEST", Color.rgb(55, 65, 78))
         row.addView(
             test,
-            LinearLayout.LayoutParams(dp(88), dp(46))
+            LinearLayout.LayoutParams(dp(88), dp(44))
         )
+
+        val refs = RowRefs(api, row, check, status, test)
+        refreshRow(refs)
 
         row.setOnClickListener {
             check.isChecked = !check.isChecked
         }
+
         check.setOnCheckedChangeListener { _, enabled ->
             MOOSASourceTester.setEnabled(api, enabled)
             updateCountOnly()
         }
-        test.setOnClickListener { runSingleTest(api, test) }
 
-        return row to test
+        test.setOnClickListener {
+            runSingleTest(refs)
+        }
+
+        return refs
     }
 
-    private fun wireListFocus() {
-        if (rowFocusPairs.isEmpty()) {
+    private fun refreshRow(refs: RowRefs) {
+        val state = MOOSASourceTester.snapshot(refs.api)
+        val (text, color) = when (state.status) {
+            MOOSASourceTester.Status.ONLINE ->
+                "• ONLINE" to Color.rgb(25, 165, 82)
+            MOOSASourceTester.Status.UNVERIFIED ->
+                "• UNVERIFIED" to Color.rgb(205, 140, 35)
+            MOOSASourceTester.Status.OFFLINE ->
+                "• OFFLINE" to Color.rgb(205, 58, 62)
+            MOOSASourceTester.Status.TESTING ->
+                "• TESTING" to Color.rgb(45, 105, 190)
+            MOOSASourceTester.Status.UNKNOWN ->
+                "• UNKNOWN" to Color.rgb(90, 100, 112)
+        }
+
+        refs.status.text =
+            if (state.serverCount > 0) "$text  ${state.serverCount}"
+            else text
+        refs.status.background = rounded(color, 8)
+    }
+
+    private fun wireRows() {
+        if (rows.isEmpty()) {
             searchButton.nextFocusDownId = searchButton.id
             return
         }
 
-        val firstRow = rowFocusPairs.first().first
-        val firstTest = rowFocusPairs.first().second
-        searchButton.nextFocusDownId = firstRow.id
+        searchButton.nextFocusDownId = rows.first().row.id
 
-        rowFocusPairs.forEachIndexed { index, pair ->
-            val row = pair.first
-            val test = pair.second
-            val previous = rowFocusPairs.getOrNull(index - 1)
-            val next = rowFocusPairs.getOrNull(index + 1)
+        rows.forEachIndexed { index, refs ->
+            val previous = rows.getOrNull(index - 1)
+            val next = rows.getOrNull(index + 1)
 
-            row.nextFocusRightId = test.id
-            test.nextFocusLeftId = row.id
+            refs.row.nextFocusRightId = refs.test.id
+            refs.test.nextFocusLeftId = refs.row.id
 
-            row.nextFocusUpId = previous?.first?.id ?: searchButton.id
-            test.nextFocusUpId = previous?.second?.id ?: searchButton.id
+            refs.row.nextFocusUpId =
+                previous?.row?.id ?: searchButton.id
+            refs.test.nextFocusUpId =
+                previous?.test?.id ?: searchButton.id
 
-            row.nextFocusDownId = next?.first?.id ?: row.id
-            test.nextFocusDownId = next?.second?.id ?: test.id
+            refs.row.nextFocusDownId =
+                next?.row?.id ?: refs.row.id
+            refs.test.nextFocusDownId =
+                next?.test?.id ?: refs.test.id
         }
-
-        deleteProfile.nextFocusDownId = firstTest.id
     }
 
     private fun updateCountOnly() {
@@ -490,20 +464,29 @@ class MOOSASourceTesterDialog : DialogFragment() {
             "${all.count { MOOSASourceTester.isEnabled(it) }} / ${all.size} enabled"
     }
 
-    private fun runSingleTest(api: MainAPI, button: Button) {
-        button.isEnabled = false
-        button.text = "…"
+    private fun runSingleTest(refs: RowRefs) {
+        refs.test.isEnabled = false
+        refs.test.text = "…"
 
         lifecycleScope.launch {
+            refreshRow(refs)
+
             withContext(Dispatchers.IO) {
-                MOOSASourceTester.test(api, discoveryDepth = 2)
+                MOOSASourceTester.test(
+                    api = refs.api,
+                    discoveryDepth = 2
+                ) { state ->
+                    refs.status.post {
+                        refreshRow(refs)
+                    }
+                }
             }
 
             if (isAdded) {
-                button.isEnabled = true
-                button.text = "TEST"
-                rebuildList()
-                button.requestFocus()
+                refs.test.isEnabled = true
+                refs.test.text = "TEST"
+                refreshRow(refs)
+                refs.test.requestFocus()
             }
         }
     }
@@ -521,20 +504,29 @@ class MOOSASourceTesterDialog : DialogFragment() {
         progressBar.progress = 0
         progressBar.visibility = View.VISIBLE
         progressText.visibility = View.VISIBLE
-        progressText.text = "Scanning 0/$total"
+        progressText.text = "0/$total"
         testAllButton.text = "TESTING…"
 
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
-                MOOSASourceTester.testAll(discoveryDepth = 2) { _, state ->
+                MOOSASourceTester.testAll(discoveryDepth = 2) { api, state ->
+                    rowsByName[api.name]?.let { refs ->
+                        refs.status.post {
+                            refreshRow(refs)
+                        }
+                    }
+
                     if (state.status == MOOSASourceTester.Status.TESTING) {
                         return@testAll
                     }
 
                     when (state.status) {
-                        MOOSASourceTester.Status.ONLINE -> online.incrementAndGet()
-                        MOOSASourceTester.Status.UNVERIFIED -> unverified.incrementAndGet()
-                        MOOSASourceTester.Status.OFFLINE -> offline.incrementAndGet()
+                        MOOSASourceTester.Status.ONLINE ->
+                            online.incrementAndGet()
+                        MOOSASourceTester.Status.UNVERIFIED ->
+                            unverified.incrementAndGet()
+                        MOOSASourceTester.Status.OFFLINE ->
+                            offline.incrementAndGet()
                         else -> Unit
                     }
 
@@ -542,24 +534,23 @@ class MOOSASourceTesterDialog : DialogFragment() {
                     progressBar.post {
                         progressBar.progress = completed
                         progressText.text =
-                            "Scanning $completed/$total  •  Online ${online.get()}  •  Unverified ${unverified.get()}  •  Offline ${offline.get()}"
+                            "$completed/$total  • Online ${online.get()}  • Unverified ${unverified.get()}  • Offline ${offline.get()}"
                     }
                 }
             }
 
             if (isAdded) {
                 testAllButton.isEnabled = true
-                testAllButton.text = "DISCOVER & TEST ALL"
+                testAllButton.text = "TEST ALL SOURCES"
                 progressBar.progress = total
                 progressText.text =
                     "Finished • Online ${online.get()} • Unverified ${unverified.get()} • Offline ${offline.get()}"
-                rebuildList()
                 testAllButton.requestFocus()
 
                 Toast.makeText(
                     requireContext(),
-                    "Source scan finished.",
-                    Toast.LENGTH_LONG
+                    "Source test finished.",
+                    Toast.LENGTH_SHORT
                 ).show()
             }
         }
@@ -589,53 +580,6 @@ class MOOSASourceTesterDialog : DialogFragment() {
                 query = ""
                 searchButton.text = "SEARCH SOURCES…"
                 rebuildList()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun promptSaveProfile() {
-        val input = EditText(requireContext()).apply {
-            hint = "Profile name"
-            setSingleLine(true)
-        }
-
-        AlertDialog.Builder(requireContext())
-            .setTitle("Save Profile")
-            .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                input.text
-                    ?.toString()
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let(MOOSASettingsStore::saveSourceProfile)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun chooseProfile(load: Boolean) {
-        val profiles = MOOSASettingsStore.sourceProfiles().keys.toTypedArray()
-
-        if (profiles.isEmpty()) {
-            Toast.makeText(
-                requireContext(),
-                "No profiles saved.",
-                Toast.LENGTH_SHORT
-            ).show()
-            return
-        }
-
-        AlertDialog.Builder(requireContext())
-            .setTitle(if (load) "Load Profile" else "Delete Profile")
-            .setItems(profiles) { _, which ->
-                val name = profiles[which]
-                if (load) {
-                    MOOSASettingsStore.loadSourceProfile(name)
-                    rebuildList()
-                } else {
-                    MOOSASettingsStore.deleteSourceProfile(name)
-                }
             }
             .setNegativeButton("Cancel", null)
             .show()
