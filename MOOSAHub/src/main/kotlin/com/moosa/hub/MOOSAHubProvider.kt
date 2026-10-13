@@ -1156,7 +1156,7 @@ class MOOSAHubProvider : TmdbProvider() {
     ): Long =
         when {
             isArabicProvider(api) &&
-                request.isTv -> 65000L
+                request.isTv -> 100000L
 
             isArabicProvider(api) -> 38000L
 
@@ -1478,7 +1478,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v10",
+        "strict-v11",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -2942,6 +2942,8 @@ class MOOSAHubProvider : TmdbProvider() {
                                     providerWorked = true
                                     emittedLink.set(true)
                                     shownLinks.incrementAndGet()
+                                    MOOSAProgress.linkAvailable()
+
                                     callback(link)
                                     true
                                 } else {
@@ -2953,6 +2955,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                                 "ar",
                                                 ignoreCase = true
                                             ) ||
+                                                isArabicProvider(api) ||
                                                 MOOSAArabicBridge.supports(api) ||
                                                 isStreamPlayProvider(api)
                                             )
@@ -3033,6 +3036,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     if (seenLinks.add(key)) {
                         emittedLink.set(true)
                         shownLinks.incrementAndGet()
+                        MOOSAProgress.linkAvailable()
+
                         callback(link)
                     }
                 }
