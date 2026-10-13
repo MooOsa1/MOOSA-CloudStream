@@ -1021,26 +1021,28 @@ class MOOSAHubProvider : TmdbProvider() {
             }
 
         val generated = buildList {
-            addAll(seasonNames)
-
             preferredBase
                 .take(8)
                 .forEach { title ->
                     add("$title $season")
-                    add("$title - $season")
-                    add("$title Season $season")
 
                     if (
                         Regex("""[\u0600-\u06FF]""")
                             .containsMatchIn(title)
                     ) {
                         add("$title الموسم $season")
+
                         arabicSeasonWord(season)
                             ?.let { word ->
                                 add("$title الموسم $word")
                             }
                     }
+
+                    add("$title Season $season")
+                    add("$title - $season")
                 }
+
+            addAll(seasonNames)
         }
 
         return (
