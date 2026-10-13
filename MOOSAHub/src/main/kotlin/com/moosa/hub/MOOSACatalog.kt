@@ -81,21 +81,24 @@ object MOOSACatalog {
                     title
                         ?: name
 
-                return if (
-                    originalLanguage.equals(
-                        "ar",
-                        ignoreCase = true
-                    )
+                return when (
+                    originalLanguage
+                        ?.lowercase()
                 ) {
-                    original
-                        ?.takeIf { it.isNotBlank() }
-                        ?: localized
-                        .orEmpty()
-                } else {
-                    localized
-                        ?.takeIf { it.isNotBlank() }
-                        ?: original
-                        .orEmpty()
+                    "ar",
+                    "en" ->
+                        original
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?: localized.orEmpty()
+
+                    else ->
+                        localized
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?: original.orEmpty()
                 }
             }
 
@@ -194,28 +197,58 @@ object MOOSACatalog {
         item: Item,
         forceTv: Boolean
     ): Item {
-        if (
-            !item.posterPath.isNullOrBlank() ||
-            !item.backdropPath.isNullOrBlank()
-        ) {
+        val preferredLanguage =
+            item.originalLanguage
+                ?.lowercase()
+                ?.takeIf {
+                    it == "ar" ||
+                        it == "en"
+                }
+
+        val shouldResolveImages =
+            item.posterPath.isNullOrBlank() ||
+                item.backdropPath.isNullOrBlank() ||
+                preferredLanguage == "ar"
+
+        if (!shouldResolveImages) {
             return item
         }
 
         val id = item.id ?: return item
+
         val isTv =
             forceTv ||
                 item.mediaType == "tv" ||
-                (item.name != null && item.title == null)
+                (
+                    item.name != null &&
+                        item.title == null
+                    )
 
-        val type = if (isTv) "tv" else "movie"
+        val type =
+            if (isTv) "tv" else "movie"
 
         return artworkSemaphore.withPermit {
+            val imageLanguages =
+                buildList {
+                    preferredLanguage
+                        ?.let(::add)
+                    add("null")
+                    if (
+                        preferredLanguage != "en"
+                    ) {
+                        add("en")
+                    }
+                }
+                    .distinct()
+                    .joinToString(",")
+
             val images = try {
                 tryParseJson<TmdbImages>(
                     get(
                         "/$type/$id/images",
                         mapOf(
-                            "include_image_language" to "en,null"
+                            "include_image_language" to
+                                imageLanguages
                         )
                     )
                 )
@@ -223,35 +256,67 @@ object MOOSACatalog {
                 null
             } ?: return@withPermit item
 
-            val poster = images.posters
-                .asSequence()
-                .filter {
-                    !it.filePath.isNullOrBlank()
-                }
-                .sortedWith(
-                    compareByDescending<TmdbImage> {
-                        when (it.language) {
-                            "en" -> 2
-                            null -> 1
-                            else -> 0
-                        }
-                    }.thenByDescending {
-                        it.voteAverage ?: 0.0
-                    }
-                )
-                .mapNotNull { it.filePath }
-                .firstOrNull()
+            fun languageRank(
+                language: String?
+            ): Int =
+                when {
+                    preferredLanguage != null &&
+                        language.equals(
+                            preferredLanguage,
+                            ignoreCase = true
+                        ) -> 4
 
-            val backdrop = images.backdrops
-                .asSequence()
-                .filter {
-                    !it.filePath.isNullOrBlank()
+                    language == null -> 3
+
+                    language.equals(
+                        "en",
+                        ignoreCase = true
+                    ) -> 2
+
+                    else -> 1
                 }
-                .sortedByDescending {
-                    it.voteAverage ?: 0.0
-                }
-                .mapNotNull { it.filePath }
-                .firstOrNull()
+
+            val poster =
+                images.posters
+                    .asSequence()
+                    .filter {
+                        !it.filePath.isNullOrBlank()
+                    }
+                    .sortedWith(
+                        compareByDescending<TmdbImage> {
+                            languageRank(
+                                it.language
+                            )
+                        }.thenByDescending {
+                            it.voteAverage ?: 0.0
+                        }
+                    )
+                    .mapNotNull {
+                        it.filePath
+                    }
+                    .firstOrNull()
+                    ?: item.posterPath
+
+            val backdrop =
+                images.backdrops
+                    .asSequence()
+                    .filter {
+                        !it.filePath.isNullOrBlank()
+                    }
+                    .sortedWith(
+                        compareByDescending<TmdbImage> {
+                            languageRank(
+                                it.language
+                            )
+                        }.thenByDescending {
+                            it.voteAverage ?: 0.0
+                        }
+                    )
+                    .mapNotNull {
+                        it.filePath
+                    }
+                    .firstOrNull()
+                    ?: item.backdropPath
 
             item.copy(
                 posterPath = poster,
