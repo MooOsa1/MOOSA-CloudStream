@@ -3,6 +3,9 @@ package com.moosa.hub
 import android.net.Uri
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
@@ -212,6 +215,26 @@ object MOOSAServerRegistry {
 
         item.lastResult = false
         return false
+    }
+
+    suspend fun testAll(
+        concurrency: Int = 8,
+        onProgress: ((done: Int, total: Int) -> Unit)? = null
+    ) = coroutineScope {
+        val keys = snapshot().map { it.key }
+        val total = keys.size
+        var done = 0
+
+        for (batch in keys.chunked(concurrency.coerceIn(2, 12))) {
+            batch.map { key ->
+                async {
+                    test(key)
+                }
+            }.awaitAll()
+
+            done += batch.size
+            onProgress?.invoke(done, total)
+        }
     }
 
     private suspend fun probeOnce(link: ExtractorLink): Boolean {
