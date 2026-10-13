@@ -437,14 +437,22 @@ internal object MOOSAArabicBridge {
                         continue
                     }
 
+                    val loadedYear =
+                        series.year
+
+                    val wantedYear =
+                        request.year
+
                     if (
-                        request.year != null &&
-                        series.year != null &&
-                        abs(series.year - request.year) > 1
+                        loadedYear != null &&
+                        wantedYear != null &&
+                        abs(
+                            loadedYear - wantedYear
+                        ) > 1
                     ) {
                         MOOSAPlaybackDiagnostics.update(
                             api,
-                            "Wrong series year • ${series.year} != ${request.year}"
+                            "Wrong series year • $loadedYear != $wantedYear"
                         )
                         continue
                     }
