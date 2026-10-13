@@ -300,6 +300,22 @@ object MOOSAServerRegistry {
                     }
 
                     else -> {
+                        fun looksLikeMedia(
+                            successful: Boolean,
+                            contentType: String
+                        ): Boolean {
+                            if (!successful) return false
+
+                            val type = contentType.lowercase()
+
+                            return type.isBlank() ||
+                                (
+                                    !type.contains("text/html") &&
+                                        !type.contains("application/json") &&
+                                        !type.contains("text/plain")
+                                    )
+                        }
+
                         val head = app.head(
                             link.url,
                             headers = headers,
@@ -307,39 +323,40 @@ object MOOSAServerRegistry {
                             verify = false
                         )
 
-                        if (head.isSuccessful) {
-                            val contentType =
-                                head.headers["Content-Type"]
-                                    .orEmpty()
-                                    .lowercase()
+                        val headType =
+                            head.headers["Content-Type"]
+                                .orEmpty()
 
-                            contentType.isBlank() ||
-                                (
-                                    !contentType.contains("text/html") &&
-                                        !contentType.contains(
-                                            "application/json"
-                                        )
-                                    )
+                        if (
+                            looksLikeMedia(
+                                head.isSuccessful,
+                                headType
+                            )
+                        ) {
+                            true
                         } else {
+                            // Some video hosts answer HEAD with an HTML/403
+                            // response but serve the actual file to a ranged GET.
+                            // Always try the ranged request when HEAD does not
+                            // positively identify media instead of marking a
+                            // playable server as dead.
                             val ranged = app.get(
                                 link.url,
                                 headers = headers + mapOf(
-                                    "Range" to "bytes=0-2047"
+                                    "Range" to "bytes=0-4095"
                                 ),
                                 referer = link.referer,
                                 verify = false
                             )
 
-                            val contentType =
+                            val rangedType =
                                 ranged.headers["Content-Type"]
                                     .orEmpty()
-                                    .lowercase()
 
-                            ranged.isSuccessful &&
-                                !contentType.contains("text/html") &&
-                                !contentType.contains(
-                                    "application/json"
-                                )
+                            looksLikeMedia(
+                                ranged.isSuccessful,
+                                rangedType
+                            )
                         }
                     }
                 }
