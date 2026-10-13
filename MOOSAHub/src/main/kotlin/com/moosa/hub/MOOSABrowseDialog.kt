@@ -242,27 +242,6 @@ class MOOSABrowseDialog : DialogFragment() {
         }
     }
 
-    override fun onDestroy() {
-        val controller = navController
-        val listener = destinationListener
-
-        if (controller != null && listener != null) {
-            try {
-                controller.javaClass.methods
-                    .firstOrNull {
-                        it.name == "removeOnDestinationChangedListener" &&
-                            it.parameterCount == 1
-                    }
-                    ?.invoke(controller, listener)
-            } catch (_: Throwable) {
-            }
-        }
-
-        destinationListener = null
-        navController = null
-        super.onDestroy()
-    }
-
     override fun onStart() {
         super.onStart()
         val metrics = resources.displayMetrics
