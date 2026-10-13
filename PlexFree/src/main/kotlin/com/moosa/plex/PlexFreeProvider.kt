@@ -6,6 +6,8 @@ import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.M3u8Helper
+import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import java.util.UUID
 
@@ -86,6 +88,9 @@ class PlexFreeProvider : MainAPI() {
 
     private data class PlexMedia(
         val protocol: String? = null,
+        val height: Int? = null,
+        val width: Int? = null,
+        val videoResolution: String? = null,
         @JsonProperty("Part")
         val parts: List<PlexPart> = emptyList()
     )
@@ -231,6 +236,28 @@ class PlexFreeProvider : MainAPI() {
         }
     }
 
+    private fun PlexMedia.qualityValue(): Int {
+        val resolution = height?.takeIf { it > 0 }
+            ?: videoResolution
+                ?.lowercase()
+                ?.let { value ->
+                    when {
+                        "4k" in value || "2160" in value -> 2160
+                        else -> Regex("\\d{3,4}").find(value)?.value?.toIntOrNull()
+                    }
+                }
+        return when {
+            resolution == null -> Qualities.Unknown.value
+            resolution >= 2000 -> Qualities.P2160.value
+            resolution >= 1300 -> Qualities.P1440.value
+            resolution >= 950 -> Qualities.P1080.value
+            resolution >= 650 -> Qualities.P720.value
+            resolution >= 420 -> Qualities.P480.value
+            resolution >= 300 -> Qualities.P360.value
+            else -> Qualities.Unknown.value
+        }
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -240,34 +267,76 @@ class PlexFreeProvider : MainAPI() {
         val payload = tryParseJson<PlexPayload>(data) ?: return false
         val token = getToken()
         val meta = getMetadata(payload.id) ?: return false
-
+        val headers = mapOf(
+            "X-Plex-Token" to token,
+            "X-Plex-Client-Identifier" to clientId
+        )
+        val emittedUrls = mutableSetOf<String>()
         var found = false
-        meta.media.forEach { media ->
-            media.parts.forEach { part ->
-                val key = part.key ?: return@forEach
-                val streamUrl = if (key.startsWith("http")) key else "${vod}${key}"
-                val joiner = if (streamUrl.contains("?")) "&" else "?"
-                val fullUrl = "${streamUrl}${joiner}${authQuery(token)}"
-                val type = when {
-                    key.contains(".m3u8", ignoreCase = true) -> ExtractorLinkType.M3U8
-                    key.contains(".mpd", ignoreCase = true) -> ExtractorLinkType.DASH
-                    else -> ExtractorLinkType.VIDEO
+
+        suspend fun emitLink(url: String, quality: Int, type: ExtractorLinkType) {
+            if (type == ExtractorLinkType.M3U8) {
+                val variants = try {
+                    M3u8Helper().m3u8Generation(
+                        M3u8Helper.M3u8Stream(url, quality, headers),
+                        false
+                    )
+                } catch (_: Exception) {
+                    emptyList()
                 }
 
+                if (variants.isNotEmpty()) {
+                    variants.forEach { variant ->
+                        if (emittedUrls.add(variant.streamUrl)) {
+                            callback(
+                                newExtractorLink(
+                                    source = name,
+                                    name = "Plex",
+                                    url = variant.streamUrl,
+                                    type = ExtractorLinkType.M3U8
+                                ) {
+                                    this.quality = variant.quality ?: quality
+                                    this.headers = headers
+                                }
+                            )
+                            found = true
+                        }
+                    }
+                    return
+                }
+            }
+
+            if (emittedUrls.add(url)) {
                 callback(
                     newExtractorLink(
                         source = name,
                         name = "Plex",
-                        url = fullUrl,
+                        url = url,
                         type = type
                     ) {
-                        headers = mapOf(
-                            "X-Plex-Token" to token,
-                            "X-Plex-Client-Identifier" to clientId
-                        )
+                        this.quality = quality
+                        this.headers = headers
                     }
                 )
                 found = true
+            }
+        }
+
+        for (media in meta.media) {
+            for (part in media.parts) {
+                val key = part.key ?: continue
+                val streamUrl = if (key.startsWith("http")) key else "${vod}${key}"
+                val joiner = if (streamUrl.contains("?")) "&" else "?"
+                val fullUrl = "${streamUrl}${joiner}${authQuery(token)}"
+                val protocol = media.protocol.orEmpty()
+                val type = when {
+                    key.contains(".m3u8", ignoreCase = true) ||
+                        protocol.equals("hls", ignoreCase = true) -> ExtractorLinkType.M3U8
+                    key.contains(".mpd", ignoreCase = true) ||
+                        protocol.equals("dash", ignoreCase = true) -> ExtractorLinkType.DASH
+                    else -> ExtractorLinkType.VIDEO
+                }
+                emitLink(fullUrl, media.qualityValue(), type)
             }
         }
         return found
