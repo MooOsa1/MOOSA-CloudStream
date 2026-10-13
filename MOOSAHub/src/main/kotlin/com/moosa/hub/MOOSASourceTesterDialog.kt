@@ -53,6 +53,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
     private var query = ""
     private val runningTests = ConcurrentHashMap.newKeySet<String>()
     private var scanRunning = false
+    private var bulkUpdating = false
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -100,7 +101,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             focused.scaleX = if (hasFocus) 1.025f else 1f
             focused.scaleY = if (hasFocus) 1.025f else 1f
             focused.background = rounded(
-                if (hasFocus) Color.rgb(35, 110, 190) else baseColor,
+                if (hasFocus) Color.rgb(38, 91, 135) else baseColor,
                 radius,
                 if (hasFocus) Color.WHITE
                 else Color.argb(85, 255, 255, 255),
@@ -126,9 +127,9 @@ class MOOSASourceTesterDialog : DialogFragment() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(14), dp(18), dp(16))
             background = rounded(
-                Color.rgb(13, 29, 47),
+                Color.rgb(10, 20, 31),
                 18,
-                Color.rgb(75, 143, 205),
+                Color.rgb(56, 102, 137),
                 2
             )
         }
@@ -138,18 +139,18 @@ class MOOSASourceTesterDialog : DialogFragment() {
             gravity = Gravity.CENTER_VERTICAL
         }
         header.addView(
-            label("Source Tester", 27f, Color.WHITE, true),
+            label("Source Tester", 23f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
-        countText = label("", 15f, Color.LTGRAY, true)
+        countText = label("", 13f, Color.rgb(174, 191, 207), true)
         header.addView(countText)
         root.addView(header)
 
         root.addView(
             label(
                 "ONLINE = verified playable link • UNVERIFIED = source responded but playback could not be confirmed",
-                13f,
-                Color.LTGRAY
+                12f,
+                Color.rgb(174, 191, 207)
             ).apply {
                 setPadding(0, dp(4), 0, dp(10))
             }
@@ -158,11 +159,11 @@ class MOOSASourceTesterDialog : DialogFragment() {
         val controls1 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        selectAll = actionButton("SELECT ALL", Color.rgb(28, 150, 78))
-        selectNone = actionButton("SELECT NONE", Color.rgb(185, 52, 60))
+        selectAll = actionButton("SELECT ALL", Color.rgb(38, 104, 78))
+        selectNone = actionButton("SELECT NONE", Color.rgb(116, 58, 66))
         controls1.addView(
             selectAll,
-            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) }
+            LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) }
         )
         controls1.addView(
             selectNone,
@@ -174,8 +175,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(7), 0, 0)
         }
-        testAllButton = actionButton("TEST ALL SOURCES", Color.rgb(24, 95, 180))
-        disableOffline = actionButton("DISABLE OFFLINE", Color.rgb(90, 70, 120))
+        testAllButton = actionButton("TEST ALL SOURCES", Color.rgb(31, 91, 143))
+        disableOffline = actionButton("DISABLE OFFLINE", Color.rgb(58, 65, 78))
         controls2.addView(
             testAllButton,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) }
@@ -209,12 +210,12 @@ class MOOSASourceTesterDialog : DialogFragment() {
         }
         root.addView(progressText)
 
-        searchButton = actionButton("SEARCH SOURCES…", Color.rgb(50, 60, 72))
+        searchButton = actionButton("SEARCH SOURCES…", Color.rgb(30, 42, 56))
         root.addView(
             searchButton,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(54)
+                dp(48)
             ).apply { topMargin = dp(8) }
         )
 
@@ -245,25 +246,32 @@ class MOOSASourceTesterDialog : DialogFragment() {
 
         selectAll.setOnClickListener {
             MOOSASourceTester.setAll(true)
+            bulkUpdating = true
             rows.forEach { refs ->
                 refs.check.isChecked = true
             }
+            bulkUpdating = false
             updateCountOnly()
         }
 
         selectNone.setOnClickListener {
             MOOSASourceTester.setAll(false)
+            bulkUpdating = true
             rows.forEach { refs ->
                 refs.check.isChecked = false
             }
+            bulkUpdating = false
             updateCountOnly()
         }
 
         disableOffline.setOnClickListener {
             MOOSASourceTester.disableOffline()
+            bulkUpdating = true
             rows.forEach { refs ->
-                refs.check.isChecked = MOOSASourceTester.isEnabled(refs.api)
+                refs.check.isChecked =
+                    MOOSASourceTester.isEnabled(refs.api)
             }
+            bulkUpdating = false
             updateCountOnly()
         }
 
@@ -289,8 +297,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
-                (metrics.widthPixels * 0.82f).toInt(),
-                (metrics.heightPixels * 0.86f).toInt()
+                (metrics.widthPixels * 0.78f).toInt(),
+                (metrics.heightPixels * 0.82f).toInt()
             )
             setBackgroundDrawableResource(android.R.color.transparent)
         }
@@ -332,12 +340,12 @@ class MOOSASourceTesterDialog : DialogFragment() {
         visible.forEach { api ->
             val refs = buildSourceRow(api)
             rows += refs
-            rowsByName[api.name] = refs
+            rowsByName["${api.name}|${api.mainUrl}"] = refs
             listContainer.addView(
                 refs.row,
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    dp(68)
+                    dp(60)
                 ).apply { bottomMargin = dp(5) }
             )
         }
@@ -353,7 +361,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), dp(5), dp(8), dp(5))
             isClickable = true
-            styleFocusable(this, Color.rgb(24, 39, 55), 9)
+            styleFocusable(this, Color.rgb(21, 32, 45), 9)
         }
 
         val check = CheckBox(context).apply {
@@ -368,12 +376,12 @@ class MOOSASourceTesterDialog : DialogFragment() {
         )
 
         row.addView(
-            label(api.name, 17f, Color.WHITE, true),
+            label(api.name, 15.5f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
 
         val status = TextView(context).apply {
-            textSize = 12f
+            textSize = 11.5f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             setPadding(dp(9), dp(6), dp(9), dp(6))
@@ -387,10 +395,10 @@ class MOOSASourceTesterDialog : DialogFragment() {
             ).apply { marginEnd = dp(10) }
         )
 
-        val test = actionButton("TEST", Color.rgb(55, 65, 78))
+        val test = actionButton("TEST", Color.rgb(39, 50, 62))
         row.addView(
             test,
-            LinearLayout.LayoutParams(dp(88), dp(44))
+            LinearLayout.LayoutParams(dp(82), dp(40))
         )
 
         val refs = RowRefs(api, row, check, status, test)
@@ -401,7 +409,9 @@ class MOOSASourceTesterDialog : DialogFragment() {
         }
 
         check.setOnCheckedChangeListener { _, enabled ->
-            MOOSASourceTester.setEnabled(api, enabled)
+            if (!bulkUpdating) {
+                MOOSASourceTester.setEnabled(api, enabled)
+            }
             updateCountOnly()
         }
 
@@ -515,7 +525,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 MOOSASourceTester.testAll(discoveryDepth = 2) { api, state ->
-                    rowsByName[api.name]?.let { refs ->
+                    rowsByName["${api.name}|${api.mainUrl}"]?.let { refs ->
                         refs.status.post {
                             refreshRow(refs)
                         }
