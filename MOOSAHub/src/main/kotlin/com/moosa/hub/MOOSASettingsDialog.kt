@@ -12,6 +12,7 @@ import android.view.Window
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
@@ -59,7 +60,7 @@ class MOOSASettingsDialog : DialogFragment() {
             id = View.generateViewId()
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(13), dp(14), dp(13))
+            setPadding(dp(13), dp(9), dp(12), dp(9))
             isFocusable = true
             isFocusableInTouchMode = false
             isClickable = true
@@ -71,7 +72,7 @@ class MOOSASettingsDialog : DialogFragment() {
 
             val iconView = TextView(context).apply {
                 text = icon
-                textSize = 25f
+                textSize = 21f
                 gravity = Gravity.CENTER
                 setTextColor(Color.WHITE)
                 background = rounded(
@@ -81,8 +82,8 @@ class MOOSASettingsDialog : DialogFragment() {
             }
             addView(
                 iconView,
-                LinearLayout.LayoutParams(dp(54), dp(54)).apply {
-                    marginEnd = dp(14)
+                LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                    marginEnd = dp(10)
                 }
             )
 
@@ -90,12 +91,12 @@ class MOOSASettingsDialog : DialogFragment() {
                 orientation = LinearLayout.VERTICAL
             }
             textHolder.addView(
-                label(title, 18f, Color.WHITE, true)
+                label(title, 16f, Color.WHITE, true)
             )
             textHolder.addView(
                 label(
                     description,
-                    12.5f,
+                    11.5f,
                     Color.rgb(210, 225, 240)
                 ).apply {
                     setPadding(0, dp(3), 0, 0)
@@ -141,7 +142,7 @@ class MOOSASettingsDialog : DialogFragment() {
             left,
             LinearLayout.LayoutParams(
                 0,
-                dp(92),
+                dp(72),
                 1f
             ).apply {
                 marginEnd = dp(6)
@@ -167,7 +168,7 @@ class MOOSASettingsDialog : DialogFragment() {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(18), dp(22), dp(20))
+            setPadding(dp(18), dp(14), dp(18), dp(16))
             background = rounded(
                 Color.rgb(12, 36, 62),
                 20,
@@ -180,7 +181,7 @@ class MOOSASettingsDialog : DialogFragment() {
             label("MOOSA HUB", 13f, Color.rgb(145, 215, 255), true)
         )
         root.addView(
-            label("Settings", 30f, Color.WHITE, true).apply {
+            label("Settings", 25f, Color.WHITE, true).apply {
                 setPadding(0, dp(2), 0, dp(14))
             }
         )
@@ -270,7 +271,7 @@ class MOOSASettingsDialog : DialogFragment() {
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
-                (metrics.widthPixels * 0.88f).toInt(),
+                (metrics.widthPixels * 0.72f).toInt(),
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
             setBackgroundDrawableResource(android.R.color.transparent)
@@ -326,6 +327,11 @@ class MOOSASettingsDialog : DialogFragment() {
                 selected
             ) { dialog, which ->
                 MOOSASettingsStore.setProviderConcurrency(values[which])
+                Toast.makeText(
+                    requireContext(),
+                    "Saved: ${values[which]} simultaneous providers",
+                    Toast.LENGTH_SHORT
+                ).show()
                 dialog.dismiss()
             }
             .setNegativeButton("Cancel", null)
@@ -353,6 +359,11 @@ class MOOSASettingsDialog : DialogFragment() {
             .setPositiveButton("Save") { _, _ ->
                 MOOSASettingsStore.setVerifyLinks(checked[0])
                 MOOSASettingsStore.setArabicFastMode(checked[1])
+                Toast.makeText(
+                    requireContext(),
+                    "Playback settings saved",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -410,9 +421,19 @@ class MOOSASettingsDialog : DialogFragment() {
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
                 onSave(input.text?.toString())
+                Toast.makeText(
+                    requireContext(),
+                    "$title saved",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             .setNeutralButton("Clear") { _, _ ->
                 onSave(null)
+                Toast.makeText(
+                    requireContext(),
+                    "$title cleared",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
             .setNegativeButton("Cancel", null)
             .show()
