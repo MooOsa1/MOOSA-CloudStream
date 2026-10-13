@@ -538,11 +538,192 @@ class MOOSAHubProvider : TmdbProvider() {
         )
     }
 
+    private fun tokenSet(
+        value: String
+    ): Set<String> =
+        canonicalTitle(value)
+            .split(" ")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+
+    private fun seasonSpecificTitleMatch(
+        candidate: String,
+        aliases: List<String>,
+        season: Int
+    ): Boolean {
+        val candidateCanonical =
+            canonicalTitle(candidate)
+
+        if (candidateCanonical.isBlank()) {
+            return false
+        }
+
+        val candidateTokens =
+            tokenSet(candidateCanonical)
+
+        val seasonToken =
+            season.toString()
+
+        val candidateHasSeason =
+            seasonToken in candidateTokens
+
+        val candidateNumbers =
+            Regex("""\b\d{1,2}\b""")
+                .findAll(candidateCanonical)
+                .mapNotNull {
+                    it.value.toIntOrNull()
+                }
+                .toSet()
+
+        if (
+            candidateNumbers.isNotEmpty() &&
+            season !in candidateNumbers
+        ) {
+            return false
+        }
+
+        for (alias in aliases) {
+            val wanted =
+                canonicalTitle(alias)
+
+            if (wanted.isBlank()) continue
+
+            if (candidateCanonical == wanted) {
+                return true
+            }
+
+            val wantedTokens =
+                tokenSet(wanted)
+
+            val wantedHasSeason =
+                seasonToken in wantedTokens
+
+            if (
+                wantedHasSeason &&
+                candidateHasSeason &&
+                wantedTokens.all {
+                    it in candidateTokens
+                }
+            ) {
+                return true
+            }
+
+            if (
+                candidateHasSeason &&
+                wantedTokens.size >= 2 &&
+                wantedTokens.all {
+                    it in candidateTokens
+                }
+            ) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun strictArabicTitleMatch(
+        candidate: String,
+        aliases: List<String>,
+        candidateYear: Int?,
+        wantedYear: Int?,
+        wantSeries: Boolean,
+        season: Int?
+    ): Boolean {
+        val candidateCanonical =
+            canonicalTitle(candidate)
+
+        val arabicAliases =
+            aliases.filter {
+                Regex("""[\u0600-\u06FF]""")
+                    .containsMatchIn(it)
+            }
+
+        val usableAliases =
+            if (arabicAliases.isNotEmpty()) {
+                arabicAliases
+            } else {
+                aliases
+            }
+
+        val canonicalAliases =
+            usableAliases
+                .map(::canonicalTitle)
+                .filter { it.isNotBlank() }
+                .distinct()
+
+        if (
+            candidateCanonical in
+                canonicalAliases
+        ) {
+            return if (wantSeries) {
+                true
+            } else {
+                yearCompatible(
+                    candidateYear,
+                    wantedYear
+                )
+            }
+        }
+
+        if (
+            wantSeries &&
+            season != null &&
+            seasonSpecificTitleMatch(
+                candidate,
+                usableAliases,
+                season
+            )
+        ) {
+            return true
+        }
+
+        val candidateTokens =
+            tokenSet(candidateCanonical)
+
+        if (candidateTokens.size < 2) {
+            return false
+        }
+
+        val similarity =
+            titleSimilarity(
+                candidate,
+                usableAliases
+            )
+
+        val enoughSharedTokens =
+            canonicalAliases.any { alias ->
+                val wantedTokens =
+                    tokenSet(alias)
+
+                candidateTokens
+                    .intersect(wantedTokens)
+                    .size >= 2
+            }
+
+        if (!enoughSharedTokens) {
+            return false
+        }
+
+        return if (wantSeries) {
+            similarity >= 0.96
+        } else {
+            yearCompatible(
+                candidateYear,
+                wantedYear
+            ) &&
+                similarity >= 0.94
+        }
+    }
+
     private fun strictSearchScore(
         result: SearchResponse,
         aliases: List<String>,
         year: Int?,
-        wantSeries: Boolean
+        wantSeries: Boolean,
+        originalLanguage: String?,
+        season: Int?
     ): Int {
         val candidateYear =
             resultYear(result)
@@ -550,14 +731,32 @@ class MOOSAHubProvider : TmdbProvider() {
         val wantedYear =
             if (wantSeries) null else year
 
-        if (
-            !safeTitleMatch(
-                result.name,
-                aliases,
-                candidateYear,
-                wantedYear
+        val isArabicOriginal =
+            originalLanguage.equals(
+                "ar",
+                ignoreCase = true
             )
-        ) {
+
+        val titleMatches =
+            if (isArabicOriginal) {
+                strictArabicTitleMatch(
+                    candidate = result.name,
+                    aliases = aliases,
+                    candidateYear = candidateYear,
+                    wantedYear = wantedYear,
+                    wantSeries = wantSeries,
+                    season = season
+                )
+            } else {
+                safeTitleMatch(
+                    result.name,
+                    aliases,
+                    candidateYear,
+                    wantedYear
+                )
+            }
+
+        if (!titleMatches) {
             return 0
         }
 
@@ -579,6 +778,21 @@ class MOOSAHubProvider : TmdbProvider() {
                 -10
             }
 
+        val seasonBonus =
+            if (
+                wantSeries &&
+                season != null &&
+                seasonSpecificTitleMatch(
+                    result.name,
+                    aliases,
+                    season
+                )
+            ) {
+                30
+            } else {
+                0
+            }
+
         val base = when {
             similarity >= 0.999 &&
                 wantedYear != null &&
@@ -593,7 +807,9 @@ class MOOSAHubProvider : TmdbProvider() {
             else -> 100
         }
 
-        return base + typeBonus
+        return base +
+            typeBonus +
+            seasonBonus
     }
 
     private fun loadedIdentityMatches(
@@ -671,20 +887,39 @@ class MOOSAHubProvider : TmdbProvider() {
                 aliases
             }
 
-        return safeTitleMatch(
-            candidate = result.name,
-            aliases = identityAliases,
-            candidateYear = result.year,
-            wantedYear =
-                if (
-                    request.season != null &&
-                    request.episode != null
-                ) {
-                    null
-                } else {
-                    request.year
-                }
-        )
+        val wantSeries =
+            request.season != null &&
+                request.episode != null
+
+        val wantedYear =
+            if (wantSeries) {
+                null
+            } else {
+                request.year
+            }
+
+        return if (
+            request.originalLanguage.equals(
+                "ar",
+                ignoreCase = true
+            )
+        ) {
+            strictArabicTitleMatch(
+                candidate = result.name,
+                aliases = identityAliases,
+                candidateYear = result.year,
+                wantedYear = wantedYear,
+                wantSeries = wantSeries,
+                season = request.season
+            )
+        } else {
+            safeTitleMatch(
+                candidate = result.name,
+                aliases = identityAliases,
+                candidateYear = result.year,
+                wantedYear = wantedYear
+            )
+        }
     }
 
     private fun arabicSeasonWord(
@@ -817,7 +1052,9 @@ class MOOSAHubProvider : TmdbProvider() {
         api: MainAPI,
         aliases: List<String>,
         year: Int?,
-        wantSeries: Boolean
+        wantSeries: Boolean,
+        originalLanguage: String?,
+        season: Int?
     ): List<SearchResponse> {
         val cleanAliases = aliases
             .map { it.trim() }
@@ -854,7 +1091,9 @@ class MOOSAHubProvider : TmdbProvider() {
                     it,
                     aliases,
                     year,
-                    wantSeries
+                    wantSeries,
+                    originalLanguage,
+                    season
                 ) >= 90
             }
 
@@ -875,7 +1114,9 @@ class MOOSAHubProvider : TmdbProvider() {
                             it,
                             aliases,
                             year,
-                            wantSeries
+                            wantSeries,
+                            originalLanguage,
+                            season
                         ) >= 90
                     }
                 ) {
@@ -942,7 +1183,10 @@ class MOOSAHubProvider : TmdbProvider() {
             api = api,
             aliases = aliases,
             year = request.year,
-            wantSeries = wantSeries
+            wantSeries = wantSeries,
+            originalLanguage =
+                request.originalLanguage,
+            season = request.season
         )
             .asSequence()
             .map {
@@ -950,7 +1194,9 @@ class MOOSAHubProvider : TmdbProvider() {
                     it,
                     aliases,
                     request.year,
-                    wantSeries
+                    wantSeries,
+                    request.originalLanguage,
+                    request.season
                 )
             }
             .filter { (_, score) ->
@@ -1050,7 +1296,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v5",
+        "strict-v6",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
