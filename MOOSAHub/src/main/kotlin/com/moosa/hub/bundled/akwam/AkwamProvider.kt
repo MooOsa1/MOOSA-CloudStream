@@ -2,204 +2,128 @@
 package com.moosa.hub.bundled.akwam
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.newExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
+import java.net.URLEncoder
 
 class AkwamProvider : MainAPI() {
     override var lang = "ar"
-    override var mainUrl = "https://ak.sv"
+    override var mainUrl = "https://akwam.ss"
     override var name = "Akwam"
     override val usesWebView = false
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie, TvType.Anime, TvType.Cartoon)
 
-    private fun Element.toSearchResponse(): SearchResponse? {
-        val url = select("a.box").attr("href") ?: return null
-        if (url.contains("/games/") || url.contains("/programs/")) return null
-        val poster = select("picture > img")
-        val title = poster.attr("alt")
-        val posterUrl = poster.attr("data-src")
-        val year = select(".badge-secondary").text().toIntOrNull()
+    private fun Element.titleText(): String =
+        selectFirst("h1,h2,h3,.entry-title,.title")?.text()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: attr("title").takeIf { it.isNotEmpty() }
+            ?: selectFirst("img[alt]")?.attr("alt")?.trim().orEmpty()
 
-        return newMovieSearchResponse(
-            title,
-            url,
-            TvType.TvSeries,
-        ) {
-            this.posterUrl = posterUrl
-            this.year = year
+    private fun Element.toSearchResponse(): SearchResponse? {
+        val anchor = if (tagName() == "a") this
+            else selectFirst("a[href*='/series/'],a[href*='/movie/']") ?: return null
+        val href = anchor.attr("abs:href").ifEmpty { fixUrl(anchor.attr("href")) }
+        if (href.isBlank() || href.contains("/games/") || href.contains("/programs/")) return null
+        val title = anchor.titleText().ifBlank {
+            parents().firstOrNull { it.titleText().isNotBlank() }?.titleText().orEmpty()
+        }
+        if (title.isBlank()) return null
+        val poster = anchor.selectFirst("img")?.let {
+            it.attr("data-src").ifEmpty { it.attr("src") }
+        } ?: anchor.parents().firstOrNull { it.selectFirst("img") != null }
+            ?.selectFirst("img")?.let { it.attr("data-src").ifEmpty { imgSrc -> imgSrc } }
+        val tvType = if (href.contains("/series/")) TvType.TvSeries else TvType.Movie
+        return if (tvType == TvType.TvSeries) {
+            newTvSeriesSearchResponse(title, href, tvType) { posterUrl = poster }
+        } else {
+            newMovieSearchResponse(title, href, tvType) { posterUrl = poster }
         }
     }
-    
+
     override val mainPage = mainPageOf(
-            "$mainUrl/movies?page=" to "Movies",
-            "$mainUrl/series?page=" to "Series",
-            "$mainUrl/shows?page=" to "Shows"
+        "$mainUrl/movies?page=" to "Movies",
+        "$mainUrl/series?section=29&page=" to "مسلسلات عربي",
+        "$mainUrl/series?page=" to "Series"
     )
 
-    override suspend fun getMainPage(page: Int, request : MainPageRequest): HomePageResponse {
-        val doc = app.get(request.data + page).document
-        val list = doc.select("div.entry-box").mapNotNull { element ->
-            element.toSearchResponse()
-        }
-        return newHomePageResponse(request.name, list)
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        val separator = if (request.data.contains("?")) "&" else "?"
+        val url = request.data + page
+        val doc = app.get(url).document
+        val items = doc.select("a[href*='/series/'],a[href*='/movie/']")
+            .distinctBy { it.attr("abs:href").ifEmpty { it.attr("href") } }
+            .mapNotNull { it.toSearchResponse() }
+        return newHomePageResponse(request.name, items)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val url = "$mainUrl/search?q=$query"
-        val doc = app.get(url).document
-        return doc.select("div.entry-box").mapNotNull {
-            it.toSearchResponse()
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        val doc = app.get("$mainUrl/search?q=$encoded").document
+        return doc.select("a[href*='/series/'],a[href*='/movie/']")
+            .distinctBy { it.attr("abs:href").ifEmpty { it.attr("href") } }
+            .mapNotNull { it.toSearchResponse() }
+    }
+
+    private fun String.normalizedDigits(): String = map {
+        when (it) {
+            '٠', '۰' -> '0'; '١', '۱' -> '1'; '٢', '۲' -> '2'; '٣', '۳' -> '3'
+            '٤', '۴' -> '4'; '٥', '۵' -> '5'; '٦', '۶' -> '6'; '٧', '۷' -> '7'
+            '٨', '۸' -> '8'; '٩', '۹' -> '9'; else -> it
         }
     }
 
-    private fun String.getIntFromText(): Int? {
-        return Regex("""\d+""").find(this)?.groupValues?.firstOrNull()?.toIntOrNull()
+    private fun String.firstNumber(): Int? =
+        Regex("\\d+").find(normalizedDigits())?.value?.toIntOrNull()
+
+    private fun String.seasonNumber(): Int? {
+        val text = normalizedDigits().lowercase()
+        Regex("(?:الموسم|موسم|season|s)[\\s:_-]*(\\d{1,2})", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
+        val words = listOf(
+            "الاول" to 1, "الأول" to 1, "الثاني" to 2, "الثالث" to 3,
+            "الرابع" to 4, "الخامس" to 5, "السادس" to 6, "السابع" to 7,
+            "الثامن" to 8, "التاسع" to 9, "العاشر" to 10
+        )
+        return words.firstOrNull { text.contains("الموسم " + it.first) || text.contains("season " + it.first) }?.second
     }
-
-    private fun Element.toEpisode(): Episode {
-        val a = select("a.text-white")
-        val url = a.attr("href")
-        val title = a.text()
-        val thumbUrl = select("picture > img").attr("src")
-        val date = select("p.entry-date").text()
-        val seasonText = buildString {
-            append(title).append(' ').append(url)
-            append(' ').append(attr("data-season"))
-            parents().forEach { parent ->
-                append(' ').append(parent.id())
-                append(' ').append(parent.className())
-                append(' ').append(parent.attr("data-season"))
-                append(' ').append(parent.ownText())
-            }
-        }.mapArabicDigits()
-        val seasonNumber = Regex(
-            """(?:الموسم|موسم|season|s)[\s:_-]*([0-9]{1,2})""",
-            RegexOption.IGNORE_CASE
-        ).find(seasonText)?.groupValues?.getOrNull(1)?.toIntOrNull()
-
-        return newEpisode(url) {
-            name = title
-            episode = title.mapArabicDigits().getIntFromText()
-            season = seasonNumber
-            posterUrl = thumbUrl
-            addDate(date)
-        }
-    }
-
-    private fun String.mapArabicDigits(): String = buildString {
-        for (char in this@mapArabicDigits) {
-            append(
-                when (char) {
-                    '٠', '۰' -> '0'
-                    '١', '۱' -> '1'
-                    '٢', '۲' -> '2'
-                    '٣', '۳' -> '3'
-                    '٤', '۴' -> '4'
-                    '٥', '۵' -> '5'
-                    '٦', '۶' -> '6'
-                    '٧', '۷' -> '7'
-                    '٨', '۸' -> '8'
-                    '٩', '۹' -> '9'
-                    else -> char
-                }
-            )
-        }
-    }
-
 
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
-        val isMovie = doc.select("#downloads > h2 > span").isNotEmpty()//url.contains("/movie/")
-        val title = doc.select("h1.entry-title").text()
-        val posterUrl = doc.select("picture > img").attr("src")
-
-        val year =
-            doc.select("div.font-size-16.text-white.mt-2").firstOrNull {
-                it.text().contains("السنة")
-            }?.text()?.getIntFromText()
-
-        val duration =
-            doc.select("div.font-size-16.text-white.mt-2").firstOrNull {
-                it.text().contains("مدة الفيلم")
-            }?.text()?.getIntFromText()
-
-        val synopsis = doc.select("div.widget-body p:first-child").text()
-
-
-        val tags = doc.select("div.font-size-16.d-flex.align-items-center.mt-3 > a").map {
-            it.text()
+        val title = doc.selectFirst("h1.entry-title,h1")?.text()?.trim().orEmpty()
+        val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
+            ?: doc.selectFirst("img")?.let { it.attr("data-src").ifEmpty { it.attr("src") } }
+        val isSeries = url.contains("/series/")
+        val episodeAnchors = if (isSeries) doc.select("a[href*='/episode/']") else emptyList()
+        if (!isSeries) {
+            return newMovieLoadResponse(title, url, TvType.Movie, url) {
+                posterUrl = poster
+                year = Regex("\\b(19|20)\\d{2}\\b").find(doc.text())?.value?.toIntOrNull()
+                plot = doc.select("meta[name=description]").attr("content")
+            }
         }
-
-        val actors = doc.select("div.widget-body > div > div.entry-box > a").mapNotNull {
-            val name = it?.selectFirst("div > .entry-title")?.text() ?: return@mapNotNull null
-            val image = it.selectFirst("div > img")?.attr("src") ?: return@mapNotNull null
-            ActorData(Actor(name, image))
-        }
-        
-        val recommendations =
-            doc.select("div > div.widget-body > div.row > div > div.entry-box").mapNotNull {
-                val recTitle = it?.selectFirst("div.entry-body > .entry-title > .text-white")
-                    ?: return@mapNotNull null
-                val href = recTitle.attr("href") ?: return@mapNotNull null
-                val name = recTitle.text() ?: return@mapNotNull null
-                val poster = it.selectFirst(".entry-image > a > picture > img")?.attr("data-src")
-                    ?: return@mapNotNull null
-                newMovieSearchResponse(name, href, TvType.Movie) {
-                    this.posterUrl = fixUrl(poster)
+        val pageSeason = (title + " " + url).seasonNumber()
+        val episodes = episodeAnchors.distinctBy { it.attr("abs:href").ifEmpty { it.attr("href") } }
+            .mapNotNull { a ->
+                val href = a.attr("abs:href").ifEmpty { fixUrl(a.attr("href")) }
+                if (href.isBlank()) return@mapNotNull null
+                val context = buildString {
+                    append(a.text()).append(' ').append(a.attr("href"))
+                    a.parents().take(4).forEach { append(' ').append(it.text()) }
+                }
+                val episodeName = a.text().ifBlank { context }
+                val episodeNumber = episodeName.firstNumber() ?: a.attr("href").firstNumber()
+                newEpisode(href) {
+                    name = episodeName
+                    episode = episodeNumber
+                    season = context.seasonNumber() ?: pageSeason
                 }
             }
-
-        return if (isMovie) {
-            newMovieLoadResponse(
-                title,
-                url,
-                TvType.Movie,
-                url
-            ) {
-                this.posterUrl = posterUrl
-                this.year = year
-                this.plot = synopsis
-                // this.score = rating
-                this.tags = tags
-                this.duration = duration
-                this.recommendations = recommendations
-                this.actors = actors
-            }
-        } else {
-            val episodes = doc.select("div.bg-primary2.p-4.col-lg-4.col-md-6.col-12").map {
-                it.toEpisode()
-            }.let {
-                val isReversed = (it.lastOrNull()?.episode ?: 1) < (it.firstOrNull()?.episode ?: 0)
-                if (isReversed)
-                    it.reversed()
-                else it
-            }
-
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                this.duration = duration
-                this.posterUrl = posterUrl
-                this.tags = tags.filterNotNull()
-                // this.score = rating
-                this.year = year
-                this.plot = synopsis
-                this.recommendations = recommendations
-                this.actors = actors
-            }
-        }
-    }
-
-    private fun getQualityFromId(id: Int?): Qualities {
-        return when (id) {
-            2 -> Qualities.P360
-            3 -> Qualities.P480
-            4 -> Qualities.P720
-            5 -> Qualities.P1080
-            else -> Qualities.Unknown
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            posterUrl = poster
+            year = Regex("\\b(19|20)\\d{2}\\b").find(doc.text())?.value?.toIntOrNull()
+            plot = doc.select("meta[name=description]").attr("content")
         }
     }
 
@@ -210,43 +134,25 @@ class AkwamProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val doc = app.get(data).document
-
-        val links = doc.select("div.tab-content.quality").map { element ->
-            val quality = getQualityFromId(element.attr("id").getIntFromText())
-            element.select(".col-lg-6 > a:contains(تحميل)").map { linkElement ->
-                if (linkElement.attr("href").contains("/download/")) {
-                    Pair(
-                        linkElement.attr("href"),
-                        quality,
-                    )
-                } else {
-                    val url = "$mainUrl/download${
-                        linkElement.attr("href").split("/link")[1]
-                    }${data.split("/movie|/episode|/shows|/show/episode".toRegex())[1]}"
-                    Pair(
-                        url,
-                        quality,
-                    )
-                }
+        val watchUrls = doc.select("a[href*='/watch/']").map {
+            it.attr("abs:href").ifEmpty { fixUrl(it.attr("href")) }
+        }.filter { it.isNotBlank() }.distinct()
+        val initialUrls = if (watchUrls.isNotEmpty()) watchUrls else listOf(data)
+        for (url in initialUrls) {
+            val page = app.get(url, headers = mapOf("Referer" to data)).document
+            val links = linkedSetOf<String>()
+            page.select("a[href],iframe[src],video[src],video source[src]").forEach { el ->
+                val raw = if (el.hasAttr("href")) el.attr("href") else el.attr("src")
+                if (raw.isBlank()) return@forEach
+                val absolute = el.attr("abs:href").ifEmpty { el.attr("abs:src") }.ifEmpty { fixUrl(raw) }
+                val host = absolute.substringAfter("://", "").substringBefore('/').lowercase()
+                if (absolute.contains(".m3u8") || absolute.contains(".mp4") ||
+                    (host.isNotBlank() && !host.contains("akwam.ss") && !host.contains("akwam.net"))
+                ) links.add(absolute)
             }
-        }.flatten()
-
-        links.map {
-            val linkDoc = app.get(it.first).document
-            val button = linkDoc.select("div.btn-loader > a")
-            val url = button.attr("href")
-
-            callback.invoke(
-                newExtractorLink(
-                    this.name,
-                    this.name,
-                    url,
-                    ExtractorLinkType.VIDEO
-                ) {
-                    quality = it.second.value
-                    referer = this@AkwamProvider.mainUrl
-                }
-            )
+            for (link in links) {
+                try { loadExtractor(link, url, subtitleCallback, callback) } catch (_: Exception) { }
+            }
         }
         return true
     }
