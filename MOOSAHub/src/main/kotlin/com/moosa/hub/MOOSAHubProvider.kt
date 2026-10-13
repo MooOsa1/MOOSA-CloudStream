@@ -2939,7 +2939,15 @@ class MOOSAHubProvider : TmdbProvider() {
                                 } else {
                                     if (
                                         !verified &&
-                                        !seenLinks.contains(key)
+                                        !seenLinks.contains(key) &&
+                                        (
+                                            !request.originalLanguage.equals(
+                                                "ar",
+                                                ignoreCase = true
+                                            ) ||
+                                                MOOSAArabicBridge.supports(api) ||
+                                                isStreamPlayProvider(api)
+                                            )
                                     ) {
                                         fallbackLinks += link
                                     }
