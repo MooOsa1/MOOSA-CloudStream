@@ -50,6 +50,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
     private var query = ""
     private val runningTests = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var scanRunning = false
+    private var bulkUpdating = false
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -94,10 +95,10 @@ class MOOSAServerManagerDialog : DialogFragment() {
         )
 
         view.setOnFocusChangeListener { focused, hasFocus ->
-            focused.scaleX = if (hasFocus) 1.025f else 1f
-            focused.scaleY = if (hasFocus) 1.025f else 1f
+            focused.scaleX = if (hasFocus) 1.012f else 1f
+            focused.scaleY = if (hasFocus) 1.012f else 1f
             focused.background = rounded(
-                if (hasFocus) Color.rgb(35, 110, 190) else baseColor,
+                if (hasFocus) Color.rgb(38, 91, 135) else baseColor,
                 radius,
                 if (hasFocus) Color.WHITE
                 else Color.argb(85, 255, 255, 255),
@@ -123,9 +124,9 @@ class MOOSAServerManagerDialog : DialogFragment() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(14), dp(18), dp(16))
             background = rounded(
-                Color.rgb(13, 29, 47),
+                Color.rgb(10, 20, 31),
                 18,
-                Color.rgb(75, 143, 205),
+                Color.rgb(56, 102, 137),
                 2
             )
         }
@@ -135,18 +136,18 @@ class MOOSAServerManagerDialog : DialogFragment() {
             gravity = Gravity.CENTER_VERTICAL
         }
         header.addView(
-            label("Server Manager", 27f, Color.WHITE, true),
+            label("Server Manager", 23f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
-        countText = label("", 15f, Color.LTGRAY, true)
+        countText = label("", 13f, Color.rgb(174, 191, 207), true)
         header.addView(countText)
         root.addView(header)
 
         root.addView(
             label(
                 "DISCOVER scans sources in the background. ONLINE means the final stream link passed two probes.",
-                13f,
-                Color.LTGRAY
+                12f,
+                Color.rgb(174, 191, 207)
             ).apply {
                 setPadding(0, dp(4), 0, dp(10))
             }
@@ -155,11 +156,11 @@ class MOOSAServerManagerDialog : DialogFragment() {
         val controls1 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        selectAll = actionButton("SELECT ALL", Color.rgb(28, 150, 78))
-        selectNone = actionButton("SELECT NONE", Color.rgb(185, 52, 60))
+        selectAll = actionButton("SELECT ALL", Color.rgb(38, 104, 78))
+        selectNone = actionButton("SELECT NONE", Color.rgb(116, 58, 66))
         controls1.addView(
             selectAll,
-            LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) }
+            LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) }
         )
         controls1.addView(
             selectNone,
@@ -173,11 +174,11 @@ class MOOSAServerManagerDialog : DialogFragment() {
         }
         discoverButton = actionButton(
             "DISCOVER & TEST SERVERS",
-            Color.rgb(24, 95, 180)
+            Color.rgb(31, 91, 143)
         )
         disableOffline = actionButton(
             "DISABLE OFFLINE",
-            Color.rgb(90, 70, 120)
+            Color.rgb(58, 65, 78)
         )
         controls2.addView(
             discoverButton,
@@ -212,12 +213,12 @@ class MOOSAServerManagerDialog : DialogFragment() {
         }
         root.addView(progressText)
 
-        searchButton = actionButton("SEARCH SERVERS…", Color.rgb(50, 60, 72))
+        searchButton = actionButton("SEARCH SERVERS…", Color.rgb(30, 42, 56))
         root.addView(
             searchButton,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(54)
+                dp(48)
             ).apply { topMargin = dp(8) }
         )
 
@@ -247,32 +248,30 @@ class MOOSAServerManagerDialog : DialogFragment() {
         )
 
         selectAll.setOnClickListener {
-            MOOSAServerRegistry.snapshot().forEach {
-                MOOSAServerRegistry.setDisabled(it.key, false)
-            }
+            MOOSAServerRegistry.setAllEnabled(true)
+            bulkUpdating = true
             rows.forEach { it.check.isChecked = true }
+            bulkUpdating = false
             updateCountOnly()
         }
 
         selectNone.setOnClickListener {
-            MOOSAServerRegistry.snapshot().forEach {
-                MOOSAServerRegistry.setDisabled(it.key, true)
-            }
+            MOOSAServerRegistry.setAllEnabled(false)
+            bulkUpdating = true
             rows.forEach { it.check.isChecked = false }
+            bulkUpdating = false
             updateCountOnly()
         }
 
         disableOffline.setOnClickListener {
-            MOOSAServerRegistry.snapshot()
-                .filter { it.lastResult == false }
-                .forEach {
-                    MOOSAServerRegistry.setDisabled(it.key, true)
-                }
+            MOOSAServerRegistry.disableOffline()
 
+            bulkUpdating = true
             rows.forEach { refs ->
                 refs.check.isChecked =
                     !MOOSAServerRegistry.isDisabled(refs.key)
             }
+            bulkUpdating = false
             updateCountOnly()
         }
 
@@ -298,8 +297,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
-                (metrics.widthPixels * 0.82f).toInt(),
-                (metrics.heightPixels * 0.86f).toInt()
+                (metrics.widthPixels * 0.78f).toInt(),
+                (metrics.heightPixels * 0.82f).toInt()
             )
             setBackgroundDrawableResource(android.R.color.transparent)
         }
@@ -357,7 +356,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
                 refs.row,
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    dp(68)
+                    dp(60)
                 ).apply { bottomMargin = dp(5) }
             )
         }
@@ -378,7 +377,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), dp(5), dp(8), dp(5))
             isClickable = true
-            styleFocusable(this, Color.rgb(24, 39, 55), 9)
+            styleFocusable(this, Color.rgb(21, 32, 45), 9)
         }
 
         val check = CheckBox(context).apply {
@@ -392,7 +391,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.MATCH_PARENT)
         )
 
-        val name = label(entry.label, 16f, Color.WHITE, true).apply {
+        val name = label(entry.label, 15.5f, Color.WHITE, true).apply {
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
@@ -402,7 +401,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
         )
 
         val status = TextView(context).apply {
-            textSize = 12f
+            textSize = 11.5f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             setPadding(dp(9), dp(6), dp(9), dp(6))
@@ -416,10 +415,10 @@ class MOOSAServerManagerDialog : DialogFragment() {
             ).apply { marginEnd = dp(10) }
         )
 
-        val test = actionButton("TEST", Color.rgb(55, 65, 78))
+        val test = actionButton("TEST", Color.rgb(39, 50, 62))
         row.addView(
             test,
-            LinearLayout.LayoutParams(dp(88), dp(44))
+            LinearLayout.LayoutParams(dp(82), dp(40))
         )
 
         val refs = RowRefs(entry.key, row, check, status, test)
@@ -430,7 +429,12 @@ class MOOSAServerManagerDialog : DialogFragment() {
         }
 
         check.setOnCheckedChangeListener { _, enabled ->
-            MOOSAServerRegistry.setDisabled(entry.key, !enabled)
+            if (!bulkUpdating) {
+                MOOSAServerRegistry.setDisabled(
+                    entry.key,
+                    !enabled
+                )
+            }
             updateCountOnly()
         }
 
