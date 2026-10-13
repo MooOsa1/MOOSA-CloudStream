@@ -422,26 +422,8 @@ internal object MOOSAArabicBridge {
                         continue
                     }
 
-                    val loadedYear =
-                        series.year
-
-                    val wantedYear =
-                        request.year
-
-                    if (
-                        loadedYear != null &&
-                        wantedYear != null &&
-                        abs(
-                            loadedYear - wantedYear
-                        ) > 1
-                    ) {
-                        MOOSAPlaybackDiagnostics.update(
-                            api,
-                            "Wrong series year • $loadedYear != $wantedYear"
-                        )
-                        continue
-                    }
-
+                    // A season can have a different release year from the
+                    // series premiere. Episode season/number are validated below.
                     val data =
                         episodeData(
                             loaded = series,
