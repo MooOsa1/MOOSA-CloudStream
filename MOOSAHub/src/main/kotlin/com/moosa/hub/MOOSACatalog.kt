@@ -43,9 +43,11 @@ object MOOSACatalog {
         @JsonProperty("name") val name: String? = null,
         @JsonProperty("original_name") val originalName: String? = null,
         @JsonProperty("poster_path") val posterPath: String? = null,
+        @JsonProperty("backdrop_path") val backdropPath: String? = null,
         @JsonProperty("release_date") val releaseDate: String? = null,
         @JsonProperty("first_air_date") val firstAirDate: String? = null,
         @JsonProperty("vote_average") val voteAverage: Double? = null,
+        @JsonProperty("vote_count") val voteCount: Int? = null,
         @JsonProperty("media_type") val mediaType: String? = null
     ) {
         val displayName: String
@@ -69,34 +71,62 @@ object MOOSACatalog {
         ).text
     }
 
-    private fun Item.toResponse(api: MainAPI, forceTv: Boolean? = null): SearchResponse? {
+    private fun Item.toResponse(
+        api: MainAPI,
+        forceTv: Boolean? = null
+    ): SearchResponse? {
         val contentId = id ?: return null
-        val isTv = forceTv ?: (mediaType == "tv" || (name != null && title == null))
-        val poster = posterPath?.let { "$IMAGE$it" }
+        val titleText =
+            displayName.trim().takeIf { it.isNotBlank() }
+                ?: return null
+
+        val isTv =
+            forceTv ?: (
+                mediaType == "tv" ||
+                    (name != null && title == null)
+                )
+
+        val artworkPath =
+            posterPath?.takeIf { it.isNotBlank() }
+                ?: backdropPath?.takeIf { it.isNotBlank() }
+
+        val poster =
+            artworkPath?.let { "$IMAGE$it" }
+
+        val reliableScore =
+            voteAverage
+                ?.takeIf {
+                    it > 0.0 &&
+                        it <= 10.0 &&
+                        (voteCount ?: 0) > 0
+                }
+                ?.let(Score::from10)
 
         return if (isTv) {
             api.newTvSeriesSearchResponse(
-                name = displayName,
-                url = "https://www.themoviedb.org/tv/$contentId",
+                name = titleText,
+                url =
+                    "https://www.themoviedb.org/tv/$contentId",
                 type = TvType.TvSeries,
                 fix = false
             ) {
                 this.id = contentId
                 this.posterUrl = poster
                 this.year = this@toResponse.year
-                this.score = Score.from10(voteAverage)
+                this.score = reliableScore
             }
         } else {
             api.newMovieSearchResponse(
-                name = displayName,
-                url = "https://www.themoviedb.org/movie/$contentId",
+                name = titleText,
+                url =
+                    "https://www.themoviedb.org/movie/$contentId",
                 type = TvType.Movie,
                 fix = false
             ) {
                 this.id = contentId
                 this.posterUrl = poster
                 this.year = this@toResponse.year
-                this.score = Score.from10(voteAverage)
+                this.score = reliableScore
             }
         }
     }
