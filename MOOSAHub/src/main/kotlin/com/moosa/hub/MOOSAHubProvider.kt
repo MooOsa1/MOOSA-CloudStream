@@ -38,6 +38,7 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONArray
 
 class MOOSAHubProvider : TmdbProvider() {
     override var name = "MOOSA Hub"
@@ -120,7 +121,39 @@ class MOOSAHubProvider : TmdbProvider() {
         val all: List<StremioSubtitle> = emptyList()
     )
 
-    private data class TmdbOverview(val overview: String? = null)
+    private data class TmdbOverview(
+        @JsonProperty("overview")
+        val overview: String? = null
+    )
+
+    private data class TmdbDetail(
+        @JsonProperty("overview")
+        val overview: String? = null,
+        @JsonProperty("poster_path")
+        val posterPath: String? = null,
+        @JsonProperty("backdrop_path")
+        val backdropPath: String? = null,
+        @JsonProperty("vote_average")
+        val voteAverage: Double? = null,
+        @JsonProperty("vote_count")
+        val voteCount: Int? = null
+    )
+
+    private data class TmdbImageResponse(
+        @JsonProperty("posters")
+        val posters: List<TmdbImage> = emptyList(),
+        @JsonProperty("backdrops")
+        val backdrops: List<TmdbImage> = emptyList()
+    )
+
+    private data class TmdbImage(
+        @JsonProperty("file_path")
+        val filePath: String? = null,
+        @JsonProperty("vote_average")
+        val voteAverage: Double? = null,
+        @JsonProperty("iso_639_1")
+        val language: String? = null
+    )
 
     private data class TmdbExternalIds(
         @JsonProperty("imdb_id")
@@ -463,10 +496,46 @@ class MOOSAHubProvider : TmdbProvider() {
             ?: raw.replace("\\n", "\n").replace("\\\"", "\"")
     }
 
-    private suspend fun translateSynopsisToArabic(text: String): String? {
-        if (text.isBlank()) return null
+    private fun cleanSynopsis(value: String?): String? {
+        val raw = value
+            ?.replace(Regex("""https?://\S+"""), " ")
+            ?.replace(
+                Regex("""\b[a-fA-F0-9]{16,}\b"""),
+                " "
+            )
+            ?.replace(
+                Regex("""\b[A-Za-z0-9_-]{24,}\b"""),
+                " "
+            )
+            ?.replace("\uFFFD", " ")
+            ?.replace(Regex("""\s+"""), " ")
+            ?.trim()
+            .orEmpty()
 
-        val response = timed(2600L) {
+        if (raw.length < 20) return null
+
+        val visible = raw.count {
+            it.isLetterOrDigit() ||
+                it in '\u0600'..'\u06FF'
+        }
+
+        val ratio =
+            visible.toDouble() /
+                raw.length.coerceAtLeast(1).toDouble()
+
+        return raw.takeIf {
+            ratio >= 0.45 &&
+                !it.contains("undefined", true) &&
+                !it.contains("null null", true)
+        }
+    }
+
+    private suspend fun translateSynopsisToArabic(
+        text: String
+    ): String? {
+        val source = cleanSynopsis(text) ?: return null
+
+        val response = timed(3000L) {
             app.get(
                 "https://translate.googleapis.com/translate_a/single",
                 params = mapOf(
@@ -474,21 +543,41 @@ class MOOSAHubProvider : TmdbProvider() {
                     "sl" to "auto",
                     "tl" to "ar",
                     "dt" to "t",
-                    "q" to text
+                    "q" to source
                 )
             ).text
         } ?: return null
 
-        val translatedSection = response.substringBefore("]],null")
-        val translated = Regex("""\["((?:\\.|[^"\\])*)",""")
-            .findAll(translatedSection)
-            .map { decodeJsonString(it.groupValues[1]) }
-            .joinToString("")
-            .trim()
+        val translated = try {
+            val root = JSONArray(response)
+            val segments = root.optJSONArray(0)
+                ?: return null
 
-        return translated.takeIf {
-            it.isNotBlank() && it.any { ch -> ch in '\u0600'..'\u06FF' }
+            buildString {
+                for (index in 0 until segments.length()) {
+                    val segment =
+                        segments.optJSONArray(index)
+                            ?: continue
+                    val value =
+                        segment.optString(0)
+                            .trim()
+
+                    if (value.isNotBlank()) {
+                        if (isNotEmpty()) append(' ')
+                        append(value)
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+            return null
         }
+
+        return cleanSynopsis(translated)
+            ?.takeIf { clean ->
+                clean.any {
+                    ch -> ch in '\u0600'..'\u06FF'
+                }
+            }
     }
 
     private suspend fun resolveArabicSynopsis(
@@ -500,9 +589,16 @@ class MOOSAHubProvider : TmdbProvider() {
         val type = if (isTv) "tv" else "movie"
         val cacheKey = "$type:$id"
 
-        synopsisCache[cacheKey]?.let { return it }
+        synopsisCache[cacheKey]?.let {
+            cleanSynopsis(it)?.let { clean ->
+                return clean
+            }
+        }
 
-        for (language in listOf("ar-SA", "ar-AE", "ar-EG", "ar")) {
+        for (
+            language in
+            listOf("ar-SA", "ar-AE", "ar-EG", "ar")
+        ) {
             val overview = timed(1800L) {
                 app.get(
                     "$tmdbApiUrl/$type/$id",
@@ -510,41 +606,188 @@ class MOOSAHubProvider : TmdbProvider() {
                         "api_key" to tmdbApiKey,
                         "language" to language
                     )
-                ).parsedSafe<TmdbOverview>()?.overview
-            }?.takeIf { it.isNotBlank() }
+                ).parsedSafe<TmdbOverview>()
+                    ?.overview
+            }
 
-            if (!overview.isNullOrBlank()) {
-                synopsisCache[cacheKey] = overview
-                return overview
+            val clean = cleanSynopsis(overview)
+            if (
+                !clean.isNullOrBlank() &&
+                clean.any {
+                    it in '\u0600'..'\u06FF'
+                }
+            ) {
+                synopsisCache[cacheKey] = clean
+                return clean
             }
         }
 
-        val translated = englishFallback
-            ?.takeIf { it.isNotBlank() }
-            ?.let { translateSynopsisToArabic(it) }
+        val fallback =
+            cleanSynopsis(englishFallback)
 
-        if (!translated.isNullOrBlank()) {
-            synopsisCache[cacheKey] = translated
+        val translated =
+            fallback?.let {
+                translateSynopsisToArabic(it)
+            }
+
+        val result =
+            cleanSynopsis(translated)
+                ?: fallback
+
+        if (!result.isNullOrBlank()) {
+            synopsisCache[cacheKey] = result
         }
 
-        return translated
+        return result
     }
 
-    override suspend fun load(url: String): LoadResponse? {
-        val base = super.load(url) ?: return null
+    private suspend fun tmdbDetail(
+        tmdbId: Int?,
+        isTv: Boolean
+    ): TmdbDetail? {
+        val id = tmdbId ?: return null
+        val type = if (isTv) "tv" else "movie"
+
+        return timed(2200L) {
+            app.get(
+                "$tmdbApiUrl/$type/$id",
+                params = mapOf(
+                    "api_key" to tmdbApiKey,
+                    "language" to "en-US"
+                )
+            ).parsedSafe<TmdbDetail>()
+        }
+    }
+
+    private suspend fun tmdbFallbackPoster(
+        tmdbId: Int?,
+        isTv: Boolean
+    ): String? {
+        val id = tmdbId ?: return null
+        val type = if (isTv) "tv" else "movie"
+
+        val images = timed(2200L) {
+            app.get(
+                "$tmdbApiUrl/$type/$id/images",
+                params = mapOf(
+                    "api_key" to tmdbApiKey,
+                    "include_image_language" to "en,null"
+                )
+            ).parsedSafe<TmdbImageResponse>()
+        } ?: return null
+
+        return images.posters
+            .asSequence()
+            .filter {
+                !it.filePath.isNullOrBlank()
+            }
+            .sortedWith(
+                compareByDescending<TmdbImage> {
+                    when (it.language) {
+                        "en" -> 2
+                        null -> 1
+                        else -> 0
+                    }
+                }.thenByDescending {
+                    it.voteAverage ?: 0.0
+                }
+            )
+            .mapNotNull { it.filePath }
+            .firstOrNull()
+            ?.let {
+                "https://image.tmdb.org/t/p/w500$it"
+            }
+    }
+
+    override suspend fun load(
+        url: String
+    ): LoadResponse? = coroutineScope {
+        val base =
+            super@MOOSAHubProvider.load(url)
+                ?: return@coroutineScope null
+
         val imdbId = base.getImdbId()
-        val tmdbMatch = Regex("""themoviedb\.org/(movie|tv)/(\d+)""").find(url)
-        val isTv = tmdbMatch?.groupValues?.getOrNull(1) == "tv"
-        val tmdbId = tmdbMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
+        val tmdbMatch =
+            Regex(
+                """themoviedb\.org/(movie|tv)/(\d+)"""
+            ).find(url)
 
-        val arabicOverview = resolveArabicSynopsis(
-            tmdbId = tmdbId,
-            isTv = isTv,
-            englishFallback = base.plot
-        )
-        if (!arabicOverview.isNullOrBlank()) base.plot = arabicOverview
+        val isTv =
+            tmdbMatch
+                ?.groupValues
+                ?.getOrNull(1) == "tv"
 
-        return when (base) {
+        val tmdbId =
+            tmdbMatch
+                ?.groupValues
+                ?.getOrNull(2)
+                ?.toIntOrNull()
+
+        val detailJob = async {
+            tmdbDetail(
+                tmdbId = tmdbId,
+                isTv = isTv
+            )
+        }
+
+        val synopsisJob = async {
+            resolveArabicSynopsis(
+                tmdbId = tmdbId,
+                isTv = isTv,
+                englishFallback = base.plot
+            )
+        }
+
+        val detail = detailJob.await()
+        val arabicOverview = synopsisJob.await()
+
+        if (!arabicOverview.isNullOrBlank()) {
+            base.plot = arabicOverview
+        } else {
+            base.plot = cleanSynopsis(base.plot)
+        }
+
+        val reliableScore =
+            detail?.voteAverage
+                ?.takeIf {
+                    it > 0.0 &&
+                        it <= 10.0 &&
+                        (detail.voteCount ?: 0) > 0
+                }
+                ?.let(Score::from10)
+
+        if (reliableScore != null) {
+            base.score = reliableScore
+        }
+
+        val poster =
+            detail?.posterPath
+                ?.takeIf { it.isNotBlank() }
+                ?.let {
+                    "https://image.tmdb.org/t/p/w500$it"
+                }
+                ?: base.posterUrl
+                ?: tmdbFallbackPoster(
+                    tmdbId = tmdbId,
+                    isTv = isTv
+                )
+
+        if (!poster.isNullOrBlank()) {
+            base.posterUrl = poster
+        }
+
+        val background =
+            detail?.backdropPath
+                ?.takeIf { it.isNotBlank() }
+                ?.let {
+                    "https://image.tmdb.org/t/p/w1280$it"
+                }
+
+        if (!background.isNullOrBlank()) {
+            base.backgroundPosterUrl = background
+        }
+
+        when (base) {
             is MovieLoadResponse -> {
                 base.dataUrl = HubPlaybackRequest(
                     title = base.name,
