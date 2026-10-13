@@ -139,8 +139,9 @@ internal object MOOSAArabicBridge {
 
             val common = cw.intersect(aw).size
             val minSize = minOf(cw.size, aw.size)
+            val maxSize = maxOf(cw.size, aw.size)
 
-            if (common == minSize) {
+            if (common == minSize && (maxSize == minSize || common >= 2 && maxSize <= minSize + 1)) {
                 val numericA =
                     Regex("""\b\d+\b""")
                         .findAll(a)
@@ -172,7 +173,7 @@ internal object MOOSAArabicBridge {
             } else {
                 val ratio =
                     common.toDouble() /
-                        minSize.coerceAtLeast(1)
+                        maxSize.coerceAtLeast(1)
 
                 best =
                     maxOf(
@@ -380,11 +381,11 @@ internal object MOOSAArabicBridge {
                     .map {
                         it to scoreTitle(
                             it.name,
-                            aliases + query
+                            aliases
                         )
                     }
                     .filter {
-                        (_, score) -> score >= 72
+                        (_, score) -> score >= 88
                     }
                     .sortedByDescending {
                         (_, score) -> score
@@ -428,7 +429,7 @@ internal object MOOSAArabicBridge {
                         scoreTitle(
                             series.name,
                             aliases + query
-                        ) < 78
+                        ) < 88
                     ) {
                         MOOSAPlaybackDiagnostics.update(
                             api,
