@@ -232,8 +232,8 @@ class MOOSAHubProvider : TmdbProvider() {
     private val cacheLifetimeMs = 20 * 60 * 1000L
     private val subtitleCacheLifetimeMs = 15 * 60 * 1000L
     private val providerResolveTimeoutMs = 30000L
-    private val providerLinksTimeoutMs = 16000L
-    private val streamPlayLinksTimeoutMs = 24000L
+    private val providerLinksTimeoutMs = 22000L
+    private val streamPlayLinksTimeoutMs = 60000L
     private val subtitleTimeoutMs = 2200L
     private val fastSubtitleTimeoutMs = 1350L
     private val linkProbeTimeoutMs = 10500L
@@ -1055,8 +1055,98 @@ class MOOSAHubProvider : TmdbProvider() {
             .take(24)
     }
 
+    private fun isStreamPlayProvider(
+        api: MainAPI
+    ): Boolean {
+        val label =
+            "${api.name} ${api.mainUrl} ${api.javaClass.name}"
+                .lowercase()
+
+        return "streamplay" in label ||
+            "stream play" in label
+    }
+
+    private fun isArabicProvider(
+        api: MainAPI
+    ): Boolean {
+        if (
+            api.lang.equals(
+                "ar",
+                ignoreCase = true
+            )
+        ) {
+            return true
+        }
+
+        val label =
+            "${api.name} ${api.mainUrl} ${api.javaClass.name}"
+                .lowercase()
+
+        return listOf(
+            "akwam",
+            "اكوام",
+            "fasel",
+            "فاصل",
+            "topcinema",
+            "top cinema",
+            "wecima",
+            "cima",
+            "arabseed",
+            "arab seed",
+            "shahid",
+            "egy",
+            "mycima"
+        ).any { it in label }
+    }
+
+    private fun searchTimeoutFor(
+        api: MainAPI,
+        request: HubPlaybackRequest
+    ): Long =
+        when {
+            isArabicProvider(api) &&
+                request.isTv -> 8500L
+
+            isArabicProvider(api) -> 6500L
+
+            isStreamPlayProvider(api) -> 5000L
+
+            else -> 3600L
+        }
+
+    private fun providerLoadTimeoutFor(
+        api: MainAPI,
+        request: HubPlaybackRequest
+    ): Long =
+        when {
+            isArabicProvider(api) &&
+                request.isTv -> 30000L
+
+            isArabicProvider(api) -> 14000L
+
+            isStreamPlayProvider(api) -> 22000L
+
+            else -> 7500L
+        }
+
+    private fun providerResolveTimeoutFor(
+        api: MainAPI,
+        request: HubPlaybackRequest
+    ): Long =
+        when {
+            isArabicProvider(api) &&
+                request.isTv -> 65000L
+
+            isArabicProvider(api) -> 38000L
+
+            isStreamPlayProvider(api) -> 35000L
+
+            else -> providerResolveTimeoutMs
+        }
+
     private suspend fun searchProvider(
         api: MainAPI,
+        request: HubPlaybackRequest,
         aliases: List<String>,
         year: Int?,
         wantSeries: Boolean,
@@ -1085,7 +1175,12 @@ class MOOSAHubProvider : TmdbProvider() {
             mutableListOf<SearchResponse>()
 
         for ((index, query) in queryVariants.withIndex()) {
-            val first = timed(3400L) {
+            val first = timed(
+                searchTimeoutFor(
+                    api,
+                    request
+                )
+            ) {
                 api.search(query, 1)
                     ?.items
                     .orEmpty()
@@ -1107,7 +1202,12 @@ class MOOSAHubProvider : TmdbProvider() {
             if (hasStrict) break
 
             if (index < 2) {
-                val second = timed(3200L) {
+                val second = timed(
+                    searchTimeoutFor(
+                        api,
+                        request
+                    )
+                ) {
                     api.search(query, 2)
                         ?.items
                         .orEmpty()
@@ -1155,14 +1255,7 @@ class MOOSAHubProvider : TmdbProvider() {
             }
 
         val isStreamPlay =
-            api.name.contains(
-                "streamplay",
-                ignoreCase = true
-            ) ||
-                api.javaClass.name.contains(
-                    "streamplay",
-                    ignoreCase = true
-                )
+            isStreamPlayProvider(api)
 
         if (
             isStreamPlay &&
@@ -1179,7 +1272,12 @@ class MOOSAHubProvider : TmdbProvider() {
                         }
                 ).toJson()
 
-            val direct = timed(15000L) {
+            val direct = timed(
+                providerLoadTimeoutFor(
+                    api,
+                    request
+                )
+            ) {
                 api.load(directPayload)
             }
 
@@ -1205,7 +1303,12 @@ class MOOSAHubProvider : TmdbProvider() {
             }
 
             if (!directUrl.isNullOrBlank()) {
-                val direct = timed(4500L) {
+                val direct = timed(
+                    providerLoadTimeoutFor(
+                        api,
+                        request
+                    )
+                ) {
                     api.load(directUrl)
                 }
 
@@ -1225,6 +1328,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val candidates = searchProvider(
             api = api,
+            request = request,
             aliases = aliases,
             year = request.year,
             wantSeries = wantSeries,
@@ -1253,7 +1357,12 @@ class MOOSAHubProvider : TmdbProvider() {
             .toList()
 
         for ((match, _) in candidates) {
-            val loaded = timed(4500L) {
+            val loaded = timed(
+                providerLoadTimeoutFor(
+                    api,
+                    request
+                )
+            ) {
                 api.load(match.url)
             } ?: continue
 
@@ -1340,7 +1449,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v7",
+        "strict-v8",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -1372,7 +1481,12 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         val isSeries = request.season != null && request.episode != null
-        val loaded = timed(providerResolveTimeoutMs) {
+        val loaded = timed(
+            providerResolveTimeoutFor(
+                api,
+                request
+            )
+        ) {
             loadBestMatch(
                 api = api,
                 request = request,
@@ -2465,14 +2579,24 @@ class MOOSAHubProvider : TmdbProvider() {
         "${link.url}|${link.referer}|${link.headers.hashCode()}"
 
 
-    private fun linksTimeoutFor(api: MainAPI): Long {
-        val label = "${api.name} ${api.mainUrl}".lowercase()
-        return if ("streamplay" in label || "stream play" in label) {
-            streamPlayLinksTimeoutMs
-        } else {
-            providerLinksTimeoutMs
+    private fun linksTimeoutFor(
+        api: MainAPI,
+        request: HubPlaybackRequest
+    ): Long =
+        when {
+            isStreamPlayProvider(api) ->
+                streamPlayLinksTimeoutMs
+
+            isArabicProvider(api) &&
+                request.isTv ->
+                35000L
+
+            isArabicProvider(api) ->
+                26000L
+
+            else ->
+                providerLinksTimeoutMs
         }
-    }
 
 
     private suspend fun verifyStreamingLink(link: ExtractorLink): Boolean {
@@ -2546,7 +2670,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         val candidateLinks =
                             Collections.synchronizedList(mutableListOf<ExtractorLink>())
 
-                        timed(linksTimeoutFor(api)) {
+                        timed(linksTimeoutFor(api, request)) {
                             api.loadLinks(
                                 target.data,
                                 isCasting,
@@ -2589,7 +2713,10 @@ class MOOSAHubProvider : TmdbProvider() {
                             )
                         }
 
-                        if (candidateLinks.isEmpty()) {
+                        if (
+                            candidateLinks.isEmpty() &&
+                            !isStreamPlayProvider(api)
+                        ) {
                             val freshTarget =
                                 resolveTargetForProvider(
                                     request = request,
@@ -2599,7 +2726,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                 )
 
                             if (freshTarget != null) {
-                                timed(linksTimeoutFor(api)) {
+                                timed(linksTimeoutFor(api, request)) {
                                     api.loadLinks(
                                         freshTarget.data,
                                         isCasting,
