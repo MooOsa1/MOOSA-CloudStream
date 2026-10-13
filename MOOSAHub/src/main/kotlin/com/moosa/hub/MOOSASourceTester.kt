@@ -1,6 +1,7 @@
 package com.moosa.hub
 
 import com.lagradost.cloudstream3.APIHolder.apis
+import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.ProviderType
@@ -203,6 +204,24 @@ object MOOSASourceTester {
         else -> emptyList()
     }
 
+    private suspend fun siteReachable(api: MainAPI): Boolean {
+        val url = api.mainUrl.trim()
+        if (!url.startsWith("http")) return false
+
+        return withTimeoutOrNull(5000L) {
+            try {
+                val response = app.get(
+                    url,
+                    verify = false
+                )
+                response.isSuccessful ||
+                    response.code in 300..499
+            } catch (_: Throwable) {
+                false
+            }
+        } ?: false
+    }
+
     suspend fun test(
         api: MainAPI,
         discoveryDepth: Int = 1,
@@ -217,7 +236,7 @@ object MOOSASourceTester {
         onUpdate?.invoke(snapshot(api))
 
         val safeDepth = discoveryDepth.coerceIn(1, 3)
-        val timeoutMs = if (safeDepth > 1) 60000L else 32000L
+        val timeoutMs = if (safeDepth > 1) 42000L else 24000L
 
         val finalStatus = withTimeoutOrNull(timeoutMs) {
             val links = Collections.synchronizedList(
@@ -231,7 +250,11 @@ object MOOSASourceTester {
             }
 
             if (targets.isEmpty()) {
-                return@withTimeoutOrNull Status.OFFLINE
+                return@withTimeoutOrNull if (siteReachable(api)) {
+                    Status.UNVERIFIED
+                } else {
+                    Status.OFFLINE
+                }
             }
 
             var anyLoaded = false
@@ -246,8 +269,8 @@ object MOOSASourceTester {
                 anyLoaded = true
                 val dataItems = playbackData(loaded)
 
-                for (data in dataItems.take(if (safeDepth > 1) 3 else 1)) {
-                    withTimeoutOrNull(14000L) {
+                for (data in dataItems.take(if (safeDepth > 1) 2 else 1)) {
+                    withTimeoutOrNull(10000L) {
                         try {
                             api.loadLinks(
                                 data,
@@ -284,35 +307,52 @@ object MOOSASourceTester {
                 "${it.url}|${it.referer}|${it.headers.hashCode()}"
             }
 
-            state.serverCount = unique.size
+            val serverKeys = unique
+                .map(MOOSAServerRegistry::keyFor)
+                .distinct()
+
+            state.serverCount = serverKeys.size
 
             if (unique.isEmpty()) {
-                return@withTimeoutOrNull if (anyLoaded) {
-                    Status.UNVERIFIED
-                } else {
-                    Status.OFFLINE
+                return@withTimeoutOrNull when {
+                    anyLoaded -> Status.UNVERIFIED
+                    siteReachable(api) -> Status.UNVERIFIED
+                    else -> Status.OFFLINE
                 }
             }
 
+            val verificationCandidates = unique
+                .distinctBy(MOOSAServerRegistry::keyFor)
+                .take(6)
+
             var anyWorking = false
 
-            for (linkBatch in unique.chunked(8)) {
-                val batchResults = coroutineScope {
-                    linkBatch.map { link ->
+            for (batch in verificationCandidates.chunked(6)) {
+                val results = coroutineScope {
+                    batch.map { link ->
                         async {
-                            val result = MOOSAServerRegistry.testLink(link)
-                            MOOSAServerRegistry.recordResult(link, result)
+                            val result =
+                                MOOSAServerRegistry.testLink(link)
+                            MOOSAServerRegistry.recordResult(
+                                link,
+                                result
+                            )
                             result
                         }
                     }.awaitAll()
                 }
 
-                if (batchResults.any { it }) {
+                if (results.any { it }) {
                     anyWorking = true
+                    break
                 }
             }
 
-            if (anyWorking) Status.ONLINE else Status.UNVERIFIED
+            if (anyWorking) {
+                Status.ONLINE
+            } else {
+                Status.UNVERIFIED
+            }
         } ?: Status.UNVERIFIED
 
         state.status = finalStatus
