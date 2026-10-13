@@ -369,29 +369,32 @@ internal object MOOSAArabicBridge {
                     "Matched \"${candidate.name}\" • loading page"
                 )
 
-                val loaded: LoadResponse =
+                val loaded =
                     withTimeoutOrNull(
                         loadTimeout(kind)
                     ) {
                         api.load(candidate.url)
-                    } ?: run {
-                        MOOSAPlaybackDiagnostics.update(
-                            api,
-                            "Page load timed out • ${candidate.name}"
-                        )
-                        continue
                     }
+
+                if (loaded == null) {
+                    MOOSAPlaybackDiagnostics.update(
+                        api,
+                        "Page load timed out • ${candidate.name}"
+                    )
+                    continue
+                }
 
                 if (request.isTv) {
                     val series =
                         loaded as? TvSeriesLoadResponse
-                            ?: run {
-                                MOOSAPlaybackDiagnostics.update(
-                                    api,
-                                    "Matched page loaded as movie, not series"
-                                )
-                                continue
-                            }
+
+                    if (series == null) {
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "Matched page loaded as movie, not series"
+                        )
+                        continue
+                    }
 
                     if (
                         scoreTitle(
@@ -413,13 +416,15 @@ internal object MOOSAArabicBridge {
                             candidateTitle =
                                 candidate.name,
                             aliases = aliases + query
-                        ) ?: run {
-                            MOOSAPlaybackDiagnostics.update(
-                                api,
-                                "Series found • S${request.season}E${request.episode} missing"
-                            )
-                            continue
-                        }
+                        )
+
+                    if (data.isNullOrBlank()) {
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "Series found • S${request.season}E${request.episode} missing"
+                        )
+                        continue
+                    }
 
                     MOOSAPlaybackDiagnostics.update(
                         api,
@@ -431,55 +436,57 @@ internal object MOOSAArabicBridge {
                         mainUrl = api.mainUrl,
                         data = data
                     )
-                } else {
-                    val movie =
-                        loaded as? MovieLoadResponse
-                            ?: run {
-                                MOOSAPlaybackDiagnostics.update(
-                                    api,
-                                    "Matched page loaded as series, not movie"
-                                )
-                                continue
-                            }
+                }
 
-                    if (
-                        !movieMatches(
-                            movie,
-                            request,
-                            aliases + query
-                        )
-                    ) {
-                        MOOSAPlaybackDiagnostics.update(
-                            api,
-                            "Loaded wrong movie • ${movie.name}"
-                        )
-                        continue
-                    }
+                val movie =
+                    loaded as? MovieLoadResponse
 
-                    val data =
-                        movie.dataUrl
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?: run {
-                                MOOSAPlaybackDiagnostics.update(
-                                    api,
-                                    "Movie matched • no playback data"
-                                )
-                                continue
-                            }
-
+                if (movie == null) {
                     MOOSAPlaybackDiagnostics.update(
                         api,
-                        "Movie matched • extracting links"
+                        "Matched page loaded as series, not movie"
                     )
-
-                    return MOOSAHubProvider.ProviderTarget(
-                        providerName = api.name,
-                        mainUrl = api.mainUrl,
-                        data = data
-                    )
+                    continue
                 }
+
+                if (
+                    !movieMatches(
+                        movie,
+                        request,
+                        aliases + query
+                    )
+                ) {
+                    MOOSAPlaybackDiagnostics.update(
+                        api,
+                        "Loaded wrong movie • ${movie.name}"
+                    )
+                    continue
+                }
+
+                val data =
+                    movie.dataUrl
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+
+                if (data.isNullOrBlank()) {
+                    MOOSAPlaybackDiagnostics.update(
+                        api,
+                        "Movie matched • no playback data"
+                    )
+                    continue
+                }
+
+                MOOSAPlaybackDiagnostics.update(
+                    api,
+                    "Movie matched • extracting links"
+                )
+
+                return MOOSAHubProvider.ProviderTarget(
+                    providerName = api.name,
+                    mainUrl = api.mainUrl,
+                    data = data
+                )
             }
         }
 
@@ -490,4 +497,5 @@ internal object MOOSAArabicBridge {
 
         return null
     }
+
 }
