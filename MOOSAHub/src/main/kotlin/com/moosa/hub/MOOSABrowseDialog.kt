@@ -71,17 +71,17 @@ class MOOSABrowseDialog : DialogFragment() {
         Button(requireContext()).apply {
             this.text = text
             setTextColor(Color.WHITE)
-            textSize = 14f
+            textSize = 12.5f
             isFocusable = true
             isFocusableInTouchMode = false
             background = rounded(
-                Color.rgb(34, 82, 128),
+                Color.rgb(30, 42, 56),
                 10,
                 Color.argb(100, 255, 255, 255)
             )
             setOnFocusChangeListener { view, focused ->
                 view.background = rounded(
-                    if (focused) Color.rgb(42, 117, 190)
+                    if (focused) Color.rgb(38, 91, 135)
                     else Color.rgb(34, 82, 128),
                     10,
                     if (focused) Color.WHITE
@@ -96,11 +96,11 @@ class MOOSABrowseDialog : DialogFragment() {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(14))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             background = rounded(
-                Color.rgb(12, 26, 42),
+                Color.rgb(10, 20, 31),
                 18,
-                Color.rgb(75, 143, 205),
+                Color.rgb(56, 102, 137),
                 2
             )
         }
@@ -112,7 +112,7 @@ class MOOSABrowseDialog : DialogFragment() {
 
         val title = TextView(context).apply {
             text = request.name
-            textSize = 26f
+            textSize = 23f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
@@ -127,7 +127,7 @@ class MOOSABrowseDialog : DialogFragment() {
 
         status = TextView(context).apply {
             textSize = 14f
-            setTextColor(Color.LTGRAY)
+            setTextColor(Color.rgb(174, 191, 207))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, dp(12), 0)
         }
@@ -136,7 +136,7 @@ class MOOSABrowseDialog : DialogFragment() {
         closeButton = focusableButton("CLOSE")
         header.addView(
             closeButton,
-            LinearLayout.LayoutParams(dp(110), dp(50))
+            LinearLayout.LayoutParams(dp(90), dp(42))
         )
 
         root.addView(header)
@@ -154,10 +154,10 @@ class MOOSABrowseDialog : DialogFragment() {
             progress,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(8)
+                dp(6)
             ).apply {
-                topMargin = dp(8)
-                bottomMargin = dp(8)
+                topMargin = dp(6)
+                bottomMargin = dp(6)
             }
         )
 
@@ -383,8 +383,8 @@ class MOOSABrowseDialog : DialogFragment() {
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
-                (metrics.widthPixels * 0.97f).toInt(),
-                (metrics.heightPixels * 0.96f).toInt()
+                (metrics.widthPixels * 0.95f).toInt(),
+                (metrics.heightPixels * 0.94f).toInt()
             )
             setBackgroundDrawableResource(android.R.color.transparent)
         }
@@ -398,31 +398,43 @@ class MOOSABrowseDialog : DialogFragment() {
         progress.isIndeterminate = true
         status.text = "Loading…"
 
-        val batch = withContext(Dispatchers.IO) {
-            MOOSACatalog.browseBatch(
-                api = api,
-                request = request,
-                startPage = 1,
-                pageCount = 10
-            )
-        }
+        try {
+            val batch = withContext(Dispatchers.IO) {
+                MOOSACatalog.browseBatch(
+                    api = api,
+                    request = request,
+                    startPage = 1,
+                    pageCount = 10
+                )
+            }
 
-        items.clear()
-        items += batch.items
-        lastPage = batch.lastPage
-        hasNext = batch.hasNext
+            items.clear()
+            items += batch.items
+            lastPage = batch.lastPage
+            hasNext = batch.hasNext
 
-        adapter.submitList(items.toList())
-        progress.visibility = View.GONE
-        progress.isIndeterminate = false
-        status.text =
-            "${items.size} titles${if (hasNext) " • more available" else ""}"
-        loading = false
+            adapter.submitList(items.toList())
 
-        recycler.post {
-            recycler.layoutManager
-                ?.findViewByPosition(0)
-                ?.requestFocus()
+            status.text = when {
+                items.isEmpty() ->
+                    "No titles available"
+                hasNext ->
+                    "${items.size} titles • more available"
+                else ->
+                    "${items.size} titles"
+            }
+
+            recycler.post {
+                recycler.layoutManager
+                    ?.findViewByPosition(0)
+                    ?.requestFocus()
+            }
+        } catch (_: Throwable) {
+            status.text = "Could not load this category"
+        } finally {
+            progress.visibility = View.GONE
+            progress.isIndeterminate = false
+            loading = false
         }
     }
 
@@ -444,34 +456,45 @@ class MOOSABrowseDialog : DialogFragment() {
 
         progress.visibility = View.VISIBLE
         progress.isIndeterminate = true
-        status.text = "${items.size} titles • loading more…"
-
-        val batch = withContext(Dispatchers.IO) {
-            MOOSACatalog.browseBatch(
-                api = api,
-                request = request,
-                startPage = lastPage + 1,
-                pageCount = 5
-            )
-        }
-
-        if (batch.items.isNotEmpty()) {
-            items += batch.items
-            val unique = items.distinctBy { it.url }
-            items.clear()
-            items += unique
-            lastPage = batch.lastPage
-            hasNext = batch.hasNext
-            adapter.submitList(items.toList())
-        } else {
-            hasNext = false
-        }
-
-        progress.visibility = View.GONE
-        progress.isIndeterminate = false
         status.text =
-            "${items.size} titles${if (hasNext) " • more available" else " • end"}"
-        loading = false
+            "${items.size} titles • loading more…"
+
+        try {
+            val batch = withContext(Dispatchers.IO) {
+                MOOSACatalog.browseBatch(
+                    api = api,
+                    request = request,
+                    startPage = lastPage + 1,
+                    pageCount = 5
+                )
+            }
+
+            if (batch.items.isNotEmpty()) {
+                items += batch.items
+
+                val unique =
+                    items.distinctBy { it.url }
+
+                items.clear()
+                items += unique
+
+                lastPage = batch.lastPage
+                hasNext = batch.hasNext
+                adapter.submitList(items.toList())
+            } else {
+                hasNext = false
+            }
+
+            status.text =
+                "${items.size} titles${if (hasNext) " • more available" else ""}"
+        } catch (_: Throwable) {
+            status.text =
+                "${items.size} titles • retry when you scroll again"
+        } finally {
+            progress.visibility = View.GONE
+            progress.isIndeterminate = false
+            loading = false
+        }
     }
 
     companion object {
