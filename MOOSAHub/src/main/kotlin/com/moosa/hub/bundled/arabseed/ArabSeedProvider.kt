@@ -97,6 +97,11 @@ class ArabSeedProvider : MainAPI() {
 
     private fun String.episodeNumber(): Int? {
         val text = normalizedDigits().lowercase()
+            .replace('ة', 'ه')
+            .replace('أ', 'ا')
+            .replace('إ', 'ا')
+            .replace('آ', 'ا')
+            .replace('ى', 'ي')
         Regex("""(?:s\s*\d{1,2}\s*e|الحلقه|حلقه|episode|ep)[\s:_-]*(\d{1,4})""")
             .find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
         val ordinal = listOf(
