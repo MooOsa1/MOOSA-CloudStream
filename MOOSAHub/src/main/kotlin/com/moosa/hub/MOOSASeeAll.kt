@@ -7,38 +7,23 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.TextView
-import android.widget.Toast
 import com.lagradost.cloudstream3.CommonActivity.activity
-import com.lagradost.cloudstream3.HomePageList
-import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.ui.home.HomeFragment
-import com.lagradost.cloudstream3.ui.home.HomeViewModel
 import java.util.WeakHashMap
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 object MOOSASeeAll {
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private data class CategoryState(
         val api: MOOSAHubProvider,
-        val request: MainPageRequest,
-        var page: Int,
-        var items: List<SearchResponse>,
-        var hasNext: Boolean,
-        val horizontal: Boolean,
-        var opening: Boolean = false
+        val request: MainPageRequest
     )
 
     private val states = ConcurrentHashMap<String, CategoryState>()
-    private val observedRoots = WeakHashMap<ViewGroup, ViewTreeObserver.OnGlobalLayoutListener>()
+    private val observedRoots =
+        WeakHashMap<ViewGroup, ViewTreeObserver.OnGlobalLayoutListener>()
 
     fun register(
         api: MOOSAHubProvider,
@@ -51,11 +36,7 @@ object MOOSASeeAll {
 
         states[request.name] = CategoryState(
             api = api,
-            request = request,
-            page = 1,
-            items = items,
-            hasNext = hasNext,
-            horizontal = horizontal
+            request = request
         )
 
         mainHandler.post {
@@ -79,7 +60,10 @@ object MOOSASeeAll {
         }
     }
 
-    private fun collectHeaders(view: View, output: MutableList<TextView>) {
+    private fun collectHeaders(
+        view: View,
+        output: MutableList<TextView>
+    ) {
         if (view is TextView) {
             val entry = try {
                 if (view.id != View.NO_ID) {
@@ -108,140 +92,65 @@ object MOOSASeeAll {
 
     private fun applyHeaders() {
         val currentActivity = activity ?: return
-        val root = currentActivity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        val root =
+            currentActivity.findViewById<ViewGroup>(android.R.id.content)
+                ?: return
+
         val headers = mutableListOf<TextView>()
         collectHeaders(root, headers)
 
         headers.forEach { header ->
-            val original = originalHeaderText(header.text?.toString().orEmpty())
+            val original =
+                originalHeaderText(header.text?.toString().orEmpty())
             val state = states[original] ?: return@forEach
 
             header.text = "${state.request.name}  SHOW MORE  ›"
-            header.contentDescription = "${state.request.name}. Show more."
+            header.contentDescription =
+                "${state.request.name}. Show more."
             header.isClickable = true
             header.isFocusable = true
             header.isFocusableInTouchMode = false
-            header.alpha = 0.9f
+            header.alpha = 0.92f
 
             header.setOnFocusChangeListener { view, focused ->
-                view.alpha = if (focused) 1f else 0.9f
+                view.alpha = if (focused) 1f else 0.92f
                 view.setBackgroundColor(
-                    if (focused) Color.argb(120, 24, 101, 180)
-                    else Color.TRANSPARENT
+                    if (focused) {
+                        Color.argb(120, 24, 101, 180)
+                    } else {
+                        Color.TRANSPARENT
+                    }
+                )
+            }
+
+            val open = {
+                MOOSABrowseDialog.show(
+                    currentActivity,
+                    state.api,
+                    state.request
                 )
             }
 
             header.setOnClickListener {
-                openCategory(state)
+                open()
             }
 
             header.setOnKeyListener { _, keyCode, event ->
                 if (
-                    event.action == android.view.KeyEvent.ACTION_UP &&
+                    event.action ==
+                        android.view.KeyEvent.ACTION_UP &&
                     (
-                        keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
-                            keyCode == android.view.KeyEvent.KEYCODE_ENTER
+                        keyCode ==
+                            android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode ==
+                                android.view.KeyEvent.KEYCODE_ENTER
                         )
                 ) {
-                    openCategory(state)
+                    open()
                     true
                 } else {
                     false
                 }
-            }
-        }
-    }
-
-    private fun createExpandable(
-        state: CategoryState
-    ): HomeViewModel.ExpandableHomepageList =
-        HomeViewModel.ExpandableHomepageList(
-            HomePageList(
-                state.request.name,
-                state.items,
-                state.horizontal
-            ),
-            state.page,
-            state.hasNext
-        )
-
-    private suspend fun expandCategory(
-        state: CategoryState
-    ): HomeViewModel.ExpandableHomepageList? {
-        if (!state.hasNext) return createExpandable(state)
-
-        val batch = MOOSACatalog.browseBatch(
-            api = state.api,
-            request = state.request,
-            startPage = state.page + 1,
-            pageCount = 5
-        )
-
-        if (batch.items.isEmpty()) {
-            state.hasNext = false
-            return createExpandable(state)
-        }
-
-        state.items = (state.items + batch.items).distinctBy { it.url }
-        state.page = batch.lastPage
-        state.hasNext = batch.hasNext
-
-        return createExpandable(state)
-    }
-
-    private suspend fun prefetchCategory(state: CategoryState) {
-        val batch = MOOSACatalog.browseBatch(
-            api = state.api,
-            request = state.request,
-            startPage = 1,
-            pageCount = 10
-        )
-
-        if (batch.items.isNotEmpty()) {
-            state.items = batch.items
-            state.page = batch.lastPage
-            state.hasNext = batch.hasNext
-        }
-    }
-
-    private fun openCategory(state: CategoryState) {
-        val currentActivity = activity ?: return
-        if (state.opening) return
-        state.opening = true
-
-        Toast.makeText(
-            currentActivity,
-            "Loading ${state.request.name}…",
-            Toast.LENGTH_SHORT
-        ).show()
-
-        scope.launch {
-            try {
-                prefetchCategory(state)
-                val expandable = createExpandable(state)
-
-                withContext(Dispatchers.Main) {
-                    try {
-                        with(HomeFragment.Companion) {
-                            currentActivity.loadHomepageList(
-                                expand = expandable,
-                                deleteCallback = null,
-                                expandCallback = {
-                                    expandCategory(state)
-                                },
-                                dismissCallback = {
-                                    mainHandler.postDelayed({
-                                        applyHeaders()
-                                    }, 120L)
-                                }
-                            )
-                        }
-                    } finally {
-                        state.opening = false
-                    }
-                }
-            } catch (_: Throwable) {
-                state.opening = false
             }
         }
     }
