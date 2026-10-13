@@ -34,3 +34,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("com.google.android.material:material:1.14.0")
 }
+
+// v36 release trigger
