@@ -1,7 +1,7 @@
 [
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-2609f15102cf0ed34ce3d2fa74224087ad2bfc90939991010826bed67db82cee",
+        "fileHash": "sha256-1c90bc3ae081ae848d04362a9ae873912e8e6309090f39e82e46495e687ad3bd",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
         "fileSize": 191515,
@@ -14,7 +14,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 33,
+        "version": 34,
         "internalName": "MOOSAHub",
         "description": "English catalog, Arabic synopsis, and multi-source playback",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAHub.cs3",
