@@ -14,7 +14,7 @@ import java.net.URLEncoder
 
 class AkwamProvider : MainAPI() {
     override var lang = "ar"
-    override var mainUrl = "https://akwam.ss"
+    override var mainUrl = "https://ak.sv"
     override var name = "Akwam"
     override val usesWebView = false
     override val hasMainPage = true
@@ -351,7 +351,7 @@ class AkwamProvider : MainAPI() {
                 val host = runCatching { java.net.URI(absolute).host?.lowercase().orEmpty() }.getOrNull().orEmpty()
                 if (host.isBlank()) continue
                 val isOwnHost = host == ownHost ||
-                    host.endsWith(".akwam.ss") || host.endsWith(".akwam.net") || host.endsWith(".ak.sv")
+                    host.endsWith(".akwam.ss") || host.endsWith(".akwam.net") || host.endsWith(".ak.sv") || host == "ak.sv"
                 val isKnownWrapper = false
                 val isIframe = element.tagName().equals("iframe", ignoreCase = true)
                 val isDirectMedia = element.tagName().equals("video", true) ||
