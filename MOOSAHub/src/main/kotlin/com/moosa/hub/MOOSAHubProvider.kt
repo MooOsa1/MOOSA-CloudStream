@@ -352,9 +352,11 @@ class MOOSAHubProvider : TmdbProvider() {
                 " "
             )
             .replace(
-                Regex(
-                    """(^|\s)الحلقه\s*\d{1,4}(?=\s|$)"""
-                ),
+                Regex("""(^|\s)(?:ج|جزء|الجزء)\s*\d{1,2}(?=\s|$)"""),
+                " "
+            )
+            .replace(
+                Regex("""(^|\s)(?:الحلقه|حلقه)\s*\d{1,4}(?:\s+(?:الاولى|الاول|الثانيه|الثاني|الثالثه|الثالث|الرابعه|الرابع|الخامسه|الخامس))?(?=\s|$)"""),
                 " "
             )
             .replace(
@@ -552,79 +554,53 @@ class MOOSAHubProvider : TmdbProvider() {
             .filter { it.isNotBlank() }
             .toSet()
 
+    private fun explicitSeasonNumber(value: String): Int? {
+        val text = normalizeArabicOrthography(normalizeTitle(value))
+        val markers = Regex("""(?:^|\\s)(?:الموسم|موسم|season|الجزء|جزء|part|ج|s)\\s*([\\p{L}\\d]+)""", RegexOption.IGNORE_CASE)
+        val ordinals = mapOf(
+            "الاول" to 1, "الاولى" to 1, "اول" to 1,
+            "الثاني" to 2, "الثانيه" to 2, "ثاني" to 2,
+            "الثالث" to 3, "الثالثه" to 3, "ثالث" to 3,
+            "الرابع" to 4, "الرابعه" to 4, "رابع" to 4,
+            "الخامس" to 5, "الخامسه" to 5, "خامس" to 5,
+            "السادس" to 6, "السادسه" to 6, "سادس" to 6,
+            "السابع" to 7, "السابعه" to 7, "سابع" to 7,
+            "الثامن" to 8, "الثامنه" to 8, "ثامن" to 8,
+            "التاسع" to 9, "التاسعه" to 9, "تاسع" to 9,
+            "العاشر" to 10, "العاشره" to 10, "عاشر" to 10
+        )
+        return markers.findAll(text).mapNotNull { match ->
+            val token = match.groupValues[1]
+            token.toIntOrNull() ?: ordinals[token]
+        }.firstOrNull()
+    }
+
     private fun seasonSpecificTitleMatch(
         candidate: String,
         aliases: List<String>,
         season: Int
     ): Boolean {
-        val candidateCanonical =
-            canonicalTitle(candidate)
+        val explicitSeason = explicitSeasonNumber(candidate)
+        if (explicitSeason != null && explicitSeason != season) return false
 
-        if (candidateCanonical.isBlank()) {
-            return false
-        }
-
-        val candidateTokens =
-            tokenSet(candidateCanonical)
-
-        val seasonToken =
-            season.toString()
-
-        val candidateHasSeason =
-            seasonToken in candidateTokens
-
-        val candidateNumbers =
-            Regex("""\b\d{1,2}\b""")
-                .findAll(candidateCanonical)
-                .mapNotNull {
-                    it.value.toIntOrNull()
-                }
-                .toSet()
-
-        if (
-            candidateNumbers.isNotEmpty() &&
-            season !in candidateNumbers
-        ) {
-            return false
-        }
+        val candidateCanonical = canonicalTitle(candidate)
+        if (candidateCanonical.isBlank()) return false
+        val candidateTokens = tokenSet(candidateCanonical)
+        val candidateHasSeason = explicitSeason == season || season.toString() in candidateTokens
 
         for (alias in aliases) {
-            val wanted =
-                canonicalTitle(alias)
-
+            val wanted = canonicalTitle(alias)
             if (wanted.isBlank()) continue
-
-            if (candidateCanonical == wanted) {
+            if (candidateCanonical == wanted) return true
+            val wantedTokens = tokenSet(wanted)
+            if (candidateHasSeason && wantedTokens.isNotEmpty() && wantedTokens.all { it in candidateTokens }) {
                 return true
             }
-
-            val wantedTokens =
-                tokenSet(wanted)
-
-            val wantedHasSeason =
-                seasonToken in wantedTokens
-
-            if (
-                wantedHasSeason &&
-                candidateHasSeason &&
-                wantedTokens.all {
-                    it in candidateTokens
-                }
-            ) {
-                return true
-            }
-
-            if (
-                candidateHasSeason &&
-                wantedTokens.size >= 2 &&
-                wantedTokens.all {
-                    it in candidateTokens
-                }
-            ) {
+            val wantedSeason = explicitSeasonNumber(alias)
+            if (wantedSeason == season && wantedTokens.all { it in candidateTokens }) {
                 return true
             }
         }
-
         return false
     }
 
