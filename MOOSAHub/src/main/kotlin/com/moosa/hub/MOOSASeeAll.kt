@@ -7,6 +7,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.TextView
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.lagradost.cloudstream3.CommonActivity.activity
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
@@ -19,7 +21,9 @@ object MOOSASeeAll {
 
     private data class CategoryState(
         val api: MOOSAHubProvider,
-        val request: MainPageRequest
+        val request: MainPageRequest,
+        var parentAdapterPosition: Int = RecyclerView.NO_POSITION,
+        var parentTopOffset: Int = 0
     )
 
     private val states = ConcurrentHashMap<String, CategoryState>()
@@ -130,6 +134,11 @@ object MOOSASeeAll {
 
             val open = {
                 headerRefs[state.request.name] = WeakReference(header)
+                captureParentPosition(
+                    currentActivity,
+                    header,
+                    state
+                )
                 MOOSABrowseDialog.show(
                     currentActivity,
                     state.api,
@@ -161,23 +170,121 @@ object MOOSASeeAll {
         }
     }
 
-    fun restoreFocus(categoryName: String) {
-        mainHandler.postDelayed({
-            val header = headerRefs[categoryName]?.get()
-            if (header != null && header.isAttachedToWindow) {
-                header.requestFocus()
-                return@postDelayed
-            }
+    private fun homeMasterRecycler(
+        activity: android.app.Activity
+    ): RecyclerView? {
+        val id = activity.resources.getIdentifier(
+            "home_master_recycler",
+            "id",
+            activity.packageName
+        )
+        if (id == 0) return null
+        return activity.findViewById(id)
+    }
 
+    private fun directChildOf(
+        ancestor: ViewGroup,
+        view: View
+    ): View? {
+        var current: View = view
+        var parent = current.parent
+
+        while (parent is View) {
+            if (parent === ancestor) {
+                return current
+            }
+            current = parent
+            parent = current.parent
+        }
+
+        return null
+    }
+
+    private fun captureParentPosition(
+        activity: android.app.Activity,
+        header: TextView,
+        state: CategoryState
+    ) {
+        val master = homeMasterRecycler(activity) ?: return
+        val itemView = directChildOf(master, header) ?: return
+        val position = master.getChildAdapterPosition(itemView)
+
+        if (position != RecyclerView.NO_POSITION) {
+            state.parentAdapterPosition = position
+            state.parentTopOffset = itemView.top - master.paddingTop
+        }
+    }
+
+    private fun focusExactParentRow(
+        activity: android.app.Activity,
+        state: CategoryState,
+        attempt: Int = 0
+    ) {
+        val master = homeMasterRecycler(activity) ?: return
+        val position = state.parentAdapterPosition
+
+        if (position == RecyclerView.NO_POSITION) {
+            applyHeaders()
+            headerRefs[state.request.name]
+                ?.get()
+                ?.takeIf { it.isAttachedToWindow }
+                ?.requestFocus()
+            return
+        }
+
+        val manager = master.layoutManager as? LinearLayoutManager
+        manager?.scrollToPositionWithOffset(
+            position,
+            state.parentTopOffset
+        )
+
+        master.post {
             applyHeaders()
 
-            mainHandler.postDelayed({
-                headerRefs[categoryName]
-                    ?.get()
-                    ?.takeIf { it.isAttachedToWindow }
-                    ?.requestFocus()
-            }, 120L)
-        }, 90L)
+            val holder = master.findViewHolderForAdapterPosition(position)
+            val itemView = holder?.itemView
+
+            val headerId = activity.resources.getIdentifier(
+                "home_child_more_info",
+                "id",
+                activity.packageName
+            )
+
+            val exactHeader = if (
+                itemView != null &&
+                headerId != 0
+            ) {
+                itemView.findViewById<TextView>(headerId)
+            } else {
+                null
+            }
+
+            if (exactHeader != null && exactHeader.isAttachedToWindow) {
+                headerRefs[state.request.name] =
+                    WeakReference(exactHeader)
+                exactHeader.requestFocus()
+            } else if (attempt < 8) {
+                mainHandler.postDelayed({
+                    focusExactParentRow(
+                        activity,
+                        state,
+                        attempt + 1
+                    )
+                }, 90L)
+            }
+        }
+    }
+
+    fun restoreFocus(categoryName: String) {
+        val currentActivity = activity ?: return
+        val state = states[categoryName] ?: return
+
+        mainHandler.postDelayed({
+            focusExactParentRow(
+                currentActivity,
+                state
+            )
+        }, 120L)
     }
 
 }
