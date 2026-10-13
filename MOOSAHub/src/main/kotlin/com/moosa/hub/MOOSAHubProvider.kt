@@ -398,13 +398,16 @@ class MOOSAHubProvider : TmdbProvider() {
             .take(6)
 
         val queryVariants = buildList {
-            cleanAliases.forEach { alias ->
-                add(alias)
-                if (year != null) {
-                    add("$alias $year")
-                }
+            addAll(cleanAliases)
+
+            if (year != null) {
+                cleanAliases
+                    .take(4)
+                    .forEach { alias ->
+                        add("$alias $year")
+                    }
             }
-        }.distinct().take(8)
+        }.distinct().take(9)
 
         val results =
             mutableListOf<SearchResponse>()
@@ -865,7 +868,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         return coroutineScope {
 
-        val imdbId = base.getImdbId()
+        val inheritedImdbId = base.getImdbId()
         val tmdbMatch =
             Regex(
                 """themoviedb\.org/(movie|tv)/(\d+)"""
@@ -889,6 +892,14 @@ class MOOSAHubProvider : TmdbProvider() {
             )
         }
 
+        val imdbJob = async {
+            inheritedImdbId
+                ?: resolveTmdbImdb(
+                    tmdbId = tmdbId,
+                    isTv = isTv
+                )
+        }
+
         val synopsisJob = async {
             resolveArabicSynopsis(
                 tmdbId = tmdbId,
@@ -898,6 +909,7 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         val detail = detailJob.await()
+        val effectiveImdbId = imdbJob.await()
         val arabicOverview = synopsisJob.await()
 
         if (!arabicOverview.isNullOrBlank()) {
@@ -951,7 +963,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 base.dataUrl = HubPlaybackRequest(
                     title = base.name,
                     year = base.year,
-                    imdbId = imdbId,
+                    imdbId = effectiveImdbId,
                     tmdbId = tmdbId,
                     isTv = false
                 ).toJson()
@@ -963,7 +975,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     episode.data = HubPlaybackRequest(
                         title = base.name,
                         year = base.year,
-                        imdbId = imdbId,
+                        imdbId = effectiveImdbId,
                         tmdbId = tmdbId,
                         isTv = isTv,
                         season = episode.season,
@@ -1048,6 +1060,27 @@ class MOOSAHubProvider : TmdbProvider() {
             PreferredSubtitleLanguage.ENGLISH ->
                 SubtitleFile("English • $source", url)
             PreferredSubtitleLanguage.OTHER -> null
+        }
+    }
+
+    private suspend fun resolveTmdbImdb(
+        tmdbId: Int?,
+        isTv: Boolean
+    ): String? {
+        val id = tmdbId ?: return null
+        val type = if (isTv) "tv" else "movie"
+
+        return timed(1800L) {
+            app.get(
+                "$tmdbApiUrl/$type/$id/external_ids",
+                params = mapOf(
+                    "api_key" to tmdbApiKey
+                )
+            ).parsedSafe<TmdbExternalIds>()
+                ?.imdbId
+                ?.takeIf {
+                    it.startsWith("tt")
+                }
         }
     }
 
@@ -1430,7 +1463,7 @@ class MOOSAHubProvider : TmdbProvider() {
         MOOSAProgress.start(providers.size)
 
         val aliasesJob = async {
-            timed(1800L) {
+            timed(4200L) {
                 MOOSACatalog.aliases(
                     tmdbId = request.tmdbId,
                     isTv = request.isTv,
