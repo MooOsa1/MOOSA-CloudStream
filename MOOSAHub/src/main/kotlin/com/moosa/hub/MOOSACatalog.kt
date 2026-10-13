@@ -16,13 +16,17 @@ import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.toNewSearchResponseList
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 object MOOSACatalog {
     private const val TMDB_API = "https://api.themoviedb.org/3"
     private const val TMDB_KEY = "e6333b32409e02a4a6eba6fb7ff866bb"
     private const val IMAGE = "https://image.tmdb.org/t/p/w500"
     private const val PAGES_PER_BATCH = 1
+    private val artworkSemaphore = Semaphore(4)
 
         data class Page(
         @JsonProperty("results")
@@ -34,6 +38,22 @@ object MOOSACatalog {
     private data class CatalogPage(
         val items: List<SearchResponse>,
         val totalPages: Int
+    )
+
+    private data class TmdbImages(
+        @JsonProperty("posters")
+        val posters: List<TmdbImage> = emptyList(),
+        @JsonProperty("backdrops")
+        val backdrops: List<TmdbImage> = emptyList()
+    )
+
+    private data class TmdbImage(
+        @JsonProperty("file_path")
+        val filePath: String? = null,
+        @JsonProperty("vote_average")
+        val voteAverage: Double? = null,
+        @JsonProperty("iso_639_1")
+        val language: String? = null
     )
 
         data class Item(
@@ -131,6 +151,76 @@ object MOOSACatalog {
         }
     }
 
+    private suspend fun enrichArtwork(
+        item: Item,
+        forceTv: Boolean
+    ): Item {
+        if (
+            !item.posterPath.isNullOrBlank() ||
+            !item.backdropPath.isNullOrBlank()
+        ) {
+            return item
+        }
+
+        val id = item.id ?: return item
+        val isTv =
+            forceTv ||
+                item.mediaType == "tv" ||
+                (item.name != null && item.title == null)
+
+        val type = if (isTv) "tv" else "movie"
+
+        return artworkSemaphore.withPermit {
+            val images = try {
+                tryParseJson<TmdbImages>(
+                    get(
+                        "/$type/$id/images",
+                        mapOf(
+                            "include_image_language" to "en,null"
+                        )
+                    )
+                )
+            } catch (_: Throwable) {
+                null
+            } ?: return@withPermit item
+
+            val poster = images.posters
+                .asSequence()
+                .filter {
+                    !it.filePath.isNullOrBlank()
+                }
+                .sortedWith(
+                    compareByDescending<TmdbImage> {
+                        when (it.language) {
+                            "en" -> 2
+                            null -> 1
+                            else -> 0
+                        }
+                    }.thenByDescending {
+                        it.voteAverage ?: 0.0
+                    }
+                )
+                .mapNotNull { it.filePath }
+                .firstOrNull()
+
+            val backdrop = images.backdrops
+                .asSequence()
+                .filter {
+                    !it.filePath.isNullOrBlank()
+                }
+                .sortedByDescending {
+                    it.voteAverage ?: 0.0
+                }
+                .mapNotNull { it.filePath }
+                .firstOrNull()
+
+            item.copy(
+                posterPath = poster,
+                backdropPath = backdrop
+            )
+        }
+    }
+
     private suspend fun listPage(
         api: MainAPI,
         path: String,
@@ -155,8 +245,16 @@ object MOOSACatalog {
             tryParseJson<Page>(body)
                 ?: return CatalogPage(emptyList(), 1)
 
+        val enriched = coroutineScope {
+            response.results.map { item ->
+                async {
+                    enrichArtwork(item, forceTv)
+                }
+            }.awaitAll()
+        }
+
         return CatalogPage(
-            items = response.results.mapNotNull {
+            items = enriched.mapNotNull {
                 it.toResponse(api, forceTv)
             },
             totalPages =
