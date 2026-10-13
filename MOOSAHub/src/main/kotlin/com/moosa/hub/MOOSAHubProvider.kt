@@ -1701,9 +1701,17 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val seenLinks = ConcurrentHashMap.newKeySet<String>()
         val seenSubtitles = ConcurrentHashMap.newKeySet<String>()
-        val nativeSubtitles = Collections.synchronizedList(mutableListOf<SubtitleFile>())
+        val nativeSubtitles =
+            Collections.synchronizedList(
+                mutableListOf<SubtitleFile>()
+            )
+        val fallbackLinks =
+            Collections.synchronizedList(
+                mutableListOf<ExtractorLink>()
+            )
         val emittedLink = AtomicBoolean(false)
         val completedProviders = AtomicInteger(0)
+        val shownLinks = AtomicInteger(0)
         val verifiedLinks = AtomicInteger(0)
 
         val externalSubtitleJob = async {
@@ -1863,13 +1871,23 @@ class MOOSAHubProvider : TmdbProvider() {
                                     !MOOSASettingsStore.verifyLinks() ||
                                         verifyStreamingLink(link)
 
-                                if (verified && seenLinks.add(key)) {
+                                if (
+                                    verified &&
+                                    seenLinks.add(key)
+                                ) {
                                     providerWorked = true
                                     emittedLink.set(true)
                                     verifiedLinks.incrementAndGet()
+                                    shownLinks.incrementAndGet()
                                     callback(link)
                                     true
                                 } else {
+                                    if (
+                                        !verified &&
+                                        !seenLinks.contains(key)
+                                    ) {
+                                        fallbackLinks += link
+                                    }
                                     false
                                 }
                             }
@@ -1894,7 +1912,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     MOOSAProgress.providerProgress(
                         completedProviders.incrementAndGet(),
                         providers.size,
-                        verifiedLinks.get()
+                        shownLinks.get()
                     )
                 }
 
@@ -1902,7 +1920,25 @@ class MOOSAHubProvider : TmdbProvider() {
             }
         }
 
-        MOOSAProgress.serversReady(verifiedLinks.get())
+        if (
+            shownLinks.get() == 0 &&
+            fallbackLinks.isNotEmpty()
+        ) {
+            fallbackLinks
+                .distinctBy(::linkKey)
+                .sortedByDescending(::inferQuality)
+                .take(10)
+                .forEach { link ->
+                    val key = linkKey(link)
+                    if (seenLinks.add(key)) {
+                        emittedLink.set(true)
+                        shownLinks.incrementAndGet()
+                        callback(link)
+                    }
+                }
+        }
+
+        MOOSAProgress.serversReady(shownLinks.get())
         MOOSAProgress.subtitles()
 
         val externalSubtitles = externalSubtitleJob.await()
@@ -1925,7 +1961,7 @@ class MOOSAHubProvider : TmdbProvider() {
             }
         }
 
-        MOOSAProgress.finish(verifiedLinks.get())
+        MOOSAProgress.finish(shownLinks.get())
         emittedLink.get()
     }
 
