@@ -226,31 +226,84 @@ class AkwamProvider : MainAPI() {
         val ownHost = runCatching { java.net.URI(mainUrl).host.lowercase() }.getOrNull().orEmpty()
         val desktopUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
+        val emittedMediaUrls = linkedSetOf<String>()
+
+        suspend fun emitLink(link: ExtractorLink) {
+            if (emittedMediaUrls.add(link.url.trim())) {
+                callback(link)
+                emitted = true
+            }
+        }
+
         suspend fun emitMedia(mediaUrl: String, referer: String) {
             val isHls = mediaUrl.contains(".m3u8", true) ||
                 mediaUrl.contains("playlist", true)
-            callback(
-                newExtractorLink(
-                    source = this.name,
-                    name = if (isHls) "${this.name} HLS" else "${this.name} Stream",
-                    url = mediaUrl,
-                    type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = referer
-                    this.quality = when {
-                        mediaUrl.contains("1080", true) -> Qualities.P1080.value
-                        mediaUrl.contains("480", true) -> Qualities.P480.value
-                        else -> Qualities.P720.value
-                    }
-                    this.type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    this.headers = mapOf(
-                        "User-Agent" to desktopUa,
-                        "Referer" to referer,
-                        "Accept" to "*/*"
-                    )
-                }
+            val headers = mapOf(
+                "User-Agent" to desktopUa,
+                "Referer" to referer,
+                "Accept" to "*/*"
             )
-            emitted = true
+            val urlQuality = Regex("""(?i)(2160|1440|1080|720|576|480|360)(?:p)?""")
+                .find(mediaUrl)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+            if (isHls) {
+                val variants = try {
+                    M3u8Helper().m3u8Generation(
+                        M3u8Helper.M3u8Stream(
+                            streamUrl = mediaUrl,
+                            quality = urlQuality,
+                            headers = headers
+                        ),
+                        false
+                    )
+                } catch (_: Exception) {
+                    emptyList()
+                }
+
+                if (variants.isNotEmpty()) {
+                    for (variant in variants) {
+                        val quality = variant.quality ?: urlQuality ?: Qualities.Unknown.value
+                        val link = newExtractorLink(
+                            source = this.name,
+                            name = "${this.name} HLS",
+                            url = variant.streamUrl,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer = referer
+                            this.quality = quality
+                            this.type = ExtractorLinkType.M3U8
+                            this.headers = headers
+                        }
+                        emitLink(link)
+                    }
+                    return
+                }
+            }
+
+            val quality = urlQuality?.let { height ->
+                when (height) {
+                    2160 -> Qualities.P2160.value
+                    1440 -> Qualities.P1440.value
+                    1080 -> Qualities.P1080.value
+                    720 -> Qualities.P720.value
+                    576 -> Qualities.P576.value
+                    480 -> Qualities.P480.value
+                    360 -> Qualities.P360.value
+                    else -> Qualities.Unknown.value
+                }
+            } ?: Qualities.Unknown.value
+            val link = newExtractorLink(
+                source = this.name,
+                name = if (isHls) "${this.name} HLS" else "${this.name} Stream",
+                url = mediaUrl,
+                type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+            ) {
+                this.referer = referer
+                this.quality = quality
+                this.type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                this.headers = headers
+            }
+            emitLink(link)
         }
 
         while (cursor < pending.size && cursor < 40) {
