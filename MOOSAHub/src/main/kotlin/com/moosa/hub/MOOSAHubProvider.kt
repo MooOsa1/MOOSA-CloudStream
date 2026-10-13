@@ -255,36 +255,28 @@ class MOOSAHubProvider : TmdbProvider() {
     private fun normalizeArabicOrthography(
         value: String
     ): String = buildString {
-        value.forEach { ch ->
-            append(
-                when (ch) {
-                    '٠', '۰' -> '0'
-                    '١', '۱' -> '1'
-                    '٢', '۲' -> '2'
-                    '٣', '۳' -> '3'
-                    '٤', '۴' -> '4'
-                    '٥', '۵' -> '5'
-                    '٦', '۶' -> '6'
-                    '٧', '۷' -> '7'
-                    '٨', '۸' -> '8'
-                    '٩', '۹' -> '9'
-                    'أ', 'إ', 'آ', 'ٱ' -> 'ا'
-                    'ى' -> 'ي'
-                    'ؤ' -> 'و'
-                    'ئ' -> 'ي'
-                    'ة' -> 'ه'
-                    'ـ' -> Unit
-                    else -> {
-                        if (
-                            ch !in '\u064B'..'\u065F' &&
-                            ch != '\u0670'
-                        ) {
-                            append(ch)
-                        }
-                        continue
-                    }
-                }
-            )
+        for (ch in value) {
+            when (ch) {
+                '٠', '۰' -> append('0')
+                '١', '۱' -> append('1')
+                '٢', '۲' -> append('2')
+                '٣', '۳' -> append('3')
+                '٤', '۴' -> append('4')
+                '٥', '۵' -> append('5')
+                '٦', '۶' -> append('6')
+                '٧', '۷' -> append('7')
+                '٨', '۸' -> append('8')
+                '٩', '۹' -> append('9')
+                'أ', 'إ', 'آ', 'ٱ' -> append('ا')
+                'ى' -> append('ي')
+                'ؤ' -> append('و')
+                'ئ' -> append('ي')
+                'ة' -> append('ه')
+                'ـ' -> Unit
+                in '\u064B'..'\u065F' -> Unit
+                '\u0670' -> Unit
+                else -> append(ch)
+            }
         }
     }
 
