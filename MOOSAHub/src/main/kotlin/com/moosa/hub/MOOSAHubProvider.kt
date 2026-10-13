@@ -3,6 +3,7 @@ package com.moosa.hub
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.APIHolder.apis
 import com.lagradost.cloudstream3.HomePageList
+import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.getImdbId
