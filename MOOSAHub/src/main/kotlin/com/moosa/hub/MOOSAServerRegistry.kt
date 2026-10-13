@@ -194,6 +194,27 @@ object MOOSAServerRegistry {
     fun isDisabled(key: String): Boolean =
         key in MOOSASettingsStore.disabledServers()
 
+    fun setAllEnabled(enabled: Boolean) {
+        if (enabled) {
+            MOOSASettingsStore.setDisabledServers(emptySet())
+        } else {
+            MOOSASettingsStore.setDisabledServers(
+                snapshot().map { it.key }.toSet()
+            )
+        }
+    }
+
+    fun disableOffline() {
+        val disabled =
+            MOOSASettingsStore.disabledServers().toMutableSet()
+
+        snapshot()
+            .filter { it.lastResult == false }
+            .forEach { disabled += it.key }
+
+        MOOSASettingsStore.setDisabledServers(disabled)
+    }
+
     suspend fun test(key: String): Boolean? {
         val item = entries[key] ?: return null
 
