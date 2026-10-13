@@ -29,6 +29,9 @@ object MOOSAProgress {
     @Volatile
     private var lastText: String = ""
 
+    @Volatile
+    private var hiddenForPlayback: Boolean = false
+
     fun setArabicSubtitleDefault() {
         try {
             val appClass = Class.forName("com.lagradost.cloudstream3.CloudStreamApp")
@@ -47,6 +50,8 @@ object MOOSAProgress {
 
         val token =
             sessionId.incrementAndGet()
+
+        hiddenForPlayback = false
 
         update(
             4,
@@ -130,18 +135,17 @@ object MOOSAProgress {
         )
     }
 
+    fun linkAvailable() {
+        hiddenForPlayback = true
+        mainHandler.post { hide() }
+    }
+
     fun finish(verified: Int) {
         sessionId.incrementAndGet()
-
-        update(
-            100,
-            "Ready • $verified servers"
-        )
-
-        mainHandler.postDelayed(
-            { hide() },
-            650
-        )
+        lastPercent = 100
+        lastText = "Ready • $verified servers"
+        hiddenForPlayback = true
+        mainHandler.post { hide() }
     }
 
     fun failureReport(report: String) {
@@ -181,6 +185,11 @@ object MOOSAProgress {
     }
 
     private fun render(retries: Int) {
+        if (hiddenForPlayback) {
+            hide()
+            return
+        }
+
         val act = currentActivity()
         if (act == null) {
             retry(retries)
