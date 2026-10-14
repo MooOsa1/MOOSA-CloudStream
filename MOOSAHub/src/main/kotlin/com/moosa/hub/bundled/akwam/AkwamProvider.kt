@@ -170,7 +170,7 @@ class AkwamProvider : MainAPI() {
             .replace('إ', 'ا')
             .replace('آ', 'ا')
             .replace('ى', 'ي')
-        Regex("""(?:s\s*\d{1,2}\s*e|الحلقه|حلقه|episode|ep)[\\s:_-]*(\d{1,4})""")
+        Regex("""(?:s\s*\d{1,2}\s*e|الحلقه|حلقه|episode|ep)[\s:_-]*(\d{1,4})""")
             .find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
         val ordinal = listOf(
             "الاولى" to 1, "الاول" to 1, "الثانيه" to 2, "الثاني" to 2,
