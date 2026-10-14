@@ -44,3 +44,27 @@ if candidate:
             ],flush=True)
         marker=next((m for m in ["reviewrate.net","gamehub.cam","filemoon","vidmoly","vidshar","upbom.cam"] if m in raw),None)
         print("PLAYER_HOST_MARKER",tag,marker,flush=True)
+        if tag=="EPISODE":
+            for a in soup.select(".allepcont a[href],.EpisodesList a[href]")[:5]:
+                print("EPISODE_ENTRY","text",a.get_text(" ",strip=True)[:80],
+                      "path",urlparse(urljoin(landing,a.get("href",""))).path[:125],flush=True)
+        if tag=="WATCH":
+            tested=set()
+            for iframe in soup.select("ul#watch iframe[src], .WatchIframe iframe[src]"):
+                player=urljoin(landing,iframe.get("src",""))
+                host=urlparse(player).hostname
+                if not host or host in tested:continue
+                tested.add(host)
+                if len(tested)>5:break
+                code,redir,phtml=request(player,ref=landing)
+                doc2=BeautifulSoup(phtml,"html.parser")
+                print("HOSTER",host,"status",code,"final",urlparse(redir).hostname,
+                      "bytes",len(phtml),"title",doc2.title.get_text(" ",strip=True)[:70] if doc2.title else "",
+                      "has_mp4",".mp4" in phtml.lower(),
+                      "has_m3u8",".m3u8" in phtml.lower(),
+                      "has_1080","1080" in phtml,"has_720","720" in phtml,
+                      "video_elems",len(doc2.select("video,source")),
+                      "script_elems",len(doc2.select("script")),
+                      "captcha",any(x in phtml.lower() for x in ("just a moment", "captcha","cloudflare challenge")),
+                      flush=True)
+
