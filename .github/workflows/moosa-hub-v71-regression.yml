@@ -1,0 +1,42 @@
+name: Validate MOOSA Hub v71 browse return (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v71-browse-return-dpad"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile all plugins without publishing
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Regression checks for player resume and focus
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          b=Path("MOOSAHub/src/main/kotlin/com/moosa/hub")
+          dialog=(b/"MOOSABrowseDialog.kt").read_text()
+          home=(b/"MOOSASeeAll.kt").read_text()
+          plugins={p["internalName"]:p["version"] for p in json.loads(Path("build/plugins.json").read_text())}
+          assert plugins == {"MOOSAHub":71,"MOOSAArabic":3},plugins
+          assert "dialog?.hide()" in dialog and "dialog?.show()" in dialog
+          assert "if (waitingForResult) dialog?.hide()" in dialog
+          assert "resultDestinationSeen && isHome(name)" in dialog
+          assert "homeActuallyVisible(host)" in dialog
+          assert "returnPosition = callback.position.coerceAtLeast(0)" in dialog
+          assert "onStop()" in dialog and "cancelPendingReturn()" in dialog
+          assert "more available" not in dialog
+          assert "focusCardDirectlyBelowHeader" in home
+          assert "KeyEvent.KEYCODE_DPAD_DOWN" in home
+          assert "smoothScrollToPosition(" not in home
+          print("PASS: playlist persistence, anti-resume, downward focus, clean status")
+          PY
