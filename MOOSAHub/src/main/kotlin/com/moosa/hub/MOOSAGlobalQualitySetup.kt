@@ -3,94 +3,112 @@ package com.moosa.hub
 import com.lagradost.cloudstream3.utils.Qualities
 
 /**
- * Applies the user's requested quality floor to the HOST APP as well.
+ * Recovery for a v62 regression.
  *
- * MOOSA Hub can filter links from ANY provider routed through Hub.loadLinks.
- * Independent plugin providers invoked directly do not call Hub.loadLinks.
- * CloudStream's own per-profile Source Priority is therefore the supported
- * app-wide route: use negative quality priorities + HideNegativeSources=true.
+ * v62 changed CloudStream-wide source priorities and enabled the
+ * "hide negative sources" option without backing up prior values. Those
+ * settings survive plugin updates, so simply reverting the Hub cannot fix
+ * hidden sources on devices where the policy was applied.
  *
- * Reflection avoids a compile-time dependency on CloudStream's Android app
- * source-priority package (only the public plugin/library API is on the
- * build classpath). No Media3/player interception or TLS bypass is used.
+ * This recovery NEVER enables that policy. Once, it restores the host app's
+ * default quality priorities on profiles touched by v62, clears negative
+ * Download-name priorities set by v62 and disables HideNegativeSources.
+ *
+ * It cannot recover personalized values that v62 overwrote, because v62
+ * did not save a snapshot. The user can customize profiles again.
  */
 internal object MOOSAGlobalQualitySetup {
-    private const val VERSION = 1
+    private const val REPAIRED_VERSION = -1
 
     @Volatile
-    var lastResult: String = "Not applied"
+    var lastResult: String = "Recovery pending"
         private set
 
     @Synchronized
-    fun applyIfNeeded(force: Boolean = false): Boolean {
-        if (!force && MOOSASettingsStore.globalQualityPolicyVersion() >= VERSION) {
-            lastResult = "Applied to CloudStream profiles"
+    fun restoreV62PrioritiesIfNeeded(): Boolean {
+        if (MOOSASettingsStore.globalQualityPolicyVersion() == REPAIRED_VERSION) {
+            lastResult = "Priorities restored"
             return true
         }
 
         return try {
-            val helperClass = Class.forName(
+            val klass = Class.forName(
                 "com.lagradost.cloudstream3.ui.player.source_priority.QualityDataHelper"
             )
-            val helper = helperClass.getField("INSTANCE").get(null)
-            val qualitySetter = helperClass.methods.first {
+            val helper = klass.getField("INSTANCE").get(null)
+            val getQuality = klass.methods.first {
+                it.name == "getQualityPriority" && it.parameterCount == 2
+            }
+            val setQuality = klass.methods.first {
                 it.name == "setQualityPriority" && it.parameterCount == 3
             }
-            val settingsSetter = helperClass.methods.first {
+            val setProfile = klass.methods.first {
                 it.name == "setProfileSetting" && it.parameterCount == 3
             }
-
-            // CloudStream keeps Wi-Fi, data and download quality profiles;
-            // profiles 1..7 are defined by the host app.
-            val hideClass = Class.forName(
-                "com.lagradost.cloudstream3.ui.player.source_priority." +
-                    "ProfileSettings\$HideNegativeSources"
-            )
-            val hideNegative = hideClass.getField("INSTANCE").get(null)
-            val sourceSetter = helperClass.methods.firstOrNull {
-                it.name == "setSourcePriority" && it.parameterCount == 3
-            }
-            val sourceNames = helperClass.methods.firstOrNull {
+            val namesMethod = klass.methods.firstOrNull {
                 it.name == "getAllSourcePriorityNames" && it.parameterCount == 1
             }
+            val getSource = klass.methods.firstOrNull {
+                it.name == "getSourcePriority" && it.parameterCount == 2
+            }
+            val setSource = klass.methods.firstOrNull {
+                it.name == "setSourcePriority" && it.parameterCount == 3
+            }
+            val hideSettings = Class.forName(
+                "com.lagradost.cloudstream3.ui.player.source_priority." +
+                    "ProfileSettings\$HideNegativeSources"
+            ).getField("INSTANCE").get(null)
+
+            val v62Applied = MOOSASettingsStore.globalQualityPolicyVersion() >= 1
+            val modifiedProfiles = mutableSetOf<Int>()
+            var restored = 0
 
             for (profile in 1..7) {
                 for (q in Qualities.values()) {
-                    val priority = when {
-                        q.value >= 2160 -> 8
-                        q.value >= 1080 -> 6
-                        q.value >= 720 -> 4
-                        // Very negative so any normal source weight still
-                        // produces a negative total -> hide in CloudStream.
-                        else -> -100
-                    }
-                    qualitySetter.invoke(helper, profile, q, priority)
-                }
-
-                settingsSetter.invoke(helper, profile, hideNegative, true)
-
-                // Known download-named source entries can also be excluded
-                // via the host app. Newly discovered names are always
-                // filtered in Hub; unknown standalone names cannot be
-                // intercepted by any independent plugin.
-                val configuredNames = runCatching {
-                    (sourceNames?.invoke(helper, profile) as? List<*>)
-                        ?.filterIsInstance<String>()
-                        .orEmpty()
-                }.getOrDefault(emptyList())
-
-                for (name in configuredNames) {
-                    if (MOOSAQualityPolicy.isDownloadName(name)) {
-                        sourceSetter?.invoke(helper, profile, name, -100)
+                    val current = (getQuality.invoke(helper, profile, q) as? Number)
+                        ?.toInt()
+                    val changedByV62 =
+                        v62Applied ||
+                            (q.value < 720 && current == -100)
+                    if (changedByV62) {
+                        // If v62 only partly ran, restore each suspicious
+                        // -100 priority without overriding other preferences.
+                        setQuality.invoke(helper, profile, q, q.defaultPriority)
+                        modifiedProfiles += profile
+                        restored++
                     }
                 }
             }
 
-            MOOSASettingsStore.setGlobalQualityPolicyVersion(VERSION)
-            lastResult = "Applied 4K > 1080p > 720p; SD hidden in all profiles"
+            // v62 explicitly enabled "Hide negative sources" across all 7
+            // profiles. Clear it only on profiles actually touched by v62.
+            for (profile in modifiedProfiles) {
+                setProfile.invoke(helper, profile, hideSettings, false)
+            }
+
+            if (v62Applied && getSource != null &&
+                setSource != null && namesMethod != null
+            ) {
+                for (profile in 1..7) {
+                    val names = (namesMethod.invoke(helper, profile) as? List<*>)
+                        ?.filterIsInstance<String>().orEmpty()
+                    for (name in names) {
+                        if (!MOOSAQualityPolicy.isDownloadName(name)) continue
+                        val priority = (getSource.invoke(helper, profile, name)
+                            as? Number)?.toInt()
+                        if (priority == -100) {
+                            // Native default source weight. No backup existed.
+                            setSource.invoke(helper, profile, name, 1)
+                        }
+                    }
+                }
+            }
+
+            MOOSASettingsStore.setGlobalQualityPolicyVersion(REPAIRED_VERSION)
+            lastResult = "V62 host quality overrides reset ($restored values)"
             true
         } catch (error: Throwable) {
-            lastResult = "Host-wide setting unavailable: " +
+            lastResult = "Automatic recovery unavailable: " +
                 error.javaClass.simpleName
             false
         }
