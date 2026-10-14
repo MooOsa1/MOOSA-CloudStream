@@ -1184,14 +1184,24 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val season = request.season ?: return true
         val explicit = explicitSeasonNumber(result.name)
+
+        // Akwam also labels a second season simply "العتاولة 2" or
+        // "الاختيار 3", without a "الموسم" token. Apply suffix inference
+        // only to a series result with the same full base title.
+        val candidate = normalizeArabicOrthography(normalizeTitle(result.name))
+        val base = normalizeArabicOrthography(normalizeTitle(request.title))
+        val numericSuffix = if (candidate.startsWith("$base ")) {
+            candidate.removePrefix("$base ").trim()
+                .toIntOrNull()?.takeIf { it in 1..30 }
+        } else null
+
+        val detected = explicit ?: numericSuffix
         return if (season == 1) {
-            explicit == 1 ||
-                (
-                    explicit == null &&
-                        canonicalTitle(result.name) == canonicalTitle(request.title)
-                )
+            detected == 1 ||
+                (detected == null &&
+                    canonicalTitle(result.name) == canonicalTitle(request.title))
         } else {
-            explicit == season
+            detected == season
         }
     }
 
