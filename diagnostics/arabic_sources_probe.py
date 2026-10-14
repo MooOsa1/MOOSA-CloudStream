@@ -244,10 +244,18 @@ def wecima():
 def cimaclub():
     name="CIMACLUB";o=client();base="https://cimacub.com"
     main=fetch(o,base);show(name,"main",main)
-    for query in ["اللعبة","اللعبة الموسم الثاني"]:
+    for query in ["اللعبة","اللعبة الموسم الثاني","Oppenheimer","الحشاشين"]:
         url=base+"/?s="+quote(query)
         r=fetch(o,url);show(name,f"search {query!r}",r)
-        page_structure(name,r["body"],r["url"])
+        soup=page_structure(name,r["body"],r["url"])
+        print(name,"CARD STRUCTURE",{
+            "BlocksHolder":len(soup.select(".BlocksHolder")),
+            "Small--Box":len(soup.select(".Small--Box")),
+            "posts":len(soup.select(".post,.Post,.post-item,.PostItem")),
+            "article":len(soup.select("article"))
+        })
+        print(name,"PAGE SEARCH BODY MARKERS",
+              [x for x in ["no-results","لا توجد","لم يتم العثور","search-results","نتائج البحث"] if x in r["body"]])
         matches=links(r,lambda u,a:"/series/" in urlparse(u).path or "مسلسل" in a["title"] or "اللعبة" in a["title"])
         print(name,"relevant_links:",len(matches),"sample:",[(urlparse(u).path[:85],t[:60]) for u,t in matches[:4]])
 
