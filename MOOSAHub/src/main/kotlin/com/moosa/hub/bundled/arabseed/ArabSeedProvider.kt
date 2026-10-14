@@ -60,10 +60,14 @@ class ArabSeedProvider : MainAPI() {
         }
 
     private fun csrfToken(html: String): String? =
-        Regex("""csrf__token\s*[:=]\s*["']([A-Za-z0-9_-]{6,})["']""")
+        Regex("""["']?csrf__token["']?\s*[:=]\s*["']([^"']{6,})["']""")
             .find(html)
             ?.groupValues
             ?.getOrNull(1)
+            ?: Regex("""var\s+csrf_token\s*=\s*["']([^"']{6,})["']""")
+                .find(html)
+                ?.groupValues
+                ?.getOrNull(1)
 
     private fun Element.poster(): String? =
         selectFirst("img")
@@ -371,6 +375,235 @@ class ArabSeedProvider : MainAPI() {
         }
     }
 
+    private data class WatchServer(
+        val id: String,
+        val quality: Int,
+        val label: String,
+        val link: String? = null
+    )
+
+    private fun postIdFrom(html: String, doc: org.jsoup.nodes.Document): String? {
+        doc.selectFirst("li[data-post][data-server]")
+            ?.attr("data-post")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+
+        doc.selectFirst("[data-post-id]")
+            ?.attr("data-post-id")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+
+        val patterns = listOf(
+            Regex("""(?:post_id|psot_id)["']?\s*[:=]\s*["']?(\d+)""", RegexOption.IGNORE_CASE),
+            Regex("""(?:var|let|const)\s+post_id\s*=\s*["']?(\d+)["']?""", RegexOption.IGNORE_CASE)
+        )
+
+        for (pattern in patterns) {
+            pattern.find(html)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { return it }
+        }
+
+        return null
+    }
+
+    private fun advertisedQualities(doc: org.jsoup.nodes.Document): List<Int> {
+        val fromQualityTabs =
+            doc.select("li[data-quality], ul.qualities__list li[data-quality]")
+                .mapNotNull { it.attr("data-quality").toIntOrNull() }
+
+        val fromServers =
+            doc.select("li[data-server][data-qu]")
+                .mapNotNull { it.attr("data-qu").toIntOrNull() }
+
+        return (fromQualityTabs + fromServers)
+            .filter { it in 240..2160 }
+            .distinct()
+            .sortedDescending()
+    }
+
+    private fun parseServerElement(
+        element: Element,
+        fallbackQuality: Int
+    ): WatchServer? {
+        val id = element.attr("data-server").trim()
+        if (id.isBlank()) return null
+
+        val quality =
+            element.attr("data-qu")
+                .toIntOrNull()
+                ?.takeIf { it > 0 }
+                ?: fallbackQuality
+
+        val label =
+            element.attr("data-server-name")
+                .ifBlank { element.selectFirst("span")?.text().orEmpty() }
+                .ifBlank { element.text() }
+                .trim()
+                .ifBlank { "Server $id" }
+
+        val link =
+            element.attr("data-link")
+                .trim()
+                .takeIf { it.isNotBlank() }
+
+        return WatchServer(
+            id = id,
+            quality = quality,
+            label = label,
+            link = link
+        )
+    }
+
+    private fun parseServerResponse(
+        body: String,
+        baseUrl: String
+    ): String? {
+        val trimmed = body.trim()
+
+        if (trimmed.startsWith("{")) {
+            val json = runCatching { JSONObject(trimmed) }.getOrNull()
+
+            json?.optString("server")
+                ?.replace("\\/", "/")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { raw ->
+                    return normalizeUrl(raw, baseUrl)
+                }
+
+            json?.optString("html")
+                ?.replace("\\/", "/")
+                ?.replace("\\"", """)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { html ->
+                    val doc = Jsoup.parse(html, baseUrl)
+                    val raw =
+                        doc.selectFirst("iframe[src]")?.attr("src")
+                            ?: doc.selectFirst("[data-link]")?.attr("data-link")
+                    normalizeUrl(raw.orEmpty(), baseUrl)
+                        ?.let { return it }
+                }
+        }
+
+        val doc = Jsoup.parse(body, baseUrl)
+        val raw =
+            doc.selectFirst("iframe[src]")?.attr("src")
+                ?: doc.selectFirst("[data-link]")?.attr("data-link")
+                ?: doc.selectFirst("video[src], source[src]")?.attr("src")
+
+        return normalizeUrl(raw.orEmpty(), baseUrl)
+    }
+
+    private suspend fun qualityServers(
+        origin: String,
+        watchUrl: String,
+        postId: String,
+        csrf: String,
+        quality: Int
+    ): List<WatchServer> {
+        val body = try {
+            app.post(
+                "$origin/get__quality__servers/",
+                headers = requestHeaders + mapOf(
+                    "X-Requested-With" to "XMLHttpRequest",
+                    "Accept" to "application/json, text/javascript, */*; q=0.01",
+                    "Origin" to origin
+                ),
+                referer = watchUrl,
+                data = mapOf(
+                    "post_id" to postId,
+                    "quality" to quality.toString(),
+                    "csrf_token" to csrf
+                )
+            ).text
+        } catch (_: Throwable) {
+            return emptyList()
+        }
+
+        val json = runCatching { JSONObject(body) }.getOrNull()
+            ?: return emptyList()
+
+        val html = json.optString("html")
+            .replace("\\/", "/")
+            .replace("\\"", """)
+
+        val doc = Jsoup.parse(html, origin)
+        val servers = doc.select("li[data-server]")
+            .mapNotNull { parseServerElement(it, quality) }
+            .toMutableList()
+
+        val activeLink =
+            json.optString("server")
+                .replace("\\/", "/")
+                .trim()
+                .takeIf { it.isNotBlank() }
+
+        if (activeLink != null && servers.isNotEmpty()) {
+            val activeId =
+                doc.selectFirst("li.active[data-server]")
+                    ?.attr("data-server")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: servers.first().id
+
+            val index = servers.indexOfFirst { it.id == activeId }
+            if (index >= 0 && servers[index].link.isNullOrBlank()) {
+                servers[index] = servers[index].copy(link = activeLink)
+            }
+        }
+
+        return servers.distinctBy { it.id }
+    }
+
+    private suspend fun serverUrl(
+        origin: String,
+        watchUrl: String,
+        postId: String,
+        csrf: String,
+        server: WatchServer
+    ): String? {
+        server.link
+            ?.let { unwrapServerLink(it, watchUrl) }
+            ?.let { return it }
+
+        val body = try {
+            app.post(
+                "$origin/get__watch__server/",
+                headers = requestHeaders + mapOf(
+                    "X-Requested-With" to "XMLHttpRequest",
+                    "Accept" to "application/json, text/javascript, */*; q=0.01",
+                    "Origin" to origin
+                ),
+                referer = watchUrl,
+                data = mapOf(
+                    "post_id" to postId,
+                    "quality" to server.quality.toString(),
+                    "server" to server.id,
+                    "csrf_token" to csrf
+                )
+            ).text
+        } catch (_: Throwable) {
+            return null
+        }
+
+        return parseServerResponse(body, origin)
+            ?.let { unwrapServerLink(it, watchUrl) }
+    }
+
+    private fun inferDirectQuality(
+        url: String,
+        fallback: Int
+    ): Int {
+        return Regex("""(?i)(2160|1440|1080|720|576|480|360)(?:p)?""")
+            .find(url)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?: fallback
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -380,70 +613,307 @@ class ArabSeedProvider : MainAPI() {
         val postUrl = data.substringBefore("#").trimEnd('/')
         if (!postUrl.startsWith("http")) return false
 
-        val watchUrl = "$postUrl/watch/"
-        val html = getHtml(watchUrl, postUrl) ?: return false
+        val requestedWatchUrl = "$postUrl/watch/"
+        val response = try {
+            app.get(
+                requestedWatchUrl,
+                headers = requestHeaders,
+                referer = postUrl
+            )
+        } catch (_: Throwable) {
+            return false
+        }
+
+        if (response.code !in 200..299) return false
+
+        val watchUrl = response.url
+        val origin = runCatching {
+            val uri = java.net.URI(watchUrl)
+            "${uri.scheme}://${uri.host}"
+        }.getOrDefault(mainUrl)
+
+        val html = response.text
         val doc = Jsoup.parse(html, watchUrl)
         val seen = linkedSetOf<String>()
         var emitted = false
 
-        fun emitDirect(url: String) {
-            if (!seen.add(url)) return
-            val isHls = url.contains(".m3u8", true)
+        suspend fun emitDirect(
+            url: String,
+            qualityHint: Int,
+            label: String
+        ) {
+            val normalized = normalizeUrl(url, watchUrl) ?: return
+            if (!seen.add(normalized)) return
+
+            val isHls = normalized.contains(".m3u8", true)
+            val quality = inferDirectQuality(normalized, qualityHint)
+
             callback(
                 newExtractorLink(
                     source = name,
-                    name = "$name Direct",
-                    url = url,
+                    name = "$name • $label",
+                    url = normalized,
                     type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                 ) {
                     referer = watchUrl
-                    quality = Qualities.Unknown.value
+                    this.quality = quality
                     headers = requestHeaders + mapOf("Referer" to watchUrl)
                 }
             )
             emitted = true
         }
 
-        doc.select("video[src], video source[src], source[src]").forEach { media ->
-            normalizeUrl(media.attr("src"), watchUrl)?.let(::emitDirect)
+        suspend fun resolveDirectShell(
+            url: String,
+            quality: Int,
+            label: String
+        ): Boolean {
+            if (!url.contains("vids.php", true)) return false
+
+            val shell = try {
+                app.get(
+                    url,
+                    headers = requestHeaders,
+                    referer = watchUrl
+                )
+            } catch (_: Throwable) {
+                return false
+            }
+
+            val shellDoc = Jsoup.parse(shell.text, shell.url)
+            val gateRaw = shellDoc.selectFirst("iframe[src]")?.attr("src")
+                ?: return false
+            val gateUrl = normalizeUrl(gateRaw, shell.url) ?: return false
+
+            val gate = try {
+                app.get(
+                    gateUrl,
+                    headers = requestHeaders,
+                    referer = "$origin/"
+                )
+            } catch (_: Throwable) {
+                return false
+            }
+
+            val gateDoc = Jsoup.parse(gate.text, gate.url)
+            val media = linkedSetOf<String>()
+
+            gateDoc.select("video[src], video source[src], source[src]").forEach { element ->
+                normalizeUrl(element.attr("src"), gate.url)?.let(media::add)
+            }
+
+            Regex(
+                """(?i)https?://[^\s"'<>]+?\.(?:m3u8|mp4)(?:\?[^\s"'<>]*)?"""
+            ).findAll(
+                gate.text.replace("\\/", "/")
+            ).forEach { match ->
+                media += match.value
+            }
+
+            for (mediaUrl in media) {
+                emitDirect(mediaUrl, quality, label)
+            }
+
+            return media.isNotEmpty()
         }
 
-        val serverLinks = linkedSetOf<String>()
-        doc.select("[data-link], iframe[src], iframe[data-src], a[data-link]").forEach { element ->
-            val raw = element.attr("data-link")
-                .ifBlank { element.attr("data-src") }
-                .ifBlank { element.attr("src") }
-                .trim()
-            unwrapServerLink(raw, watchUrl)?.let(serverLinks::add)
-        }
-
-        for (server in serverLinks) {
-            if (!seen.add(server)) continue
+        suspend fun resolveServer(
+            server: WatchServer,
+            target: String
+        ): Int {
+            val before = seen.size
 
             if (
-                server.contains(".m3u8", true) ||
-                server.contains(".mp4", true)
+                target.contains(".m3u8", true) ||
+                target.contains(".mp4", true)
             ) {
-                emitDirect(server)
-                continue
+                emitDirect(
+                    target,
+                    server.quality,
+                    "${server.label} ${server.quality}p"
+                )
+                return seen.size - before
+            }
+
+            if (
+                resolveDirectShell(
+                    target,
+                    server.quality,
+                    "${server.label} ${server.quality}p"
+                )
+            ) {
+                return seen.size - before
             }
 
             try {
                 loadExtractor(
-                    server,
+                    target,
                     watchUrl,
                     subtitleCallback
                 ) { link ->
-                    if (seen.add(link.url)) {
+                    if (seen.add(link.url.trim())) {
                         callback(link)
                         emitted = true
                     }
                 }
             } catch (_: Throwable) {
-                // A broken hoster must not stop the remaining ArabSeed servers.
+                // One dead host must not block the rest.
             }
+
+            return seen.size - before
+        }
+
+        val csrf = csrfToken(html)
+        val postId = postIdFrom(html, doc)
+        val qualities = advertisedQualities(doc)
+
+        var successfulQualityLevels = 0
+
+        if (
+            !csrf.isNullOrBlank() &&
+            !postId.isNullOrBlank() &&
+            qualities.isNotEmpty()
+        ) {
+            for (quality in qualities) {
+                val servers =
+                    qualityServers(
+                        origin = origin,
+                        watchUrl = watchUrl,
+                        postId = postId,
+                        csrf = csrf,
+                        quality = quality
+                    )
+
+                var linksAtThisQuality = 0
+
+                for (server in servers) {
+                    val target =
+                        serverUrl(
+                            origin = origin,
+                            watchUrl = watchUrl,
+                            postId = postId,
+                            csrf = csrf,
+                            server = server
+                        ) ?: continue
+
+                    linksAtThisQuality +=
+                        resolveServer(server, target)
+                }
+
+                if (linksAtThisQuality > 0) {
+                    successfulQualityLevels++
+
+                    // Keep the highest working quality plus one fallback tier.
+                    // This prevents 480p/360p duplicates from flooding the source list.
+                    if (successfulQualityLevels >= 2) {
+                        break
+                    }
+                }
+            }
+        }
+
+        // Visible/active servers are a fallback when the AJAX quality API is missing.
+        if (!emitted) {
+            val visibleServers =
+                doc.select("li[data-server], [data-link], iframe[src], iframe[data-src]")
+                    .mapNotNull { element ->
+                        val serverId = element.attr("data-server").trim()
+                        val quality =
+                            element.attr("data-qu")
+                                .toIntOrNull()
+                                ?: qualities.firstOrNull()
+                                ?: 0
+                        val label =
+                            element.attr("data-server-name")
+                                .ifBlank { element.selectFirst("span")?.text().orEmpty() }
+                                .ifBlank { "Server" }
+                        val raw =
+                            element.attr("data-link")
+                                .ifBlank { element.attr("data-src") }
+                                .ifBlank { element.attr("src") }
+                                .trim()
+
+                        val link = unwrapServerLink(raw, watchUrl)
+                            ?: return@mapNotNull null
+
+                        WatchServer(
+                            id = serverId.ifBlank { link.hashCode().toString() },
+                            quality = quality,
+                            label = label,
+                            link = link
+                        )
+                    }
+                    .distinctBy { it.link }
+
+            for (server in visibleServers) {
+                val target = server.link ?: continue
+                resolveServer(server, target)
+            }
+        }
+
+        // Download page can expose direct/high-bitrate mirrors that are not in watch servers.
+        val downloadUrl = "$postUrl/download/"
+        try {
+            val downloadResponse = app.get(
+                downloadUrl,
+                headers = requestHeaders,
+                referer = postUrl
+            )
+
+            if (downloadResponse.code in 200..299) {
+                val downloadDoc =
+                    Jsoup.parse(
+                        downloadResponse.text,
+                        downloadResponse.url
+                    )
+
+                val targets =
+                    downloadDoc.select(
+                        "ul.downloads__links__list a[href], a.download__item[href], a[href*='.mp4'], a[href*='.m3u8']"
+                    )
+                        .mapNotNull {
+                            normalizeUrl(
+                                it.attr("href"),
+                                downloadResponse.url
+                            )
+                        }
+                        .distinct()
+                        .take(8)
+
+                for (target in targets) {
+                    if (
+                        target.contains(".mp4", true) ||
+                        target.contains(".m3u8", true)
+                    ) {
+                        emitDirect(
+                            target,
+                            inferDirectQuality(target, 0),
+                            "Download"
+                        )
+                        continue
+                    }
+
+                    try {
+                        loadExtractor(
+                            target,
+                            downloadResponse.url,
+                            subtitleCallback
+                        ) { link ->
+                            if (seen.add(link.url.trim())) {
+                                callback(link)
+                                emitted = true
+                            }
+                        }
+                    } catch (_: Throwable) {
+                        // Keep trying remaining download mirrors.
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+            // Watch path is still valid when download page is unavailable.
         }
 
         return emitted
     }
+
 }
