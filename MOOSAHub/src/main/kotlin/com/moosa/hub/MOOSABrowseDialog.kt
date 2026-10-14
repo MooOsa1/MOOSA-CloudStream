@@ -3,6 +3,7 @@ package com.moosa.hub
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
+import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
@@ -30,7 +31,6 @@ import com.lagradost.cloudstream3.ui.search.SearchHelper.handleSearchClickCallba
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.lang.reflect.Proxy
 
 class MOOSABrowseDialog : DialogFragment() {
     private lateinit var api: MOOSAHubProvider
@@ -46,11 +46,7 @@ class MOOSABrowseDialog : DialogFragment() {
     private var lastPage = 0
     private var hasNext = true
     private var loading = false
-    private var waitingForResult = false
-    private var resultDestinationSeen = false
-    private var returnPosition = 0
-    private var navController: Any? = null
-    private var destinationListener: Any? = null
+    private var navigatingToResult = false
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -74,19 +70,15 @@ class MOOSABrowseDialog : DialogFragment() {
             textSize = 12.5f
             isFocusable = true
             isFocusableInTouchMode = false
-            background = rounded(
-                Color.rgb(30, 42, 56),
-                10,
-                Color.argb(100, 255, 255, 255)
-            )
+            background = rounded(Color.rgb(33, 33, 36), 6, Color.rgb(92, 92, 96))
             setOnFocusChangeListener { view, focused ->
                 view.background = rounded(
-                    if (focused) Color.rgb(38, 91, 135)
-                    else Color.rgb(34, 82, 128),
-                    10,
-                    if (focused) Color.WHITE
-                    else Color.argb(100, 255, 255, 255),
-                    if (focused) 2 else 1
+                    if (focused) Color.rgb(245, 245, 246) else Color.rgb(33, 33, 36),
+                    6,
+                    if (focused) Color.WHITE else Color.rgb(92, 92, 96)
+                )
+                (view as Button).setTextColor(
+                    if (focused) Color.rgb(14, 14, 16) else Color.WHITE
                 )
             }
         }
@@ -98,10 +90,10 @@ class MOOSABrowseDialog : DialogFragment() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
             background = rounded(
-                Color.rgb(10, 20, 31),
-                18,
-                Color.rgb(56, 102, 137),
-                2
+                Color.rgb(12, 12, 14),
+                12,
+                Color.rgb(49, 49, 53),
+                1
             )
         }
 
@@ -127,7 +119,7 @@ class MOOSABrowseDialog : DialogFragment() {
 
         status = TextView(context).apply {
             textSize = 14f
-            setTextColor(Color.rgb(174, 191, 207))
+            setTextColor(Color.rgb(184, 184, 189))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, dp(12), 0)
         }
@@ -148,6 +140,8 @@ class MOOSABrowseDialog : DialogFragment() {
         ).apply {
             max = 100
             progress = 0
+            progressTintList = ColorStateList.valueOf(Color.WHITE)
+            progressBackgroundTintList = ColorStateList.valueOf(Color.rgb(55, 55, 60))
             visibility = View.GONE
         }
         root.addView(
@@ -164,6 +158,9 @@ class MOOSABrowseDialog : DialogFragment() {
         recycler = AutofitRecyclerView(context).apply {
             id = View.generateViewId()
             overScrollMode = View.OVER_SCROLL_NEVER
+            itemAnimator = null
+            setHasFixedSize(true)
+            setItemViewCacheSize(6)
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
             isFocusable = false
             clipToPadding = false
@@ -185,10 +182,10 @@ class MOOSABrowseDialog : DialogFragment() {
                 callback.action == SEARCH_ACTION_LOAD ||
                 callback.action == SEARCH_ACTION_PLAY_FILE
             ) {
-                returnPosition = callback.position.coerceAtLeast(0)
-                waitingForResult = true
-                resultDestinationSeen = false
-                dialog?.hide()
+                // Close the overlay before opening results/player.
+                // Never keep it hidden and automatically show it on resume.
+                navigatingToResult = true
+                dismissAllowingStateLoss()
             }
 
             handleSearchClickCallback(callback)
@@ -231,8 +228,6 @@ class MOOSABrowseDialog : DialogFragment() {
             dismissAllowingStateLoss()
         }
 
-        installNavigationReturnWatcher()
-
         lifecycleScope.launch {
             loadInitial()
         }
@@ -244,188 +239,11 @@ class MOOSABrowseDialog : DialogFragment() {
         }
     }
 
-    override fun onDestroy() {
-        val controller = navController
-        val listener = destinationListener
-
-        if (controller != null && listener != null) {
-            try {
-                controller.javaClass.methods
-                    .firstOrNull {
-                        it.name == "removeOnDestinationChangedListener" &&
-                            it.parameterCount == 1
-                    }
-                    ?.invoke(controller, listener)
-            } catch (_: Throwable) {
-            }
-        }
-
-        destinationListener = null
-        navController = null
-        super.onDestroy()
-    }
-
-    private fun installNavigationReturnWatcher() {
-        val hostActivity = activity as? AppCompatActivity ?: return
-        val navHostId = hostActivity.resources.getIdentifier(
-            "nav_host_fragment",
-            "id",
-            hostActivity.packageName
-        )
-        if (navHostId == 0) return
-
-        val host = hostActivity.supportFragmentManager
-            .findFragmentById(navHostId)
-            ?: return
-
-        val controller = try {
-            host.javaClass.methods
-                .firstOrNull {
-                    it.name == "getNavController" &&
-                        it.parameterCount == 0
-                }
-                ?.invoke(host)
-        } catch (_: Throwable) {
-            null
-        } ?: return
-
-        val listenerClass = try {
-            Class.forName(
-                "androidx.navigation.NavController\$OnDestinationChangedListener"
-            )
-        } catch (_: Throwable) {
-            return
-        }
-
-        val listener = Proxy.newProxyInstance(
-            listenerClass.classLoader,
-            arrayOf(listenerClass)
-        ) { _, method, args ->
-            if (
-                method.name == "onDestinationChanged" &&
-                waitingForResult
-            ) {
-                val destination = args?.getOrNull(1)
-                val destinationId = try {
-                    destination
-                        ?.javaClass
-                        ?.methods
-                        ?.firstOrNull {
-                            it.name == "getId" &&
-                                it.parameterCount == 0
-                        }
-                        ?.invoke(destination) as? Int
-                } catch (_: Throwable) {
-                    null
-                } ?: 0
-
-                val entryName = try {
-                    if (destinationId != 0) {
-                        hostActivity.resources
-                            .getResourceEntryName(destinationId)
-                    } else {
-                        ""
-                    }
-                } catch (_: Throwable) {
-                    ""
-                }.lowercase()
-
-                val isContentDestination =
-                    "result" in entryName ||
-                        "navigation_results" in entryName ||
-                        "navigation_player" in entryName
-
-                val isHomeDestination =
-                    entryName == "navigation_home" ||
-                        entryName.endsWith("_home")
-
-                if (isContentDestination) {
-                    resultDestinationSeen = true
-                } else if (resultDestinationSeen && isHomeDestination) {
-                    // Let navigation and TV focus settle before restoring the
-                    // hidden list. Transient home destinations during resume
-                    // must not put the dialog over an active player.
-                    android.os.Handler(android.os.Looper.getMainLooper())
-                        .postDelayed({
-                            val currentDestination = try {
-                                controller.javaClass.methods
-                                    .firstOrNull {
-                                        it.name == "getCurrentDestination" &&
-                                            it.parameterCount == 0
-                                    }
-                                    ?.invoke(controller)
-                            } catch (_: Throwable) {
-                                null
-                            }
-                            val currentId = try {
-                                currentDestination
-                                    ?.javaClass
-                                    ?.methods
-                                    ?.firstOrNull {
-                                        it.name == "getId" &&
-                                            it.parameterCount == 0
-                                    }
-                                    ?.invoke(currentDestination) as? Int
-                            } catch (_: Throwable) {
-                                null
-                            } ?: 0
-                            val currentName = try {
-                                if (currentId != 0) {
-                                    hostActivity.resources.getResourceEntryName(currentId)
-                                } else {
-                                    ""
-                                }
-                            } catch (_: Throwable) {
-                                ""
-                            }.lowercase()
-                            val stillHome =
-                                currentName == "navigation_home" ||
-                                    currentName.endsWith("_home")
-
-                            if (
-                                waitingForResult &&
-                                resultDestinationSeen &&
-                                stillHome &&
-                                hostActivity.hasWindowFocus() &&
-                                !hostActivity.isFinishing &&
-                                !hostActivity.isDestroyed
-                            ) {
-                                waitingForResult = false
-                                resultDestinationSeen = false
-                                dialog?.show()
-                                recycler.post {
-                                    recycler.scrollToPosition(returnPosition)
-                                    recycler.layoutManager
-                                        ?.findViewByPosition(returnPosition)
-                                        ?.requestFocus()
-                                }
-                            }
-                        }, 700L)
-                }
-            }
-            null
-        }
-
-        try {
-            controller.javaClass.methods
-                .firstOrNull {
-                    it.name == "addOnDestinationChangedListener" &&
-                        it.parameterCount == 1
-                }
-                ?.invoke(controller, listener)
-
-            navController = controller
-            destinationListener = listener
-        } catch (_: Throwable) {
-            navController = null
-            destinationListener = null
-        }
-    }
-
     override fun onDismiss(dialog: android.content.DialogInterface) {
         super.onDismiss(dialog)
-        waitingForResult = false
-        MOOSASeeAll.restoreFocus(request.name)
+        if (!navigatingToResult) {
+            MOOSASeeAll.restoreFocus(request.name)
+        }
     }
 
     override fun onStart() {
@@ -454,7 +272,7 @@ class MOOSABrowseDialog : DialogFragment() {
                     api = api,
                     request = request,
                     startPage = 1,
-                    pageCount = 10
+                    pageCount = 2
                 )
             }
 
@@ -515,7 +333,7 @@ class MOOSABrowseDialog : DialogFragment() {
                     api = api,
                     request = request,
                     startPage = lastPage + 1,
-                    pageCount = 5
+                    pageCount = 2
                 )
             }
 
@@ -554,14 +372,19 @@ class MOOSABrowseDialog : DialogFragment() {
             request: MainPageRequest
         ) {
             val activity = context as? AppCompatActivity ?: return
-            if (activity.isFinishing || activity.isDestroyed) return
+            if (activity.isFinishing || activity.isDestroyed ||
+                activity.supportFragmentManager.isStateSaved
+            ) return
+
+            val tag = "moosa_browse_${request.name}"
+            if (activity.supportFragmentManager.findFragmentByTag(tag) != null) return
 
             MOOSABrowseDialog().apply {
                 this.api = api
                 this.request = request
             }.show(
                 activity.supportFragmentManager,
-                "moosa_browse_${request.name}"
+                tag
             )
         }
     }
