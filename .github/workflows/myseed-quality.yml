@@ -1,0 +1,17 @@
+name: Test MySeed quality selection
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/myseed_quality_discovery.py"
+      - ".github/workflows/myseed-quality.yml"
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet beautifulsoup4
+      - name: Inspect live HD quality selection without fetching full videos
+        run: python3 diagnostics/myseed_quality_discovery.py
