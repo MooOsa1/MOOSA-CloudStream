@@ -2846,7 +2846,32 @@ class MOOSAHubProvider : TmdbProvider() {
         callback: (ExtractorLink) -> Unit
     ): Boolean = coroutineScope {
         val request = tryParseJson<HubPlaybackRequest>(data) ?: return@coroutineScope false
-        val providers = playbackProviders(request)
+        val allProviders = playbackProviders(request)
+        val fastArabic = request.originalLanguage.equals("ar", true) &&
+            MOOSASettingsStore.arabicFastMode()
+
+        // Fast lane: check user-confirmed Akwam first by itself. Only if
+        // Akwam yields no playable link do we try a few external fallbacks.
+        // Previously 10+ sources could each spend 40-100 seconds searching,
+        // while the native spinner still waited for loadLinks() to return.
+        val firstAkwam = allProviders.firstOrNull(::isAkwamProvider)
+        val providers = if (fastArabic && firstAkwam != null) {
+            listOf(firstAkwam) +
+                allProviders
+                    .filterNot { it === firstAkwam }
+                    .filter { api ->
+                        api.lang.equals("ar", true) ||
+                            MOOSAArabicBridge.supports(api)
+                    }
+                    .take(3)
+        } else if (fastArabic) {
+            allProviders.filter {
+                it.lang.equals("ar", true) ||
+                    MOOSAArabicBridge.supports(it)
+            }.take(4)
+        } else {
+            allProviders
+        }
 
         MOOSAPlaybackDiagnostics.start(
             request,
@@ -2870,7 +2895,27 @@ class MOOSAHubProvider : TmdbProvider() {
         MOOSAProgress.start(providers.size)
 
         val aliasesJob = async {
-            playbackAliases(request)
+            // Skip four TMDB alias calls and season metadata when the
+            // Arabic title itself is already available. This costs multiple
+            // seconds before even the first Akwam search starts.
+            if (
+                fastArabic &&
+                Regex("""[\u0600-\u06FF]""").containsMatchIn(request.title)
+            ) {
+                buildList {
+                    add(request.title)
+                    request.season?.let { season ->
+                        add("${request.title} الموسم $season")
+                        arabicSeasonWord(season)?.let { ordinal ->
+                            add("${request.title} الموسم $ordinal")
+                        }
+                        add("${request.title} ج$season")
+                        add("${request.title} $season")
+                    }
+                }
+            } else {
+                playbackAliases(request)
+            }
         }
 
         val seenLinks = ConcurrentHashMap.newKeySet<String>()
@@ -2902,7 +2947,13 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val aliases = aliasesJob.await()
 
-        val providerBatchSize = MOOSASettingsStore.providerConcurrency()
+        val providerBatchSize = if (fastArabic) {
+            // Akwam is a separate first batch, so successful playback can
+            // finish without waiting for unsuccessful external providers.
+            1
+        } else {
+            MOOSASettingsStore.providerConcurrency()
+        }
 
         for (batch in providers.chunked(providerBatchSize)) {
             batch.amap { api ->
@@ -3016,7 +3067,8 @@ class MOOSAHubProvider : TmdbProvider() {
 
                         if (
                             candidateLinks.isEmpty() &&
-                            !isStreamPlayProvider(api)
+                            !isStreamPlayProvider(api) &&
+                            !fastArabic
                         ) {
                             val freshTarget =
                                 resolveTargetForProvider(
@@ -3234,6 +3286,13 @@ class MOOSAHubProvider : TmdbProvider() {
                 }
 
                 providerWorked
+            }
+
+            // Native CloudStream only finishes its loading UI when
+            // loadLinks() returns. Stop after one confirmed fast-lane
+            // source rather than keeping it searching for dead mirrors.
+            if (fastArabic && shownLinks.get() > 0) {
+                break
             }
         }
 
