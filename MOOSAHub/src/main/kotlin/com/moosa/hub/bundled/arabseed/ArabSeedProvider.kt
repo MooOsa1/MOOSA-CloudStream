@@ -224,7 +224,7 @@ class ArabSeedProvider : MainAPI() {
             .replace('إ', 'ا')
             .replace('آ', 'ا')
 
-        Regex("""(?:الموسم|موسم|season|part)\s*[:#-]?\s*(\d{1,2})""", RegexOption.IGNORE_CASE)
+        Regex("""(?:الموسم|موسم|الجزء|جزء|season|part|ج)\s*[:#-]?\s*(\d{1,2})""", RegexOption.IGNORE_CASE)
             .find(text)
             ?.groupValues
             ?.getOrNull(1)
@@ -243,9 +243,20 @@ class ArabSeedProvider : MainAPI() {
             "التاسع" to 9,
             "العاشر" to 10
         )
-        return words.firstOrNull { (word, _) ->
-            text.contains("الموسم $word") || text.contains("موسم $word")
-        }?.second
+        words.firstOrNull { (word, _) ->
+            text.contains("الموسم $word") ||
+                text.contains("موسم $word") ||
+                text.contains("الجزء $word")
+        }?.second?.let { return it }
+
+        // A post such as "مسلسل اللعبة 4 الحلقة 19" is season 4, not
+        // season 1. The numeric suffix must directly precede an episode
+        // marker, otherwise numbered FILM titles can be corrupted.
+        return Regex(
+            """(?:^|\s)(\d{1,2})(?=\s*(?:الحلقه|حلقه|episode|ep)\b)""",
+            RegexOption.IGNORE_CASE
+        ).find(text)?.groupValues?.getOrNull(1)
+            ?.toIntOrNull()?.takeIf { it in 1..30 }
     }
 
     override suspend fun load(url: String): LoadResponse? {
@@ -287,7 +298,10 @@ class ArabSeedProvider : MainAPI() {
 
         val pageSeason = seasonNumber("$title $postUrl")
 
-        val episodeAnchors = doc.select(".episodes__list a[href], .episodes-list a[href], a[href*='الحلقة'], a[href*='episode']")
+        // Restrict episode discovery to this show's real episode widget.
+        // Global /episode links are often unrelated recommendations and
+        // should never be treated as this series' episodes.
+        val episodeAnchors = doc.select(".episodes__list a[href], .episodes-list a[href]")
             .mapNotNull { anchor ->
                 val href = normalizeUrl(anchor.attr("href"), watchUrl) ?: return@mapNotNull null
                 if (href == postUrl || href == watchUrl) return@mapNotNull null
@@ -316,10 +330,16 @@ class ArabSeedProvider : MainAPI() {
         if (isEpisodePost && episodeAnchors.isEmpty()) {
             val season = pageSeason ?: 1
             val seriesName = title
+                .replace(Regex("""(?i)\s*(?:الحلقة|الحلقه|حلقة|episode|ep)\s*\d{1,4}.*"""), "")
                 .replace(Regex(
                     """(?i)\s*(?:الموسم|موسم|season|الجزء|جزء)\s*(?:\d{1,2}|الاول|الأول|الثاني|الثالث|الرابع|الخامس|السادس).*"""
                 ), "")
-                .replace(Regex("""(?i)\s*(?:الحلقة|الحلقه|حلقة|episode|ep)\s*\d{1,4}.*"""), "")
+                // This numerical suffix was proved to be a season above.
+                .let { prefix ->
+                    if (pageSeason != null) {
+                        prefix.replace(Regex("""\s+\d{1,2}$"""), "")
+                    } else prefix
+                }
                 .replace(Regex("""^\s*مسلسل\s+"""), "")
                 .trim().ifBlank { title }
 
