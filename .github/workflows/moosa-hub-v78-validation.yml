@@ -1,0 +1,80 @@
+name: Validate MOOSA Hub v78 Indian trending catalogue (no release)
+on:
+  push:
+    branches: ["feat/moosa-hub-v78-trending-indian-movies"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Build both plugins without publishing
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Validate stable order and distinct Indian categories
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          s=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSACatalog.kt").read_text()
+          v={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert v == {"MOOSAHub":78,"MOOSAArabic":3},v
+          trending='"Trending Indian Movies"'
+          top='"Top Indian Movies"'
+          assert s.index(trending)<s.index(top)
+          assert s.count('to "Trending Indian Movies"')==1
+          assert s.count('to "Top Indian Movies"')==1
+          assert "with_origin_country=IN&sort_by=popularity.desc&vote_count.gte=50&vote_average.gte=6.2&without_genres=99" in s
+          assert "with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7&without_genres=99" in s
+          assert 'calendar.add(Calendar.MONTH, -24)' in s
+          assert '"primary_release_date.gte" to since' in s
+          assert '"primary_release_date.lte" to today' in s
+          assert "private fun isTrendingIndian" in s
+          assert "exactIndianPopularityOrder(fetchedPages, unsorted)" in s
+          assert s.count("exactIndianPopularityOrder(fetchedPages, unsorted)")==2
+          assert "exactIndianRatingOrder(fetchedPages, unsorted)" in s
+          assert s.count("exactIndianRatingOrder(fetchedPages, unsorted)")==2
+          print("PASS: two independent category rankings, order, pagination and rolling release dates")
+          PY
+      - name: Live read-only TMDB Indian trending quality probe
+        run: |
+          python3 - <<'PY'
+          import json,re,datetime,urllib.parse,urllib.request
+          from pathlib import Path
+          s=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSACatalog.kt").read_text()
+          key=re.search(r'private const val TMDB_KEY = "([^"]+)"',s).group(1)
+          now=datetime.datetime.now(datetime.timezone.utc).date()
+          try: since=now.replace(year=now.year-2)
+          except ValueError: since=now.replace(year=now.year-2, day=28)
+          base={
+              "api_key":key,"language":"en-US","include_adult":"false",
+              "with_origin_country":"IN","sort_by":"popularity.desc",
+              "vote_count.gte":"50","vote_average.gte":"6.2",
+              "without_genres":"99",
+              "primary_release_date.gte":since.isoformat(),
+              "primary_release_date.lte":now.isoformat()
+          }
+          all_items=[]
+          for page in [1,2]:
+              url="https://api.themoviedb.org/3/discover/movie?"+urllib.parse.urlencode(dict(base,page=page))
+              with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"}),timeout=18) as r:
+                  result=json.load(r)
+              items=result["results"]
+              assert items, f"page {page} returned no Indian films"
+              assert all(x.get("vote_count",0)>=50 and x.get("vote_average",0)>=6.2 for x in items)
+              assert all(99 not in x.get("genre_ids",[]) for x in items)
+              assert sum("IN" in x.get("origin_country",[]) for x in items)>=int(len(items)*0.8)
+              all_items.extend(items)
+              print("PAGE",page,"TOTAL",result.get("total_results"),"COUNT",len(items))
+          assert len(all_items)>=15, "Not enough recognized Indian movies to fill the category"
+          ranked=sorted(all_items,key=lambda x:(-x.get("popularity",0),x.get("title","")))
+          print("TRENDING_INDIAN_SAMPLE",[(x.get("title"),round(x.get("popularity",0),2),x.get("vote_count")) for x in ranked[:12]])
+          print("PASS: live TMDB Indian films meet nationality, rating, popularity and non-documentary filters")
+          PY
