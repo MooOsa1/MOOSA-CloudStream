@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - main
+      - arabic-provider-extraction-20261014
     paths-ignore:
       - "*.md"
       - "repo.json"
@@ -54,6 +55,7 @@ jobs:
           cp build/plugins.json "$GITHUB_WORKSPACE/builds"/plugins.json
 
       - name: Publish builds
+        if: github.ref == 'refs/heads/main'
         run: |
           cd "$GITHUB_WORKSPACE/builds"
           git config user.email "actions@github.com"
