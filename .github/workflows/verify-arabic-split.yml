@@ -1,0 +1,38 @@
+name: Verify Arabic provider extraction
+on:
+  push:
+    branches:
+      - arabic-provider-extraction-20261014
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Build CloudStream plugins
+        run: gradle make makePluginsJson ensureJarCompatibility
+      - name: Verify split manifest
+        run: |
+          python3 - <<'PY'
+          import json
+          p=json.load(open("build/plugins.json"))
+          assert any(x["internalName"]=="MOOSAHub" for x in p), p
+          assert any(x["internalName"]=="MOOSAArabic" for x in p), p
+          assert any(x["internalName"]=="MOOSAArabic" and x["language"]=="ar" for x in p), p
+          print("Hub and Arabic extension manifests found")
+          PY
