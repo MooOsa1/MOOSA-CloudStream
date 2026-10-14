@@ -587,10 +587,12 @@ object MOOSACatalog {
 
         val fetchedPages = listOf(first) + rest.map { it.await() }
         val unsorted = fetchedPages.flatMap { it.items }.distinctBy { it.url }
-        val items = if (isIndianTop(path, options)) {
-            exactIndianRatingOrder(fetchedPages, unsorted)
-        } else {
-            unsorted
+        val items = when {
+            isIndianTop(path, options) ->
+                exactIndianRatingOrder(fetchedPages, unsorted)
+            isTrendingIndian(path, options) ->
+                exactIndianPopularityOrder(fetchedPages, unsorted)
+            else -> unsorted
         }
 
         BrowseBatch(
