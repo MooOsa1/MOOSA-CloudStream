@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 76
+version = 77
 
 
 android {
@@ -65,3 +65,7 @@ dependencies {
 
 // v76: 190ms SHOW MORE focus-expand and 150ms blur-collapse animations;
 // preserves v75 arrow, v74 click activation and fixed D-pad routing.
+
+// v77: restore meaningful Indian top-rated film filters (200+ TMDB votes,
+// rating >= 7), three sorted pages; Arabic plots from TMDB first, external
+// translation of synopsis alone when not available. Native titles unchanged.
