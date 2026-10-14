@@ -59,12 +59,12 @@ jobs:
             req=u.Request(url,headers={"User-Agent":"Mozilla/5.0"})
             with u.urlopen(req, timeout=14) as handle: response=json.load(handle)
             items=response["results"]
+            print("INDIAN_TOP", "found",response.get("total_results"),"page_titles", [(x.get("title"),x.get("vote_average"),x.get("vote_count")) for x in items[:12]],flush=True)
             assert len(items)>=8, "unexpectedly few Indian movies"
-            assert all(x["vote_count"]>=200 and x["vote_average"]>=7 for x in items)
-            assert all(items[i]["vote_average"] >= items[i+1]["vote_average"] for i in range(len(items)-1))
-            print("INDIAN_TOP", "found",response.get("total_results"),"page_titles", [(x.get("title"),x.get("vote_average"),x.get("vote_count")) for x in items[:7]])
+            assert all(x["vote_count"]>=200 and x["vote_average"]>=7 for x in items), "TMDB ignored rating/vote filter"
+            assert all(items[i]["vote_average"] >= items[i+1]["vote_average"] for i in range(len(items)-1)), "TMDB rating sort mismatch"
           except Exception as e:
-            print("TMDB_PROBE_UNAVAILABLE",str(e)[:180])
+            print("TMDB_PROBE_UNAVAILABLE",type(e).__name__,repr(str(e))[:180])
           params={"client":"gtx","sl":"en","tl":"ar","dt":"t",
                   "q":"A young scientist searches for a lost city and meets an old friend."}
           try:
