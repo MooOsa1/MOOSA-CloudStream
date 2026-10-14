@@ -1009,9 +1009,12 @@ class MOOSAHubProvider : TmdbProvider() {
         // generated "اللعبة الموسم 5" occupied the same canonical-title key
         // and removed the plain query before it reached any provider.
         val generated = buildList {
-            addAll(preferredBase)
+            // Keep a few primary names first, then their season-specific forms.
+            // Otherwise a long TMDB alias list consumes the entire search
+            // budget before season 5 variants can run.
+            addAll(preferredBase.take(2))
             preferredBase
-                .take(6)
+                .take(2)
                 .forEach { title ->
                     if (
                         Regex("""[\u0600-\u06FF]""")
@@ -1030,6 +1033,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     }
                 }
             addAll(seasonNames)
+            addAll(preferredBase.drop(2))
         }
 
         return generated
@@ -1142,7 +1146,7 @@ class MOOSAHubProvider : TmdbProvider() {
             .filter { it.isNotBlank() }
             // Keep "اللعبة" and "اللعبة الموسم 5" as separate search queries.
             .distinctBy { normalizeArabicOrthography(normalizeTitle(it)) }
-            .take(16)
+            .take(if (originalLanguage.equals("ar", true)) 12 else 16)
 
         val queryVariants = buildList {
             addAll(cleanAliases)
@@ -1547,7 +1551,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v12",
+        "strict-v13",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
