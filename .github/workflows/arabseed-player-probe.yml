@@ -1,0 +1,17 @@
+name: Probe ArabSeed episode players
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/arabseed_live_player_probe.py"
+      - ".github/workflows/arabseed-player-probe.yml"
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet beautifulsoup4
+      - name: Inspect actual Arabic episode server DOM
+        run: python3 diagnostics/arabseed_live_player_probe.py
