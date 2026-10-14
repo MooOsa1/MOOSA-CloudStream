@@ -37,10 +37,15 @@ class MOOSAArabicProvider : MainAPI() {
             parents().firstOrNull { it.titleText().isNotBlank() }?.titleText().orEmpty()
         }
         if (title.isBlank()) return null
-        val poster = anchor.selectFirst("img")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }
-        } ?: anchor.parents().firstOrNull { it.selectFirst("img") != null }
-            ?.selectFirst("img")?.let { it.attr("data-src").ifEmpty { it.attr("src") } }
+        val image = anchor.selectFirst("img")
+            ?: anchor.parents().firstOrNull { it.selectFirst("img") != null }
+                ?.selectFirst("img")
+        val poster = image?.let { img ->
+            sequenceOf("data-src", "data-original", "data-lazy-src", "src")
+                .map { img.attr(it) }
+                .firstOrNull { it.isNotBlank() && !it.startsWith("data:", true) }
+                ?.let(::fixUrl)
+        }
         val tvType = if (href.contains("/series/")) TvType.TvSeries else TvType.Movie
         return if (tvType == TvType.TvSeries) {
             newTvSeriesSearchResponse(title, href, tvType) { posterUrl = poster }
@@ -224,8 +229,12 @@ class MOOSAArabicProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
         val title = doc.selectFirst("h1.entry-title,h1")?.text()?.trim().orEmpty()
-        val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
-            ?: doc.selectFirst("img")?.let { it.attr("data-src").ifEmpty { it.attr("src") } }
+        val poster = doc.selectFirst("meta[property=og:image]")
+            ?.attr("content")?.takeIf(String::isNotBlank)?.let(::fixUrl)
+            ?: doc.selectFirst("img")?.let { img ->
+                sequenceOf("data-src", "data-original", "src")
+                    .map { img.attr(it) }.firstOrNull(String::isNotBlank)?.let(::fixUrl)
+            }
         val isSeries = url.contains("/series/")
         val episodeAnchors = if (isSeries) doc.select("a[href*='/episode/']") else emptyList()
         if (!isSeries) {
@@ -678,16 +687,13 @@ class MOOSAArabicProvider : MainAPI() {
                 }
 
                 try {
-                    loadExtractor(absolute, pageUrl, subtitleCallback) { link ->
-                        // Infer resolution only when this specific Akwam
-                        // quality tab identifies the target.
-                        if (
-                            link.quality == Qualities.Unknown.value &&
-                            elementQuality != null
-                        ) {
-                            link.quality = elementQuality
+                    withTimeoutOrNull(6000L) {
+                        loadExtractor(absolute, pageUrl, subtitleCallback) { link ->
+                            // Do not fabricate quality from film/episode names.
+                            if (link.quality == Qualities.Unknown.value &&
+                                elementQuality != null) link.quality = elementQuality
+                            emitLink(link)
                         }
-                        emitLink(link)
                     }
                 } catch (_: Exception) {
                     // Keep traversing the server page even when CloudStream has no extractor for its host.

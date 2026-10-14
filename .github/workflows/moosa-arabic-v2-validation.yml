@@ -24,7 +24,8 @@ jobs:
           from pathlib import Path
           p=json.loads(Path("build/plugins.json").read_text())
           assert {x["internalName"] for x in p}=={"MOOSAArabic","MOOSAHub"}
-          print("Isolated build output verified")
+          assert next(x for x in p if x["internalName"]=="MOOSAArabic")["version"]==2
+          print("Isolated v2 build output verified")
           PY
       - name: Check native catalog and movie/episode pages
         run: |
@@ -32,3 +33,7 @@ jobs:
           python3 diagnostics/moosa_arabic_native_catalog.py
       - name: Check native source structure and pagination
         run: python3 diagnostics/moosa_arabic_v2_probe.py
+      - name: Assert real episode numbering and paged search
+        run: python3 diagnostics/moosa_arabic_v2_regression.py
+      - name: Verify actual CDN video signatures using tiny ranges
+        run: python3 diagnostics/akwam_arabic_regression.py
