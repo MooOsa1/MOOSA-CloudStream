@@ -103,6 +103,13 @@ object MOOSASourceTester {
         value.lowercase().filter { it.isLetterOrDigit() }
 
     private fun testQueries(api: MainAPI): List<String> = when {
+        api.lang.equals("ar", ignoreCase = true) -> listOf(
+            "بيت الروبي",
+            "جعفر العمدة",
+            "العتاولة",
+            "اللعبة",
+            "الحريفة"
+        )
         TvType.Movie in api.supportedTypes -> listOf(
             "Inception",
             "Avatar",
@@ -277,16 +284,15 @@ object MOOSASourceTester {
                                 false,
                                 {},
                                 { link ->
-                                    val label =
-                                        "${link.name} ${link.source}".lowercase()
-
+                                    // Source Tester must meet the SAME HD
+                                    // and non-Download policy as MOOSA Hub.
+                                    // Previously a 480p English movie could
+                                    // mark ArabSeed ONLINE despite Arabic
+                                    // films and episodes being unavailable.
                                     if (
-                                        (
-                                            link.url.startsWith("http://", true) ||
-                                                link.url.startsWith("https://", true)
-                                            ) &&
-                                        "download" !in label &&
-                                        "تحميل" !in label
+                                        (link.url.startsWith("http://", true) ||
+                                            link.url.startsWith("https://", true)) &&
+                                        MOOSAQualityPolicy.accepts(link)
                                     ) {
                                         MOOSAServerRegistry.record(link)
                                         links += link
