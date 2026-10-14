@@ -2335,6 +2335,17 @@ class MOOSAHubProvider : TmdbProvider() {
             base.backgroundPosterUrl = background
         }
 
+        // TMDB detail requests can time out on some networks. If the
+        // displayed/original title is in Arabic, preserve Arabic strict
+        // matching rather than silently treating the request as generic.
+        val playbackLanguage = detail?.originalLanguage
+            ?.takeIf { it.isNotBlank() }
+            ?: if (Regex("""[\u0600-\u06FF]""").containsMatchIn(base.name)) {
+                "ar"
+            } else {
+                null
+            }
+
         when (base) {
             is MovieLoadResponse -> {
                 base.dataUrl = HubPlaybackRequest(
@@ -2343,8 +2354,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     imdbId = effectiveImdbId,
                     tmdbId = tmdbId,
                     isTv = false,
-                    originalLanguage =
-                        detail?.originalLanguage
+                    originalLanguage = playbackLanguage
                 ).toJson()
                 base
             }
@@ -2357,8 +2367,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         imdbId = effectiveImdbId,
                         tmdbId = tmdbId,
                         isTv = isTv,
-                        originalLanguage =
-                            detail?.originalLanguage,
+                        originalLanguage = playbackLanguage,
                         season = episode.season,
                         episode = episode.episode
                     ).toJson()
