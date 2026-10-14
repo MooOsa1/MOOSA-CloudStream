@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote,urljoin,urlparse
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError,URLError
+import socket,ssl
 BASE="https://arabseeds.watch"
 UA="Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
 def req(url,referer=None):
@@ -127,4 +128,35 @@ for q in ["اللعبة","الفيل الأزرق","الكينج"]:
                                       flush=True)
                         except (HTTPError,URLError,OSError) as error:
                             print("MEDIA_RANGED","error",type(error).__name__,
+                                  "reason",str(getattr(error,"reason",error))[:170],
                                   "host",urlparse(media).hostname,flush=True)
+                            if urlparse(media).scheme=="https":
+                                try:
+                                    with urlopen(Request(media,headers=hs),timeout=10,
+                                        context=ssl._create_unverified_context()) as unsafe:
+                                        peek=unsafe.read(64)
+                                        print("TLS_DIAG_ONLY",unsafe.status,
+                                              "range",unsafe.headers.get("Content-Range","")[:35],
+                                              "mp4",peek[4:8]==b"ftyp",flush=True)
+                                except (HTTPError,URLError,OSError) as err:
+                                    print("TLS_DIAG_ONLY_FAIL",type(err).__name__,
+                                          str(getattr(err,"reason",err))[:115],flush=True)
+                                try:
+                                    plain=media.replace("https://","http://",1)
+                                    with urlopen(Request(plain,headers=hs),timeout=10) as http:
+                                        peek=http.read(64)
+                                        print("HTTP_ALT_DIAG",http.status,
+                                              "host",urlparse(http.url).hostname,
+                                              "scheme",urlparse(http.url).scheme,
+                                              "range",http.headers.get("Content-Range","")[:35],
+                                              "mp4",peek[4:8]==b"ftyp",flush=True)
+                                except (HTTPError,URLError,OSError) as err:
+                                    print("HTTP_ALT_FAIL",type(err).__name__,
+                                          str(getattr(err,"reason",err))[:115],flush=True)
+                        print("SOURCE_METADATA",
+                              "path",urlparse(media).path[:105],
+                              "element",source.name,"type",source.get("type",""),
+                              "quality",source.get("data-quality",""),
+                              "video_attrs",[(k,str(v)[:70]) for k,v in source.parent.attrs.items()
+                                            if k in ("width","height","data-quality","poster")],
+                              flush=True)
