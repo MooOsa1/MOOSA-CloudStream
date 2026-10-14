@@ -203,6 +203,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val name: String? = null,
         @JsonProperty("original_name")
         val originalName: String? = null,
+        @JsonProperty("original_language")
+        val originalLanguage: String? = null,
         @JsonProperty("poster_path")
         val posterPath: String? = null,
         @JsonProperty("release_date")
@@ -213,7 +215,7 @@ class MOOSAHubProvider : TmdbProvider() {
         val voteAverage: Double? = null
     ) {
         val displayTitle: String
-            get() = (if (originalLanguage == "ar") sequenceOf(originalTitle, originalName, title, name) else sequenceOf(title, name, originalTitle, originalName))
+            get() = (if (originalLanguage == "ar") sequenceOf(title, name, originalTitle, originalName).filterNotNull().filter { Regex("""[\u0600-\u06FF]""").containsMatchIn(it) } + sequenceOf(title, name, originalTitle, originalName).filterNotNull() else sequenceOf(title, name, originalTitle, originalName))
                 .filterNotNull().map(String::trim)
                 .firstOrNull(String::isNotBlank).orEmpty()
 
