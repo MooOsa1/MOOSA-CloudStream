@@ -7,6 +7,8 @@ import html
 import json
 import re
 import ssl
+from collections import Counter
+from bs4 import BeautifulSoup
 from html.parser import HTMLParser
 from http.cookiejar import CookieJar
 from urllib.parse import urlencode, quote, urlparse, urljoin
@@ -69,10 +71,45 @@ def links(result,selector):
             found.append((u,html.unescape(a["title"] or a["text"]).strip()))
     return list(dict((u,(u,t)) for u,t in found).values())
 
+def page_structure(name,body,base):
+    soup=BeautifulSoup(body,"html.parser")
+    print(name,"forms:",[
+        {
+            "action":f.get("action","")[:80],
+            "method":f.get("method","GET"),
+            "fields":[i.get("name","") for i in f.select("input")][:12]
+        } for f in soup.select("form")[:4]
+    ],flush=True)
+    allclasses=Counter(c for e in soup.select("[class]") for c in e.get("class",[]))
+    print(name,"classes:",allclasses.most_common(18),flush=True)
+    candidates=[]
+    for a in soup.select("a[href]"):
+        label=a.get("title") or a.get_text(" ",strip=True)
+        href=urljoin(base,a.get("href",""))
+        if "لعب" in label or "لعب" in href:
+            candidates.append((urlparse(href).path[:85],label[:85]))
+    print(name,"game-related:",len(candidates),"samples:",candidates[:8],flush=True)
+    print(name,"search-like attributes:",[
+        (e.name,e.get("id"),e.get("name"),e.get("action"),e.get("placeholder"))
+        for e in soup.select("[id*='search'],[class*='search'],input[placeholder]")[:14]
+    ],flush=True)
+    return soup
+
 def arabseed():
     name="ARABSEED";o=client();base="https://m.myseed.pics"
     main=fetch(o,base+"/main/");show(name,"main",main)
     htmltext=main["body"]
+    page_structure(name,htmltext,main["url"])
+    for pattern in ["find__posts","csrf__token","/search/","?s=","search?q","search_type","ajax","search-form"]:
+        print(name,"contains",pattern,pattern.lower() in htmltext.lower())
+    for query_url in [
+        base+"/?s="+quote("اللعبة"),
+        "https://m.myseed.tv/?s="+quote("اللعبة"),
+        "https://m.myseed.tv/search/?q="+quote("اللعبة")
+    ]:
+        alt=fetch(o,query_url)
+        show(name,"GET search "+urlparse(query_url).path+"?"+urlparse(query_url).query[:15],alt)
+        page_structure(name+" alternative",alt["body"],alt["url"])
     csrf_patterns=[
         r"""["']?csrf__token["']?\s*[:=]\s*["']([^"']{6,})["']""",
         r"""var\s+csrf_token\s*=\s*["']([^"']{6,})["']"""
@@ -116,6 +153,7 @@ def cimaclub():
     for query in ["اللعبة","اللعبة الموسم الثاني"]:
         url=base+"/?s="+quote(query)
         r=fetch(o,url);show(name,f"search {query!r}",r)
+        page_structure(name,r["body"],r["url"])
         matches=links(r,lambda u,a:"/series/" in urlparse(u).path or "مسلسل" in a["title"] or "اللعبة" in a["title"])
         print(name,"relevant_links:",len(matches),"sample:",[(urlparse(u).path[:85],t[:60]) for u,t in matches[:4]])
 
