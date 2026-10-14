@@ -43,12 +43,14 @@ object MOOSAQualityPolicy {
      * streams can legitimately use /download/ in their page or CDN URL.
      */
     private val forbiddenServerLabel = Regex(
-        """(?i)download|down\\s*load|داونلود|داون\\s*لود|تحميل|تنزيل"""
+        """(?i)download|down\s*load|داونلود|داون\s*لود|تحميل|تنزيل"""
     )
 
+    fun isDownloadName(value: String): Boolean =
+        forbiddenServerLabel.containsMatchIn(value)
+
     fun hasForbiddenLabel(link: ExtractorLink): Boolean =
-        forbiddenServerLabel.containsMatchIn(link.name) ||
-            forbiddenServerLabel.containsMatchIn(link.source)
+        isDownloadName(link.name) || isDownloadName(link.source)
 
     fun accepts(link: ExtractorLink): Boolean =
         !hasForbiddenLabel(link) &&
