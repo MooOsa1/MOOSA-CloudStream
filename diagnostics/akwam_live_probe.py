@@ -112,5 +112,14 @@ if links:
             "HTTP final scheme: " +
             (urlparse(plain.get("url", "")).scheme or "none")
         )
+        plain_seek = request(http_url, page_url, "bytes=1048576-1048639")
+        show("HTTP byte-range seek", plain_seek)
+        plain_ok = (
+            plain.get("status") == 206 and
+            plain.get("body", b"")[4:8] == b"ftyp" and
+            plain_seek.get("status") == 206 and
+            plain_seek.get("content_range", "").startswith("bytes 1048576-")
+        )
+        print("HTTP progressive MP4 transport: " + ("PASS" if plain_ok else "FAIL"))
 else:
     print("Cannot test CDN from this runner: page did not expose direct target.")
