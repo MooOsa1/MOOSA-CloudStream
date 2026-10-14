@@ -1,0 +1,3524 @@
+package com.moosa.hub
+
+import com.fasterxml.jackson.annotation.JsonProperty
+import com.lagradost.cloudstream3.APIHolder.apis
+import com.lagradost.cloudstream3.HomePageList
+import com.lagradost.cloudstream3.Episode
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.LoadResponse.Companion.getImdbId
+import com.lagradost.cloudstream3.LoadResponse.Companion.getTMDbId
+import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.MovieLoadResponse
+import com.lagradost.cloudstream3.MovieSearchResponse
+import com.lagradost.cloudstream3.ProviderType
+import com.lagradost.cloudstream3.Score
+import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SearchResponseList
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.TvSeriesLoadResponse
+import com.lagradost.cloudstream3.TvSeriesSearchResponse
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.amap
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.base64Encode
+import com.lagradost.cloudstream3.metaproviders.TmdbProvider
+import com.lagradost.cloudstream3.mvvm.logError
+import com.lagradost.cloudstream3.newHomePageResponse
+import com.lagradost.cloudstream3.newMovieSearchResponse
+import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.syncproviders.SyncIdName
+import com.lagradost.cloudstream3.utils.AppUtils.toJson
+import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.Collections
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONArray
+import kotlin.math.abs
+
+class MOOSAHubProvider : TmdbProvider() {
+    override var name = "MOOSA Hub"
+    override var lang = "en"
+
+    override val useMetaLoadResponse = true
+    override val mainPage = MOOSACatalog.categories
+    override val apiName = "MOOSA Hub"
+    override val disableSeasonZero = true
+    override val includeAdult = false
+
+    data class ProviderTarget(
+        val providerName: String,
+        val mainUrl: String,
+        val data: String
+    )
+
+    private data class DirectTmdbRequest(
+        val id: Int,
+        val type: String
+    )
+
+    data class HubPlaybackRequest(
+        val title: String,
+        val year: Int? = null,
+        val imdbId: String? = null,
+        val tmdbId: Int? = null,
+        val isTv: Boolean = false,
+        val originalLanguage: String? = null,
+        val season: Int? = null,
+        val episode: Int? = null,
+        val titleAliases: List<String> = emptyList()
+    )
+
+    private data class CachedTarget(
+        val createdAt: Long,
+        val target: ProviderTarget
+    )
+
+    private data class StremioSubtitleResponse(
+        val subtitles: List<StremioSubtitle> = emptyList()
+    )
+
+    private data class StremioSubtitle(
+        val id: String? = null,
+        val url: String? = null,
+        val lang: String? = null
+    )
+
+    private data class WyzieSubtitle(
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("display") val display: String? = null,
+        @JsonProperty("language") val language: String? = null
+    )
+
+    private data class SubDlResponse(
+        @JsonProperty("status") val status: Boolean = false,
+        @JsonProperty("subtitles") val subtitles: List<SubDlSubtitle> = emptyList()
+    )
+
+    private data class SubDlSubtitle(
+        @JsonProperty("language") val language: String? = null,
+        @JsonProperty("release_name") val releaseName: String? = null,
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("unpack_files") val unpackFiles: List<SubDlFile> = emptyList()
+    )
+
+    private data class SubDlFile(
+        @JsonProperty("language") val language: String? = null,
+        @JsonProperty("release_name") val releaseName: String? = null,
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("season") val season: Int? = null,
+        @JsonProperty("episode") val episode: Int? = null,
+        @JsonProperty("format") val format: String? = null
+    )
+
+    private data class CachedSubtitleList(
+        val createdAt: Long,
+        val items: List<SubtitleFile>
+    )
+
+    private data class LegacySubtitleResult(
+        val result: LegacySubtitleList? = null
+    )
+
+    private data class LegacySubtitleList(
+        val all: List<StremioSubtitle> = emptyList()
+    )
+
+    private data class TmdbOverview(
+        @JsonProperty("overview")
+        val overview: String? = null
+    )
+
+    private data class TmdbSeasonDetail(
+        @JsonProperty("name")
+        val name: String? = null,
+        @JsonProperty("season_number")
+        val seasonNumber: Int? = null
+    )
+
+    private data class TmdbDetail(
+        @JsonProperty("overview")
+        val overview: String? = null,
+        @JsonProperty("title")
+        val title: String? = null,
+        @JsonProperty("name")
+        val name: String? = null,
+        @JsonProperty("original_title")
+        val originalTitle: String? = null,
+        @JsonProperty("original_name")
+        val originalName: String? = null,
+        @JsonProperty("original_language")
+        val originalLanguage: String? = null,
+        @JsonProperty("poster_path")
+        val posterPath: String? = null,
+        @JsonProperty("backdrop_path")
+        val backdropPath: String? = null,
+        @JsonProperty("vote_average")
+        val voteAverage: Double? = null,
+        @JsonProperty("vote_count")
+        val voteCount: Int? = null
+    )
+
+    private data class TmdbImageResponse(
+        @JsonProperty("posters")
+        val posters: List<TmdbImage> = emptyList(),
+        @JsonProperty("backdrops")
+        val backdrops: List<TmdbImage> = emptyList()
+    )
+
+    private data class TmdbImage(
+        @JsonProperty("file_path")
+        val filePath: String? = null,
+        @JsonProperty("vote_average")
+        val voteAverage: Double? = null,
+        @JsonProperty("iso_639_1")
+        val language: String? = null
+    )
+
+    private data class TmdbExternalIds(
+        @JsonProperty("imdb_id")
+        val imdbId: String? = null
+    )
+
+    private data class TmdbHomePage(
+        @JsonProperty("results")
+        val results: List<TmdbHomeItem> = emptyList()
+    )
+
+    private data class TmdbHomeItem(
+        @JsonProperty("id")
+        val id: Int? = null,
+        @JsonProperty("title")
+        val title: String? = null,
+        @JsonProperty("original_title")
+        val originalTitle: String? = null,
+        @JsonProperty("name")
+        val name: String? = null,
+        @JsonProperty("original_name")
+        val originalName: String? = null,
+        @JsonProperty("original_language")
+        val originalLanguage: String? = null,
+        @JsonProperty("poster_path")
+        val posterPath: String? = null,
+        @JsonProperty("release_date")
+        val releaseDate: String? = null,
+        @JsonProperty("first_air_date")
+        val firstAirDate: String? = null,
+        @JsonProperty("vote_average")
+        val voteAverage: Double? = null
+    ) {
+        val displayTitle: String
+            get() = (if (originalLanguage == "ar") sequenceOf(title, name, originalTitle, originalName).filterNotNull().filter { Regex("""[\u0600-\u06FF]""").containsMatchIn(it) } + sequenceOf(title, name, originalTitle, originalName).filterNotNull() else sequenceOf(title, name, originalTitle, originalName))
+                .filterNotNull().map(String::trim)
+                .firstOrNull(String::isNotBlank).orEmpty()
+
+        val year: Int?
+            get() = (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull()
+    }
+
+    private enum class PreferredSubtitleLanguage {
+        ARABIC,
+        ENGLISH,
+        OTHER
+    }
+
+    private val targetCache = ConcurrentHashMap<String, CachedTarget>()
+    private val providerHealth = ConcurrentHashMap<String, Int>()
+    private val synopsisCache = ConcurrentHashMap<String, String>()
+    private val subtitleCache = ConcurrentHashMap<String, CachedSubtitleList>()
+
+    private val cacheLifetimeMs = 20 * 60 * 1000L
+    private val subtitleCacheLifetimeMs = 15 * 60 * 1000L
+    private val providerResolveTimeoutMs = 30000L
+    private val providerLinksTimeoutMs = 22000L
+    private val streamPlayLinksTimeoutMs = 60000L
+    private val subtitleTimeoutMs = 2200L
+    private val fastSubtitleTimeoutMs = 1350L
+    private val linkProbeTimeoutMs = 10500L
+    private val linkProbeBatchSize = 10
+
+    private val tmdbApiKey = "e6333b32409e02a4a6eba6fb7ff866bb"
+    private val tmdbApiUrl = "https://api.themoviedb.org/3"
+
+    private suspend fun <T> timed(
+        timeoutMs: Long,
+        block: suspend () -> T
+    ): T? = withTimeoutOrNull(timeoutMs) {
+        try {
+            block()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            logError(error)
+            null
+        }
+    }
+
+    private fun normalizeTitle(value: String): String =
+        value.lowercase()
+            .replace("&", "and")
+            .replace(Regex("""[’'\u2018\u2019]"""), "")
+            .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+
+    private fun normalizeArabicOrthography(
+        value: String
+    ): String = buildString {
+        for (ch in value) {
+            when (ch) {
+                '٠', '۰' -> append('0')
+                '١', '۱' -> append('1')
+                '٢', '۲' -> append('2')
+                '٣', '۳' -> append('3')
+                '٤', '۴' -> append('4')
+                '٥', '۵' -> append('5')
+                '٦', '۶' -> append('6')
+                '٧', '۷' -> append('7')
+                '٨', '۸' -> append('8')
+                '٩', '۹' -> append('9')
+                'أ', 'إ', 'آ', 'ٱ' -> append('ا')
+                'ى' -> append('ي')
+                'ؤ' -> append('و')
+                'ئ' -> append('ي')
+                'ة' -> append('ه')
+                'ـ' -> Unit
+                in '\u064B'..'\u065F' -> Unit
+                '\u0670' -> Unit
+                else -> append(ch)
+            }
+        }
+    }
+
+    private fun canonicalTitle(value: String): String {
+        var text =
+            normalizeArabicOrthography(
+                normalizeTitle(value)
+            )
+
+        text = text
+            .replace(
+                Regex("""\b(?:19|20)\d{2}\b"""),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\b(?:2160p|1440p|1080p|720p|480p|4k|uhd|fhd|hdr|hevc|x264|x265|web[- ]?dl|webrip|bluray|blu[- ]?ray|dvdrip|hdtv)\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\bseason\s*\d{1,2}\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\b(?:episode|ep)\s*\d{1,4}\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\be\d{1,4}\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\bs\d{1,2}\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """\b(?:movie|series|show|watch|download|subbed|dubbed|translated|complete|all episodes|full series|online)\b"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """(^|\s)(?:فيلم|مسلسل|مسلسلات|برنامج|مشاهدة|تحميل|مترجم|مدبلج|اونلاين|اون لاين|كامل)(?=\s|$)"""
+                ),
+                " "
+            )
+            .replace(
+                Regex(
+                    """(^|\s)الموسم\s*(?:\d{1,2}|الاول|الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)(?=\s|$)"""
+                ),
+                " "
+            )
+            .replace(
+                Regex("""(^|\s)(?:ج|جزء|الجزء)\s*\d{1,2}(?=\s|$)"""),
+                " "
+            )
+            .replace(
+                Regex("""(^|\s)(?:الحلقه|حلقه)\s*\d{1,4}(?:\s+(?:الاولى|الاول|الثانيه|الثاني|الثالثه|الثالث|الرابعه|الرابع|الخامسه|الخامس))?(?=\s|$)"""),
+                " "
+            )
+            .replace(
+                Regex("""\s+"""),
+                " "
+            )
+            .trim()
+
+        return text
+    }
+
+    private fun titleTokens(value: String): Set<String> =
+        canonicalTitle(value)
+            .split(" ")
+            .map { it.trim() }
+            .filter { it.length >= 2 }
+            .toSet()
+
+    private fun titleSimilarity(
+        candidate: String,
+        aliases: List<String>
+    ): Double {
+        val candidateCanonical =
+            canonicalTitle(candidate)
+
+        if (candidateCanonical.isBlank()) {
+            return 0.0
+        }
+
+        var best = 0.0
+
+        for (alias in aliases) {
+            val wanted =
+                canonicalTitle(alias)
+
+            if (wanted.isBlank()) continue
+
+            if (candidateCanonical == wanted) {
+                return 1.0
+            }
+
+            val a = titleTokens(candidateCanonical)
+            val b = titleTokens(wanted)
+
+            if (a.isEmpty() || b.isEmpty()) continue
+
+            val common =
+                a.intersect(b).size.toDouble()
+
+            val union =
+                a.union(b).size.toDouble()
+
+            val jaccard =
+                if (union > 0.0) {
+                    common / union
+                } else {
+                    0.0
+                }
+
+            val containment =
+                common /
+                    minOf(
+                        a.size,
+                        b.size
+                    ).coerceAtLeast(1)
+
+            val lengthRatio =
+                minOf(
+                    candidateCanonical.length,
+                    wanted.length
+                ).toDouble() /
+                    maxOf(
+                        candidateCanonical.length,
+                        wanted.length
+                    ).coerceAtLeast(1).toDouble()
+
+            val score =
+                maxOf(
+                    jaccard,
+                    containment * lengthRatio
+                )
+
+            if (score > best) {
+                best = score
+            }
+        }
+
+        return best
+    }
+
+    private fun resultYear(
+        result: SearchResponse
+    ): Int? = when (result) {
+        is MovieSearchResponse -> result.year
+        is TvSeriesSearchResponse -> result.year
+        else -> null
+    }
+
+    private fun exactTitleMatch(
+        candidate: String,
+        aliases: List<String>
+    ): Boolean =
+        titleSimilarity(
+            candidate,
+            aliases
+        ) >= 0.999
+
+    private fun safeTitleMatch(
+        candidate: String,
+        aliases: List<String>,
+        candidateYear: Int?,
+        wantedYear: Int?
+    ): Boolean {
+        val similarity =
+            titleSimilarity(
+                candidate,
+                aliases
+            )
+
+        if (similarity >= 0.999) {
+            return yearCompatible(
+                candidateYear,
+                wantedYear
+            )
+        }
+
+        if (
+            candidateYear != null &&
+            wantedYear != null
+        ) {
+            return abs(
+                candidateYear - wantedYear
+            ) <= 1 &&
+                similarity >= 0.82
+        }
+
+        return similarity >= 0.94
+    }
+
+    private fun yearCompatible(
+        candidateYear: Int?,
+        wantedYear: Int?
+    ): Boolean {
+        if (
+            candidateYear == null ||
+            wantedYear == null
+        ) {
+            return true
+        }
+
+        return abs(
+            candidateYear - wantedYear
+        ) <= 1
+    }
+
+    private fun searchTypeMatches(
+        result: SearchResponse,
+        wantSeries: Boolean
+    ): Boolean {
+        if (wantSeries) {
+            if (
+                result is TvSeriesSearchResponse
+            ) {
+                return true
+            }
+
+            return result.type in setOf(
+                TvType.TvSeries,
+                TvType.Cartoon,
+                TvType.Anime,
+                TvType.OVA,
+                TvType.AsianDrama
+            )
+        }
+
+        if (
+            result is MovieSearchResponse
+        ) {
+            return true
+        }
+
+        return result.type in setOf(
+            TvType.Movie,
+            TvType.AnimeMovie,
+            TvType.Documentary
+        )
+    }
+
+    private fun tokenSet(
+        value: String
+    ): Set<String> =
+        canonicalTitle(value)
+            .split(" ")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+
+    private fun explicitSeasonNumber(value: String): Int? {
+        val text = normalizeArabicOrthography(normalizeTitle(value))
+        val markers = Regex("""(?:^|\s)(?:الموسم|موسم|season|الجزء|جزء|part|ج|s)\s*([\p{L}\d]+)""", RegexOption.IGNORE_CASE)
+        val ordinals = mapOf(
+            "الاول" to 1, "الاولى" to 1, "اول" to 1,
+            "الثاني" to 2, "الثانيه" to 2, "ثاني" to 2,
+            "الثالث" to 3, "الثالثه" to 3, "ثالث" to 3,
+            "الرابع" to 4, "الرابعه" to 4, "رابع" to 4,
+            "الخامس" to 5, "الخامسه" to 5, "خامس" to 5,
+            "السادس" to 6, "السادسه" to 6, "سادس" to 6,
+            "السابع" to 7, "السابعه" to 7, "سابع" to 7,
+            "الثامن" to 8, "الثامنه" to 8, "ثامن" to 8,
+            "التاسع" to 9, "التاسعه" to 9, "تاسع" to 9,
+            "العاشر" to 10, "العاشره" to 10, "عاشر" to 10
+        )
+        return markers.findAll(text).mapNotNull { match ->
+            val token = match.groupValues[1]
+            token.toIntOrNull() ?: ordinals[token]
+        }.firstOrNull()
+    }
+
+    private fun seasonSpecificTitleMatch(
+        candidate: String,
+        aliases: List<String>,
+        season: Int
+    ): Boolean {
+        val explicitSeason = explicitSeasonNumber(candidate)
+        if (explicitSeason != null && explicitSeason != season) return false
+
+        val candidateCanonical = canonicalTitle(candidate)
+        if (candidateCanonical.isBlank()) return false
+        val candidateTokens = tokenSet(candidateCanonical)
+        val candidateHasSeason = explicitSeason == season || season.toString() in candidateTokens
+
+        for (alias in aliases) {
+            val wanted = canonicalTitle(alias)
+            if (wanted.isBlank()) continue
+            if (candidateCanonical == wanted) return true
+            val wantedTokens = tokenSet(wanted)
+            if (candidateHasSeason && wantedTokens.isNotEmpty() && wantedTokens.all { it in candidateTokens }) {
+                return true
+            }
+            val wantedSeason = explicitSeasonNumber(alias)
+            if (wantedSeason == season && wantedTokens.all { it in candidateTokens }) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun strictArabicTitleMatch(
+        candidate: String,
+        aliases: List<String>,
+        candidateYear: Int?,
+        wantedYear: Int?,
+        wantSeries: Boolean,
+        season: Int?
+    ): Boolean {
+        val candidateCanonical =
+            canonicalTitle(candidate)
+
+        val arabicAliases =
+            aliases.filter {
+                Regex("""[\u0600-\u06FF]""")
+                    .containsMatchIn(it)
+            }
+
+        val usableAliases =
+            if (arabicAliases.isNotEmpty()) {
+                arabicAliases
+            } else {
+                aliases
+            }
+
+        val canonicalAliases =
+            usableAliases
+                .map(::canonicalTitle)
+                .filter { it.isNotBlank() }
+                .distinct()
+
+        // Even an exact series-title match cannot override an explicit,
+        // contradictory season in the provider result.
+        if (wantSeries && season != null) {
+            val explicit = explicitSeasonNumber(candidate)
+            if (explicit != null && explicit != season) return false
+        }
+
+        if (
+            candidateCanonical in
+                canonicalAliases
+        ) {
+            return if (wantSeries) {
+                true
+            } else {
+                yearCompatible(
+                    candidateYear,
+                    wantedYear
+                )
+            }
+        }
+
+        if (
+            wantSeries &&
+            season != null &&
+            seasonSpecificTitleMatch(
+                candidate,
+                usableAliases,
+                season
+            )
+        ) {
+            return true
+        }
+
+        val candidateTokens =
+            tokenSet(candidateCanonical)
+
+        if (candidateTokens.size < 2) {
+            return false
+        }
+
+        val similarity =
+            titleSimilarity(
+                candidate,
+                usableAliases
+            )
+
+        val enoughSharedTokens =
+            canonicalAliases.any { alias ->
+                val wantedTokens =
+                    tokenSet(alias)
+
+                candidateTokens
+                    .intersect(wantedTokens)
+                    .size >= 2
+            }
+
+        if (!enoughSharedTokens) {
+            return false
+        }
+
+        return if (wantSeries) {
+            similarity >= 0.96
+        } else {
+            yearCompatible(
+                candidateYear,
+                wantedYear
+            ) &&
+                similarity >= 0.94
+        }
+    }
+
+    private fun strictSearchScore(
+        result: SearchResponse,
+        aliases: List<String>,
+        year: Int?,
+        wantSeries: Boolean,
+        originalLanguage: String?,
+        season: Int?
+    ): Int {
+        val candidateYear =
+            resultYear(result)
+
+        val wantedYear =
+            if (wantSeries) null else year
+
+        val isArabicOriginal =
+            originalLanguage.equals(
+                "ar",
+                ignoreCase = true
+            )
+
+        val titleMatches =
+            if (isArabicOriginal) {
+                strictArabicTitleMatch(
+                    candidate = result.name,
+                    aliases = aliases,
+                    candidateYear = candidateYear,
+                    wantedYear = wantedYear,
+                    wantSeries = wantSeries,
+                    season = season
+                )
+            } else {
+                safeTitleMatch(
+                    result.name,
+                    aliases,
+                    candidateYear,
+                    wantedYear
+                )
+            }
+
+        if (!titleMatches) {
+            return 0
+        }
+
+        val similarity =
+            titleSimilarity(
+                result.name,
+                aliases
+            )
+
+        val typeBonus =
+            if (
+                searchTypeMatches(
+                    result,
+                    wantSeries
+                )
+            ) {
+                10
+            } else {
+                -10
+            }
+
+        val seasonBonus =
+            if (
+                wantSeries &&
+                season != null &&
+                seasonSpecificTitleMatch(
+                    result.name,
+                    aliases,
+                    season
+                )
+            ) {
+                30
+            } else {
+                0
+            }
+
+        val base = when {
+            similarity >= 0.999 &&
+                wantedYear != null &&
+                candidateYear == wantedYear -> 140
+
+            similarity >= 0.999 -> 125
+
+            wantedYear != null &&
+                candidateYear != null &&
+                candidateYear == wantedYear -> 112
+
+            else -> 100
+        }
+
+        return base +
+            typeBonus +
+            seasonBonus
+    }
+
+    private fun loadedIdentityMatches(
+        result: LoadResponse,
+        request: HubPlaybackRequest,
+        aliases: List<String>
+    ): Boolean {
+        val loadedImdb =
+            result.getImdbId()
+
+        val loadedTmdb =
+            result.getTMDbId()
+                ?.toIntOrNull()
+
+        if (
+            !request.imdbId.isNullOrBlank() &&
+            !loadedImdb.isNullOrBlank() &&
+            !loadedImdb.equals(
+                request.imdbId,
+                ignoreCase = true
+            )
+        ) {
+            return false
+        }
+
+        if (
+            request.tmdbId != null &&
+            loadedTmdb != null &&
+            loadedTmdb != request.tmdbId
+        ) {
+            return false
+        }
+
+        val idMatched =
+            (
+                !request.imdbId.isNullOrBlank() &&
+                    !loadedImdb.isNullOrBlank() &&
+                    loadedImdb.equals(
+                        request.imdbId,
+                        ignoreCase = true
+                    )
+                ) ||
+                (
+                    request.tmdbId != null &&
+                        loadedTmdb != null &&
+                        loadedTmdb == request.tmdbId
+                    )
+
+        if (idMatched) {
+            return true
+        }
+
+        // Series premiere dates vary by season across Arabic providers.
+        // Match the series identity and exact requested episode instead.
+        val candidateHasArabic =
+            Regex("""[\u0600-\u06FF]""")
+                .containsMatchIn(result.name)
+
+        val identityAliases =
+            if (
+                request.originalLanguage.equals(
+                    "ar",
+                    ignoreCase = true
+                ) &&
+                candidateHasArabic
+            ) {
+                (
+                    listOf(request.title) +
+                        aliases.filter {
+                            Regex("""[\u0600-\u06FF]""")
+                                .containsMatchIn(it)
+                        }
+                    )
+                    .distinctBy(::canonicalTitle)
+                    .take(10)
+            } else {
+                aliases
+            }
+
+        val wantSeries =
+            request.season != null &&
+                request.episode != null
+
+        val wantedYear =
+            if (wantSeries) {
+                null
+            } else {
+                request.year
+            }
+
+        return if (
+            request.originalLanguage.equals(
+                "ar",
+                ignoreCase = true
+            )
+        ) {
+            strictArabicTitleMatch(
+                candidate = result.name,
+                aliases = identityAliases,
+                candidateYear = result.year,
+                wantedYear = wantedYear,
+                wantSeries = wantSeries,
+                season = request.season
+            )
+        } else {
+            safeTitleMatch(
+                candidate = result.name,
+                aliases = identityAliases,
+                candidateYear = result.year,
+                wantedYear = wantedYear
+            )
+        }
+    }
+
+    private fun arabicSeasonWord(
+        season: Int
+    ): String? = when (season) {
+        1 -> "الأول"
+        2 -> "الثاني"
+        3 -> "الثالث"
+        4 -> "الرابع"
+        5 -> "الخامس"
+        6 -> "السادس"
+        7 -> "السابع"
+        8 -> "الثامن"
+        9 -> "التاسع"
+        10 -> "العاشر"
+        else -> null
+    }
+
+    private suspend fun tmdbSeasonNames(
+        request: HubPlaybackRequest
+    ): List<String> {
+        val id = request.tmdbId ?: return emptyList()
+        val season = request.season ?: return emptyList()
+        if (!request.isTv) return emptyList()
+
+        return coroutineScope {
+            listOf(
+                "ar-SA",
+                "ar",
+                "en-US"
+            ).map { language ->
+                async {
+                    timed(2200L) {
+                        app.get(
+                            "$tmdbApiUrl/tv/$id/season/$season",
+                            params = mapOf(
+                                "api_key" to tmdbApiKey,
+                                "language" to language
+                            )
+                        ).parsedSafe<TmdbSeasonDetail>()
+                            ?.name
+                            ?.trim()
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                    }
+                }
+            }.mapNotNull { it.await() }
+                .distinctBy(::canonicalTitle)
+        }
+    }
+
+    private suspend fun playbackAliases(
+        request: HubPlaybackRequest
+    ): List<String> {
+        val base = timed(5200L) {
+            MOOSACatalog.aliases(
+                tmdbId = request.tmdbId,
+                isTv = request.isTv,
+                fallback = request.title
+            )
+        } ?: listOf(request.title)
+
+        val season = request.season
+        if (
+            !request.isTv ||
+            season == null
+        ) {
+            return base
+                .distinctBy(::canonicalTitle)
+                .take(16)
+        }
+
+        val seasonNames =
+            tmdbSeasonNames(request)
+
+        val arabicBase =
+            base.filter {
+                Regex("""[\u0600-\u06FF]""")
+                    .containsMatchIn(it)
+            }
+
+        val preferredBase =
+            if (
+                request.originalLanguage.equals(
+                    "ar",
+                    ignoreCase = true
+                ) &&
+                arabicBase.isNotEmpty()
+            ) {
+                arabicBase + base
+            } else {
+                base
+            }
+
+        // A title such as "اللعبة" must be searched first.  Previously the
+        // generated "اللعبة الموسم 5" occupied the same canonical-title key
+        // and removed the plain query before it reached any provider.
+        val generated = buildList {
+            // Keep a few primary names first, then their season-specific forms.
+            // Otherwise a long TMDB alias list consumes the entire search
+            // budget before season 5 variants can run.
+            addAll(preferredBase.take(2))
+            preferredBase
+                .take(2)
+                .forEach { title ->
+                    if (
+                        Regex("""[\u0600-\u06FF]""")
+                            .containsMatchIn(title)
+                    ) {
+                        add("$title الموسم $season")
+                        add("$title الجزء $season")
+                        arabicSeasonWord(season)?.let { word ->
+                            add("$title الموسم $word")
+                            add("$title الجزء $word")
+                        }
+                        add("$title ج$season")
+                        add("$title $season")
+                    } else {
+                        add("$title Season $season")
+                    }
+                }
+            addAll(seasonNames)
+            addAll(preferredBase.drop(2))
+        }
+
+        return generated
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { normalizeArabicOrthography(normalizeTitle(it)) }
+            .take(24)
+    }
+
+    private fun isStreamPlayProvider(
+        api: MainAPI
+    ): Boolean {
+        val label =
+            "${api.name} ${api.mainUrl} ${api.javaClass.name}"
+                .lowercase()
+
+        return "streamplay" in label ||
+            "stream play" in label
+    }
+
+    private fun isArabicProvider(
+        api: MainAPI
+    ): Boolean {
+        if (
+            api.lang.equals(
+                "ar",
+                ignoreCase = true
+            )
+        ) {
+            return true
+        }
+
+        val label =
+            "${api.name} ${api.mainUrl} ${api.javaClass.name}"
+                .lowercase()
+
+        return listOf(
+            "akwam",
+            "اكوام",
+            "fasel",
+            "فاصل",
+            "topcinema",
+            "top cinema",
+            "wecima",
+            "cima",
+            "arabseed",
+            "arab seed",
+            "shahid",
+            "egy",
+            "mycima"
+        ).any { it in label }
+    }
+
+    private fun searchTimeoutFor(
+        api: MainAPI,
+        request: HubPlaybackRequest
+    ): Long =
+        when {
+            // Akwam S1 discovery uses a search page plus an older-season
+            // page, so it needs enough time for both network requests.
+            isAkwamProvider(api) &&
+                request.isTv -> 13500L
+
+            isArabicProvider(api) &&
+                request.isTv -> 8500L
+
+            isArabicProvider(api) -> 6500L
+
+            isStreamPlayProvider(api) -> 5000L
+
+            else -> 3600L
+        }
+
+    private fun providerLoadTimeoutFor(
+        api: MainAPI,
+        request: HubPlaybackRequest
+    ): Long =
+        when {
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isAkwamProvider(api) -> 12000L
+
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isArabicProvider(api) -> 8000L
+
+            isArabicProvider(api) &&
+                request.isTv -> 30000L
+
+            isArabicProvider(api) -> 14000L
+
+            isStreamPlayProvider(api) -> 22000L
+
+            else -> 7500L
+        }
+
+    private fun providerResolveTimeoutFor(
+        api: MainAPI,
+        request: HubPlaybackRequest
+    ): Long =
+        when {
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isAkwamProvider(api) -> 35000L
+
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isArabicProvider(api) -> 13000L
+
+            isArabicProvider(api) &&
+                request.isTv -> 100000L
+
+            isArabicProvider(api) -> 38000L
+
+            isStreamPlayProvider(api) -> 35000L
+
+            else -> providerResolveTimeoutMs
+        }
+
+    private fun isAkwamProvider(api: MainAPI): Boolean =
+        api.name.equals("Akwam", ignoreCase = true) ||
+            api.javaClass.name.endsWith(".AkwamProvider")
+
+    private fun isArabSeedProvider(api: MainAPI): Boolean =
+        api.name.equals("ArabSeed", ignoreCase = true) &&
+            isBundledArabicProvider(api)
+
+    private fun arabSeedEpisodeConfirmed(
+        api: MainAPI,
+        result: SearchResponse,
+        request: HubPlaybackRequest,
+        wantSeries: Boolean
+    ): Boolean {
+        if (!isArabSeedProvider(api) || !wantSeries) return true
+
+        // MySeed lists individual episodes as separate search entries.
+        // A matching show/season but the wrong EP must never stop search.
+        val season = request.season ?: return false
+        val episode = request.episode ?: return false
+        // A source may also provide a genuine series collection page
+        // without an episode number. Let its load() provide verified episodes.
+        val listedEpisode = explicitArabicEpisodeNumber(result.name)
+            ?: return true
+        val explicit = explicitSeasonNumber(result.name)
+
+        // MySeed titles sometimes use "اللعبة 4 الحلقة 19" instead of
+        // "اللعبة الموسم الرابع الحلقة 19". Require the numeric suffix
+        // to follow an exact title alias; never guess from an arbitrary
+        // number within the name.
+        val normalized = normalizeArabicOrthography(normalizeTitle(result.name))
+        val priorToEpisode = normalized.substringBefore(" الحلقه")
+            .substringBefore(" حلقه")
+            .substringBefore(" episode")
+            .trim()
+        val lastToken = priorToEpisode.substringAfterLast(' ').toIntOrNull()
+        val numberedSeason = lastToken
+            ?.takeIf { it in 1..30 }
+            ?.takeIf {
+                val prefix = priorToEpisode.substringBeforeLast(' ').trim()
+                val allowed = (listOf(request.title) + request.titleAliases)
+                    .any { alias -> canonicalTitle(prefix) == canonicalTitle(alias) }
+                allowed
+            }
+        val listedSeason = explicit ?: numberedSeason
+
+        return listedEpisode == episode &&
+            (listedSeason == season || (season == 1 && listedSeason == null))
+    }
+
+    // Akwam lists each season as a separate series page. A plain base-title
+    // hit is season 1, not evidence that seasons 2/3 were found. Keep searching
+    // until a result explicitly identifies the requested season.
+    private fun akwamSeasonConfirmed(
+        api: MainAPI,
+        result: SearchResponse,
+        request: HubPlaybackRequest,
+        wantSeries: Boolean
+    ): Boolean {
+        if (
+            !isAkwamProvider(api) ||
+            !wantSeries ||
+            !request.originalLanguage.equals("ar", ignoreCase = true)
+        ) return true
+
+        val season = request.season ?: return true
+        val explicit = explicitSeasonNumber(result.name)
+        // Akwam also names seasons as "العتاولة 2", not only
+        // "العتاولة الموسم الثاني". Require the prefix to match the
+        // requested series exactly before treating a suffix as a season.
+        val suffix = Regex("""\s+(\d{1,2})\s*$""")
+            .find(normalizeArabicOrthography(result.name))
+        val numberedSeason = suffix?.groupValues?.getOrNull(1)?.toIntOrNull()
+            ?.takeIf { it in 1..30 }
+            ?.takeIf {
+                val prefix = result.name.substring(0, result.name.length - suffix.value.length)
+                canonicalTitle(prefix) == canonicalTitle(request.title)
+            }
+        val foundSeason = explicit ?: numberedSeason
+        return if (season == 1) {
+            foundSeason == 1 ||
+                (foundSeason == null &&
+                    canonicalTitle(result.name) == canonicalTitle(request.title))
+        } else {
+            foundSeason == season
+        }
+    }
+
+    private suspend fun searchProvider(
+        api: MainAPI,
+        request: HubPlaybackRequest,
+        aliases: List<String>,
+        year: Int?,
+        wantSeries: Boolean,
+        originalLanguage: String?,
+        season: Int?
+    ): List<SearchResponse> {
+        val cleanAliases = aliases
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            // Keep "اللعبة" and "اللعبة الموسم 5" as separate search queries.
+            .distinctBy { normalizeArabicOrthography(normalizeTitle(it)) }
+            .take(if (originalLanguage.equals("ar", true)) 12 else 16)
+
+        // Akwam indexes every season as a different series. Searching the
+        // bare title first can return only the newest seasons or S1 and
+        // waste most of the resolver budget. Prioritize the requested
+        // season's Arabic WORD alias, which matches Akwam's own titles.
+        val orderedAliases =
+            if (
+                isAkwamProvider(api) &&
+                wantSeries &&
+                season != null &&
+                season > 1 &&
+                originalLanguage.equals("ar", true)
+            ) {
+                val ordinal = arabicSeasonWord(season)
+                val seasonAliases = cleanAliases
+                    .filter { explicitSeasonNumber(it) == season }
+                    .sortedBy { alias ->
+                        when {
+                            ordinal != null &&
+                                alias.contains("الموسم $ordinal") -> 0
+                            Regex("""(?:^|\s)ج\s*$season(?:\s|$)""")
+                                .containsMatchIn(alias) -> 1
+                            else -> 2
+                        }
+                    }
+                seasonAliases + cleanAliases.filterNot { it in seasonAliases }
+            } else {
+                cleanAliases
+            }
+
+        val isEpisodeIndex = isArabSeedProvider(api) ||
+            api.name.equals("TopCinema", ignoreCase = true)
+        // Episode-indexed Arabic sites need the requested episode, not just
+        // the newest result sharing the show's name.
+        val episodeQueries = if (
+            wantSeries && isEpisodeIndex && originalLanguage.equals("ar", true) &&
+            request.episode != null
+        ) {
+            orderedAliases.filter {
+                Regex("""[\u0600-\u06FF]""").containsMatchIn(it) &&
+                    explicitSeasonNumber(it) == null
+            }.take(2).flatMap { title ->
+                listOf("$title الحلقة ${request.episode}",
+                    "$title الموسم $season الحلقة ${request.episode}")
+            }
+        } else emptyList()
+        val queryVariants = buildList {
+            addAll(episodeQueries)
+            addAll(orderedAliases)
+            if (year != null && !wantSeries) {
+                orderedAliases.take(2).forEach { alias ->
+                    add("$alias $year")
+                }
+            }
+        }.distinct().take(if (isArabSeedProvider(api)) 6 else if (isEpisodeIndex) 8 else 12)
+
+        val results = mutableListOf<SearchResponse>()
+
+        for ((index, query) in queryVariants.withIndex()) {
+            val maxPages = when {
+                // Akwam ignores pagination; its search already finds seasons.
+                isAkwamProvider(api) -> 1
+                // MySeed's public search has actual WordPress-style pages;
+                // older episodes can appear on pages 3-5.
+                isArabSeedProvider(api) && wantSeries && index < 2 -> 3
+                isEpisodeIndex && wantSeries && index < 3 -> 3
+                index < 2 -> 2
+                else -> 1
+            }
+
+            for (page in 1..maxPages) {
+                val found = timed(searchTimeoutFor(api, request)) {
+                    api.search(query, page)?.items.orEmpty()
+                }.orEmpty()
+                results += found
+
+                val matchingEpisode = found.any { item ->
+                    akwamSeasonConfirmed(api, item, request, wantSeries) &&
+                        arabSeedEpisodeConfirmed(api, item, request, wantSeries) &&
+                        strictSearchScore(
+                            item,
+                            aliases,
+                            year,
+                            wantSeries,
+                            originalLanguage,
+                            season
+                        ) >= 90
+                }
+                val confirmedEpisode = if (isArabSeedProvider(api) && wantSeries) {
+                    found.any { item ->
+                        explicitArabicEpisodeNumber(item.name) == request.episode &&
+                            arabSeedEpisodeConfirmed(api, item, request, true) &&
+                            strictSearchScore(item, aliases, year, true, originalLanguage, season) >= 90
+                    }
+                } else matchingEpisode
+                if (confirmedEpisode) {
+                    return results.distinctBy { it.url }
+                }
+                if (found.isEmpty()) break
+            }
+        }
+
+        return results.distinctBy { it.url }
+    }
+
+    private data class MatchedLoad(
+        val response: LoadResponse,
+        val searchTitle: String
+    )
+
+    private fun explicitArabicEpisodeNumber(value: String): Int? {
+        val normalized = normalizeArabicOrthography(normalizeTitle(value))
+        val ep = Regex(
+            """(?:الحلقه|حلقه|episode|ep)\s*[:#-]?\s*(\d{1,4}|الاولى|الاول|الثانيه|الثاني|الثالثه|الثالث|الرابعه|الرابع|الخامسه|الخامس)""",
+            RegexOption.IGNORE_CASE
+        ).find(normalized)?.groupValues?.getOrNull(1)
+            ?: return null
+
+        return ep.toIntOrNull() ?: mapOf(
+            "الاولى" to 1, "الاول" to 1,
+            "الثانيه" to 2, "الثاني" to 2,
+            "الثالثه" to 3, "الثالث" to 3,
+            "الرابعه" to 4, "الرابع" to 4,
+            "الخامسه" to 5, "الخامس" to 5
+        )[ep]
+    }
+
+    private fun explicitArabicEpisodeMovieMatches(
+        movie: MovieLoadResponse,
+        searchTitle: String,
+        request: HubPlaybackRequest,
+        aliases: List<String>
+    ): Boolean {
+        if (!request.originalLanguage.equals("ar", ignoreCase = true)) return false
+
+        val season = request.season ?: return false
+        val episode = request.episode ?: return false
+        val titles = listOf(searchTitle, movie.name)
+
+        if (titles.any {
+                val s = explicitSeasonNumber(it)
+                s != null && s != season
+            }) return false
+
+        if (titles.any {
+                val ep = explicitArabicEpisodeNumber(it)
+                ep != null && ep != episode
+            }) return false
+
+        // Never use movie-typed search results as arbitrary episodes.  A
+        // genuine episode page must prove both season and episode itself.
+        if (!titles.any {
+                explicitSeasonNumber(it) == season &&
+                    explicitArabicEpisodeNumber(it) == episode
+            }) return false
+
+        return !movie.dataUrl.isNullOrBlank() &&
+            loadedIdentityMatches(movie, request, aliases)
+    }
+
+    private suspend fun loadBestMatch(
+        api: MainAPI,
+        request: HubPlaybackRequest,
+        aliases: List<String>
+    ): MatchedLoad? {
+        val wantSeries =
+            request.season != null &&
+                request.episode != null
+
+        fun correctType(
+            response: LoadResponse?
+        ): Boolean =
+            if (wantSeries) {
+                response is TvSeriesLoadResponse
+            } else {
+                response is MovieLoadResponse
+            }
+
+        val isStreamPlay =
+            isStreamPlayProvider(api)
+
+        if (
+            isStreamPlay &&
+            request.tmdbId != null
+        ) {
+            val directPayload =
+                DirectTmdbRequest(
+                    id = request.tmdbId,
+                    type =
+                        if (wantSeries) {
+                            "tv"
+                        } else {
+                            "movie"
+                        }
+                ).toJson()
+
+            val direct = timed(
+                providerLoadTimeoutFor(
+                    api,
+                    request
+                )
+            ) {
+                api.load(directPayload)
+            }
+
+            if (
+                direct != null &&
+                correctType(direct)
+            ) {
+                return MatchedLoad(direct, direct.name)
+            }
+        }
+
+        if (
+            !request.imdbId.isNullOrBlank() &&
+            api.supportedSyncNames.contains(
+                SyncIdName.Imdb
+            )
+        ) {
+            val directUrl = timed(1800L) {
+                api.getLoadUrl(
+                    SyncIdName.Imdb,
+                    request.imdbId
+                )
+            }
+
+            if (!directUrl.isNullOrBlank()) {
+                val direct = timed(
+                    providerLoadTimeoutFor(
+                        api,
+                        request
+                    )
+                ) {
+                    api.load(directUrl)
+                }
+
+                if (
+                    correctType(direct) &&
+                    direct != null &&
+                    loadedIdentityMatches(
+                        direct,
+                        request,
+                        aliases
+                    )
+                ) {
+                    return MatchedLoad(direct, direct.name)
+                }
+            }
+        }
+
+        val searchResults = searchProvider(
+            api = api,
+            request = request,
+            aliases = aliases,
+            year = request.year,
+            wantSeries = wantSeries,
+            originalLanguage = request.originalLanguage,
+            season = request.season
+        )
+
+        if (searchResults.isEmpty()) {
+            MOOSAPlaybackDiagnostics.update(api, "Search returned no results")
+        }
+
+        val candidates = searchResults
+            .asSequence()
+            .filter {
+                akwamSeasonConfirmed(api, it, request, wantSeries) &&
+                    arabSeedEpisodeConfirmed(api, it, request, wantSeries)
+            }
+            .map {
+                it to strictSearchScore(
+                    it,
+                    aliases,
+                    request.year,
+                    wantSeries,
+                    request.originalLanguage,
+                    request.season
+                )
+            }
+            .filter { (_, score) ->
+                score >= 90
+            }
+            .sortedByDescending {
+                (_, score) -> score
+            }
+            .take(6)
+            .toList()
+
+        if (searchResults.isNotEmpty() && candidates.isEmpty()) {
+            MOOSAPlaybackDiagnostics.update(
+                api,
+                "Search found ${searchResults.size} results, but no matching title/season"
+            )
+        }
+
+        for ((match, _) in candidates) {
+            val loaded = timed(
+                providerLoadTimeoutFor(
+                    api,
+                    request
+                )
+            ) {
+                api.load(match.url)
+            } ?: continue
+
+            if (
+                wantSeries &&
+                loaded is MovieLoadResponse &&
+                explicitArabicEpisodeMovieMatches(
+                    movie = loaded,
+                    searchTitle = match.name,
+                    request = request,
+                    aliases = aliases
+                )
+            ) {
+                return MatchedLoad(loaded, match.name)
+            }
+
+            if (!correctType(loaded)) continue
+
+            if (
+                loadedIdentityMatches(
+                    loaded,
+                    request,
+                    aliases
+                )
+            ) {
+                return MatchedLoad(loaded, match.name)
+            }
+        }
+
+        if (candidates.isNotEmpty()) {
+            MOOSAPlaybackDiagnostics.update(
+                api,
+                "Title matched, but loading/series identity failed"
+            )
+        }
+
+        return null
+    }
+
+    private fun isBundledArabicProvider(api: MainAPI): Boolean =
+        api.javaClass.name.startsWith("com.moosa.hub.bundled.")
+
+    private fun playbackProviders(
+        request: HubPlaybackRequest
+    ): List<MainAPI> {
+        val disabled =
+            MOOSASettingsStore.disabledSources()
+
+        fun hasOwnLoadLinks(api: MainAPI): Boolean =
+            try {
+                api.javaClass.declaredMethods.any {
+                    it.name == "loadLinks"
+                }
+            } catch (_: Throwable) {
+                false
+            }
+
+        val available = apis
+            .filter { api ->
+                api !== this &&
+                    (
+                        api.providerType ==
+                            ProviderType.DirectProvider ||
+                            hasOwnLoadLinks(api)
+                        ) &&
+                    disabled.none { blocked ->
+                        blocked.equals(
+                            api.name,
+                            ignoreCase = true
+                        )
+                    }
+            }
+
+        // Prefer the copies shipped inside MOOSA Hub and avoid running two
+        // implementations with the same provider name.
+        val bundledNames = available
+            .filter(::isBundledArabicProvider)
+            .map { it.name.lowercase() }
+            .toSet()
+
+        val arabicRequest = request.originalLanguage.equals("ar", true)
+        // Only bundled Akwam has user-confirmed Arabic playback.
+        // Leave failed candidates available as standalone providers for
+        // testing, but don't waste the Hub's Arabic lookup budget on them.
+        // This is a temporary quarantine, not a claim that they never work.
+        // TopCinema now has independently probed 1080p/720p HLS segment
+        // delivery on Vidara (2026-10-14). Use it after confirmed Akwam
+        // when the Akwam target is missing or fails, not as a fake mirror.
+        // ArabSeed now parses individual Arabic episode posts and exact
+        // season/episode matches. Re-enable as a strictly verified FALLBACK
+        // after Akwam, not as a simultaneous slow candidate.
+        val experimentalBundled = setOf(
+            "WeCima", "CimaClub", "ShahidWBas"
+        )
+
+        return available
+            .filter { api ->
+                (isBundledArabicProvider(api) ||
+                    api.name.lowercase() !in bundledNames) &&
+                    !(arabicRequest && isBundledArabicProvider(api) &&
+                        api.name in experimentalBundled)
+            }
+            .sortedWith(
+                compareByDescending<MainAPI> {
+                    when {
+                        arabicRequest && isAkwamProvider(it) -> 6
+                        arabicRequest && it.name.equals("ShahidWBas", true) -> 5
+                        arabicRequest && isArabSeedProvider(it) -> 4
+                        isBundledArabicProvider(it) -> 3
+                        arabicRequest && MOOSAArabicBridge.supports(it) -> 2
+                        arabicRequest && it.lang.equals("ar", true) -> 1
+                        else -> 0
+                    }
+                }.thenByDescending {
+                    providerHealth[it.name] ?: 0
+                }.thenByDescending {
+                    if (
+                        !request.imdbId.isNullOrBlank() &&
+                        it.supportedSyncNames.contains(
+                            SyncIdName.Imdb
+                        )
+                    ) {
+                        1
+                    } else {
+                        0
+                    }
+                }
+            )
+    }
+
+    private fun providerCacheKey(
+        request: HubPlaybackRequest,
+        api: MainAPI
+    ): String = listOf(
+        "strict-v15",
+        request.imdbId.orEmpty(),
+        request.tmdbId?.toString().orEmpty(),
+        request.originalLanguage.orEmpty(),
+        normalizeTitle(request.title),
+        request.year?.toString().orEmpty(),
+        request.season?.toString().orEmpty(),
+        request.episode?.toString().orEmpty(),
+        api.name,
+        api.mainUrl
+    ).joinToString("|")
+
+    private suspend fun resolveTargetForProvider(
+        request: HubPlaybackRequest,
+        api: MainAPI,
+        aliases: List<String>,
+        forceRefresh: Boolean = false
+    ): ProviderTarget? {
+        val cacheKey = providerCacheKey(request, api)
+
+        if (forceRefresh) {
+            targetCache.remove(cacheKey)
+        }
+
+        targetCache[cacheKey]?.let { cached ->
+            if (
+                System.currentTimeMillis() -
+                    cached.createdAt <
+                    if (request.originalLanguage.equals("ar", true)) {
+                        3 * 60 * 1000L
+                    } else {
+                        cacheLifetimeMs
+                    }
+            ) {
+                return cached.target
+            }
+            targetCache.remove(cacheKey)
+        }
+
+        if (
+            request.originalLanguage.equals(
+                "ar",
+                ignoreCase = true
+            ) &&
+            !isBundledArabicProvider(api) &&
+            MOOSAArabicBridge.supports(api)
+        ) {
+            // External repositories are unpredictable. Cap the whole bridge,
+            // not just each HTTP call, or six failed searches can stall the
+            // CloudStream loading dialog for over a minute.
+            val bridged = timed(
+                if (MOOSASettingsStore.arabicFastMode()) 14_000L else 25_000L
+            ) {
+                MOOSAArabicBridge.resolve(
+                    api = api,
+                    request = request,
+                    aliases = aliases
+                )
+            }
+
+            if (bridged != null) {
+                targetCache[cacheKey] =
+                    CachedTarget(
+                        createdAt =
+                            System.currentTimeMillis(),
+                        target = bridged
+                    )
+
+                return bridged
+            }
+            // In fast mode the bridge has already tried the relevant Arabic
+            // aliases. Don't repeat the whole search through a second resolver.
+            if (MOOSASettingsStore.arabicFastMode()) return null
+        }
+
+        val isSeries =
+            request.season != null &&
+                request.episode != null
+        val matched = timed(
+            providerResolveTimeoutFor(
+                api,
+                request
+            )
+        ) {
+            loadBestMatch(
+                api = api,
+                request = request,
+                aliases = aliases
+            )
+        } ?: return null
+        val loaded = matched.response
+
+        val data = if (!isSeries || loaded is MovieLoadResponse) {
+            (loaded as? MovieLoadResponse)?.dataUrl
+        } else {
+            val series = loaded as? TvSeriesLoadResponse ?: return null
+            val season = request.season ?: return null
+            val episode = request.episode ?: return null
+
+            fun normalizeDigits(
+                value: String
+            ): String = buildString {
+                value.forEach { ch ->
+                    append(
+                        when (ch) {
+                            '٠', '۰' -> '0'
+                            '١', '۱' -> '1'
+                            '٢', '۲' -> '2'
+                            '٣', '۳' -> '3'
+                            '٤', '۴' -> '4'
+                            '٥', '۵' -> '5'
+                            '٦', '۶' -> '6'
+                            '٧', '۷' -> '7'
+                            '٨', '۸' -> '8'
+                            '٩', '۹' -> '9'
+                            else -> ch
+                        }
+                    )
+                }
+            }
+
+            fun explicitEpisodeNumber(
+                value: String?
+            ): Int? {
+                if (value.isNullOrBlank()) {
+                    return null
+                }
+
+                val normalized =
+                    normalizeDigits(value)
+
+                val patterns = listOf(
+                    Regex(
+                        """(?:الحلقة|الحلقه|حلقة|حلقه)\s*[:#\-]?\s*(\d{1,4})"""
+                    ),
+                    Regex(
+                        """(\d{1,4})\s*(?:الحلقة|الحلقه|حلقة|حلقه)"""
+                    ),
+                    Regex(
+                        """\b(?:episode|ep)\s*[:#\-]?\s*(\d{1,4})\b""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    Regex(
+                        """\bs\d{1,3}\s*e(\d{1,4})\b""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    Regex(
+                        """[?&](?:episode|ep)=(\d{1,4})(?:&|$)""",
+                        RegexOption.IGNORE_CASE
+                    )
+                )
+
+                patterns.forEach { pattern ->
+                    pattern.find(normalized)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.toIntOrNull()
+                        ?.let { return it }
+                }
+
+                return normalized
+                    .trim()
+                    .takeIf {
+                        it.matches(
+                            Regex("""\d{1,4}""")
+                        )
+                    }
+                    ?.toIntOrNull()
+            }
+
+            fun explicitSeasonNumber(
+                value: String?
+            ): Int? {
+                if (value.isNullOrBlank()) {
+                    return null
+                }
+
+                val normalized =
+                    normalizeDigits(value)
+
+                val patterns = listOf(
+                    Regex(
+                        """(?:الموسم|موسم)\s*[:#\-]?\s*(\d{1,3})"""
+                    ),
+                    Regex(
+                        """\bs(\d{1,3})\s*e\d{1,4}\b""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    Regex(
+                        """[?&](?:season|s)=(\d{1,3})(?:&|$)""",
+                        RegexOption.IGNORE_CASE
+                    )
+                )
+
+                patterns.forEach { pattern ->
+                    pattern.find(normalized)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.toIntOrNull()
+                        ?.let { return it }
+                }
+
+                return null
+            }
+
+            fun providerSeason(
+                item: Episode
+            ): Int? =
+                item.season
+                    ?.takeIf {
+                        it in 1..200
+                    }
+                    ?: explicitSeasonNumber(
+                        item.name
+                    )
+                    ?: explicitSeasonNumber(
+                        item.data
+                    )
+
+            fun episodeNumber(
+                item: Episode
+            ): Int? =
+                item.episode
+                    ?.takeIf { it > 0 }
+                    ?: explicitEpisodeNumber(
+                        item.name
+                    )
+                    ?: explicitEpisodeNumber(
+                        item.data
+                    )
+
+            val exact =
+                series.episodes.firstOrNull {
+                    providerSeason(it) == season &&
+                        episodeNumber(it) == episode
+                }
+
+            val explicitSeasons =
+                series.episodes
+                    .mapNotNull(::providerSeason)
+                    .distinct()
+
+            // A provider can number episodes as season 1 inside a
+            // dedicated S5 page.  Remap ONLY if its page/search title
+            // explicitly identifies this requested season.
+            val pageProvesSeason =
+                listOf(series.name, matched.searchTitle).any { title ->
+                    explicitSeasonNumber(title) == season &&
+                        seasonSpecificTitleMatch(title, aliases, season)
+                }
+
+            val seasonless =
+                if (
+                    exact == null &&
+                    (
+                        explicitSeasons.isEmpty() ||
+                            explicitSeasons == listOf(1)
+                    ) &&
+                    (season == 1 || pageProvesSeason)
+                ) {
+                    series.episodes.firstOrNull { item ->
+                        episodeNumber(item) == episode &&
+                            (
+                                providerSeason(item) == null ||
+                                    providerSeason(item) == 1
+                                )
+                    }
+                } else {
+                    null
+                }
+
+            val firstSeasonFallback =
+                if (
+                    exact == null &&
+                    season == 1
+                ) {
+                    series.episodes.firstOrNull {
+                        episodeNumber(it) == episode &&
+                            (
+                                providerSeason(it) == null ||
+                                    providerSeason(it) == 1
+                                )
+                    }
+                } else {
+                    null
+                }
+
+            val episodeData = (
+                exact
+                    ?: seasonless
+                    ?: firstSeasonFallback
+                )?.data
+
+            if (episodeData.isNullOrBlank()) {
+                MOOSAPlaybackDiagnostics.update(
+                    api,
+                    "Series matched, but S${season}E${episode} not confirmed"
+                )
+            }
+            episodeData
+        }?.takeIf { it.isNotBlank() } ?: return null
+
+        val target = ProviderTarget(
+            providerName = api.name,
+            mainUrl = api.mainUrl,
+            data = data
+        )
+
+        targetCache[cacheKey] = CachedTarget(
+            createdAt = System.currentTimeMillis(),
+            target = target
+        )
+
+        return target
+    }
+
+    private fun decodeJsonString(raw: String): String {
+        return tryParseJson<String>("\"$raw\"")
+            ?: raw.replace("\\n", "\n").replace("\\\"", "\"")
+    }
+
+    private fun cleanSynopsis(value: String?): String? {
+        val raw = value
+            ?.replace(Regex("""https?://\S+"""), " ")
+            ?.replace(
+                Regex("""\b[a-fA-F0-9]{16,}\b"""),
+                " "
+            )
+            ?.replace(
+                Regex("""\b[A-Za-z0-9_-]{24,}\b"""),
+                " "
+            )
+            ?.replace("\uFFFD", " ")
+            ?.replace(Regex("""\s+"""), " ")
+            ?.trim()
+            .orEmpty()
+
+        if (raw.length < 20) return null
+
+        val visible = raw.count {
+            it.isLetterOrDigit() ||
+                it in '\u0600'..'\u06FF'
+        }
+
+        val ratio =
+            visible.toDouble() /
+                raw.length.coerceAtLeast(1).toDouble()
+
+        return raw.takeIf {
+            ratio >= 0.45 &&
+                !it.contains("undefined", true) &&
+                !it.contains("null null", true)
+        }
+    }
+
+    private suspend fun resolveArabicSynopsis(
+        tmdbId: Int?,
+        isTv: Boolean,
+        englishFallback: String?
+    ): String? {
+        val id = tmdbId ?: return null
+        val type = if (isTv) "tv" else "movie"
+        val cacheKey = "$type:$id"
+
+        synopsisCache[cacheKey]?.let {
+            cleanSynopsis(it)?.let { clean ->
+                return clean
+            }
+        }
+
+        for (
+            language in
+            listOf("ar-SA", "ar-AE", "ar-EG", "ar")
+        ) {
+            val overview = timed(1800L) {
+                app.get(
+                    "$tmdbApiUrl/$type/$id",
+                    params = mapOf(
+                        "api_key" to tmdbApiKey,
+                        "language" to language
+                    )
+                ).parsedSafe<TmdbOverview>()
+                    ?.overview
+            }
+
+            val clean = cleanSynopsis(overview)
+            if (
+                !clean.isNullOrBlank() &&
+                clean.any {
+                    it in '\u0600'..'\u06FF'
+                }
+            ) {
+                synopsisCache[cacheKey] = clean
+                return clean
+            }
+        }
+
+        val fallback =
+            cleanSynopsis(englishFallback)
+
+        // No machine translation. Prefer published TMDB Arabic text;
+        // otherwise retain the source's original synopsis.
+        val result = fallback
+
+        if (!result.isNullOrBlank()) {
+            synopsisCache[cacheKey] = result
+        }
+
+        return result
+    }
+
+    private suspend fun tmdbDetail(
+        tmdbId: Int?,
+        isTv: Boolean
+    ): TmdbDetail? {
+        val id = tmdbId ?: return null
+        val type = if (isTv) "tv" else "movie"
+
+        return timed(2200L) {
+            app.get(
+                "$tmdbApiUrl/$type/$id",
+                params = mapOf(
+                    "api_key" to tmdbApiKey,
+                    "language" to "en-US"
+                )
+            ).parsedSafe<TmdbDetail>()
+        }
+    }
+
+    private suspend fun tmdbFallbackPoster(
+        tmdbId: Int?,
+        isTv: Boolean,
+        preferredLanguage: String? = null
+    ): String? {
+        val id = tmdbId ?: return null
+        val type = if (isTv) "tv" else "movie"
+
+        val preferred =
+            preferredLanguage
+                ?.lowercase()
+                ?.takeIf {
+                    it == "ar" ||
+                        it == "en"
+                }
+
+        val includeLanguages =
+            buildList {
+                preferred?.let(::add)
+                add("null")
+                if (preferred != "en") {
+                    add("en")
+                }
+            }
+                .distinct()
+                .joinToString(",")
+
+        val images = timed(2600L) {
+            app.get(
+                "$tmdbApiUrl/$type/$id/images",
+                params = mapOf(
+                    "api_key" to tmdbApiKey,
+                    "include_image_language" to
+                        includeLanguages
+                )
+            ).parsedSafe<TmdbImageResponse>()
+        } ?: return null
+
+        fun rank(language: String?): Int =
+            when {
+                preferred != null &&
+                    language.equals(
+                        preferred,
+                        ignoreCase = true
+                    ) -> 4
+
+                language == null -> 3
+
+                language.equals(
+                    "en",
+                    ignoreCase = true
+                ) -> 2
+
+                else -> 1
+            }
+
+        return images.posters
+            .asSequence()
+            .filter {
+                !it.filePath.isNullOrBlank()
+            }
+            .sortedWith(
+                compareByDescending<TmdbImage> {
+                    rank(it.language)
+                }.thenByDescending {
+                    it.voteAverage ?: 0.0
+                }
+            )
+            .mapNotNull { it.filePath }
+            .firstOrNull()
+            ?.let {
+                "https://image.tmdb.org/t/p/w500$it"
+            }
+    }
+
+    override suspend fun load(
+        url: String
+    ): LoadResponse? {
+        val base =
+            super.load(url)
+                ?: return null
+
+        return coroutineScope {
+
+        val inheritedImdbId = base.getImdbId()
+        val tmdbMatch =
+            Regex(
+                """themoviedb\.org/(movie|tv)/(\d+)"""
+            ).find(url)
+
+        val isTv =
+            tmdbMatch
+                ?.groupValues
+                ?.getOrNull(1) == "tv"
+
+        val tmdbId =
+            tmdbMatch
+                ?.groupValues
+                ?.getOrNull(2)
+                ?.toIntOrNull()
+
+        val detailJob = async {
+            tmdbDetail(
+                tmdbId = tmdbId,
+                isTv = isTv
+            )
+        }
+
+        val imdbJob = async {
+            inheritedImdbId
+                ?: resolveTmdbImdb(
+                    tmdbId = tmdbId,
+                    isTv = isTv
+                )
+        }
+
+        val synopsisJob = async {
+            resolveArabicSynopsis(
+                tmdbId = tmdbId,
+                isTv = isTv,
+                englishFallback = base.plot
+            )
+        }
+
+        val detail = detailJob.await()
+        val effectiveImdbId = imdbJob.await()
+        val arabicOverview = synopsisJob.await()
+
+        // The production-language original can be Japanese/Hindi, and an
+        // Arabic production can have a romanized original_name. Preserve
+        // familiar English display names and authentic Arabic script.
+        val arDetail = if (
+            detail?.originalLanguage.equals("ar", ignoreCase = true) &&
+            tmdbId != null
+        ) {
+            timed(2100L) {
+                app.get(
+                    "$tmdbApiUrl/${if (isTv) "tv" else "movie"}/$tmdbId",
+                    params = mapOf(
+                        "api_key" to tmdbApiKey,
+                        "language" to "ar-SA"
+                    )
+                ).parsedSafe<TmdbDetail>()
+            }
+        } else null
+
+        detail?.let { meta ->
+            val preferredName = if (meta.originalLanguage.equals("ar", true)) {
+                listOfNotNull(
+                    arDetail?.title, arDetail?.name,
+                    meta.originalTitle, meta.originalName,
+                    base.name, meta.title, meta.name
+                ).firstOrNull {
+                    Regex("""[\u0600-\u06FF]""").containsMatchIn(it)
+                } ?: listOfNotNull(meta.title, meta.name, base.name,
+                    meta.originalTitle, meta.originalName).firstOrNull()
+            } else {
+                listOfNotNull(meta.title, meta.name, base.name,
+                    meta.originalTitle, meta.originalName).firstOrNull()
+            }
+            if (!preferredName.isNullOrBlank()) base.name = preferredName
+        }
+
+        if (!arabicOverview.isNullOrBlank()) {
+            base.plot = arabicOverview
+        } else {
+            base.plot = cleanSynopsis(base.plot)
+        }
+
+        val reliableScore =
+            detail?.voteAverage
+                ?.takeIf {
+                    it > 0.0 &&
+                        it <= 10.0 &&
+                        (detail.voteCount ?: 0) > 0
+                }
+                ?.let(Score::from10)
+
+        if (reliableScore != null) {
+            base.score = reliableScore
+        }
+
+        val originalPoster =
+            if (
+                detail?.originalLanguage.equals(
+                    "ar",
+                    ignoreCase = true
+                )
+            ) {
+                tmdbFallbackPoster(
+                    tmdbId = tmdbId,
+                    isTv = isTv,
+                    preferredLanguage =
+                        detail?.originalLanguage
+                )
+            } else {
+                null
+            }
+
+        val poster =
+            originalPoster
+                ?: detail?.posterPath
+                    ?.takeIf {
+                        it.isNotBlank()
+                    }
+                    ?.let {
+                        "https://image.tmdb.org/t/p/w500$it"
+                    }
+                ?: base.posterUrl
+                ?: tmdbFallbackPoster(
+                    tmdbId = tmdbId,
+                    isTv = isTv,
+                    preferredLanguage =
+                        detail?.originalLanguage
+                )
+
+        if (!poster.isNullOrBlank()) {
+            base.posterUrl = poster
+        }
+
+        val background =
+            detail?.backdropPath
+                ?.takeIf { it.isNotBlank() }
+                ?.let {
+                    "https://image.tmdb.org/t/p/w1280$it"
+                }
+
+        if (!background.isNullOrBlank()) {
+            base.backgroundPosterUrl = background
+        }
+
+        val detectedOriginalLanguage =
+            detail?.originalLanguage?.takeIf { it.isNotBlank() }
+                ?: if (Regex("""[\u0600-\u06FF]""").containsMatchIn(base.name)) {
+                    "ar"
+                } else null
+
+        // TMDB provides both the official original and official localized
+        // names. Carry them as aliases instead of machine-translating.
+        val sourceTitleAliases = listOfNotNull(
+            detail?.originalTitle, detail?.originalName,
+            detail?.title, detail?.name,
+            arDetail?.title, arDetail?.name,
+            base.name
+        ).filter(String::isNotBlank).distinct()
+
+        when (base) {
+            is MovieLoadResponse -> {
+                base.dataUrl = HubPlaybackRequest(
+                    title = base.name,
+                    year = base.year,
+                    imdbId = effectiveImdbId,
+                    tmdbId = tmdbId,
+                    isTv = false,
+                    originalLanguage = detectedOriginalLanguage,
+                    titleAliases = sourceTitleAliases
+                ).toJson()
+                base
+            }
+
+            is TvSeriesLoadResponse -> {
+                base.episodes.forEach { episode ->
+                    episode.data = HubPlaybackRequest(
+                        title = base.name,
+                        year = base.year,
+                        imdbId = effectiveImdbId,
+                        tmdbId = tmdbId,
+                        isTv = isTv,
+                        originalLanguage = detectedOriginalLanguage,
+                        titleAliases = sourceTitleAliases,
+                        season = episode.season,
+                        episode = episode.episode
+                    ).toJson()
+                }
+                base
+            }
+
+            else -> base
+        }
+        }
+    }
+
+    private fun subtitleLanguage(
+        label: String?,
+        langTag: String? = null
+    ): PreferredSubtitleLanguage {
+        val text = label.orEmpty().lowercase()
+        val tag = langTag.orEmpty().lowercase()
+
+        if (
+            tag == "ar" ||
+            tag.startsWith("ar-") ||
+            text == "ar" ||
+            text == "ara" ||
+            text.contains("arab") ||
+            text.contains("عرب")
+        ) return PreferredSubtitleLanguage.ARABIC
+
+        if (
+            tag == "en" ||
+            tag.startsWith("en-") ||
+            text == "en" ||
+            text == "eng" ||
+            text.contains("english")
+        ) return PreferredSubtitleLanguage.ENGLISH
+
+        return PreferredSubtitleLanguage.OTHER
+    }
+
+    private fun isWeakSubtitleVariant(subtitle: SubtitleFile): Boolean {
+        val text = subtitle.lang.lowercase()
+        return "sdh" in text ||
+            "cc" in text ||
+            "hearing" in text ||
+            "forced" in text ||
+            "auto" in text ||
+            "machine" in text
+    }
+
+    private fun subtitleScore(subtitle: SubtitleFile): Int {
+        val language = subtitleLanguage(subtitle.lang, subtitle.langTag)
+        val text = subtitle.lang.lowercase()
+        val url = subtitle.url.lowercase()
+
+        var score = when (language) {
+            PreferredSubtitleLanguage.ARABIC -> 3000
+            PreferredSubtitleLanguage.ENGLISH -> 1000
+            PreferredSubtitleLanguage.OTHER -> 0
+        }
+
+        if (!isWeakSubtitleVariant(subtitle)) score += 150
+        if ("srt" in url) score += 25
+        if ("vtt" in url) score += 15
+        if ("sdh" in text || "cc" in text || "hearing" in text) score -= 120
+        if ("forced" in text) score -= 100
+        if ("auto" in text || "machine" in text) score -= 180
+
+        return score
+    }
+
+    private fun normalizeExternalSubtitle(
+        sub: StremioSubtitle,
+        source: String
+    ): SubtitleFile? {
+        val url = sub.url?.takeIf { it.startsWith("http") } ?: return null
+
+        return when (subtitleLanguage(sub.lang)) {
+            PreferredSubtitleLanguage.ARABIC ->
+                SubtitleFile("Arabic • $source", url)
+            PreferredSubtitleLanguage.ENGLISH ->
+                SubtitleFile("English • $source", url)
+            PreferredSubtitleLanguage.OTHER -> null
+        }
+    }
+
+    private suspend fun resolveTmdbImdb(
+        tmdbId: Int?,
+        isTv: Boolean
+    ): String? {
+        val id = tmdbId ?: return null
+        val type = if (isTv) "tv" else "movie"
+
+        return timed(1800L) {
+            app.get(
+                "$tmdbApiUrl/$type/$id/external_ids",
+                params = mapOf(
+                    "api_key" to tmdbApiKey
+                )
+            ).parsedSafe<TmdbExternalIds>()
+                ?.imdbId
+                ?.takeIf {
+                    it.startsWith("tt")
+                }
+        }
+    }
+
+    private suspend fun resolveSubtitleImdb(
+        request: HubPlaybackRequest
+    ): String? {
+        request.imdbId
+            ?.takeIf { it.startsWith("tt") }
+            ?.let { return it }
+
+        val tmdbId = request.tmdbId ?: return null
+        val type = if (request.isTv || request.season != null) "tv" else "movie"
+
+        val timeout = if (MOOSASettingsStore.arabicFastMode()) 900L else 1800L
+
+        return timed(timeout) {
+            app.get(
+                "$tmdbApiUrl/$type/$tmdbId/external_ids",
+                params = mapOf("api_key" to tmdbApiKey)
+            ).parsedSafe<TmdbExternalIds>()
+                ?.imdbId
+                ?.takeIf { it.startsWith("tt") }
+        }
+    }
+
+    private fun currentSubtitleTimeoutMs(): Long =
+        if (MOOSASettingsStore.arabicFastMode()) {
+            fastSubtitleTimeoutMs
+        } else {
+            subtitleTimeoutMs
+        }
+
+    private fun subtitleCacheKey(
+        request: HubPlaybackRequest,
+        imdb: String
+    ): String = listOf(
+        imdb,
+        request.season?.toString().orEmpty(),
+        request.episode?.toString().orEmpty()
+    ).joinToString("|")
+
+    private suspend fun fetchOpenSubtitlesV3(
+        request: HubPlaybackRequest,
+        imdb: String
+    ): List<SubtitleFile> {
+        val isSeries = request.season != null && request.episode != null
+        val type = if (isSeries) "series" else "movie"
+        val id = if (isSeries) {
+            "$imdb:${request.season}:${request.episode}"
+        } else {
+            imdb
+        }
+
+        val response = timed(currentSubtitleTimeoutMs()) {
+            app.get(
+                "https://opensubtitles-v3.strem.io/subtitles/$type/$id.json",
+                headers = mapOf("Accept" to "application/json")
+            ).parsedSafe<StremioSubtitleResponse>()
+        } ?: return emptyList()
+
+        return response.subtitles
+            .mapNotNull { normalizeExternalSubtitle(it, "OpenSubtitles") }
+            .distinctBy { it.url }
+    }
+
+    private suspend fun fetchOpenSubtitlesLegacy(
+        request: HubPlaybackRequest,
+        imdb: String
+    ): List<SubtitleFile> {
+        val query = if (
+            request.season != null &&
+            request.episode != null
+        ) {
+            "$imdb ${request.season} ${request.episode}"
+        } else {
+            imdb
+        }
+
+        val payload = base64Encode(
+            """{"id":1,"jsonrpc":"2.0","method":"subtitles.find","params":[null,{"query":{"itemHash":"$query"}}]}""".toByteArray()
+        )
+
+        val response = timed(currentSubtitleTimeoutMs()) {
+            app.get(
+                "https://opensubtitles.strem.io/stremio/v1/q.json?b=$payload"
+            ).parsedSafe<LegacySubtitleResult>()
+        } ?: return emptyList()
+
+        return response.result
+            ?.all
+            .orEmpty()
+            .mapNotNull { normalizeExternalSubtitle(it, "OpenSubtitles Backup") }
+            .distinctBy { it.url }
+    }
+
+    private suspend fun fetchWyzieSubtitles(
+        request: HubPlaybackRequest,
+        imdb: String
+    ): List<SubtitleFile> {
+        val key = MOOSASettingsStore.wyzieKey() ?: return emptyList()
+        val params = buildMap {
+            put("id", imdb)
+            put("source", "all")
+            put("key", key)
+            request.season?.let { put("season", it.toString()) }
+            request.episode?.let { put("episode", it.toString()) }
+        }
+
+        val response = timed(currentSubtitleTimeoutMs()) {
+            app.get(
+                "https://sub.wyzie.ru/search",
+                params = params,
+                headers = mapOf("Accept" to "application/json")
+            ).parsedSafe<Array<WyzieSubtitle>>()
+        } ?: return emptyList()
+
+        return response.mapNotNull { item ->
+            val url = item.url?.takeIf { it.startsWith("http") } ?: return@mapNotNull null
+            val lang = item.language.orEmpty()
+            when (subtitleLanguage(lang, lang)) {
+                PreferredSubtitleLanguage.ARABIC ->
+                    SubtitleFile(item.display ?: "Arabic • Wyzie", url)
+                PreferredSubtitleLanguage.ENGLISH ->
+                    SubtitleFile(item.display ?: "English • Wyzie", url)
+                PreferredSubtitleLanguage.OTHER -> null
+            }
+        }.distinctBy { it.url }
+    }
+
+    private suspend fun fetchSubDlSubtitles(
+        request: HubPlaybackRequest,
+        imdb: String
+    ): List<SubtitleFile> {
+        val key = MOOSASettingsStore.subdlKey() ?: return emptyList()
+        val isSeries = request.season != null && request.episode != null
+
+        val params = buildMap {
+            put("api_key", key)
+            put("imdb_id", imdb)
+            put("type", if (isSeries) "tv" else "movie")
+            put("languages", "AR,EN")
+            put("unpack", "1")
+            put("subs_per_page", "30")
+            put("client", "custom_integration")
+            request.season?.let { put("season_number", it.toString()) }
+            request.episode?.let { put("episode_number", it.toString()) }
+        }
+
+        val response = timed(2200L) {
+            app.get(
+                "https://api.subdl.com/api/v1/subtitles",
+                params = params,
+                headers = mapOf(
+                    "Accept" to "application/json",
+                    "Authorization" to "Bearer $key"
+                )
+            ).parsedSafe<SubDlResponse>()
+        } ?: return emptyList()
+
+        if (!response.status) return emptyList()
+
+        return response.subtitles.flatMap { subtitle ->
+            val parentLang = subtitle.language.orEmpty()
+
+            if (subtitle.unpackFiles.isNotEmpty()) {
+                subtitle.unpackFiles.mapNotNull { file ->
+                    if (
+                        isSeries &&
+                        request.season != null &&
+                        request.episode != null &&
+                        file.season != null &&
+                        file.episode != null &&
+                        (file.season != request.season || file.episode != request.episode)
+                    ) return@mapNotNull null
+
+                    val raw = file.url ?: return@mapNotNull null
+                    val url = if (raw.startsWith("http")) raw
+                    else "https://dl.subdl.com$raw"
+
+                    val language = file.language?.takeIf { it.isNotBlank() } ?: parentLang
+                    val label = when (subtitleLanguage(language, language)) {
+                        PreferredSubtitleLanguage.ARABIC -> "Arabic • SubDL"
+                        PreferredSubtitleLanguage.ENGLISH -> "English • SubDL"
+                        PreferredSubtitleLanguage.OTHER -> return@mapNotNull null
+                    }
+
+                    val detail = file.releaseName
+                        ?: subtitle.releaseName
+                        ?: file.format
+                        ?: "subtitle"
+
+                    SubtitleFile(
+                        lang = "${label} • ${detail}",
+                        url = url
+                    )
+                }
+            } else {
+                val raw = subtitle.url ?: return@flatMap emptyList()
+                if (
+                    raw.endsWith(".zip", ignoreCase = true) ||
+                    raw.endsWith(".rar", ignoreCase = true)
+                ) return@flatMap emptyList()
+
+                val url = if (raw.startsWith("http")) raw
+                else "https://dl.subdl.com$raw"
+
+                val label = when (subtitleLanguage(parentLang, parentLang)) {
+                    PreferredSubtitleLanguage.ARABIC -> "Arabic • SubDL"
+                    PreferredSubtitleLanguage.ENGLISH -> "English • SubDL"
+                    PreferredSubtitleLanguage.OTHER -> return@flatMap emptyList()
+                }
+
+                listOf(
+                    SubtitleFile(
+                        lang = "${label} • ${subtitle.releaseName ?: "subtitle"}",
+                        url = url
+                    )
+                )
+            }
+        }.distinctBy { it.url }
+    }
+
+    private suspend fun fetchExternalSubtitles(
+        request: HubPlaybackRequest,
+        onArabic: (SubtitleFile) -> Unit
+    ): List<SubtitleFile> = coroutineScope {
+        val imdb = resolveSubtitleImdb(request) ?: return@coroutineScope emptyList()
+        val cacheKey = subtitleCacheKey(request, imdb)
+
+        subtitleCache[cacheKey]?.let { cached ->
+            if (System.currentTimeMillis() - cached.createdAt < subtitleCacheLifetimeMs) {
+                cached.items
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+                return@coroutineScope cached.items
+            }
+            subtitleCache.remove(cacheKey)
+        }
+
+        val v3 = async {
+            fetchOpenSubtitlesV3(request, imdb).also { subtitles ->
+                subtitles
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+            }
+        }
+
+        val legacy = async {
+            fetchOpenSubtitlesLegacy(request, imdb).also { subtitles ->
+                subtitles
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+            }
+        }
+
+        val wyzie = async {
+            fetchWyzieSubtitles(request, imdb).also { subtitles ->
+                subtitles
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+            }
+        }
+
+        val subDl = async {
+            fetchSubDlSubtitles(request, imdb).also { subtitles ->
+                subtitles
+                    .filter {
+                        subtitleLanguage(it.lang, it.langTag) ==
+                            PreferredSubtitleLanguage.ARABIC
+                    }
+                    .sortedByDescending(::subtitleScore)
+                    .forEach(onArabic)
+            }
+        }
+
+        val all = (
+            v3.await() +
+                legacy.await() +
+                wyzie.await() +
+                subDl.await()
+            )
+            .distinctBy { it.url }
+            .sortedByDescending(::subtitleScore)
+
+        if (all.isNotEmpty()) {
+            subtitleCache[cacheKey] = CachedSubtitleList(
+                createdAt = System.currentTimeMillis(),
+                items = all
+            )
+        }
+
+        all
+    }
+
+    private fun normalizeNativeSubtitle(
+        subtitle: SubtitleFile,
+        source: String
+    ): SubtitleFile? {
+        return when (subtitleLanguage(subtitle.lang, subtitle.langTag)) {
+            PreferredSubtitleLanguage.ARABIC ->
+                subtitle.copy(lang = "Arabic • $source")
+            PreferredSubtitleLanguage.ENGLISH ->
+                subtitle.copy(lang = "English • $source")
+            PreferredSubtitleLanguage.OTHER -> null
+        }
+    }
+
+    private fun inferQuality(link: ExtractorLink): Int =
+        MOOSAQualityPolicy.height(link) ?: 0
+
+    private fun validStreamingUrl(url: String): Boolean =
+        url.startsWith("https://", ignoreCase = true) ||
+            url.startsWith("http://", ignoreCase = true)
+
+    private fun linkKey(link: ExtractorLink): String =
+        "${link.url}|${link.referer}|${link.headers.hashCode()}"
+
+
+    private fun linksTimeoutFor(
+        api: MainAPI,
+        request: HubPlaybackRequest
+    ): Long {
+        val label =
+            "${api.name} ${api.mainUrl} ${api.javaClass.name}"
+                .lowercase()
+
+        return when {
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isAkwamProvider(api) -> 23000L
+
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isArabicProvider(api) -> 11000L
+
+            isStreamPlayProvider(api) ->
+                streamPlayLinksTimeoutMs
+
+            "fasel" in label ||
+                "فاصل" in label ->
+                75_000L
+
+            "topcinema" in label ||
+                "top cinema" in label ->
+                55_000L
+
+            "akwam" in label ||
+                "اكوام" in label ->
+                45_000L
+
+            "arabseed" in label ||
+                "arab seed" in label ->
+                60_000L
+
+            "wecima" in label ||
+                "we cima" in label ||
+                "cimaclub" in label ||
+                "cima club" in label ->
+                45_000L
+
+            isArabicProvider(api) &&
+                request.isTv ->
+                40_000L
+
+            isArabicProvider(api) ->
+                30_000L
+
+            else ->
+                providerLinksTimeoutMs
+        }
+    }
+
+
+    private suspend fun verifyStreamingLink(link: ExtractorLink): Boolean {
+        val result = timed(linkProbeTimeoutMs) {
+            MOOSAServerRegistry.testLink(link)
+        } ?: false
+
+        MOOSAServerRegistry.recordResult(link, result)
+        return result
+    }
+
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean = coroutineScope {
+        val request = tryParseJson<HubPlaybackRequest>(data) ?: return@coroutineScope false
+        val allProviders = playbackProviders(request)
+        val fastArabic = request.originalLanguage.equals("ar", true) &&
+            MOOSASettingsStore.arabicFastMode()
+
+        // Collect independent Arabic alternatives in one bounded parallel batch.
+        // Stopping immediately at the first Akwam result hid ArabSeed/TopCinema,
+        // even when a different host would stream more smoothly.
+        val providers = if (fastArabic) {
+            val priority = allProviders.filter { api ->
+                isAkwamProvider(api) || isArabSeedProvider(api) ||
+                    (isBundledArabicProvider(api) && api.name.equals("TopCinema", true))
+            }
+            val extra = allProviders.filterNot { it in priority }
+                .filter { api -> api.lang.equals("ar", true) || MOOSAArabicBridge.supports(api) }
+                .take(1)
+            (priority + extra).distinctBy { it.name.lowercase() }.take(4)
+        } else allProviders
+
+        MOOSAPlaybackDiagnostics.start(
+            request,
+            providers
+        )
+
+        if (providers.isEmpty()) {
+            if (
+                request.originalLanguage.equals(
+                    "ar",
+                    ignoreCase = true
+                )
+            ) {
+                MOOSAProgress.failureReport(
+                    MOOSAPlaybackDiagnostics.report()
+                )
+            }
+            return@coroutineScope false
+        }
+
+        MOOSAProgress.start(providers.size)
+
+        val aliasesJob = async {
+            // Skip four TMDB alias calls and season metadata when the
+            // Arabic title itself is already available. This costs multiple
+            // seconds before even the first Akwam search starts.
+            if (
+                fastArabic &&
+                Regex("""[\u0600-\u06FF]""").containsMatchIn(request.title)
+            ) {
+                buildList {
+                    add(request.title)
+                    addAll(request.titleAliases)
+                    request.season?.let { season ->
+                        add("${request.title} الموسم $season")
+                        arabicSeasonWord(season)?.let { ordinal ->
+                            add("${request.title} الموسم $ordinal")
+                        }
+                        add("${request.title} ج$season")
+                        add("${request.title} $season")
+                    }
+                }
+            } else {
+                (request.titleAliases + playbackAliases(request))
+                    .distinctBy(::canonicalTitle)
+            }
+        }
+
+        val seenLinks = ConcurrentHashMap.newKeySet<String>()
+        val seenSubtitles = ConcurrentHashMap.newKeySet<String>()
+        val nativeSubtitles =
+            Collections.synchronizedList(
+                mutableListOf<SubtitleFile>()
+            )
+        val emittedLink = AtomicBoolean(false)
+        val completedProviders = AtomicInteger(0)
+        val shownLinks = AtomicInteger(0)
+        val callbackLock = Any()
+
+        val externalSubtitleJob = async {
+            timed(6500L) {
+                fetchExternalSubtitles(request) { subtitle ->
+                    if (
+                        seenSubtitles.add(
+                            subtitle.url
+                        )
+                    ) {
+                        subtitleCallback(
+                            subtitle
+                        )
+                    }
+                }
+            } ?: emptyList()
+        }
+
+        val aliases = aliasesJob.await()
+
+        // Resolve up to three Arabic sources together; finish as soon as the
+        // initial batch has returned so no fourth slow source blocks playback.
+        val providerBatchSize = if (fastArabic) 3
+            else MOOSASettingsStore.providerConcurrency()
+
+        for (batch in providers.chunked(providerBatchSize)) {
+            batch.amap { api ->
+                var providerWorked = false
+                val candidateLinks =
+                    Collections.synchronizedList(mutableListOf<ExtractorLink>())
+                val extracted = AtomicInteger(0)
+                val invalidUrls = AtomicInteger(0)
+                val disabledUrls = AtomicInteger(0)
+                val downloadNamesSkipped = AtomicInteger(0)
+                val lowQualityUrls = AtomicInteger(0)
+                val unknownQualityUrls = AtomicInteger(0)
+                val failedProbes = AtomicInteger(0)
+                val acceptedLinks = AtomicInteger(0)
+                val failedReasons = ConcurrentHashMap<String, AtomicInteger>()
+                val emittedAkwamMirrors =
+                    ConcurrentHashMap.newKeySet<String>()
+
+                try {
+                    MOOSAPlaybackDiagnostics.update(
+                        api,
+                        if (MOOSAArabicBridge.supports(api)) {
+                            "Starting Arabic bridge"
+                        } else {
+                            "Resolving provider"
+                        }
+                    )
+
+                    val target =
+                        resolveTargetForProvider(
+                            request,
+                            api,
+                            aliases
+                        )
+
+                    if (target != null) {
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "Target found • requesting links"
+                        )
+                        fun collectLink(link: ExtractorLink) {
+                            extracted.incrementAndGet()
+                            if (!validStreamingUrl(link.url)) {
+                                invalidUrls.incrementAndGet()
+                                return
+                            }
+                            // Source/server display names, never the URL path:
+                            // Akwam's valid MP4 can be hosted via /download/.
+                            if (MOOSAQualityPolicy.hasForbiddenLabel(link)) {
+                                downloadNamesSkipped.incrementAndGet()
+                                return
+                            }
+
+                            // Reject SD and unknown links BEFORE probing them.
+                            // Displaying only HD is not enough: SD should not
+                            // consume time, network requests or source slots.
+                            val height = MOOSAQualityPolicy.height(link)
+                            if (height == null || height <= 0) {
+                                unknownQualityUrls.incrementAndGet()
+                                return
+                            }
+                            if (!MOOSAQualityPolicy.acceptsHeight(height)) {
+                                lowQualityUrls.incrementAndGet()
+                                return
+                            }
+                            if (link.quality <= 0) link.quality = height
+
+                            // Only eligible playback names and 720p+ streams
+                            // reach network probing or the visible source list.
+                            MOOSAServerRegistry.record(link)
+                            if (MOOSAServerRegistry.isDisabled(link)) {
+                                disabledUrls.incrementAndGet()
+                                return
+                            }
+                            candidateLinks += link
+                        }
+
+                        timed(linksTimeoutFor(api, request)) {
+                            api.loadLinks(
+                                target.data,
+                                isCasting,
+                                { subtitle ->
+                                    normalizeNativeSubtitle(subtitle, api.name)?.let { normalized ->
+                                        if (normalized.url.isBlank()) return@let
+
+                                        when (
+                                            subtitleLanguage(
+                                                normalized.lang,
+                                                normalized.langTag
+                                            )
+                                        ) {
+                                            PreferredSubtitleLanguage.ARABIC -> {
+                                                if (seenSubtitles.add(normalized.url)) {
+                                                    subtitleCallback(normalized)
+                                                }
+                                            }
+
+                                            PreferredSubtitleLanguage.ENGLISH -> {
+                                                nativeSubtitles += normalized
+                                            }
+
+                                            PreferredSubtitleLanguage.OTHER -> Unit
+                                        }
+                                    }
+                                },
+                                { link ->
+                                    collectLink(link)
+                                }
+                            )
+                        }
+
+                        if (
+                            candidateLinks.isEmpty() &&
+                            !isStreamPlayProvider(api) &&
+                            !fastArabic
+                        ) {
+                            val freshTarget =
+                                resolveTargetForProvider(
+                                    request = request,
+                                    api = api,
+                                    aliases = aliases,
+                                    forceRefresh = true
+                                )
+
+                            if (freshTarget != null) {
+                                timed(linksTimeoutFor(api, request)) {
+                                    api.loadLinks(
+                                        freshTarget.data,
+                                        isCasting,
+                                        { subtitle ->
+                                            normalizeNativeSubtitle(
+                                                subtitle,
+                                                api.name
+                                            )?.let { normalized ->
+                                                if (
+                                                    normalized.url.isBlank()
+                                                ) {
+                                                    return@let
+                                                }
+
+                                                when (
+                                                    subtitleLanguage(
+                                                        normalized.lang,
+                                                        normalized.langTag
+                                                    )
+                                                ) {
+                                                    PreferredSubtitleLanguage.ARABIC -> {
+                                                        if (
+                                                            seenSubtitles.add(
+                                                                normalized.url
+                                                            )
+                                                        ) {
+                                                            subtitleCallback(
+                                                                normalized
+                                                            )
+                                                        }
+                                                    }
+
+                                                    PreferredSubtitleLanguage.ENGLISH -> {
+                                                        nativeSubtitles +=
+                                                            normalized
+                                                    }
+
+                                                    PreferredSubtitleLanguage.OTHER ->
+                                                        Unit
+                                                }
+                                            }
+                                        },
+                                        { link ->
+                                            collectLink(link)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "Episode matched: ${extracted.get()} extracted, " +
+                                "${candidateLinks.size} candidates, " +
+                                "${invalidUrls.get()} invalid, ${disabledUrls.get()} disabled, " +
+                                "${downloadNamesSkipped.get()} downloads skipped, " +
+                                "${lowQualityUrls.get()} SD skipped, ${unknownQualityUrls.get()} unknown skipped"
+                        )
+
+                        val allCandidates = candidateLinks
+                            .distinctBy(::linkKey)
+
+                        // Akwam Downet HTTPS still uses an untrusted TLS
+                        // certificate on the tested path. If Akwam also
+                        // supplied the exact HTTP mirror, don't spend up to
+                        // two 6.5-second TLS probes on the known-bad URL.
+                        // Keep HTTPS for every other host and for Downet
+                        // links with no HTTP alternative.
+                        val directHttpMirrors = allCandidates
+                            .asSequence()
+                            .filter {
+                                it.url.startsWith("http://", true) &&
+                                    it.url.contains(".downet.net/", true)
+                            }
+                            .map { it.url }
+                            .toSet()
+
+                        val candidates = allCandidates
+                            .filterNot { link ->
+                                link.url.startsWith("https://", true) &&
+                                    link.url.contains(".downet.net/", true) &&
+                                    link.url.replaceFirst(
+                                        "https://",
+                                        "http://",
+                                        ignoreCase = true
+                                    ) in directHttpMirrors
+                            }
+                            .sortedWith(
+                                compareByDescending<ExtractorLink>(::inferQuality)
+                                    // When equal-resolution mirrors exist,
+                                    // prefer servers that transferred the
+                                    // previous 64 KiB test faster on THIS
+                                    // device; never demote 4K below 1080p.
+                                    .thenByDescending {
+                                        MOOSAServerRegistry.sampledMbps(it)
+                                            ?: 0.0
+                                    }
+                            )
+
+                        for (linkBatch in candidates.chunked(linkProbeBatchSize)) {
+                            linkBatch.amap { link ->
+                                val key = linkKey(link)
+                                if (seenLinks.contains(key)) {
+                                    return@amap false
+                                }
+
+                                // Do not allow untested Arabic source mirrors:
+                                // fallback URLs previously bypassed verification,
+                                // then were shown even after the probe failed.
+                                val verified =
+                                    (
+                                        !request.originalLanguage.equals("ar", true) &&
+                                            !MOOSASettingsStore.verifyLinks()
+                                        ) ||
+                                        verifyStreamingLink(link)
+
+                                val mirrorIdentity =
+                                    if (api.name.equals("Akwam", true)) {
+                                        val host = runCatching {
+                                            java.net.URI(link.url).host
+                                                ?.lowercase()
+                                                .orEmpty()
+                                        }.getOrDefault("")
+                                        if (
+                                            host == "downet.net" ||
+                                            host.endsWith(".downet.net")
+                                        ) {
+                                            "${link.url.substringBefore("://").lowercase()}|$host|${inferQuality(link)}"
+                                        } else null
+                                    } else null
+
+                                if (
+                                    verified &&
+                                    seenLinks.add(key) &&
+                                    (
+                                        mirrorIdentity == null ||
+                                            emittedAkwamMirrors.add(mirrorIdentity)
+                                        )
+                                ) {
+                                    providerWorked = true
+                                    acceptedLinks.incrementAndGet()
+                                    emittedLink.set(true)
+                                    shownLinks.incrementAndGet()
+                                    MOOSAProgress.linkAvailable()
+
+                                    synchronized(callbackLock) {
+                                        callback(link)
+                                    }
+                                    true
+                                } else {
+                                    if (!verified) {
+                                        failedProbes.incrementAndGet()
+                                        val reason = MOOSAServerRegistry
+                                            .lastProbeReason(link)
+                                            ?: "Unverified link"
+                                        failedReasons
+                                            .computeIfAbsent(reason) { AtomicInteger(0) }
+                                            .incrementAndGet()
+                                    }
+                                    false
+                                }
+                            }
+                        }
+                    } else {
+                        val lastStatus = MOOSAPlaybackDiagnostics.status(api)
+                        if (
+                            lastStatus == null ||
+                            lastStatus == "Resolving provider" ||
+                            lastStatus == "Starting Arabic bridge"
+                        ) {
+                            MOOSAPlaybackDiagnostics.update(
+                                api,
+                                "No matching page or episode"
+                            )
+                        }
+                    }
+
+                    if (providerWorked) {
+                        val measured = candidateLinks
+                            .mapNotNull(MOOSAServerRegistry::sampledMbps)
+                            .maxOrNull()
+                        val quality = candidateLinks.maxOfOrNull(::inferQuality) ?: 0
+                        val rateInfo = measured?.let { speed ->
+                            val label = String.format(
+                                java.util.Locale.US, "%.1f", speed
+                            )
+                            val mayBuffer = (quality >= 2160 && speed < 8.0) ||
+                                (quality >= 1080 && quality < 2160 && speed < 2.5) ||
+                                (quality in 720..1079 && speed < 1.0)
+                            " • CDN sample $label Mbps" +
+                                if (mayBuffer) " (possible buffering)" else ""
+                        }.orEmpty()
+                        MOOSAPlaybackDiagnostics.update(
+                            api,
+                            "Playback ready • ${acceptedLinks.get()} verified, " +
+                                "${failedProbes.get()} probe failures" + rateInfo
+                        )
+
+                        providerHealth.merge(api.name, 3) { old, add ->
+                            (old + add).coerceAtMost(24)
+                        }
+                    } else {
+                        // Keep the original matching/search diagnostic when
+                        // no target was found. Don't overwrite it with "No links".
+                        if (target != null) {
+                            val reportStatus = when {
+                                extracted.get() == 0 ->
+                                    "Episode matched • extractor returned 0 links"
+                                candidateLinks.isEmpty() ->
+                                    "Episode matched • ${extracted.get()} URLs, " +
+                                        "${invalidUrls.get()} invalid, " +
+                                        "${disabledUrls.get()} disabled, " +
+                                        "${downloadNamesSkipped.get()} downloads skipped, " +
+                                        "${lowQualityUrls.get()} SD skipped, " +
+                                        "${unknownQualityUrls.get()} unknown skipped"
+                                else -> {
+                                    val reasons = failedReasons.entries
+                                        .sortedByDescending { it.value.get() }
+                                        .take(2)
+                                        .joinToString("; ") {
+                                            "${it.key} x${it.value.get()}"
+                                        }
+                                    "Episode matched • ${candidateLinks.distinctBy(::linkKey).size} candidates; " +
+                                        "${failedProbes.get()} failed checks, 0 confirmed" +
+                                        if (reasons.isNotBlank()) " • $reasons" else ""
+                                }
+                            }
+                            MOOSAPlaybackDiagnostics.update(api, reportStatus)
+                        }
+
+                        providerHealth.merge(api.name, -2) { old, add ->
+                            (old + add).coerceAtLeast(-12)
+                        }
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    logError(error)
+
+                    MOOSAPlaybackDiagnostics.update(
+                        api,
+                        "Error • ${error.javaClass.simpleName}"
+                    )
+
+                    providerHealth.merge(api.name, -2) { old, add ->
+                        (old + add).coerceAtLeast(-12)
+                    }
+                } finally {
+                    MOOSAProgress.providerProgress(
+                        completedProviders.incrementAndGet(),
+                        providers.size,
+                        shownLinks.get()
+                    )
+                }
+
+                providerWorked
+            }
+
+            // Native CloudStream only finishes its loading UI when
+            // loadLinks() returns. Stop after one confirmed fast-lane
+            // source rather than keeping it searching for dead mirrors.
+            if (fastArabic && shownLinks.get() > 0) {
+                break
+            }
+        }
+
+        MOOSAProgress.serversReady(shownLinks.get())
+        MOOSAProgress.subtitles()
+
+        val externalSubtitles =
+            if (fastArabic && emittedLink.get()) {
+                // Once an Arabic-title video is verified, don't keep the
+                // native loading dialog open for unrelated subtitle APIs.
+                val ready = withTimeoutOrNull(800L) {
+                    externalSubtitleJob.await()
+                }.orEmpty()
+                externalSubtitleJob.cancel()
+                ready
+            } else {
+                externalSubtitleJob.await()
+            }
+
+        val remainingSubtitles = (
+            nativeSubtitles +
+                externalSubtitles.filter {
+                    subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ENGLISH
+                }
+            )
+            .filter {
+                subtitleLanguage(it.lang, it.langTag) != PreferredSubtitleLanguage.OTHER
+            }
+            .distinctBy { it.url }
+            .sortedByDescending(::subtitleScore)
+
+        remainingSubtitles.forEach { subtitle ->
+            if (seenSubtitles.add(subtitle.url)) {
+                try {
+                    subtitleCallback(subtitle)
+                } catch (error: Throwable) {
+                    logError(error)
+                }
+            }
+        }
+
+        MOOSAProgress.finish(shownLinks.get())
+
+        if (
+            shownLinks.get() == 0 &&
+            request.originalLanguage.equals(
+                "ar",
+                ignoreCase = true
+            )
+        ) {
+            MOOSAProgress.failureReport(
+                MOOSAPlaybackDiagnostics.report()
+            )
+        }
+
+        emittedLink.get()
+    }
+
+    private suspend fun tmdbHome(
+        path: String,
+        page: Int,
+        isTv: Boolean,
+        language: String = "en-US",
+        extra: Map<String, String> = emptyMap()
+    ): List<SearchResponse> {
+        val params = buildMap {
+            put("api_key", tmdbApiKey)
+            put("page", page.toString())
+            put("language", language)
+            put("include_adult", "false")
+            putAll(extra)
+        }
+
+        val data = timed(3500L) {
+            app.get(
+                "$tmdbApiUrl$path",
+                params = params
+            ).parsedSafe<TmdbHomePage>()
+        } ?: return emptyList()
+
+        return data.results.mapNotNull { item ->
+            val id = item.id ?: return@mapNotNull null
+            val title = item.displayTitle.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val url = if (isTv) {
+                "https://www.themoviedb.org/tv/$id"
+            } else {
+                "https://www.themoviedb.org/movie/$id"
+            }
+            val poster = item.posterPath?.let {
+                "https://image.tmdb.org/t/p/w500$it"
+            }
+
+            if (isTv) {
+                newTvSeriesSearchResponse(
+                    name = title,
+                    url = url,
+                    type = TvType.TvSeries,
+                    fix = false
+                ) {
+                    this.id = id
+                    this.posterUrl = poster
+                    this.year = item.year
+                    this.score = item.voteAverage?.let { Score.from10(it) }
+                }
+            } else {
+                newMovieSearchResponse(
+                    name = title,
+                    url = url,
+                    type = TvType.Movie,
+                    fix = false
+                ) {
+                    this.id = id
+                    this.posterUrl = poster
+                    this.year = item.year
+                    this.score = item.voteAverage?.let { Score.from10(it) }
+                }
+            }
+        }
+    }
+
+    override suspend fun getMainPage(
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse = MOOSACatalog.home(this, page, request)
+
+    override suspend fun search(
+        query: String,
+        page: Int
+    ): SearchResponseList? = MOOSACatalog.search(this, query, page)
+}
