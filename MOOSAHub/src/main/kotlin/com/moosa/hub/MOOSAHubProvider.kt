@@ -1132,6 +1132,38 @@ class MOOSAHubProvider : TmdbProvider() {
             else -> providerResolveTimeoutMs
         }
 
+    private fun isAkwamProvider(api: MainAPI): Boolean =
+        api.name.equals("Akwam", ignoreCase = true) ||
+            api.javaClass.name.endsWith(".AkwamProvider")
+
+    // Akwam lists each season as a separate series page. A plain base-title
+    // hit is season 1, not evidence that seasons 2/3 were found. Keep searching
+    // until a result explicitly identifies the requested season.
+    private fun akwamSeasonConfirmed(
+        api: MainAPI,
+        result: SearchResponse,
+        request: HubPlaybackRequest,
+        wantSeries: Boolean
+    ): Boolean {
+        if (
+            !isAkwamProvider(api) ||
+            !wantSeries ||
+            !request.originalLanguage.equals("ar", ignoreCase = true)
+        ) return true
+
+        val season = request.season ?: return true
+        val explicit = explicitSeasonNumber(result.name)
+        return if (season == 1) {
+            explicit == 1 ||
+                (
+                    explicit == null &&
+                        canonicalTitle(result.name) == canonicalTitle(request.title)
+                )
+        } else {
+            explicit == season
+        }
+    }
+
     private suspend fun searchProvider(
         api: MainAPI,
         request: HubPlaybackRequest,
@@ -1178,14 +1210,15 @@ class MOOSAHubProvider : TmdbProvider() {
             results += first
 
             val hasStrict = first.any {
-                strictSearchScore(
-                    it,
-                    aliases,
-                    year,
-                    wantSeries,
-                    originalLanguage,
-                    season
-                ) >= 90
+                akwamSeasonConfirmed(api, it, request, wantSeries) &&
+                    strictSearchScore(
+                        it,
+                        aliases,
+                        year,
+                        wantSeries,
+                        originalLanguage,
+                        season
+                    ) >= 90
             }
 
             if (hasStrict) break
@@ -1206,14 +1239,15 @@ class MOOSAHubProvider : TmdbProvider() {
 
                 if (
                     second.any {
-                        strictSearchScore(
-                            it,
-                            aliases,
-                            year,
-                            wantSeries,
-                            originalLanguage,
-                            season
-                        ) >= 90
+                        akwamSeasonConfirmed(api, it, request, wantSeries) &&
+                            strictSearchScore(
+                                it,
+                                aliases,
+                                year,
+                                wantSeries,
+                                originalLanguage,
+                                season
+                            ) >= 90
                     }
                 ) {
                     break
@@ -1386,6 +1420,9 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val candidates = searchResults
             .asSequence()
+            .filter {
+                akwamSeasonConfirmed(api, it, request, wantSeries)
+            }
             .map {
                 it to strictSearchScore(
                     it,
@@ -1551,7 +1588,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v13",
+        "strict-v14",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
