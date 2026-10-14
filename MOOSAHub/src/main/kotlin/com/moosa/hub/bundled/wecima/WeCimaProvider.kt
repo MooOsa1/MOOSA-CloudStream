@@ -9,6 +9,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import com.moosa.hub.MOOSAQualityPolicy
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
@@ -553,8 +554,7 @@ class WeCimaProvider : MainAPI() {
                 target.contains(".mp4", true)
             ) {
                 val isHls = target.contains(".m3u8", true)
-                callback(
-                    newExtractorLink(
+                val directLink = newExtractorLink(
                         source = name,
                         name = "$name Direct",
                         url = target,
@@ -571,8 +571,10 @@ class WeCimaProvider : MainAPI() {
                                 ?.toIntOrNull()
                                 ?: Qualities.Unknown.value
                     }
-                )
-                emitted = true
+                if (MOOSAQualityPolicy.accepts(directLink)) {
+                    callback(directLink)
+                    emitted = true
+                }
                 continue
             }
 
@@ -582,7 +584,10 @@ class WeCimaProvider : MainAPI() {
                     data,
                     subtitleCallback
                 ) { link ->
-                    if (seen.add(link.url)) {
+                    if (
+                        MOOSAQualityPolicy.accepts(link) &&
+                        seen.add(link.url)
+                    ) {
                         callback(link)
                         emitted = true
                     }
