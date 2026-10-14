@@ -73,5 +73,26 @@ title=soup.select_one("h1.entry-title,h1")
 print("SERIES_LOAD","HTTP",status,"path",urlparse(final).path[:110],
       "title",title.get_text(" ",strip=True)[:80] if title else "",
       "episode_links",len(set(eps)),flush=True)
-assert status==200, "Akwam Arabic series detail page failed"
-print("PASS: Arabic catalog pages and native series item can be requested")
+assert status==200 and len(eps)>0, "Akwam Arabic series episodes were not discovered"
+# Load the actual first linked episode, not a guessed season/episode slug.
+episode_url=eps[0]
+status,final,body=fetch(episode_url)
+episode_doc=BeautifulSoup(body,"html.parser")
+episode_title=episode_doc.select_one("h1.entry-title,h1")
+quality_tabs=episode_doc.select("div.tab-content.quality")
+download_links=episode_doc.select("a[href*='/download/'],a[href*='/watch/']")
+print("EPISODE_LOAD","HTTP",status,"path",urlparse(final).path[:120],
+      "title",episode_title.get_text(" ",strip=True)[:95] if episode_title else "",
+      "quality_tabs",len(quality_tabs),"watch_download_links",len(download_links),flush=True)
+assert status==200 and episode_title is not None, "Akwam Arabic episode detail page failed"
+
+# Movie and episode detail pages are loaded directly from their native links.
+movie_url=next(iter(checked["أفلام عربية"]))
+status,final,body=fetch(movie_url)
+movie_doc=BeautifulSoup(body,"html.parser")
+movie_title=movie_doc.select_one("h1.entry-title,h1")
+print("MOVIE_LOAD","HTTP",status,"path",urlparse(final).path[:120],
+      "title",movie_title.get_text(" ",strip=True)[:95] if movie_title else "",
+      "quality_tabs",len(movie_doc.select("div.tab-content.quality")),flush=True)
+assert status==200 and movie_title is not None, "Akwam Arabic movie detail page failed"
+print("PASS: native Arabic movie/series catalogs, title search, series episodes, episode and movie detail pages")
