@@ -80,12 +80,19 @@ class ArabSeedProvider : MainAPI() {
             }
             ?.let { normalizeUrl(it) }
 
-    private fun looksLikeMovie(url: String): Boolean {
+    private fun looksLikeMovie(url: String, title: String = ""): Boolean {
         val decoded = runCatching {
             URLDecoder.decode(url, "UTF-8")
         }.getOrDefault(url)
+        val cleanTitle = title.trim()
+        // ArabSeed indexes single Arabic episodes as posts, not full
+        // seasons. Don't identify them as movies solely by their post path.
+        if (Regex("""(?:الحلقة|الحلقه|حلقة|episode)\\s*\\d""",
+                RegexOption.IGNORE_CASE).containsMatchIn(cleanTitle)) return false
         return decoded.contains("فيلم-") ||
-            decoded.contains("/movie", ignoreCase = true)
+            decoded.contains("/movie", ignoreCase = true) ||
+            cleanTitle.startsWith("فيلم ") ||
+            cleanTitle.startsWith("Film ", ignoreCase = true)
     }
 
     private fun contentCards(html: String): List<SearchResponse> {
@@ -109,7 +116,7 @@ class ArabSeedProvider : MainAPI() {
                 if (title.isBlank()) return@mapNotNull null
 
                 val poster = anchor.poster()
-                if (looksLikeMovie(href)) {
+                if (looksLikeMovie(href, title)) {
                     newMovieSearchResponse(title, href, TvType.Movie) {
                         posterUrl = poster
                     }
@@ -296,7 +303,40 @@ class ArabSeedProvider : MainAPI() {
             }
             .distinctBy { it.first }
 
-        if (episodeAnchors.isEmpty() || looksLikeMovie(postUrl)) {
+        // ArabSeed's search index consists largely of individual episode
+        // posts. The old provider converted every post lacking a related
+        // episode list to a MOVIE, making the Hub reject Arabic series.
+        val numberedEpisode = Regex(
+            """(?i)(?:الحلقة|الحلقه|حلقة|episode|ep)\\s*[:#-]?\\s*(\\d{1,4})"""
+        ).find(title.normalizedDigits())
+            ?.groupValues?.getOrNull(1)?.toIntOrNull()
+        val isEpisodePost = numberedEpisode != null &&
+            !looksLikeMovie(postUrl, title)
+
+        if (isEpisodePost && episodeAnchors.isEmpty()) {
+            val season = pageSeason ?: 1
+            val seriesName = title
+                .replace(Regex(
+                    """(?i)\\s*(?:الموسم|موسم|season|الجزء|جزء)\\s*(?:\\d{1,2}|الاول|الأول|الثاني|الثالث|الرابع|الخامس|السادس).*"""
+                ), "")
+                .replace(Regex("""(?i)\\s*(?:الحلقة|الحلقه|حلقة|episode|ep)\\s*\\d{1,4}.*"""), "")
+                .replace(Regex("""^\\s*مسلسل\\s+"""), "")
+                .trim().ifBlank { title }
+
+            return newTvSeriesLoadResponse(
+                seriesName, postUrl, TvType.TvSeries,
+                listOf(newEpisode(postUrl) {
+                    name = "الحلقة $numberedEpisode"
+                    episode = numberedEpisode
+                    this.season = season
+                })
+            ) {
+                posterUrl = poster
+                this.plot = plot
+            }
+        }
+
+        if (episodeAnchors.isEmpty() || looksLikeMovie(postUrl, title)) {
             return newMovieLoadResponse(
                 title,
                 postUrl,
