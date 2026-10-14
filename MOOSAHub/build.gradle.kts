@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 60
+version = 61
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v60: hard 720p+ floor across bundled playback, 1080p first, new ShahidWBas candidate, prioritize verified Arabic sources, 3-minute Arabic target refresh
+// v61: hide all Download/تحميل/داونلود-named servers, keep 720p+ only, quarantine nonworking Arabic built-ins, preserve Akwam playback
