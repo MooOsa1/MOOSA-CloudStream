@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Public Akwam episode/CDN smoke probe. Never prints signed media URLs."""
 import html
+import socket
 from html.parser import HTMLParser
 from urllib.request import Request, urlopen
 from urllib.parse import urljoin, urlparse, quote
@@ -41,7 +42,8 @@ def request(url, referer=None, byterange=None):
     except HTTPError as error:
         return {"status": error.code, "error": f"HTTP {error.code}"}
     except (URLError, TimeoutError, OSError) as error:
-        return {"status": 0, "error": type(error).__name__}
+        detail = str(getattr(error, "reason", error)).replace("\\n", " ")[:150]
+        return {"status": 0, "error": f"{type(error).__name__}: {detail}"}
 
 def show(label, result):
     print(
@@ -67,7 +69,14 @@ links = [
 print(f"Downet download targets found: {len(links)}")
 if links:
     target = links[0]
-    print(f"First media basename: {urlparse(target).path.rsplit('/',1)[-1]}")
+    media = urlparse(target)
+    print(f"Download URL scheme: {media.scheme}; host: {media.hostname}")
+    try:
+        addresses = socket.getaddrinfo(media.hostname, 443)
+        print(f"DNS resolved: {len(addresses)} address(es)")
+    except OSError as error:
+        print(f"DNS failed: {type(error).__name__}: {str(error)[:120]}")
+    print(f"First media basename: {media.path.rsplit('/',1)[-1]}")
     begin = request(target, page_url, "bytes=0-63")
     show("MP4 beginning", begin)
     prefix = begin.get("body", b"")
