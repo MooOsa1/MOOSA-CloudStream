@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import com.moosa.hub.MOOSAQualityPolicy
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
@@ -432,7 +433,7 @@ class ArabSeedProvider : MainAPI() {
                 .mapNotNull { it.attr("data-qu").toIntOrNull() }
 
         return (fromQualityTabs + fromServers)
-            .filter { it in 240..2160 }
+            .filter { it in MOOSAQualityPolicy.MIN_HEIGHT..2160 }
             .distinct()
             .sortedDescending()
     }
@@ -456,6 +457,7 @@ class ArabSeedProvider : MainAPI() {
                 .toIntOrNull()
                 ?.takeIf { it > 0 }
                 ?: fallbackQuality
+        if (quality > 0 && !MOOSAQualityPolicy.acceptsHeight(quality)) return null
 
         val label =
             element.attr("data-server-name")
@@ -704,6 +706,7 @@ class ArabSeedProvider : MainAPI() {
             qualityHint: Int,
             label: String
         ) {
+            if (!MOOSAQualityPolicy.acceptsHeight(qualityHint)) return
             val normalized = normalizeUrl(url, watchUrl) ?: return
             if (!seen.add(normalized)) return
 
@@ -783,6 +786,7 @@ class ArabSeedProvider : MainAPI() {
             server: WatchServer,
             target: String
         ): Int {
+            if (!MOOSAQualityPolicy.acceptsHeight(server.quality)) return 0
             val before = seen.size
 
             if (
@@ -813,7 +817,18 @@ class ArabSeedProvider : MainAPI() {
                     watchUrl,
                     subtitleCallback
                 ) { link ->
-                    if (seen.add(link.url.trim())) {
+                    // This link comes from a confirmed quality tab.
+                    // Never send unknown/SD results to the user.
+                    if (
+                        link.quality == Qualities.Unknown.value &&
+                        MOOSAQualityPolicy.acceptsHeight(server.quality)
+                    ) {
+                        link.quality = server.quality
+                    }
+                    if (
+                        MOOSAQualityPolicy.accepts(link) &&
+                        seen.add(link.url.trim())
+                    ) {
                         callback(link)
                         emitted = true
                     }
@@ -915,6 +930,7 @@ class ArabSeedProvider : MainAPI() {
                     .distinctBy { it.link }
 
             for (server in visibleServers) {
+                if (!MOOSAQualityPolicy.acceptsHeight(server.quality)) continue
                 val target = server.link ?: continue
                 resolveServer(server, target)
             }
@@ -944,6 +960,14 @@ class ArabSeedProvider : MainAPI() {
                         "ul.downloads__links__list a[href], a.download__item[href], a[href*='.mp4'], a[href*='.m3u8']"
                     )
                         .mapNotNull { anchor ->
+                            val label = anchor.text().trim()
+                            val quality = Regex(
+                                """(?i)(?:^|\W)(2160|1440|1080|720|480|360)p(?:\W|$)"""
+                            ).find(label)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                            if (!MOOSAQualityPolicy.acceptsHeight(quality)) {
+                                return@mapNotNull null
+                            }
+
                             val raw = normalizeUrl(
                                 anchor.attr("href"),
                                 downloadResponse.url
@@ -952,19 +976,19 @@ class ArabSeedProvider : MainAPI() {
                                 raw,
                                 downloadResponse.url
                             ) ?: return@mapNotNull null
-                            target to anchor.text().trim()
+                            Triple(target, label, quality!!)
                         }
                         .distinctBy { it.first }
                         .take(8)
 
-                for ((target, label) in targets) {
+                for ((target, label, quality) in targets) {
                     if (
                         target.contains(".mp4", true) ||
                         target.contains(".m3u8", true)
                     ) {
                         emitDirect(
                             target,
-                            inferDirectQuality(target, 0),
+                            quality,
                             "Download - $label"
                         )
                         continue
@@ -976,7 +1000,13 @@ class ArabSeedProvider : MainAPI() {
                             downloadResponse.url,
                             subtitleCallback
                         ) { link ->
-                            if (seen.add(link.url.trim())) {
+                            if (link.quality == Qualities.Unknown.value) {
+                                link.quality = quality
+                            }
+                            if (
+                                MOOSAQualityPolicy.accepts(link) &&
+                                seen.add(link.url.trim())
+                            ) {
                                 callback(link)
                                 emitted = true
                             }
