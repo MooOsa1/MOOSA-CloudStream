@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -6,7 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object MOOSASettingsStore {
-    private const val PREF_FILE = "MOOSAHub"
+    private const val PREF_FILE = "MOOSAArabic"
     private const val KEY_CONCURRENCY = "provider_concurrency"
     private const val KEY_DISABLED_SOURCES = "disabled_sources"
     private const val KEY_VERIFY_LINKS = "verify_links"

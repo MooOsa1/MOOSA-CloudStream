@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import android.graphics.Color
 import android.os.Handler
@@ -20,7 +20,7 @@ object MOOSASeeAll {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private data class CategoryState(
-        val api: MOOSAHubProvider,
+        val api: MOOSAArabicProvider,
         val request: MainPageRequest,
         var parentAdapterPosition: Int = RecyclerView.NO_POSITION,
         var parentTopOffset: Int = 0
@@ -33,7 +33,7 @@ object MOOSASeeAll {
         ConcurrentHashMap<String, WeakReference<TextView>>()
 
     fun register(
-        api: MOOSAHubProvider,
+        api: MOOSAArabicProvider,
         request: MainPageRequest,
         items: List<SearchResponse>,
         hasNext: Boolean,

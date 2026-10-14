@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import android.app.Dialog
 import android.content.Context
@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
 import java.lang.reflect.Proxy
 
 class MOOSABrowseDialog : DialogFragment() {
-    private lateinit var api: MOOSAHubProvider
+    private lateinit var api: MOOSAArabicProvider
     private lateinit var request: MainPageRequest
 
     private lateinit var recycler: AutofitRecyclerView
@@ -550,7 +550,7 @@ class MOOSABrowseDialog : DialogFragment() {
     companion object {
         fun show(
             context: Context,
-            api: MOOSAHubProvider,
+            api: MOOSAArabicProvider,
             request: MainPageRequest
         ) {
             val activity = context as? AppCompatActivity ?: return

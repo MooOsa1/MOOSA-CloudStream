@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.APIHolder.apis
@@ -43,13 +43,13 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONArray
 import kotlin.math.abs
 
-class MOOSAHubProvider : TmdbProvider() {
-    override var name = "MOOSA Hub"
-    override var lang = "en"
+class MOOSAArabicProvider : TmdbProvider() {
+    override var name = "MOOSA Arabic"
+    override var lang = "ar"
 
     override val useMetaLoadResponse = true
     override val mainPage = MOOSACatalog.categories
-    override val apiName = "MOOSA Hub"
+    override val apiName = "MOOSA Arabic"
     override val disableSeasonZero = true
     override val includeAdult = false
 
@@ -1604,7 +1604,19 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     private fun isBundledArabicProvider(api: MainAPI): Boolean =
-        api.javaClass.name.startsWith("com.moosa.hub.bundled.")
+        api.javaClass.name.startsWith("com.moosa.arabic.bundled.")
+
+    // Internal engines: do not register them as separate CloudStream providers.
+    private val ownArabicProviders: List<MainAPI> by lazy {
+        listOf(
+            com.moosa.arabic.bundled.akwam.AkwamProvider(),
+            com.moosa.arabic.bundled.arabseed.ArabSeedProvider(),
+            com.moosa.arabic.bundled.topcinema.TopCinemaProvider(),
+            com.moosa.arabic.bundled.wecima.WeCimaProvider(),
+            com.moosa.arabic.bundled.cimaclub.CimaClubProvider(),
+            com.moosa.arabic.bundled.shahidwbas.ShahidWBasProvider()
+        )
+    }
 
     private fun playbackProviders(
         request: HubPlaybackRequest
@@ -1621,7 +1633,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 false
             }
 
-        val available = apis
+        val available = (ownArabicProviders + apis)
             .filter { api ->
                 api !== this &&
                     (
@@ -1637,7 +1649,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     }
             }
 
-        // Prefer the copies shipped inside MOOSA Hub and avoid running two
+        // Prefer the copies shipped inside MOOSA Arabic and avoid running two
         // implementations with the same provider name.
         val bundledNames = available
             .filter(::isBundledArabicProvider)
@@ -2252,6 +2264,8 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         val detail = detailJob.await()
+        // An independent provider: only Arabic-original productions.
+        if (!detail?.originalLanguage.equals("ar", ignoreCase = true)) return@coroutineScope null
         val effectiveImdbId = imdbJob.await()
         val arabicOverview = synopsisJob.await()
 
@@ -2905,6 +2919,7 @@ class MOOSAHubProvider : TmdbProvider() {
         callback: (ExtractorLink) -> Unit
     ): Boolean = coroutineScope {
         val request = tryParseJson<HubPlaybackRequest>(data) ?: return@coroutineScope false
+        if (!request.originalLanguage.equals("ar", ignoreCase = true)) return@coroutineScope false
         val allProviders = playbackProviders(request)
         val fastArabic = request.originalLanguage.equals("ar", true) &&
             MOOSASettingsStore.arabicFastMode()

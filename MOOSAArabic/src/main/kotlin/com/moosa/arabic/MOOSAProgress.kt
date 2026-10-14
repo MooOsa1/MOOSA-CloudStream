@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import android.app.Activity
 import android.app.AlertDialog

@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.LoadResponse
@@ -198,7 +198,7 @@ internal object MOOSAArabicBridge {
         }
 
     private fun queryList(
-        request: MOOSAHubProvider.HubPlaybackRequest,
+        request: MOOSAArabicProvider.HubPlaybackRequest,
         aliases: List<String>
     ): List<String> {
         val rawTitles =
@@ -274,7 +274,7 @@ internal object MOOSAArabicBridge {
 
     private fun episodeData(
         loaded: TvSeriesLoadResponse,
-        request: MOOSAHubProvider.HubPlaybackRequest,
+        request: MOOSAArabicProvider.HubPlaybackRequest,
         candidateTitle: String,
         aliases: List<String>
     ): String? {
@@ -323,7 +323,7 @@ internal object MOOSAArabicBridge {
 
     private fun movieMatches(
         loaded: MovieLoadResponse,
-        request: MOOSAHubProvider.HubPlaybackRequest,
+        request: MOOSAArabicProvider.HubPlaybackRequest,
         aliases: List<String>
     ): Boolean {
         if (
@@ -345,9 +345,9 @@ internal object MOOSAArabicBridge {
 
     suspend fun resolve(
         api: MainAPI,
-        request: MOOSAHubProvider.HubPlaybackRequest,
+        request: MOOSAArabicProvider.HubPlaybackRequest,
         aliases: List<String>
-    ): MOOSAHubProvider.ProviderTarget? {
+    ): MOOSAArabicProvider.ProviderTarget? {
         val kind = kindOf(api) ?: return null
         val queries = queryList(request, aliases).take(6)
         val seenUrls = linkedSetOf<String>()
@@ -470,7 +470,7 @@ internal object MOOSAArabicBridge {
                         "Episode found • extracting links"
                     )
 
-                    return MOOSAHubProvider.ProviderTarget(
+                    return MOOSAArabicProvider.ProviderTarget(
                         providerName = api.name,
                         mainUrl = api.mainUrl,
                         data = data
@@ -521,7 +521,7 @@ internal object MOOSAArabicBridge {
                     "Movie matched • extracting links"
                 )
 
-                return MOOSAHubProvider.ProviderTarget(
+                return MOOSAArabicProvider.ProviderTarget(
                     providerName = api.name,
                     mainUrl = api.mainUrl,
                     data = data

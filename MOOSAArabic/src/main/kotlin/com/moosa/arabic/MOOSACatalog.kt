@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.HomePageResponse
@@ -120,6 +120,7 @@ object MOOSACatalog {
         api: MainAPI,
         forceTv: Boolean? = null
     ): SearchResponse? {
+        if (!originalLanguage.equals("ar", ignoreCase = true)) return null
         val contentId = id ?: return null
         val titleText =
             displayName.trim().takeIf { it.isNotBlank() }
@@ -358,13 +359,10 @@ object MOOSACatalog {
     }
 
     val categories = mainPageOf(
-        "/trending/movie/week" to "Trending Movies",
-        "/trending/tv/week" to "Trending Series",
-        "/movie/top_rated" to "Top Rated Movies",
-        "/tv/top_rated" to "Top Rated Series",
-        "/discover/movie?with_original_language=ar&sort_by=popularity.desc" to "Arabic Movies",
-        "/discover/tv?with_original_language=ar&sort_by=popularity.desc" to "Arabic Series",
-        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200" to "Top Indian Movies"
+        "/discover/movie?with_original_language=ar&sort_by=popularity.desc" to "أفلام عربية",
+        "/discover/tv?with_original_language=ar&sort_by=popularity.desc" to "مسلسلات عربية",
+        "/discover/movie?with_original_language=ar&sort_by=vote_average.desc&vote_count.gte=100" to "أفلام عربية الأعلى تقييمًا",
+        "/discover/tv?with_original_language=ar&sort_by=vote_average.desc&vote_count.gte=50" to "مسلسلات عربية الأعلى تقييمًا"
     )
 
     suspend fun home(
@@ -425,7 +423,7 @@ object MOOSACatalog {
         if (
             showMoreButton &&
             page == 1 &&
-            api is MOOSAHubProvider
+            api is MOOSAArabicProvider
         ) {
             MOOSASeeAll.register(
                 api = api,

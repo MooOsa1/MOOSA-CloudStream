@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import com.lagradost.cloudstream3.MainAPI
 
@@ -16,7 +16,7 @@ internal object MOOSAPlaybackDiagnostics {
         "${api.javaClass.name}|${System.identityHashCode(api)}"
 
     fun start(
-        request: MOOSAHubProvider.HubPlaybackRequest,
+        request: MOOSAArabicProvider.HubPlaybackRequest,
         providers: List<MainAPI>
     ) {
         synchronized(lock) {
