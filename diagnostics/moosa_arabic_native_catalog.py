@@ -13,7 +13,7 @@ BASE = "https://ak.sv"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
 def fetch(url):
     try:
-        with urlopen(Request(url, headers={"User-Agent": UA, "Accept-Language": "ar,en;q=0.5"}), timeout=16) as resp:
+        with urlopen(Request(quote(url, safe=":/?&=#%+;,@"), headers={"User-Agent": UA, "Accept-Language": "ar,en;q=0.5"}), timeout=16) as resp:
             return resp.status, resp.url, resp.read(1_000_000).decode("utf-8", "replace")
     except HTTPError as e:
         return e.code, url, e.read(3000).decode("utf-8","replace")
