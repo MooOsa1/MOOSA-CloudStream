@@ -71,36 +71,17 @@ object MOOSACatalog {
         @JsonProperty("vote_count") val voteCount: Int? = null,
         @JsonProperty("media_type") val mediaType: String? = null
     ) {
+        // TMDB original_title/original_name is the production's original
+        // credited title. Do not replace it with translated display names,
+        // regardless of original language (Arabic, English, Hindi, Korean...).
         val displayName: String
-            get() {
-                val original =
-                    originalTitle
-                        ?: originalName
-
-                val localized =
-                    title
-                        ?: name
-
-                return when (
-                    originalLanguage
-                        ?.lowercase()
-                ) {
-                    "ar",
-                    "en" ->
-                        original
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?: localized.orEmpty()
-
-                    else ->
-                        localized
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?: original.orEmpty()
-                }
-            }
+            get() = sequenceOf(
+                originalTitle,
+                originalName,
+                title,
+                name
+            ).filterNotNull().map(String::trim)
+                .firstOrNull(String::isNotBlank).orEmpty()
 
         val year: Int?
             get() = (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull()
@@ -603,14 +584,20 @@ object MOOSACatalog {
             alternativeJob.await()
 
         buildList {
+            // Put original credited names first. Localized titles are
+            // secondary aliases strictly for finding pages on providers.
+            details.forEach { detail ->
+                listOfNotNull(
+                    detail.originalTitle,
+                    detail.originalName
+                ).forEach(::add)
+            }
             add(fallback)
 
             details.forEach { detail ->
                 listOfNotNull(
                     detail.title,
-                    detail.name,
-                    detail.originalTitle,
-                    detail.originalName
+                    detail.name
                 ).forEach(::add)
             }
 
