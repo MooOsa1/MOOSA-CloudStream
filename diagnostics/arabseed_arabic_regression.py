@@ -45,6 +45,21 @@ for typ,title,season,episode in cases:
                 ".as-card":len(soup.select(".as-card")),
                 "article":len(soup.select("article"))
             },flush=True)
+            print(" HTML MARKERS",{
+                "script_count":len(soup.select("script")),
+                "rsc": "__next_f.push" in body,
+                "nuxt": "__NUXT__" in body,
+                "vue": "__VUE__" in body,
+                "react": "react" in body.lower(),
+                "result_phrase":norm(title.split()[0]) in norm(body),
+                "jsonld":len(soup.select("script[type='application/ld+json']")),
+                "main_tags":len(soup.select("main")),
+                "search_inputs":len(soup.select("input[type='search']")),
+                "body_text_len":len(soup.get_text(" ",strip=True)),
+                "body_start":body[:90].replace("\\n"," ")
+            },flush=True)
+            print(" SCRIPT SRCS",[a.get("src","")[:115] for a in soup.select("script[src]")[:12]],flush=True)
+            print(" FIRST CONTENT",soup.get_text(" ",strip=True)[:260],flush=True)
         links=[]
         for a in soup.select("a[title][href]"):
             label=a.get("title","").strip()
