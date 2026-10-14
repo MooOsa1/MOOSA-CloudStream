@@ -332,60 +332,94 @@ object MOOSAServerRegistry {
                         val contentType = response.headers["Content-Type"]
                             .orEmpty().substringBefore(';').trim().lowercase()
                         val contentRange = response.headers["Content-Range"].orEmpty()
-                        val disposition = response.headers["Content-Disposition"]
-                            .orEmpty().lowercase()
+                        val isDownet = runCatching {
+                            val host = Uri.parse(link.url).host.orEmpty().lowercase()
+                            host == "downet.net" || host.endsWith(".downet.net")
+                        }.getOrDefault(false)
+
+                        // HTTP status, MIME and filename do not prove playability.
+                        // Inspect the real first 32 binary bytes, not response.text.
+                        val prefix = ByteArray(32)
+                        val count = response.body.byteStream().use { stream ->
+                            stream.read(prefix)
+                        }.coerceAtLeast(0)
+
+                        fun asciiAt(offset: Int, value: String): Boolean =
+                            count >= offset + value.length &&
+                                value.indices.all { i ->
+                                    prefix[offset + i].toInt() == value[i].code
+                                }
+
+                        val mp4Signature = asciiAt(4, "ftyp") || asciiAt(4, "styp")
+                        val ebmlSignature =
+                            count >= 4 &&
+                                (prefix[0].toInt() and 0xff) == 0x1a &&
+                                (prefix[1].toInt() and 0xff) == 0x45 &&
+                                (prefix[2].toInt() and 0xff) == 0xdf &&
+                                (prefix[3].toInt() and 0xff) == 0xa3
+                        val flvSignature = asciiAt(0, "FLV")
+                        val aviSignature = asciiAt(0, "RIFF") && asciiAt(8, "AVI ")
+                        val tsSignature = count >= 1 &&
+                            (prefix[0].toInt() and 0xff) == 0x47
+                        val recognizedVideoBytes =
+                            mp4Signature || ebmlSignature || flvSignature ||
+                                aviSignature || tsSignature
                         val isVideoMime =
                             contentType.startsWith("video/") ||
                                 contentType == "application/mp4" ||
-                                contentType == "application/x-matroska"
-                        val isGenericMime =
-                            contentType == "application/octet-stream" ||
-                                contentType == "binary/octet-stream"
-                        val isPartial =
-                            response.code == 206 ||
-                                contentRange.startsWith("bytes ", ignoreCase = true)
-                        val hasVideoExtension = Regex(
-                            """(?i)\.(?:mp4|m4v|mkv|webm|mov|ts)(?:[?#]|$)"""
-                        ).containsMatchIn(link.url) ||
-                            Regex("""(?i)filename[^;]*\.(?:mp4|m4v|mkv|webm|mov|ts)""")
-                                .containsMatchIn(disposition)
+                                contentType == "application/x-matroska" ||
+                                contentType == "application/octet-stream"
+                        val validFirstChunk = response.isSuccessful &&
+                            count > 0 && isVideoMime && recognizedVideoBytes
 
-                        // Some signed CDN URLs do not end in .mp4. For an
-                        // octet-stream response, recognize MP4's ftyp box in
-                        // the first bytes of a successful partial response.
-                        val hasMp4Signature =
-                            if (response.isSuccessful && isGenericMime && isPartial) {
-                                runCatching {
-                                    response.text.take(32)
-                                        .let { prefix ->
-                                            prefix.length >= 8 &&
-                                                prefix.substring(4, 8) == "ftyp"
-                                        }
-                                }.getOrDefault(false)
+                        // This CDN may return 200 with a valid MP4 header but
+                        // refuse byte-range seeking, breaking progressive playback.
+                        var seekable = !isDownet
+                        var seekReason = ""
+                        if (validFirstChunk && isDownet) {
+                            if (
+                                response.code != 206 ||
+                                !contentRange.startsWith("bytes 0-", true)
+                            ) {
+                                seekReason = "Downet ignored first byte-range request"
                             } else {
-                                false
-                            }
-
-                        val valid = response.isSuccessful &&
-                            (
-                                isVideoMime ||
-                                    (
-                                        isGenericMime && isPartial &&
-                                            (hasVideoExtension || hasMp4Signature)
-                                        )
+                                val seekResponse = app.get(
+                                    link.url,
+                                    headers = headers + mapOf(
+                                        "Range" to "bytes=1048576-1048607"
+                                    ),
+                                    referer = link.referer,
+                                    verify = false
                                 )
+                                val seekRange =
+                                    seekResponse.headers["Content-Range"].orEmpty()
+                                val seekByte = seekResponse.body.byteStream().use {
+                                    it.read()
+                                }
+                                seekable = seekResponse.code == 206 &&
+                                    seekRange.startsWith("bytes 1048576-", true) &&
+                                    seekByte >= 0
+                                if (!seekable) {
+                                    seekReason =
+                                        "Downet seek failed HTTP ${seekResponse.code}; range=$seekRange"
+                                }
+                            }
+                        }
 
+                        val valid = validFirstChunk && seekable
                         val reason = when {
                             !response.isSuccessful -> "Media HTTP ${response.code}"
-                            contentType.isBlank() -> "Media response has no Content-Type"
-                            !isVideoMime && !isGenericMime ->
-                                "Non-video Content-Type: $contentType"
-                            isGenericMime && !isPartial ->
-                                "Generic response without byte-range proof"
-                            isGenericMime && !hasVideoExtension && !hasMp4Signature ->
-                                "Generic response without MP4 signature"
-                            valid -> "Video MIME and ranged GET confirmed"
-                            else -> "Media response not confirmed"
+                            count == 0 -> "Empty media response"
+                            !isVideoMime -> "Non-video Content-Type: $contentType"
+                            !recognizedVideoBytes ->
+                                "Response has no recognized video signature"
+                            !seekable -> seekReason
+                            valid -> if (isDownet) {
+                                "Video signature and two byte ranges confirmed"
+                            } else {
+                                "Video signature confirmed"
+                            }
+                            else -> "Media not verified"
                         }
 
                         ProbeCheck(valid, reason)
