@@ -40,47 +40,5 @@
         "description": "Global movies and series with Arabic subtitles; Arabic originals in separate MOOSA Arabic plugin",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAHub.cs3",
         "name": "MOOSAHub"
-    },
-    {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-3b5fbf2d9bde1c8e3ee2de18d336a094cae3dd576febef78cadccbca396b0996",
-        "apiVersion": 1,
-        "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 1754,
-        "status": 1,
-        "language": "en",
-        "authors": [
-            "MOOSA"
-        ],
-        "tvTypes": [
-            "Movie",
-            "TvSeries"
-        ],
-        "version": 3,
-        "internalName": "MOOSAMovies",
-        "description": "Modern movie and TV catalog powered by TMDB metadata",
-        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAMovies.cs3",
-        "name": "MOOSAMovies"
-    },
-    {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=plex.tv&sz=%size%",
-        "fileHash": "sha256-edfc6e9922838a360a734a0ac77c30f247fe2915d081ce3c4fa6d3a60d99f081",
-        "apiVersion": 1,
-        "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 30015,
-        "status": 1,
-        "language": "en",
-        "authors": [
-            "MOOSA"
-        ],
-        "tvTypes": [
-            "Movie",
-            "TvSeries"
-        ],
-        "version": 2,
-        "internalName": "PlexFree",
-        "description": "Free ad-supported movies and TV shows from Plex",
-        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/PlexFree.cs3",
-        "name": "PlexFree"
     }
 ]
