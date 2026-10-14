@@ -6,6 +6,7 @@ on:
     paths:
       - "diagnostics/arabic_sources_probe.py"
       - "diagnostics/arabseed_download_probe.py"
+      - "diagnostics/arabseed_arabic_regression.py"
       - ".github/workflows/arabic-sources-probe.yml"
 jobs:
   probe:
@@ -19,3 +20,5 @@ jobs:
         run: python3 diagnostics/arabic_sources_probe.py
       - name: Probe ArabSeed direct FHD download mirrors
         run: python3 diagnostics/arabseed_download_probe.py
+      - name: Check Arabic ArabSeed episodes and movies
+        run: python3 diagnostics/arabseed_arabic_regression.py
