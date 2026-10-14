@@ -213,7 +213,7 @@ class MOOSAHubProvider : TmdbProvider() {
         val voteAverage: Double? = null
     ) {
         val displayTitle: String
-            get() = sequenceOf(originalTitle, originalName, title, name)
+            get() = (if (originalLanguage == "ar") sequenceOf(originalTitle, originalName, title, name) else sequenceOf(title, name, originalTitle, originalName))
                 .filterNotNull().map(String::trim)
                 .firstOrNull(String::isNotBlank).orEmpty()
 
