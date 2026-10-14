@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "diagnostics/moosa_arabic_native_catalog.py"
+      - "diagnostics/akwam_arabic_regression.py"
       - ".github/workflows/moosa-arabic-native-catalog.yml"
 jobs:
   check:
@@ -15,3 +16,5 @@ jobs:
       - run: python3 -m pip install --quiet beautifulsoup4
       - name: Confirm Akwam Arabic categories and direct series pages
         run: python3 diagnostics/moosa_arabic_native_catalog.py
+      - name: Probe existing movie and episode CDN with tiny HTTP ranges
+        run: python3 diagnostics/akwam_arabic_regression.py
