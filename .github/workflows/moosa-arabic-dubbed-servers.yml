@@ -1,15 +1,36 @@
-name: Probe Arabic dubbed source and mirrors (development)
+name: Validate MOOSA Arabic dubbed catalog and servers (no release)
 on:
   push:
     branches: ["fix/arabic-v3-dubbed-servers"]
   workflow_dispatch:
 jobs:
-  probe:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Install HTML parser
-        run: python3 -m pip install --quiet beautifulsoup4
-      - name: Check native Akwam dubbing sections and MP4 mirrors
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Build without publishing
+        run: |
+          gradle :MOOSAArabic:make :MOOSAHub:make makePluginsJson
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          plugins=json.loads(Path("build/plugins.json").read_text())
+          names={x["internalName"]:x["version"] for x in plugins}
+          assert names=={"MOOSAArabic":3,"MOOSAHub":69},names
+          print("Built only MOOSAArabic v3 and MOOSAHub v69")
+          PY
+      - run: python3 -m pip install --quiet beautifulsoup4
+      - name: Verify genuine dubbed sections and pagination
+        run: python3 diagnostics/moosa_arabic_dubbed_catalog_regression.py
+      - name: Validate episodes and series in Akwam
+        run: python3 diagnostics/moosa_arabic_v2_regression.py
+      - name: Probe CDN transport and exact available resolutions
         run: python3 diagnostics/moosa_arabic_dubbed_servers_probe.py

@@ -54,13 +54,15 @@ class MOOSAArabicProvider : MainAPI() {
         }
     }
 
-    // These are Akwam's real Arabic sections. Dubbed titles are split using
-    // Akwam's own "مدبلج" marker, not another site's title matching.
+    // Akwam-native categories, verified live on 2026-10-14:
+    // section=29 => Arabic originals; category=71 => dubbed genre across
+    // ALL production countries. Filtering category=71 by title is wrong:
+    // some genuine dubbed titles (e.g. "الحب والأمل") omit "مدبلج".
     override val mainPage = mainPageOf(
         "$mainUrl/movies?section=29&page=" to "أحدث الأفلام العربية",
         "$mainUrl/series?section=29&page=" to "أحدث المسلسلات العربية",
-        "$mainUrl/movies?section=29&page=|dubbed|" to "أفلام مدبلجة للعربية",
-        "$mainUrl/series?section=29&page=|dubbed|" to "مسلسلات مدبلجة للعربية"
+        "$mainUrl/movies?category=71&page=" to "أفلام مدبلجة للعربية",
+        "$mainUrl/series?category=71&page=" to "مسلسلات مدبلجة للعربية"
     )
 
     private fun parseCards(doc: org.jsoup.nodes.Document): List<SearchResponse> =
@@ -78,7 +80,7 @@ class MOOSAArabicProvider : MainAPI() {
             }
 
     private fun isDubbed(title: String): Boolean =
-        Regex("""مدبلج(?:ة|\s+للعربية|\s+مصري)?""", RegexOption.IGNORE_CASE)
+        Regex("""(?:مدبلج|مدبلجة|مديلج|دبلجة|dubbed)""", RegexOption.IGNORE_CASE)
             .containsMatchIn(title)
 
     private fun pageHasNext(doc: org.jsoup.nodes.Document, page: Int): Boolean =
@@ -89,11 +91,13 @@ class MOOSAArabicProvider : MainAPI() {
         }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val section = request.data.substringBefore("|dubbed|")
-        val dubbedOnly = request.data.contains("|dubbed|")
-        val doc = app.get(section + page).document
+        val doc = app.get(request.data + page).document
+        val nativeDubbedCategory = request.data.contains("category=71")
+        // The source's category is authoritative, including titles without
+        // "مدبلج" in their actual name. Exclude obvious dubbed cards only
+        // from the Arabic-original shelf; no TMDB or manual translation.
         val items = parseCards(doc).filter { item ->
-            isDubbed(item.name) == dubbedOnly
+            nativeDubbedCategory || !isDubbed(item.name)
         }
         return newHomePageResponse(request.name, items, pageHasNext(doc, page))
     }
@@ -428,8 +432,10 @@ class MOOSAArabicProvider : MainAPI() {
                 link.type != ExtractorLinkType.VIDEO
             ) return
 
-            // Public MP4 transport alternative; explicitly disclose that
-            // the HTTP stream is unencrypted. Never send auth headers.
+            // Fallback for devices where HTTPS CDN connections fail.
+            // HTTPS is emitted first; HTTP is clearly labeled unencrypted.
+            // Server candidates are NOT assumed playable on every device.
+            // Never forward authorization headers to the fallback.
             val httpUrl = link.url.replaceFirst(
                 "https://",
                 "http://",
