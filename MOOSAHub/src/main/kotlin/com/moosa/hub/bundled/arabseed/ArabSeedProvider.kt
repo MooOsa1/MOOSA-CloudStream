@@ -11,10 +11,11 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.net.URLDecoder
+import java.net.URLEncoder
 
 class ArabSeedProvider : MainAPI() {
     override var lang = "ar"
-    override var mainUrl = "https://m.myseed.pics"
+    override var mainUrl = "https://m.myseed.tv"
     override var name = "ArabSeed"
     override val usesWebView = false
     override val hasMainPage = true
@@ -135,62 +136,32 @@ class ArabSeedProvider : MainAPI() {
         )
     }
 
-    override suspend fun search(query: String): List<SearchResponse> {
+    // MySeed changed search from JSON POST /find__posts/ to GET listings.
+    // The old CSRF API now returns no results even while its website works.
+    private suspend fun searchPage(query: String, page: Int): List<SearchResponse> {
         val clean = query.trim()
-        if (clean.isBlank()) return emptyList()
+        if (clean.isBlank() || page !in 1..30) return emptyList()
 
-        val home = getHtml("$mainUrl/main/")
-            ?: getHtml(mainUrl)
-            ?: return emptyList()
-
-        val csrf = csrfToken(home) ?: return emptyList()
-
-        val response = try {
-            app.post(
-                "$mainUrl/find__posts/",
-                headers = requestHeaders + mapOf(
-                    "X-Requested-With" to "XMLHttpRequest",
-                    "Accept" to "application/json, text/javascript, */*; q=0.01"
-                ),
-                referer = "$mainUrl/",
-                data = mapOf(
-                    "search" to clean,
-                    "search_type" to "",
-                    "csrf_token" to csrf
-                )
-            ).text
-        } catch (_: Throwable) {
-            return emptyList()
+        val encoded = URLEncoder.encode(clean, "UTF-8")
+        val url = if (page == 1) {
+            "$mainUrl/?s=$encoded"
+        } else {
+            "$mainUrl/page/$page/?s=$encoded"
         }
 
-        val html = runCatching {
-            JSONObject(response).optString("html")
-        }.getOrDefault("")
+        val html = getHtml(url) ?: return emptyList()
+        return contentCards(html)
+    }
 
-        if (html.isBlank()) return emptyList()
+    override suspend fun search(query: String): List<SearchResponse> =
+        searchPage(query, 1)
 
-        val doc = Jsoup.parse(html, mainUrl)
-        return doc.select("a.search__item[href], a[title][href]")
-            .mapNotNull { anchor ->
-                val href = normalizeUrl(anchor.attr("href")) ?: return@mapNotNull null
-                val title = anchor.attr("title")
-                    .ifBlank { anchor.selectFirst("img")?.attr("alt").orEmpty() }
-                    .ifBlank { anchor.text() }
-                    .trim()
-                if (title.isBlank()) return@mapNotNull null
-                val poster = anchor.poster()
-
-                if (looksLikeMovie(href)) {
-                    newMovieSearchResponse(title, href, TvType.Movie) {
-                        posterUrl = poster
-                    }
-                } else {
-                    newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                        posterUrl = poster
-                    }
-                }
-            }
-            .distinctBy { it.url }
+    override suspend fun search(query: String, page: Int): SearchResponseList {
+        val results = searchPage(query, page)
+        return newSearchResponseList(
+            results,
+            results.size >= 10 && page < 30
+        )
     }
 
     private fun String.normalizedDigits(): String = buildString {
@@ -376,6 +347,28 @@ class ArabSeedProvider : MainAPI() {
                 URLDecoder.decode(wrapped, "UTF-8")
             }.getOrDefault(wrapped)
             return normalizeUrl(decoded, base)
+        }
+
+        // Download anchors have the shape /l/<Base64(https://host/file)>.
+        // They lead to a category page, not a playable file. Unwrap before
+        // passing to CloudStream host-specific extractors.
+        val path = runCatching { java.net.URI(normalized).path }.getOrNull()
+        val encodedLink = path
+            ?.let { Regex("""^/l/([A-Za-z0-9_-]+={0,2})/?$""")
+                .matchEntire(it)
+                ?.groupValues
+                ?.getOrNull(1)
+            }
+        if (encodedLink != null) {
+            val decoded = runCatching {
+                String(
+                    Base64.decode(encodedLink, Base64.URL_SAFE or Base64.NO_WRAP),
+                    Charsets.UTF_8
+                )
+            }.getOrNull()
+            if (!decoded.isNullOrBlank()) {
+                return normalizeUrl(decoded, base)
+            }
         }
 
         if (!normalized.contains("/vid/?id=", true)) return normalized
@@ -950,16 +943,21 @@ class ArabSeedProvider : MainAPI() {
                     downloadDoc.select(
                         "ul.downloads__links__list a[href], a.download__item[href], a[href*='.mp4'], a[href*='.m3u8']"
                     )
-                        .mapNotNull {
-                            normalizeUrl(
-                                it.attr("href"),
+                        .mapNotNull { anchor ->
+                            val raw = normalizeUrl(
+                                anchor.attr("href"),
                                 downloadResponse.url
-                            )
+                            ) ?: return@mapNotNull null
+                            val target = unwrapServerLink(
+                                raw,
+                                downloadResponse.url
+                            ) ?: return@mapNotNull null
+                            target to anchor.text().trim()
                         }
-                        .distinct()
+                        .distinctBy { it.first }
                         .take(8)
 
-                for (target in targets) {
+                for ((target, label) in targets) {
                     if (
                         target.contains(".mp4", true) ||
                         target.contains(".m3u8", true)
@@ -967,7 +965,7 @@ class ArabSeedProvider : MainAPI() {
                         emitDirect(
                             target,
                             inferDirectQuality(target, 0),
-                            "Download"
+                            "Download - $label"
                         )
                         continue
                     }
