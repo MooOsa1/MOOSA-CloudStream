@@ -87,6 +87,36 @@ if candidate:
                                       "size",len(manifest),"hls",manifest.lstrip().startswith("#EXTM3U"),
                                       "resolutions",qualities[:18],"segments",manifest.count("#EXTINF:"),
                                       flush=True)
+
+                                lines=manifest.splitlines()
+                                variants=[]
+                                for idx,line in enumerate(lines):
+                                    match=re.search(r"RESOLUTION=\d+x(\d+)",line,re.I)
+                                    if not match:continue
+                                    later=next((l.strip() for l in lines[idx+1:] if l.strip() and not l.startswith("#")),None)
+                                    if later:variants.append((int(match.group(1)),urljoin(purl,later)))
+                                for height,url2 in variants:
+                                    if height not in (1080,720):continue
+                                    vstatus,vland,vbody=request(url2,ref=purl)
+                                    vlines=vbody.splitlines()
+                                    fragments=[q.strip() for q in vlines if q.strip() and not q.startswith("#")]
+                                    print("VIDARA_VARIANT",height,"status",vstatus,
+                                          "host",urlparse(vland).hostname,
+                                          "has_extm3u",vbody.lstrip().startswith("#EXTM3U"),
+                                          "fragments",len(fragments),flush=True)
+                                    if not fragments:continue
+                                    segment=urljoin(vland,fragments[0])
+                                    try:
+                                        with urlopen(Request(segment,headers={"User-Agent":UA,"Range":"bytes=0-63","Referer":vland}),timeout=10) as seg:
+                                            first=seg.read(64)
+                                            print("VIDARA_SEGMENT",height,"status",seg.status,
+                                                  "bytes",len(first),
+                                                  "mime",seg.headers.get("Content-Type","")[:50],
+                                                  "host",urlparse(seg.url).hostname,flush=True)
+                                    except (HTTPError,URLError,OSError) as err:
+                                        print("VIDARA_SEGMENT_ERR",height,type(err).__name__,
+                                              str(getattr(err,"reason",err))[:95],flush=True)
+
                     except (HTTPError,URLError,OSError,ValueError) as e:
                         print("VIDARA_API_FAIL",type(e).__name__,
                               "reason",str(getattr(e,"reason",e))[:110],flush=True)
