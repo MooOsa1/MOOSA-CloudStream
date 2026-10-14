@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 62
+version = 63
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v62: unified internal/external 720p+ filters, globally rank 4K > 1080p > 720p, host-app quality profiles, strict Akwam movie/season matching, multi-title diagnostics
+// v63: emergency rollback to v61 proven playback; undo persistent v62 host-wide negative quality priorities and hidden sources
