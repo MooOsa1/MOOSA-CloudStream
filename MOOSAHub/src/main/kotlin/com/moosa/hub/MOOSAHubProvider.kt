@@ -2246,23 +2246,39 @@ class MOOSAHubProvider : TmdbProvider() {
         val effectiveImdbId = imdbJob.await()
         val arabicOverview = synopsisJob.await()
 
-        detail?.let { meta ->
-            val originalName =
-                meta.originalTitle
-                    ?: meta.originalName
-
-            val localizedName =
-                meta.title
-                    ?: meta.name
-
-            // Original credited names in all languages, no translated title.
-            val preferredName = originalName
-                ?.takeIf { it.isNotBlank() }
-                ?: localizedName?.takeIf { it.isNotBlank() }
-
-            if (!preferredName.isNullOrBlank()) {
-                base.name = preferredName
+        // The production-language original can be Japanese/Hindi, and an
+        // Arabic production can have a romanized original_name. Preserve
+        // familiar English display names and authentic Arabic script.
+        val arDetail = if (
+            detail?.originalLanguage.equals("ar", ignoreCase = true) &&
+            tmdbId != null
+        ) {
+            timed(2100L) {
+                app.get(
+                    "$tmdbApiUrl/${if (isTv) "tv" else "movie"}/$tmdbId",
+                    params = mapOf(
+                        "api_key" to tmdbApiKey,
+                        "language" to "ar-SA"
+                    )
+                ).parsedSafe<TmdbDetail>()
             }
+        } else null
+
+        detail?.let { meta ->
+            val preferredName = if (meta.originalLanguage.equals("ar", true)) {
+                listOfNotNull(
+                    arDetail?.title, arDetail?.name,
+                    meta.originalTitle, meta.originalName,
+                    base.name, meta.title, meta.name
+                ).firstOrNull {
+                    Regex("""[\u0600-\u06FF]""").containsMatchIn(it)
+                } ?: listOfNotNull(meta.title, meta.name, base.name,
+                    meta.originalTitle, meta.originalName).firstOrNull()
+            } else {
+                listOfNotNull(meta.title, meta.name, base.name,
+                    meta.originalTitle, meta.originalName).firstOrNull()
+            }
+            if (!preferredName.isNullOrBlank()) base.name = preferredName
         }
 
         if (!arabicOverview.isNullOrBlank()) {
@@ -2343,7 +2359,9 @@ class MOOSAHubProvider : TmdbProvider() {
         // names. Carry them as aliases instead of machine-translating.
         val sourceTitleAliases = listOfNotNull(
             detail?.originalTitle, detail?.originalName,
-            detail?.title, detail?.name
+            detail?.title, detail?.name,
+            arDetail?.title, arDetail?.name,
+            base.name
         ).filter(String::isNotBlank).distinct()
 
         when (base) {
