@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 71
+version = 72
 
 
 android {
@@ -50,3 +50,6 @@ dependencies {
 // v68: familiar catalog titles in English, genuine Arabic-script metadata,
 // exact Arabic season/episode search, Akwam episode-number repair, real
 // TopCinema pagination, bounded bridge search, parallel Arabic fallback.
+
+// v72: stable directional focus on SHOW MORE, correct More Info navigation,
+// validated non-empty subtitles, official Arabic overviews, broader Indian catalog.
