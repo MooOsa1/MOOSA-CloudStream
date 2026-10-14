@@ -334,10 +334,15 @@ object MOOSACatalog {
             tryParseJson<Page>(body)
                 ?: return CatalogPage(emptyList(), 1)
 
+        val indianTop = path == "/discover/movie" &&
+            extra["with_origin_country"] == "IN"
         val enriched = coroutineScope {
             response.results.map { item ->
                 async {
-                    enrichArtwork(item, forceTv)
+                    // Keep this ranking responsive even when old Indian
+                    // catalogue entries have no uploaded poster. CloudStream
+                    // can show a default cover until artwork exists.
+                    if (indianTop) item else enrichArtwork(item, forceTv)
                 }
             }.awaitAll()
         }
@@ -359,7 +364,9 @@ object MOOSACatalog {
         "/trending/tv/week" to "Trending Series",
         "/movie/top_rated" to "Top Rated Movies",
         "/tv/top_rated" to "Top Rated Series",
-        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=35" to "Top Indian Movies"
+        // Ranked by TMDB votes with a meaningful minimum vote sample.
+        // v72's 35-vote floor exposed obscure titles with inflated scores.
+        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7" to "Top Indian Movies"
     )
 
     suspend fun home(
