@@ -1220,11 +1220,16 @@ class MOOSAHubProvider : TmdbProvider() {
             .distinctBy { it.url }
     }
 
+    private data class MatchedLoad(
+        val response: LoadResponse,
+        val searchTitle: String
+    )
+
     private suspend fun loadBestMatch(
         api: MainAPI,
         request: HubPlaybackRequest,
         aliases: List<String>
-    ): LoadResponse? {
+    ): MatchedLoad? {
         val wantSeries =
             request.season != null &&
                 request.episode != null
@@ -1269,7 +1274,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 direct != null &&
                 correctType(direct)
             ) {
-                return direct
+                return MatchedLoad(direct, direct.name)
             }
         }
 
@@ -1305,7 +1310,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         aliases
                     )
                 ) {
-                    return direct
+                    return MatchedLoad(direct, direct.name)
                 }
             }
         }
@@ -1371,7 +1376,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     aliases
                 )
             ) {
-                return loaded
+                return MatchedLoad(loaded, match.name)
             }
         }
 
@@ -1543,7 +1548,7 @@ class MOOSAHubProvider : TmdbProvider() {
         val isSeries =
             request.season != null &&
                 request.episode != null
-        val loaded = timed(
+        val matched = timed(
             providerResolveTimeoutFor(
                 api,
                 request
@@ -1555,6 +1560,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 aliases = aliases
             )
         } ?: return null
+        val loaded = matched.response
 
         val data = if (!isSeries) {
             (loaded as? MovieLoadResponse)?.dataUrl
@@ -1706,24 +1712,30 @@ class MOOSAHubProvider : TmdbProvider() {
                     .mapNotNull(::providerSeason)
                     .distinct()
 
+            // A provider can number episodes as season 1 inside a
+            // dedicated S5 page.  Remap ONLY if its page/search title
+            // explicitly identifies this requested season.
             val pageProvesSeason =
-                seasonSpecificTitleMatch(
-                    series.name,
-                    aliases,
-                    season
-                )
+                listOf(series.name, matched.searchTitle).any { title ->
+                    explicitSeasonNumber(title) == season &&
+                        seasonSpecificTitleMatch(title, aliases, season)
+                }
 
             val seasonless =
                 if (
                     exact == null &&
-                    explicitSeasons.isEmpty() &&
                     (
-                        season == 1 ||
-                            pageProvesSeason
-                        )
+                        explicitSeasons.isEmpty() ||
+                            explicitSeasons == listOf(1)
+                    ) &&
+                    (season == 1 || pageProvesSeason)
                 ) {
-                    series.episodes.firstOrNull {
-                        episodeNumber(it) == episode
+                    series.episodes.firstOrNull { item ->
+                        episodeNumber(item) == episode &&
+                            (
+                                providerSeason(item) == null ||
+                                    providerSeason(item) == 1
+                                )
                     }
                 } else {
                     null
@@ -1745,11 +1757,19 @@ class MOOSAHubProvider : TmdbProvider() {
                     null
                 }
 
-            (
+            val episodeData = (
                 exact
                     ?: seasonless
                     ?: firstSeasonFallback
                 )?.data
+
+            if (episodeData.isNullOrBlank()) {
+                MOOSAPlaybackDiagnostics.update(
+                    api,
+                    "Series matched, but S${season}E${episode} not confirmed"
+                )
+            }
+            episodeData
         }?.takeIf { it.isNotBlank() } ?: return null
 
         val target = ProviderTarget(
