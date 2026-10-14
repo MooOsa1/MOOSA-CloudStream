@@ -39,7 +39,7 @@ object MOOSASeeAll {
     // The host adapter rewrites home_child_more_info.text on rebind.
     // Never mutate that text to add SHOW MORE: a separate persistent view
     // survives a recycled item's text reset without flickering.
-    private val actionForTitle = WeakHashMap<TextView, TextView>()
+    private val actionForTitle = WeakHashMap<TextView, WeakReference<TextView>>()
     private var headerRefreshScheduled = false
     private var lastBrowseOpenAt = 0L
 
@@ -66,7 +66,7 @@ object MOOSASeeAll {
     }
 
     private fun actionFor(header: TextView): TextView? =
-        actionForTitle[header]?.takeIf { it.parent === header.parent }
+        actionForTitle[header]?.get()?.takeIf { it.parent === header.parent }
 
     private fun installAction(header: TextView): TextView? {
         actionFor(header)?.let { return it }
@@ -144,7 +144,7 @@ object MOOSASeeAll {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { marginEnd = dp(16) }
         )
-        actionForTitle[header] = action
+        actionForTitle[header] = WeakReference(action)
         styleAction(action, false)
         wireAction(host, header, action)
         return action
