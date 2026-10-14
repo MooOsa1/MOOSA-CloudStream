@@ -1092,6 +1092,11 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest
     ): Long =
         when {
+            // Akwam S1 discovery uses a search page plus an older-season
+            // page, so it needs enough time for both network requests.
+            isAkwamProvider(api) &&
+                request.isTv -> 13500L
+
             isArabicProvider(api) &&
                 request.isTv -> 8500L
 
@@ -1180,15 +1185,41 @@ class MOOSAHubProvider : TmdbProvider() {
             .distinctBy { normalizeArabicOrthography(normalizeTitle(it)) }
             .take(if (originalLanguage.equals("ar", true)) 12 else 16)
 
-        val queryVariants = buildList {
-            addAll(cleanAliases)
-
-            if (year != null) {
-                cleanAliases
-                    .take(4)
-                    .forEach { alias ->
-                        add("$alias $year")
+        // Akwam indexes every season as a different series. Searching the
+        // bare title first can return only the newest seasons or S1 and
+        // waste most of the resolver budget. Prioritize the requested
+        // season's Arabic WORD alias, which matches Akwam's own titles.
+        val orderedAliases =
+            if (
+                isAkwamProvider(api) &&
+                wantSeries &&
+                season != null &&
+                season > 1 &&
+                originalLanguage.equals("ar", true)
+            ) {
+                val ordinal = arabicSeasonWord(season)
+                val seasonAliases = cleanAliases
+                    .filter { explicitSeasonNumber(it) == season }
+                    .sortedBy { alias ->
+                        when {
+                            ordinal != null &&
+                                alias.contains("الموسم $ordinal") -> 0
+                            Regex("""(?:^|\s)ج\s*$season(?:\s|$)""")
+                                .containsMatchIn(alias) -> 1
+                            else -> 2
+                        }
                     }
+                seasonAliases + cleanAliases.filterNot { it in seasonAliases }
+            } else {
+                cleanAliases
+            }
+
+        val queryVariants = buildList {
+            addAll(orderedAliases)
+            if (year != null) {
+                orderedAliases.take(4).forEach { alias ->
+                    add("$alias $year")
+                }
             }
         }.distinct().take(18)
 
@@ -1223,7 +1254,9 @@ class MOOSAHubProvider : TmdbProvider() {
 
             if (hasStrict) break
 
-            if (index < 2) {
+            // This bundled Akwam provider has one search endpoint and
+            // ignores a page number; retrying "page 2" repeats page 1.
+            if (index < 2 && !isAkwamProvider(api)) {
                 val second = timed(
                     searchTimeoutFor(
                         api,
