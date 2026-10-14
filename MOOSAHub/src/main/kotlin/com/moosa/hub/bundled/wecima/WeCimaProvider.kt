@@ -547,6 +547,9 @@ class WeCimaProvider : MainAPI() {
         val seen = linkedSetOf<String>()
 
         for (target in targets) {
+            val declaredQuality = MOOSAQualityPolicy.labeledHeight(target)
+            if (declaredQuality != null &&
+                declaredQuality < MOOSAQualityPolicy.MIN_HEIGHT) continue
             if (!seen.add(target)) continue
 
             if (
