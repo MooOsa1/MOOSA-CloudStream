@@ -1112,6 +1112,14 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest
     ): Long =
         when {
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isAkwamProvider(api) -> 12000L
+
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isArabicProvider(api) -> 8000L
+
             isArabicProvider(api) &&
                 request.isTv -> 30000L
 
@@ -1127,6 +1135,14 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest
     ): Long =
         when {
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isAkwamProvider(api) -> 35000L
+
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isArabicProvider(api) -> 13000L
+
             isArabicProvider(api) &&
                 request.isTv -> 100000L
 
@@ -2792,6 +2808,14 @@ class MOOSAHubProvider : TmdbProvider() {
                 .lowercase()
 
         return when {
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isAkwamProvider(api) -> 23000L
+
+            request.originalLanguage.equals("ar", true) &&
+                MOOSASettingsStore.arabicFastMode() &&
+                isArabicProvider(api) -> 11000L
+
             isStreamPlayProvider(api) ->
                 streamPlayLinksTimeoutMs
 
