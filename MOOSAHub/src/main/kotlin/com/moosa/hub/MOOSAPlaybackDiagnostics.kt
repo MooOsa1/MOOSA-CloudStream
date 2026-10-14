@@ -54,6 +54,11 @@ internal object MOOSAPlaybackDiagnostics {
         }
     }
 
+    fun status(api: MainAPI): String? =
+        synchronized(lock) {
+            states[key(api)]?.second
+        }
+
     fun report(): String =
         synchronized(lock) {
             buildString {
