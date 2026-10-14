@@ -29,3 +29,17 @@ The Arabic extension remains **Akwam-native**. It does not use TMDB, Google Tran
 ### Verification and limitations
 
 An isolated pre-release CloudStream Gradle build succeeded. Live metadata checks found 30 unique correctly numbered episodes for each tested sample: "جعفر العمدة" season 1 and "اللعبة" seasons 1 and 5. Native catalogs, paged search, and episode pages passed. Several server samples returned HTTP 206 and MP4 signatures from tiny ranged requests. These do not prove uninterrupted playback, actual 1080p/4K encoding, or Fire TV performance everywhere.
+
+## MOOSA Arabic v3 — native dubbed-category correction (2026-10-14)
+
+MOOSA Arabic keeps **one direct Akwam backend**, no TMDB title matching and no machine-translated names.
+
+- Native Arabic movie/series sections use section=29 (explicit "مدبلج" titles are excluded from their Arabic-original shelves).
+- The dubbed movie/series shelves use **Akwam's own category=71**, not filtering section=29 by title text. This includes source-tagged dubbed productions that do not say "مدبلج" in the title.
+- Live smoke checks: page 1 showed **30 dubbed movies** and **24 dubbed series**, and both second pages contained additional cards.
+- Stream discovery retains high-to-low source quality tab order: tab-5 (1080p), tab-4 (720p); quality below 720p is hidden.
+- Small-byte live server probes on one movie and one series episode returned **HTTP 206** and MP4 file signatures on Downet over both HTTPS and HTTP. HTTPS is shown first, and any HTTP fallback is labelled as unencrypted. No random unsupported hosts were added.
+
+### Limits
+
+A valid first-byte server result does not prove actual video width/height or sustained streaming performance on Fire TV in Oman. The website may change categories, hosts and CDN availability later. Tested pages and server candidates are not guarantees for every title.
