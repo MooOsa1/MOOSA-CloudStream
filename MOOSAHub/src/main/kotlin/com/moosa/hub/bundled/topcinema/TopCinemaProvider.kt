@@ -8,6 +8,7 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.moosa.hub.MOOSAQualityPolicy
 import org.jsoup.nodes.Element
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
@@ -344,6 +345,11 @@ class TopCinemaProvider : MainAPI() {
         val pageUrl = data.trimEnd('/')
         val watchUrl = "$pageUrl/watch/"
 
+        // Apply the same hard floor when TopCinema is selected directly.
+        val hdOnly: (ExtractorLink) -> Unit = { link ->
+            if (MOOSAQualityPolicy.accepts(link)) callback(link)
+        }
+
         val watchResponse = try {
             app.get(watchUrl, headers = headers + mapOf("Referer" to pageUrl))
         } catch (e: Exception) {
@@ -354,7 +360,7 @@ class TopCinemaProvider : MainAPI() {
             val doc = watchResponse.document
             val activeIframeUrl = doc.selectFirst("div.WatchIframe iframe, .player-embed iframe")?.attr("src") ?: ""
             if (activeIframeUrl.isNotEmpty()) {
-                safeExtract(activeIframeUrl, subtitleCallback, callback)
+                safeExtract(activeIframeUrl, subtitleCallback, hdOnly)
             }
 
             val servers = doc.select("ul#watch > li, .servers-list li, [data-watch]")
@@ -366,13 +372,13 @@ class TopCinemaProvider : MainAPI() {
 
                 when {
                     rawUrl.contains("reviewrate.net") || rawUrl.contains("gamehub.cam") -> {
-                        scrapeM3u8(rawUrl, "ReviewRate", callback)
+                        scrapeM3u8(rawUrl, "ReviewRate", hdOnly)
                     }
                     rawUrl.contains("filemoon") || rawUrl.contains("moonplayer") -> {
-                        safeExtract(rawUrl, subtitleCallback, callback)
+                        safeExtract(rawUrl, subtitleCallback, hdOnly)
                     }
                     else -> {
-                        safeExtract(rawUrl, subtitleCallback, callback)
+                        safeExtract(rawUrl, subtitleCallback, hdOnly)
                     }
                 }
             }
