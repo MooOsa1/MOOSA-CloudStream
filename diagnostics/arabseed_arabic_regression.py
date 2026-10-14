@@ -32,6 +32,19 @@ for typ,title,season,episode in cases:
         url=base+"/?s="+quote(title) if page==1 else base+f"/page/{page}/?s="+quote(title)
         status,final,body=fetch(url)
         soup=BeautifulSoup(body,"html.parser")
+        if page==1:
+            pageTitle=soup.title.get_text(" ",strip=True)[:95] if soup.title else ""
+            cardTitles=[a.get("title","")[:75] for a in soup.select("a[title][href]")[:12]]
+            print(" DOCUMENT", "url_host",urlparse(final).hostname,"body_len",len(body),
+                  "title",pageTitle,"a_with_title",len(soup.select("a[title][href]")),
+                  "a_all",len(soup.select("a[href]")),
+                  "sample_titles",cardTitles,flush=True)
+            print(" SEARCH_CARD_SELECTORS",{
+                ".movie__block":len(soup.select(".movie__block")),
+                ".content-box":len(soup.select(".content-box")),
+                ".as-card":len(soup.select(".as-card")),
+                "article":len(soup.select("article"))
+            },flush=True)
         links=[]
         for a in soup.select("a[title][href]"):
             label=a.get("title","").strip()
