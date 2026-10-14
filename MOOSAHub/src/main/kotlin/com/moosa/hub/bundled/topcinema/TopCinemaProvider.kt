@@ -452,46 +452,87 @@ class TopCinemaProvider : MainAPI() {
     ): Boolean {
         val pageUrl = data.trimEnd('/')
         val watchUrl = "$pageUrl/watch/"
-
-        // Apply the same hard floor when TopCinema is selected directly.
-        val hdOnly: (ExtractorLink) -> Unit = { link ->
-            if (MOOSAQualityPolicy.accepts(link)) callback(link)
+        val response = try {
+            app.get(
+                watchUrl,
+                headers = headers + mapOf("Referer" to pageUrl)
+            )
+        } catch (_: Exception) {
+            return false
         }
+        if (response.code !in 200..299) return false
 
-        val watchResponse = try {
-            app.get(watchUrl, headers = headers + mapOf("Referer" to pageUrl))
-        } catch (e: Exception) {
-            null
-        }
-
-        if (watchResponse != null && watchResponse.code == 200) {
-            val doc = watchResponse.document
-            val activeIframeUrl = doc.selectFirst("div.WatchIframe iframe, .player-embed iframe")?.attr("src") ?: ""
-            if (activeIframeUrl.isNotEmpty()) {
-                safeExtract(activeIframeUrl, subtitleCallback, hdOnly)
-            }
-
-            val servers = doc.select("ul#watch > li, .servers-list li, [data-watch]")
-            servers.forEach { li ->
-                val rawUrl = li.attr("data-watch").trim().ifEmpty {
-                    li.select("noscript iframe, iframe").attr("src").trim()
-                }
-                if (rawUrl.isEmpty() || rawUrl == pageUrl || rawUrl == watchUrl) return@forEach
-
-                when {
-                    rawUrl.contains("reviewrate.net") || rawUrl.contains("gamehub.cam") -> {
-                        scrapeM3u8(rawUrl, "ReviewRate", hdOnly)
-                    }
-                    rawUrl.contains("filemoon") || rawUrl.contains("moonplayer") -> {
-                        safeExtract(rawUrl, subtitleCallback, hdOnly)
-                    }
-                    else -> {
-                        safeExtract(rawUrl, subtitleCallback, hdOnly)
-                    }
-                }
+        val emittedUrls = linkedSetOf<String>()
+        val unknownHlsMasters = mutableListOf<ExtractorLink>()
+        fun accept(link: ExtractorLink) {
+            if (MOOSAQualityPolicy.accepts(link)) {
+                if (emittedUrls.add(link.url.trim())) callback(link)
+            } else if (
+                link.isM3u8 &&
+                link.quality == Qualities.Unknown.value &&
+                !MOOSAQualityPolicy.hasForbiddenLabel(link)
+            ) {
+                // The Vidara extractor emits an unknown-quality HLS master.
+                // Read RESOLUTION from the actual playlist, never infer HD.
+                unknownHlsMasters += link
             }
         }
-        return true
+
+        val doc = response.document
+        val servers = doc.select(
+            "ul#watch > li, .servers-list li, [data-watch]"
+        ).distinctBy { element ->
+            element.attr("data-watch").ifBlank {
+                element.selectFirst("iframe[src]")?.attr("src").orEmpty()
+            }
+        }.sortedBy { element ->
+            val url = element.attr("data-watch").ifBlank {
+                element.selectFirst("iframe[src]")?.attr("src").orEmpty()
+            }
+            if (url.contains("vidara.to", ignoreCase = true)) 0 else 1
+        }
+
+        for (server in servers.take(5)) {
+            val target = server.attr("data-watch").trim().ifBlank {
+                server.selectFirst("iframe[src]")?.attr("src").orEmpty()
+            }
+            if (target.isBlank() || target == watchUrl || target == pageUrl) continue
+            safeExtract(target, subtitleCallback, ::accept)
+            // Don't delay the player with failing hosters after Vidara is found.
+            if (unknownHlsMasters.isNotEmpty() || emittedUrls.isNotEmpty()) break
+        }
+
+        for (master in unknownHlsMasters.distinctBy { it.url }.take(3)) {
+            val variants = try {
+                M3u8Helper().m3u8Generation(
+                    M3u8Helper.M3u8Stream(
+                        streamUrl = master.url,
+                        quality = null,
+                        headers = master.getAllHeaders()
+                    ),
+                    false
+                )
+            } catch (_: Exception) {
+                emptyList()
+            }
+
+            variants.sortedByDescending { it.quality ?: 0 }.forEach { variant ->
+                val height = variant.quality
+                if (!MOOSAQualityPolicy.acceptsHeight(height)) return@forEach
+                val link = newExtractorLink(
+                    source = name,
+                    name = name + " • " + height + "p • " + master.source,
+                    url = variant.streamUrl,
+                    type = ExtractorLinkType.M3U8
+                ) {
+                    referer = master.referer
+                    quality = height!!
+                    headers = master.headers
+                }
+                accept(link)
+            }
+        }
+        return emittedUrls.isNotEmpty()
     }
 
     private suspend fun safeExtract(
@@ -500,7 +541,7 @@ class TopCinemaProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            loadExtractor(url, "https://topcima.online/", subtitleCallback, callback)
+            loadExtractor(url, "$mainUrl/", subtitleCallback, callback)
         } catch (e: Exception) {
             scrapeM3u8(url, "Direct", callback)
         }
@@ -514,7 +555,7 @@ class TopCinemaProvider : MainAPI() {
         try {
             val text = app.get(
                 url,
-                headers = headers + mapOf("Referer" to "https://topcima.online/")
+                headers = headers + mapOf("Referer" to "$mainUrl/")
             ).text
 
             val m3u8 = Regex("""["']?(https?://[^"'\s]+\.m3u8[^"'\s]*)["']?""")
