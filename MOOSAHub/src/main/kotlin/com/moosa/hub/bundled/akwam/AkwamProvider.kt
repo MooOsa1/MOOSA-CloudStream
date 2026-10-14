@@ -380,6 +380,12 @@ class AkwamProvider : MainAPI() {
                 host == "downet.net" || host.endsWith(".downet.net")
             }.getOrDefault(false)
 
+            // Some mirrors already deliver a clear HTTP MP4 directly.
+            // The Hub independently verifies it before displaying it.
+            if (isDownet && link.url.startsWith("http://", true)) {
+                foundDirectHdTransport = true
+            }
+
             if (
                 !isDownet ||
                 !link.url.startsWith("https://", ignoreCase = true) ||
