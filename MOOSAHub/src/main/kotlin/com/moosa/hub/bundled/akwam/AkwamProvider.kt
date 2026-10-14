@@ -355,6 +355,7 @@ class AkwamProvider : MainAPI() {
         val pending = mutableListOf(PlayerPage(data, 0, mainUrl))
         var cursor = 0
         var emitted = false
+        var foundDirectHdTransport = false
         val ownHost = runCatching { java.net.URI(mainUrl).host.lowercase() }.getOrNull().orEmpty()
         val desktopUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
@@ -412,7 +413,10 @@ class AkwamProvider : MainAPI() {
                 headers = safeHeaders,
                 type = ExtractorLinkType.VIDEO
             )
-            if (MOOSAQualityPolicy.accepts(alternate)) callback(alternate)
+            if (MOOSAQualityPolicy.accepts(alternate)) {
+                callback(alternate)
+                foundDirectHdTransport = true
+            }
         }
 
         fun labelFor(url: String, quality: Int): String {
@@ -516,7 +520,14 @@ class AkwamProvider : MainAPI() {
             emitLink(link)
         }
 
-        while (cursor < pending.size && cursor < 40) {
+        // The verified player candidate is checked by MOOSA Hub. Stop the
+        // expensive page crawl as soon as its HD HTTP transport is delivered;
+        // continuing through 40 Akwam/iframe pages made the result spinner
+        // wait long after the only usable server had already been discovered.
+        while (cursor < pending.size &&
+            cursor < 40 &&
+            !foundDirectHdTransport
+        ) {
             val (url, depth, referer, qualityHint) = pending[cursor++]
             if (!visited.add(url)) continue
             val response = try {
@@ -577,6 +588,7 @@ class AkwamProvider : MainAPI() {
             val selectors = "li[data-link],a.watchBTn,a.link-show,a.aplr-link,a[data-link],a[href*='/watch/'],a[href*='/download/'],a[href*='serv='],a.link-download[href],a.link-btn[href],a[href*='downet.net'],a[href*='.mp4'],div.btn-loader > a[href],a.download-link[href],div.tab-content.quality a[href],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]";
 
             for (element in page.select(selectors)) {
+                if (foundDirectHdTransport) break
                 val raw = element.attr("data-link")
                     .ifBlank { element.attr("data-src") }
                     .ifBlank { element.attr("data-lazy-src") }
