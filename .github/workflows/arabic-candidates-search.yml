@@ -1,0 +1,17 @@
+name: Test Arabic provider search APIs
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/arabic_candidates_search_probe.py"
+      - ".github/workflows/arabic-candidates-search.yml"
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet beautifulsoup4
+      - name: Test exact Arabic movie and series searches
+        run: python3 diagnostics/arabic_candidates_search_probe.py
