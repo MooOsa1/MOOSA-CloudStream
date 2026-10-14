@@ -1,0 +1,43 @@
+name: Validate MOOSA Hub v73 stable browse focus (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v73-stable-showmore-focus"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both plugins without release
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Static focus and recycling regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASeeAll.kt").read_text()
+          versions={v["internalName"]:v["version"] for v in json.loads(Path("build/plugins.json").read_text())}
+          assert versions == {"MOOSAHub":73,"MOOSAArabic":3}, versions
+          assert "private val actionForTitle = WeakHashMap<TextView, WeakReference<TextView>>()" in p
+          assert 'text = "SHOW MORE  ›"' in p
+          assert 'header.text = expectedText' not in p
+          assert 'title.text = expectedText' not in p
+          assert "toolbar.addView(" in p
+          assert "focusInPreviousVisibleRow" in p
+          assert "manager.scrollToPositionWithOffset(target, 0)" in p
+          assert "focusHomeSelector(host)" in p
+          assert "focusCardDirectlyBelowHeader" in p
+          assert "KeyEvent.KEYCODE_DPAD_UP" in p
+          assert "KeyEvent.KEYCODE_DPAD_DOWN" in p
+          assert "KeyEvent.KEYCODE_DPAD_RIGHT -> true" in p
+          assert "if (position == RecyclerView.NO_POSITION)" in p
+          print("PASS: no recycled title mutation, no trapped UP at offscreen row")
+          PY
