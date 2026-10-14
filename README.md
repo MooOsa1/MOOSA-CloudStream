@@ -40,6 +40,10 @@ MOOSA Arabic keeps **one direct Akwam backend**, no TMDB title matching and no m
 - Stream discovery retains high-to-low source quality tab order: tab-5 (1080p), tab-4 (720p); quality below 720p is hidden.
 - Small-byte live server probes on one movie and one series episode returned **HTTP 206** and MP4 file signatures on Downet over both HTTPS and HTTP. HTTPS is shown first, and any HTTP fallback is labelled as unencrypted. No random unsupported hosts were added.
 
+### Dubbed-content playback regression (2026-10-14)
+
+In addition to the standard Arabic samples, a separate CI smoke test now selects a **dubbed movie and dubbed series episode directly from Akwam category=71**, follows the original item/episode pages, and requests only 64 bytes from the candidate MP4 transport. Both returned valid `HTTP 206` ranges and MP4 signatures **over unencrypted HTTP** (Downet hosts `s201d1` and `s205d1`). The HTTPS attempts for those particular dubbed samples failed in the CI environment. Thus HTTP fallback is important but is explicitly labeled unencrypted. These results do not prove end-to-end playback, sustained throughput, or the actual video dimensions.
+
 ### Limits
 
 A valid first-byte server result does not prove actual video width/height or sustained streaming performance on Fire TV in Oman. The website may change categories, hosts and CDN availability later. Tested pages and server candidates are not guarantees for every title.
