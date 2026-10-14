@@ -412,7 +412,7 @@ class AkwamProvider : MainAPI() {
                 headers = safeHeaders,
                 type = ExtractorLinkType.VIDEO
             )
-            callback(alternate)
+            if (MOOSAQualityPolicy.accepts(alternate)) callback(alternate)
         }
 
         fun labelFor(url: String, quality: Int): String {
