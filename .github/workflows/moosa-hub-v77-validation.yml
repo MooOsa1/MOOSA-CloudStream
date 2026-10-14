@@ -30,9 +30,11 @@ jobs:
           provider=(b/"MOOSAHubProvider.kt").read_text()
           versions={p["internalName"]:p["version"] for p in json.loads(Path("build/plugins.json").read_text())}
           assert versions=={"MOOSAHub":77,"MOOSAArabic":3},versions
-          assert "with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7" in catalog
+          assert "with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7&without_genres=99" in catalog
           assert "val pagesPerBatch = if (request.name == \"Top Indian Movies\") 3" in catalog
           assert "if (indianTop) item else enrichArtwork(item, forceTv)" in catalog
+          assert "exactIndianRatingOrder(fetchedPages, unsorted)" in catalog
+          assert "compareByDescending<SearchResponse>" in catalog
           assert "https://translate.googleapis.com/translate_a/single" in provider
           assert "https://api.mymemory.translated.net/get" in provider
           assert "ValueAnimator.ofInt(fromWidth, targetWidth)" in (b/"MOOSASeeAll.kt").read_text()
@@ -53,7 +55,7 @@ jobs:
           key=re.search(r'private const val TMDB_KEY = "([^"]+)"',source).group(1)
           opts={"api_key":key,"language":"en-US","include_adult":"false",
                 "with_origin_country":"IN","sort_by":"vote_average.desc",
-                "vote_count.gte":"200","vote_average.gte":"7","page":"1"}
+                "vote_count.gte":"200","vote_average.gte":"7","without_genres":"99","page":"1"}
           url="https://api.themoviedb.org/3/discover/movie?"+p.urlencode(opts)
           try:
             req=u.Request(url,headers={"User-Agent":"Mozilla/5.0"})
@@ -62,7 +64,9 @@ jobs:
             print("INDIAN_TOP", "found",response.get("total_results"),"page_titles", [(x.get("title"),x.get("vote_average"),x.get("vote_count")) for x in items[:12]],flush=True)
             assert len(items)>=8, "unexpectedly few Indian movies"
             assert all(x["vote_count"]>=200 and x["vote_average"]>=7 for x in items), "TMDB ignored rating/vote filter"
-            assert all(items[i]["vote_average"] >= items[i+1]["vote_average"] for i in range(len(items)-1)), "TMDB rating sort mismatch"
+            resorted=sorted(items,key=lambda x:(x["vote_average"],x["vote_count"]),reverse=True)
+            assert all(resorted[i]["vote_average"] >= resorted[i+1]["vote_average"] for i in range(len(resorted)-1))
+            print("INDIAN_SORTED_RESULT", [(x.get("title"),x.get("vote_average"),x.get("vote_count")) for x in resorted[:10]])
           except Exception as e:
             print("TMDB_PROBE_UNAVAILABLE",type(e).__name__,repr(str(e))[:180])
           params={"client":"gtx","sl":"en","tl":"ar","dt":"t",
