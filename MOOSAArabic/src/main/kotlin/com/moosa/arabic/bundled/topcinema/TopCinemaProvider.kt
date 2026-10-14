@@ -1,5 +1,5 @@
 // Bundled from ramailo1/arprov (cb10a262a9fae679322c264973cf5c0f5219acdc); MIT licensed. See THIRD_PARTY_NOTICES.md.
-package com.moosa.hub.bundled.topcinema
+package com.moosa.arabic.bundled.topcinema
 
 
 import com.lagradost.cloudstream3.*
@@ -9,7 +9,7 @@ import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.M3u8Helper
-import com.moosa.hub.MOOSAQualityPolicy
+import com.moosa.arabic.MOOSAQualityPolicy
 import org.jsoup.nodes.Element
 import org.jsoup.Jsoup
 import java.net.URLEncoder

@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import com.lagradost.cloudstream3.APIHolder.apis
 import com.lagradost.cloudstream3.app
@@ -49,7 +49,7 @@ object MOOSASourceTester {
     fun sources(): List<MainAPI> =
         apis
             .filter {
-                it.name != "MOOSA Hub" &&
+                it.name != "MOOSA Arabic" &&
                     it.providerType == ProviderType.DirectProvider
             }
             .distinctBy { key(it) }
@@ -285,7 +285,7 @@ object MOOSASourceTester {
                                 {},
                                 { link ->
                                     // Source Tester must meet the SAME HD
-                                    // and non-Download policy as MOOSA Hub.
+                                    // and non-Download policy as MOOSA Arabic.
                                     // Previously a 480p English movie could
                                     // mark ArabSeed ONLINE despite Arabic
                                     // films and episodes being unavailable.

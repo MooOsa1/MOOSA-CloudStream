@@ -1,4 +1,4 @@
-package com.moosa.hub
+package com.moosa.arabic
 
 import android.net.Uri
 import com.lagradost.cloudstream3.app

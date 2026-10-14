@@ -1,5 +1,5 @@
 // Bundled from ramailo1/arprov (cb10a262a9fae679322c264973cf5c0f5219acdc); MIT licensed. See THIRD_PARTY_NOTICES.md.
-package com.moosa.hub.bundled.akwam
+package com.moosa.arabic.bundled.akwam
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -9,7 +9,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.moosa.hub.MOOSAQualityPolicy
+import com.moosa.arabic.MOOSAQualityPolicy
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
@@ -537,7 +537,7 @@ class AkwamProvider : MainAPI() {
             emitLink(link)
         }
 
-        // The verified player candidate is checked by MOOSA Hub. Stop the
+        // The verified player candidate is checked by MOOSA Arabic. Stop the
         // expensive page crawl as soon as its HD HTTP transport is delivered;
         // continuing through 40 Akwam/iframe pages made the result spinner
         // wait long after the only usable server had already been discovered.

@@ -1,4 +1,4 @@
-package com.moosa.hub.bundled.cimaclub
+package com.moosa.arabic.bundled.cimaclub
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.amap
@@ -7,7 +7,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import com.moosa.hub.MOOSAQualityPolicy
+import com.moosa.arabic.MOOSAQualityPolicy
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
 

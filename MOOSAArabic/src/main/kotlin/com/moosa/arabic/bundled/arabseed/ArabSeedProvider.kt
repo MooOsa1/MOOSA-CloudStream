@@ -1,4 +1,4 @@
-package com.moosa.hub.bundled.arabseed
+package com.moosa.arabic.bundled.arabseed
 
 import android.util.Base64
 import com.lagradost.cloudstream3.*
@@ -7,7 +7,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import com.moosa.hub.MOOSAQualityPolicy
+import com.moosa.arabic.MOOSAQualityPolicy
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element

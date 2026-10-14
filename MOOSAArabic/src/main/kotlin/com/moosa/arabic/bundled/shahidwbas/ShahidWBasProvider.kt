@@ -1,11 +1,11 @@
-package com.moosa.hub.bundled.shahidwbas
+package com.moosa.arabic.bundled.shahidwbas
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import com.moosa.hub.MOOSAQualityPolicy
+import com.moosa.arabic.MOOSAQualityPolicy
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.net.URI
