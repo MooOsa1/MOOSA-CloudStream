@@ -1180,7 +1180,27 @@ class MOOSAHubProvider : TmdbProvider() {
         // without an episode number. Let its load() provide verified episodes.
         val listedEpisode = explicitArabicEpisodeNumber(result.name)
             ?: return true
-        val listedSeason = explicitSeasonNumber(result.name)
+        val explicit = explicitSeasonNumber(result.name)
+
+        // MySeed titles sometimes use "اللعبة 4 الحلقة 19" instead of
+        // "اللعبة الموسم الرابع الحلقة 19". Require the numeric suffix
+        // to follow an exact title alias; never guess from an arbitrary
+        // number within the name.
+        val normalized = normalizeArabicOrthography(normalizeTitle(result.name))
+        val priorToEpisode = normalized.substringBefore(" الحلقه")
+            .substringBefore(" حلقه")
+            .substringBefore(" episode")
+            .trim()
+        val lastToken = priorToEpisode.substringAfterLast(' ').toIntOrNull()
+        val numberedSeason = lastToken
+            ?.takeIf { it in 1..30 }
+            ?.takeIf {
+                val prefix = priorToEpisode.substringBeforeLast(' ').trim()
+                val allowed = (listOf(request.title) + request.titleAliases)
+                    .any { alias -> canonicalTitle(prefix) == canonicalTitle(alias) }
+                allowed
+            }
+        val listedSeason = explicit ?: numberedSeason
 
         return listedEpisode == episode &&
             (listedSeason == season || (season == 1 && listedSeason == null))
