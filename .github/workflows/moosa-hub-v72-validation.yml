@@ -1,0 +1,49 @@
+name: Validate MOOSA Hub v72 UI, subtitles and catalog (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v72-navigation-subs-catalog"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Build plugins without publication
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Verify v72 functional invariants
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path("MOOSAHub/src/main/kotlin/com/moosa/hub")
+          home=(base/"MOOSASeeAll.kt").read_text()
+          browse=(base/"MOOSABrowseDialog.kt").read_text()
+          provider=(base/"MOOSAHubProvider.kt").read_text()
+          catalog=(base/"MOOSACatalog.kt").read_text()
+          versions={p["internalName"]:p["version"] for p in json.loads(Path("build/plugins.json").read_text())}
+          assert versions=={"MOOSAHub":72,"MOOSAArabic":3},versions
+          for token in ("KEYCODE_DPAD_UP","KEYCODE_DPAD_DOWN","KEYCODE_DPAD_LEFT","KEYCODE_DPAD_RIGHT","focusInPreviousVisibleRow"):
+              assert token in home,token
+          assert "SEARCH_ACTION_SHOW_METADATA" in browse
+          assert "metadataPreviewRequested" in browse
+          assert "isContent(name)" in browse
+          assert "dialog?.hide()" in browse and "dialog?.show()" in browse
+          assert "verifiedArabicSynopsis" in provider
+          assert "TmdbTranslationCollection" in provider
+          assert "الوصف العربي غير متوفر لهذا العمل حاليًا." in provider
+          assert "filterReadableSubtitles" in provider
+          assert "isReadableSubtitle" in provider
+          assert "subtitleTiming" in provider
+          assert "onArabic: (SubtitleFile)" not in provider
+          assert "vote_count.gte=35" in catalog
+          assert 'request.name == "Top Indian Movies") 3' in catalog
+          print("PASS: UI / More Info / subtitles / native Arabic plots / Indian discovery")
+          PY
