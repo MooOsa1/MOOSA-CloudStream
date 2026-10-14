@@ -264,6 +264,13 @@ object MOOSAServerRegistry {
 
     // HEAD 200 and empty Content-Type never prove a playable video.
     private val probeReasons = ConcurrentHashMap<String, String>()
+    // A bounded sample is measured on the viewer's own device, not a
+    // remote GitHub runner. Useful for ranking equivalent CDN mirrors,
+    // but never proof that a full video will remain smooth.
+    private val sampledHostMbps = ConcurrentHashMap<String, Double>()
+
+    fun sampledMbps(link: ExtractorLink): Double? =
+        sampledHostMbps[hostOf(link)]
 
     fun lastProbeReason(link: ExtractorLink): String? =
         probeReasons[linkKey(link)]
@@ -391,21 +398,48 @@ object MOOSAServerRegistry {
                             ) {
                                 seekReason = "Downet ignored first byte-range request"
                             } else {
+                                // Reuse the existing seek request to read
+                                // a small 64 KiB sample. This adds at most
+                                // 64 KiB, not a second separate speed test.
+                                val seekStartNs = System.nanoTime()
                                 val seekResponse = app.get(
                                     link.url,
                                     headers = headers + mapOf(
-                                        "Range" to "bytes=1048576-1048607"
+                                        "Range" to "bytes=1048576-1114111"
                                     ),
                                     referer = link.referer
                                 )
                                 val seekRange =
                                     seekResponse.headers["Content-Range"].orEmpty()
-                                val seekByte = seekResponse.body.byteStream().use {
-                                    it.read()
+                                val sampledBytes = seekResponse.body.byteStream().use { stream ->
+                                    val buffer = ByteArray(8192)
+                                    var total = 0
+                                    while (total < 65536) {
+                                        val count = stream.read(
+                                            buffer, 0,
+                                            minOf(buffer.size, 65536 - total)
+                                        )
+                                        if (count <= 0) break
+                                        total += count
+                                    }
+                                    total
                                 }
+                                val elapsedSeconds = (
+                                    (System.nanoTime() - seekStartNs) / 1e9
+                                ).coerceAtLeast(0.01)
                                 seekable = seekResponse.code == 206 &&
                                     seekRange.startsWith("bytes 1048576-", true) &&
-                                    seekByte >= 0
+                                    sampledBytes >= 32
+                                if (seekable && sampledBytes >= 8192) {
+                                    val mbps = (sampledBytes * 8.0) /
+                                        (elapsedSeconds * 1000000.0)
+                                    if (mbps.isFinite() && mbps > 0) {
+                                        val host = hostOf(link)
+                                        if (host.isNotBlank()) {
+                                            sampledHostMbps[host] = mbps
+                                        }
+                                    }
+                                }
                                 if (!seekable) {
                                     seekReason =
                                         "Downet seek failed HTTP ${seekResponse.code}; range=$seekRange"
@@ -423,7 +457,13 @@ object MOOSAServerRegistry {
                                 "Response has no recognized video signature"
                             !seekable -> seekReason
                             valid -> if (isDownet) {
-                                "Video signature and two byte ranges confirmed"
+                                val sample = sampledMbps(link)
+                                if (sample != null) {
+                                    "Video and seek confirmed; short CDN sample " +
+                                        String.format(java.util.Locale.US, "%.1f Mbps", sample)
+                                } else {
+                                    "Video signature and two byte ranges confirmed"
+                                }
                             } else {
                                 "Video signature confirmed"
                             }
