@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 77
+version = 78
 
 
 android {
@@ -69,3 +69,7 @@ dependencies {
 // v77: restore meaningful Indian top-rated film filters (200+ TMDB votes,
 // rating >= 7), three sorted pages; Arabic plots from TMDB first, external
 // translation of synopsis alone when not available. Native titles unchanged.
+
+// v78: Trending Indian Movies directly above Top Indian Movies, ranked by
+// current TMDB popularity among quality-screened releases from the past
+// 24 months. Existing Indian Top ranking and other sections remain separate.
