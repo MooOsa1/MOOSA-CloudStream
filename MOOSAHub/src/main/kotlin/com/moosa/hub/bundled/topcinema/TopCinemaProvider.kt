@@ -215,10 +215,10 @@ class TopCinemaProvider : MainAPI() {
         Regex("""(?:الحلقة|الحلقه|حلقة)\s*(\d{1,4})""")
             .find(title)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
-    override suspend fun search(query: String): List<SearchResponse> {
-        if (query.isBlank()) return emptyList()
+    private suspend fun searchPage(query: String, page: Int): List<SearchResponse> {
+        if (query.isBlank() || page !in 1..8) return emptyList()
         val encoded = URLEncoder.encode(query.trim(), "UTF-8")
-        val url = "$mainUrl/wp-json/wp/v2/search?search=$encoded&per_page=15"
+        val url = "$mainUrl/wp-json/wp/v2/search?search=$encoded&per_page=30&page=$page"
         val raw = try {
             app.get(url, headers = headers).text
         } catch (_: Exception) {
@@ -258,6 +258,13 @@ class TopCinemaProvider : MainAPI() {
                 newMovieSearchResponse(cleaned.ifBlank { rawTitle }, href, TvType.Movie)
             }
         }.distinctBy { it.url }
+    }
+
+    override suspend fun search(query: String): List<SearchResponse> = searchPage(query, 1)
+
+    override suspend fun search(query: String, page: Int): SearchResponseList {
+        val results = searchPage(query, page)
+        return newSearchResponseList(results, results.size >= 30 && page < 8)
     }
 
     override suspend fun load(url: String): LoadResponse {
