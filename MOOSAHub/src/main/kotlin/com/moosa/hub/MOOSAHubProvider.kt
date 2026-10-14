@@ -1589,8 +1589,11 @@ class MOOSAHubProvider : TmdbProvider() {
         // Leave failed candidates available as standalone providers for
         // testing, but don't waste the Hub's Arabic lookup budget on them.
         // This is a temporary quarantine, not a claim that they never work.
+        // TopCinema now has independently probed 1080p/720p HLS segment
+        // delivery on Vidara (2026-10-14). Use it after confirmed Akwam
+        // when the Akwam target is missing or fails, not as a fake mirror.
         val experimentalBundled = setOf(
-            "WeCima", "CimaClub", "TopCinema", "ArabSeed", "ShahidWBas"
+            "WeCima", "CimaClub", "ArabSeed", "ShahidWBas"
         )
 
         return available
