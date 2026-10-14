@@ -8,6 +8,7 @@ import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
 import com.moosa.hub.bundled.akwam.AkwamProvider
 import com.moosa.hub.bundled.arabseed.ArabSeedProvider
+import com.moosa.hub.bundled.cimaclub.CimaClubProvider
 import com.moosa.hub.bundled.topcinema.TopCinemaProvider
 
 @CloudstreamPlugin
@@ -21,6 +22,7 @@ class MOOSAHubPlugin : Plugin() {
         }
         registerMainAPI(AkwamProvider())
         registerMainAPI(ArabSeedProvider())
+        registerMainAPI(CimaClubProvider())
         registerMainAPI(TopCinemaProvider())
         registerMainAPI(MOOSAHubProvider())
     }
