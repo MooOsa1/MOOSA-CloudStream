@@ -77,7 +77,7 @@ for season, series_url in PAGES:
     first = next((
         href for href, label in episode_links
         if re.search(r"حلقة\s*1(?:\D|$)", label)
-        or "/الحلقة-1" in href
+        or re.search(r"/الحلقة-1(?:$|[?#/])", href)
     ), None)
     if first is None:
         print(f" S{season}: no E1 page link")
