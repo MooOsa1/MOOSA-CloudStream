@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "diagnostics/akwam_live_probe.py"
+      - "diagnostics/akwam_season_probe.py"
       - ".github/workflows/akwam-live-probe.yml"
 jobs:
   probe:
@@ -14,3 +15,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Probe actual episode MP4 headers and byte ranges
         run: python3 diagnostics/akwam_live_probe.py
+      - name: Audit Akwam season discovery and episode links
+        run: python3 diagnostics/akwam_season_probe.py
