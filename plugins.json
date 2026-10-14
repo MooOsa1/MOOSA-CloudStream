@@ -1,10 +1,31 @@
 [
     {
-        "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-594959042d4d8f701c7b1dc68255898583c7013065964ceccad2f462649199dc",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=akwam.ss&sz=%size%",
+        "fileHash": "sha256-c5dd6b8732bb49869b345b844fddfc33fa34fb7a10dc17b9fe422b5fb1c6ab5b",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 383358,
+        "fileSize": 39753,
+        "status": 1,
+        "language": "ar",
+        "authors": [
+            "MOOSA"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 1,
+        "internalName": "MOOSAArabic",
+        "description": "\u0623\u0641\u0644\u0627\u0645 \u0648\u0645\u0633\u0644\u0633\u0644\u0627\u062a \u0639\u0631\u0628\u064a\u0629 \u0645\u0646 \u0623\u0642\u0633\u0627\u0645 \u0623\u0643\u0648\u0627\u0645 \u0627\u0644\u0623\u0635\u0644\u064a\u0629\u060c \u0628\u062f\u0648\u0646 TMDB \u0623\u0648 \u0645\u0637\u0627\u0628\u0642\u0629 \u062e\u0627\u0631\u062c\u064a\u0629",
+        "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAArabic.cs3",
+        "name": "MOOSAArabic"
+    },
+    {
+        "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
+        "fileHash": "sha256-36a0217c9b93bf673f360315ba5f55a020c3fe277b9dd8a4dde1af332b3303b0",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
+        "fileSize": 383284,
         "status": 1,
         "language": "en",
         "authors": [
@@ -14,9 +35,9 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 68,
+        "version": 69,
         "internalName": "MOOSAHub",
-        "description": "English catalog, Arabic synopsis, and multi-source playback",
+        "description": "Global movies and series with Arabic subtitles; Arabic originals in separate MOOSA Arabic plugin",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAHub.cs3",
         "name": "MOOSAHub"
     },
