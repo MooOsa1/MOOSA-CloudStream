@@ -1024,6 +1024,7 @@ class MOOSAHubProvider : TmdbProvider() {
                             add("$title الجزء $word")
                         }
                         add("$title ج$season")
+                        add("$title $season")
                     } else {
                         add("$title Season $season")
                     }
@@ -1225,6 +1226,56 @@ class MOOSAHubProvider : TmdbProvider() {
         val searchTitle: String
     )
 
+    private fun explicitArabicEpisodeNumber(value: String): Int? {
+        val normalized = normalizeArabicOrthography(normalizeTitle(value))
+        val ep = Regex(
+            """(?:الحلقه|حلقه|episode|ep)\s*[:#-]?\s*(\d{1,4}|الاولى|الاول|الثانيه|الثاني|الثالثه|الثالث|الرابعه|الرابع|الخامسه|الخامس)""",
+            RegexOption.IGNORE_CASE
+        ).find(normalized)?.groupValues?.getOrNull(1)
+            ?: return null
+
+        return ep.toIntOrNull() ?: mapOf(
+            "الاولى" to 1, "الاول" to 1,
+            "الثانيه" to 2, "الثاني" to 2,
+            "الثالثه" to 3, "الثالث" to 3,
+            "الرابعه" to 4, "الرابع" to 4,
+            "الخامسه" to 5, "الخامس" to 5
+        )[ep]
+    }
+
+    private fun explicitArabicEpisodeMovieMatches(
+        movie: MovieLoadResponse,
+        searchTitle: String,
+        request: HubPlaybackRequest,
+        aliases: List<String>
+    ): Boolean {
+        if (!request.originalLanguage.equals("ar", ignoreCase = true)) return false
+
+        val season = request.season ?: return false
+        val episode = request.episode ?: return false
+        val titles = listOf(searchTitle, movie.name)
+
+        if (titles.any {
+                val s = explicitSeasonNumber(it)
+                s != null && s != season
+            }) return false
+
+        if (titles.any {
+                val ep = explicitArabicEpisodeNumber(it)
+                ep != null && ep != episode
+            }) return false
+
+        // Never use movie-typed search results as arbitrary episodes.  A
+        // genuine episode page must prove both season and episode itself.
+        if (!titles.any {
+                explicitSeasonNumber(it) == season &&
+                    explicitArabicEpisodeNumber(it) == episode
+            }) return false
+
+        return !movie.dataUrl.isNullOrBlank() &&
+            loadedIdentityMatches(movie, request, aliases)
+    }
+
     private suspend fun loadBestMatch(
         api: MainAPI,
         request: HubPlaybackRequest,
@@ -1366,6 +1417,19 @@ class MOOSAHubProvider : TmdbProvider() {
             ) {
                 api.load(match.url)
             } ?: continue
+
+            if (
+                wantSeries &&
+                loaded is MovieLoadResponse &&
+                explicitArabicEpisodeMovieMatches(
+                    movie = loaded,
+                    searchTitle = match.name,
+                    request = request,
+                    aliases = aliases
+                )
+            ) {
+                return MatchedLoad(loaded, match.name)
+            }
 
             if (!correctType(loaded)) continue
 
@@ -1562,7 +1626,7 @@ class MOOSAHubProvider : TmdbProvider() {
         } ?: return null
         val loaded = matched.response
 
-        val data = if (!isSeries) {
+        val data = if (!isSeries || loaded is MovieLoadResponse) {
             (loaded as? MovieLoadResponse)?.dataUrl
         } else {
             val series = loaded as? TvSeriesLoadResponse ?: return null
