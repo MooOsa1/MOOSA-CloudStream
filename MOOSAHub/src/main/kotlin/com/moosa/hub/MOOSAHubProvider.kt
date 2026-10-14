@@ -1745,12 +1745,18 @@ class MOOSAHubProvider : TmdbProvider() {
             !isBundledArabicProvider(api) &&
             MOOSAArabicBridge.supports(api)
         ) {
-            val bridged =
+            // External repositories are unpredictable. Cap the whole bridge,
+            // not just each HTTP call, or six failed searches can stall the
+            // CloudStream loading dialog for over a minute.
+            val bridged = timed(
+                if (MOOSASettingsStore.arabicFastMode()) 14_000L else 25_000L
+            ) {
                 MOOSAArabicBridge.resolve(
                     api = api,
                     request = request,
                     aliases = aliases
                 )
+            }
 
             if (bridged != null) {
                 targetCache[cacheKey] =
@@ -1762,6 +1768,9 @@ class MOOSAHubProvider : TmdbProvider() {
 
                 return bridged
             }
+            // In fast mode the bridge has already tried the relevant Arabic
+            // aliases. Don't repeat the whole search through a second resolver.
+            if (MOOSASettingsStore.arabicFastMode()) return null
         }
 
         val isSeries =
