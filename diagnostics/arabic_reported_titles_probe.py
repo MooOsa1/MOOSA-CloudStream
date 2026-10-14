@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 UA = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36"
 TITLES = ("هوجان", "فرصة ثانية", "جعفر العمدة", "بيت الروبي")
 BASES = {"TOPCINEMA": "https://www.topcinema.vip", "AKWAM": "https://ak.sv",
-         "ARABSEED": "https://m.myseed.tv"}
+         "ARABSEED": "https://m.myseed.tv", "ARABSEED_WATCH": "https://arabseeds.watch"}
 def fetch(url):
     try:
         with urlopen(Request(url,headers={"User-Agent":UA,"Accept-Language":"ar,en-US;q=0.8"}),timeout=11) as r:
@@ -48,6 +48,9 @@ for title in TITLES:
         else:
             status,final,body=fetch(base+"/?s="+quote(title))
             doc=BeautifulSoup(body,"html.parser")
-            rows=[(a.get("title","")[:90],urlparse(a.get("href","")).path[:75])
-                  for a in doc.select("a[title][href]") if title.split()[0] in a.get("title","")]
+            rows=[((a.get("title") or a.get_text(" ",strip=True))[:90],
+                    urlparse(a.get("href","")).path[:75])
+                  for a in doc.select("a[href]")
+                  if title.split()[0] in (a.get("title") or a.get_text(" ",strip=True))
+                  and urlparse(a.get("href","")).path not in ("","/")]
             print(provider,title,"HTTP",status,"html",len(body),"matches",len(rows),"titles",rows[:10],flush=True)
