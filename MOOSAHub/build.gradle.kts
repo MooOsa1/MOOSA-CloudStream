@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 57
+version = 58
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v57: emit Downet HTTP playback alternative as soon as the direct MP4 is discovered
+// v58: discover season-one via linked Akwam season pages, avoid wrong-season search early exit, and fix episode season labeling
