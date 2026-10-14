@@ -64,11 +64,87 @@ class AkwamProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val encoded = URLEncoder.encode(query, "UTF-8")
+        val clean = query.trim()
+        if (clean.isBlank()) return emptyList()
+
+        val encoded = URLEncoder.encode(clean, "UTF-8")
         val doc = app.get("$mainUrl/search?q=$encoded").document
-        return doc.select("a[href*='/series/'],a[href*='/movie/']")
-            .distinctBy { it.attr("abs:href").ifEmpty { it.attr("href") } }
+
+        // Akwam creates three anchors for each result (overlay, Watch,
+        // actual title). Deduplicating BEFORE parsing kept the overlay link,
+        // whose title is often empty or just "مشاهدة".
+        val parsed = doc.select("a[href*='/series/'],a[href*='/movie/']")
             .mapNotNull { it.toSearchResponse() }
+            .filter { item ->
+                item.name.trim().isNotBlank() &&
+                    item.name.trim() !in setOf("مشاهدة", "-->", "شاهد")
+            }
+            .groupBy { it.url }
+            .values
+            .mapNotNull { group ->
+                group.maxByOrNull { item -> item.name.trim().length }
+            }
+
+        // On Akwam, season 1 is named by the series title alone.
+        // Its old entry is missing from broad, newest-first search results.
+        // However, other season pages link to it under "مواسم اخرى".
+        val normalizedQuery = clean.replace(Regex("""\s+"""), " ").trim()
+        val isBareTitle =
+            !Regex(
+                """(?:الموسم|موسم|الجزء|جزء|season|part|(?:^|\s)ج\s*\d)""",
+                RegexOption.IGNORE_CASE
+            ).containsMatchIn(normalizedQuery) &&
+                !normalizedQuery.contains(Regex("""\d"""))
+
+        val hasBaseTitle = parsed.any {
+            it is TvSeriesSearchResponse &&
+                it.name.replace(Regex("""\s+"""), " ").trim()
+                    .equals(normalizedQuery, ignoreCase = true)
+        }
+
+        if (!isBareTitle || hasBaseTitle) return parsed
+
+        // Prefer a season page with explicit "الموسم": Akwam S5 pages
+        // do not always contain the historical other-season navigation.
+        val seriesPages = parsed
+            .filter {
+                it is TvSeriesSearchResponse &&
+                    it.name.startsWith(normalizedQuery, ignoreCase = true) &&
+                    (
+                        it.name.contains("الموسم") ||
+                            it.name.contains("موسم")
+                    )
+            }
+            .take(2)
+
+        val related = mutableListOf<SearchResponse>()
+        for (series in seriesPages) {
+            val relatedDoc = runCatching {
+                app.get(series.url).document
+            }.getOrNull() ?: continue
+
+            val matchingSeasonOne = relatedDoc
+                .select("a[href*='/series/']")
+                .firstOrNull { anchor ->
+                    anchor.text()
+                        .replace(Regex("""\s+"""), " ")
+                        .trim()
+                        .equals(normalizedQuery, ignoreCase = true)
+                } ?: continue
+
+            val href = matchingSeasonOne.attr("abs:href")
+                .ifBlank { fixUrl(matchingSeasonOne.attr("href")) }
+            if (href.isBlank()) continue
+
+            related += newTvSeriesSearchResponse(
+                normalizedQuery,
+                href,
+                TvType.TvSeries
+            )
+            break
+        }
+
+        return (parsed + related).distinctBy { it.url }
     }
 
     private fun String.normalizedDigits(): String = buildString {
@@ -140,16 +216,26 @@ class AkwamProvider : MainAPI() {
             .mapNotNull { a ->
                 val href = a.attr("abs:href").ifEmpty { fixUrl(a.attr("href")) }
                 if (href.isBlank()) return@mapNotNull null
-                val context = buildString {
-                    append(a.text()).append(' ').append(a.attr("href"))
-                    a.parents().take(4).forEach { append(' ').append(it.text()) }
-                }
-                val episodeName = a.text().ifBlank { context }
-                val episodeNumber = episodeName.episodeNumber() ?: href.episodeNumber()
+                // The previous parent text crawled as high as the whole
+                // series page, including "other seasons". That made S1
+                // episodes inherit S2/S3/S4 from unrelated navigation links.
+                val episodeName = a.text().trim()
+                    .ifBlank { a.attr("title").trim() }
+                    .ifBlank { href.substringAfterLast('/').replace('-', ' ') }
+                val episodeNumber = episodeName.episodeNumber()
+                    ?: href.episodeNumber()
+
+                // The series title establishes the page season; season 1
+                // intentionally has no explicit season name on Akwam.
+                val episodeSeason = episodeName.seasonNumber()
+                    ?: href.seasonNumber()
+                    ?: pageSeason
+                    ?: 1
+
                 newEpisode(href) {
                     name = episodeName
                     episode = episodeNumber
-                    season = context.seasonNumber() ?: pageSeason
+                    season = episodeSeason
                 }
             }
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
