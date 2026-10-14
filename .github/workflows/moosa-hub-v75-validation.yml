@@ -2,8 +2,6 @@ name: Validate MOOSA Hub v75 compact SHOW MORE (no release)
 on:
   push:
     branches: ["fix/moosa-hub-v75-compact-showmore-arrow"]
-  pull_request:
-    branches: ["main"]
   workflow_dispatch:
 jobs:
   validate:
