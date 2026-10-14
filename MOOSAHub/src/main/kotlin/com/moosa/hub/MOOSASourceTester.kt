@@ -50,7 +50,14 @@ object MOOSASourceTester {
         apis
             .filter {
                 it.name != "MOOSA Hub" &&
-                    it.providerType == ProviderType.DirectProvider
+                    (
+                        it.providerType == ProviderType.DirectProvider ||
+                            runCatching {
+                                it.javaClass.declaredMethods.any { method ->
+                                    method.name == "loadLinks"
+                                }
+                            }.getOrDefault(false)
+                    )
             }
             .distinctBy { key(it) }
             .sortedBy { it.name.lowercase() }
@@ -103,6 +110,13 @@ object MOOSASourceTester {
         value.lowercase().filter { it.isLetterOrDigit() }
 
     private fun testQueries(api: MainAPI): List<String> = when {
+        api.lang.equals("ar", ignoreCase = true) -> listOf(
+            "بيت الروبي",
+            "جعفر العمدة",
+            "الحشاشين",
+            "العتاولة",
+            "اللعبة"
+        )
         TvType.Movie in api.supportedTypes -> listOf(
             "Inception",
             "Avatar",
@@ -277,16 +291,12 @@ object MOOSASourceTester {
                                 false,
                                 {},
                                 { link ->
-                                    val label =
-                                        "${link.name} ${link.source}".lowercase()
-
                                     if (
                                         (
                                             link.url.startsWith("http://", true) ||
                                                 link.url.startsWith("https://", true)
-                                            ) &&
-                                        "download" !in label &&
-                                        "تحميل" !in label
+                                        ) &&
+                                        MOOSAQualityPolicy.accepts(link)
                                     ) {
                                         MOOSAServerRegistry.record(link)
                                         links += link
