@@ -1615,8 +1615,11 @@ class MOOSAHubProvider : TmdbProvider() {
         // TopCinema now has independently probed 1080p/720p HLS segment
         // delivery on Vidara (2026-10-14). Use it after confirmed Akwam
         // when the Akwam target is missing or fails, not as a fake mirror.
+        // ArabSeed now parses individual Arabic episode posts and exact
+        // season/episode matches. Re-enable as a strictly verified FALLBACK
+        // after Akwam, not as a simultaneous slow candidate.
         val experimentalBundled = setOf(
-            "WeCima", "CimaClub", "ArabSeed", "ShahidWBas"
+            "WeCima", "CimaClub", "ShahidWBas"
         )
 
         return available
