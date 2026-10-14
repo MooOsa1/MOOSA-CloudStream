@@ -109,3 +109,22 @@ for q in ["اللعبة","الفيل الأزرق","الكينج"]:
                           "has_packed","eval(function(p,a,c,k,e" in htmlplayer,
                           "scripts",[urlparse(x.get("src","")).hostname for x in ds.select("script[src]")[:8]],
                           flush=True)
+
+                    for source in ds.select("video[src],source[src]")[:3]:
+                        raw=source.get("src","")
+                        media=urljoin(player,raw)
+                        hs={"User-Agent":UA,"Referer":player,"Range":"bytes=0-63"}
+                        try:
+                            with urlopen(Request(media,headers=hs),timeout=10) as response:
+                                prefix=response.read(64)
+                                print("MEDIA_RANGED","host",urlparse(response.url).hostname,
+                                      "status",response.status,"type",response.headers.get("Content-Type","")[:60],
+                                      "range",response.headers.get("Content-Range","")[:40],
+                                      "mp4_signature",len(prefix)>=8 and prefix[4:8]==b"ftyp",
+                                      "hls_signature",prefix.startswith(b"#EXTM3U"),
+                                      "declared_type",source.get("type",""),
+                                      "data_quality",source.get("data-quality",""),
+                                      flush=True)
+                        except (HTTPError,URLError,OSError) as error:
+                            print("MEDIA_RANGED","error",type(error).__name__,
+                                  "host",urlparse(media).hostname,flush=True)
