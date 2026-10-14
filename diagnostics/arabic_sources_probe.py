@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Check current Arabic source HTTP endpoints, search parsers and listing structure.
+No media is downloaded; only HTML/search metadata is inspected.
+"""
+import base64
+import html
+import json
+import re
+import ssl
+from html.parser import HTMLParser
+from http.cookiejar import CookieJar
+from urllib.parse import urlencode, quote, urlparse, urljoin
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPCookieProcessor, Request, build_opener
+
+UA="Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
+
+class Anchors(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links=[]
+        self.active=None
+    def handle_starttag(self,tag,attrs):
+        if tag=="a":
+            props=dict(attrs)
+            self.active={"href": props.get("href",""),"title":props.get("title",""),"text":""}
+    def handle_data(self,data):
+        if self.active is not None:
+            self.active["text"]+=data
+    def handle_endtag(self,tag):
+        if tag=="a" and self.active is not None:
+            self.links.append(self.active)
+            self.active=None
+
+def client():
+    return build_opener(HTTPCookieProcessor(CookieJar()))
+
+def fetch(opener,url,post=None,referer=None):
+    heads={"User-Agent":UA,"Accept-Language":"ar,en;q=0.7","Accept":"text/html,application/json,*/*"}
+    if referer:heads["Referer"]=referer
+    if post is not None:
+        heads["Content-Type"]="application/x-www-form-urlencoded; charset=UTF-8"
+        heads["X-Requested-With"]="XMLHttpRequest"
+    req=Request(url, headers=heads, data=urlencode(post).encode() if post is not None else None)
+    try:
+        with opener.open(req,timeout=16) as resp:
+            body=resp.read(800_000).decode("utf-8","replace")
+            return {"status":resp.status,"url":resp.url,"type":resp.headers.get("Content-Type",""),"body":body}
+    except HTTPError as e:
+        return {"status":e.code,"url":url,"type":e.headers.get("Content-Type",""),"body":e.read(8000).decode("utf-8","replace"),"error":"http"}
+    except (URLError,TimeoutError, OSError) as e:
+        return {"status":0,"url":url,"type":"","body":"","error":type(e).__name__+":"+str(getattr(e,"reason",e))[:90]}
+
+def show(provider,step,r):
+    body=r["body"];status=r["status"]
+    title=re.search(r"<title[^>]*>(.*?)</title>",body,re.I|re.S)
+    flags=[n for n,flag in [
+        ("captcha","captcha" in body.lower()),("cloudflare","challenge-platform" in body or "Just a moment" in body),
+        ("login","<form" in body and "password" in body.lower())
+    ] if flag]
+    print(f"{provider} {step}: code={status} host={urlparse(r['url']).hostname} bytes={len(body)} type={r['type'][:45]!r} title={html.unescape(re.sub('<[^>]+>',' ',title.group(1))).strip()[:75] if title else ''!r} flags={flags} error={r.get('error','')}",flush=True)
+
+def links(result,selector):
+    p=Anchors();p.feed(result["body"])
+    found=[]
+    for a in p.links:
+        u=urljoin(result["url"],html.unescape(a["href"]))
+        if selector(u,a):
+            found.append((u,html.unescape(a["title"] or a["text"]).strip()))
+    return list(dict((u,(u,t)) for u,t in found).values())
+
+def arabseed():
+    name="ARABSEED";o=client();base="https://m.myseed.pics"
+    main=fetch(o,base+"/main/");show(name,"main",main)
+    htmltext=main["body"]
+    csrf_patterns=[
+        r"""["']?csrf__token["']?\s*[:=]\s*["']([^"']{6,})["']""",
+        r"""var\s+csrf_token\s*=\s*["']([^"']{6,})["']"""
+    ]
+    csrf=next((m.group(1) for p in csrf_patterns if (m:=re.search(p,htmltext))),None)
+    print(name,"csrf:",bool(csrf),"quality elements:",len(re.findall(r"data-quality",htmltext)))
+    if csrf:
+        for query in ["اللعبة","اللعبة الموسم الخامس"]:
+            r=fetch(o,base+"/find__posts/",{"search":query,"search_type":"","csrf_token":csrf},referer=base+"/")
+            show(name,f"search {query!r}",r)
+            try:
+                obj=json.loads(r["body"]);inner=str(obj.get("html",""))
+                els=Anchors();els.feed(inner)
+                matches=[(a["href"][:110],a["title"][:70]) for a in els.links if a["href"] and "اللعب" in (a["title"]+a["text"]+a["href"])]
+                print(name,"response_keys:",list(obj)[:10],"matches:",len(matches),"sample:",matches[:4])
+            except (json.JSONDecodeError,ValueError) as e:
+                print(name,"search JSON invalid:",type(e).__name__)
+
+def wecima():
+    name="WECIMA";o=client();base="https://wecima.ac"
+    main=fetch(o,base);show(name,"main",main)
+    actual=main["url"].rstrip("/")
+    for query in ["اللعبة","اللعبة الموسم الخامس"]:
+        r=fetch(o,actual+"/search",{"q":query},referer=actual+"/")
+        show(name,f"search {query!r}",r)
+        try:
+            data=json.loads(r["body"])
+            results=data.get("results",[]) if isinstance(data,dict) else []
+            sample=[{k:record.get(k) for k in ("title","slug","istv")} for record in results[:4] if isinstance(record,dict)]
+            print(name,"result_count:",len(results),"sample:",sample)
+        except (json.JSONDecodeError,ValueError) as e:
+            print(name,"search JSON invalid:",type(e).__name__)
+    # One regular listing as selector baseline; no streaming involved.
+    r=fetch(o,actual+"/category/arabic-series");show(name,"arabic-series",r)
+    matches=links(r,lambda u,a:"/series/" in urlparse(u).path)
+    print(name,"series_links:",len(matches),"sample:",[(urlparse(u).path[:80],t[:45]) for u,t in matches[:3]])
+
+def cimaclub():
+    name="CIMACLUB";o=client();base="https://cimacub.com"
+    main=fetch(o,base);show(name,"main",main)
+    for query in ["اللعبة","اللعبة الموسم الثاني"]:
+        url=base+"/?s="+quote(query)
+        r=fetch(o,url);show(name,f"search {query!r}",r)
+        matches=links(r,lambda u,a:"/series/" in urlparse(u).path or "مسلسل" in a["title"] or "اللعبة" in a["title"])
+        print(name,"relevant_links:",len(matches),"sample:",[(urlparse(u).path[:85],t[:60]) for u,t in matches[:4]])
+
+for method in (arabseed,wecima,cimaclub):
+    print("---",method.__name__,"---",flush=True)
+    try:method()
+    except Exception as exc:
+        print("PROBE ERROR",method.__name__,type(exc).__name__,str(exc)[:200],flush=True)
