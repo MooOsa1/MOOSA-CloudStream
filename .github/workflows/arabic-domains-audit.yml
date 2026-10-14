@@ -1,0 +1,17 @@
+name: Audit Arabic source domains
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/arabic_live_domain_audit.py"
+      - ".github/workflows/arabic-domains-audit.yml"
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet beautifulsoup4
+      - name: Compare MySeed/ArabSeed domain and Arabic catalogue
+        run: python3 diagnostics/arabic_live_domain_audit.py
