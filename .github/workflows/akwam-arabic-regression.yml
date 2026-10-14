@@ -1,0 +1,16 @@
+name: Audit Arabic film and series playback
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/akwam_arabic_regression.py"
+      - ".github/workflows/akwam-arabic-regression.yml"
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test several Arabic film and series search paths and video ranges
+        run: python3 diagnostics/akwam_arabic_regression.py
