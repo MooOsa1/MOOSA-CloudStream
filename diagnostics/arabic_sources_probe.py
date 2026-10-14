@@ -128,6 +128,53 @@ def arabseed():
             except (json.JSONDecodeError,ValueError) as e:
                 print(name,"search JSON invalid:",type(e).__name__)
 
+def arabseed_episode_deep_probe():
+    o=client()
+    base="https://m.myseed.tv"
+    for query in ["اللعبة الموسم الخامس الحلقة 1","اللعبة الموسم الخامس","اللعبة", "اللعبة الموسم الثاني"]:
+        u=base+"/?s="+quote(query)
+        r=fetch(o,u);show("ARABSEED-DEEP",f"search {query!r}",r)
+        soup=BeautifulSoup(r["body"],"html.parser")
+        cards=soup.select(".movie__block a[href],a[title][href]")
+        hits=[]
+        for a in cards:
+            href=urljoin(r["url"],a.get("href",""))
+            title=a.get("title") or a.get_text(" ",strip=True)
+            if "لعب" in title or "لعب" in href:
+                hits.append((href,title))
+        hits=list(dict((u,(u,t)) for u,t in hits).values())
+        print("ARABSEED-DEEP",query,"matches",len(hits),"sample",[(urlparse(u).path[:115],t[:65]) for u,t in hits[:6]],flush=True)
+        pager=[(a.get_text(" ",strip=True),urljoin(r["url"],a["href"])) for a in soup.select("a[href]") if "page/" in a["href"] or "paged=" in a["href"]]
+        print("ARABSEED-DEEP pager:",[(t,urlparse(u).path[:70],urlparse(u).query[:25]) for t,u in pager[:4]],flush=True)
+        if query != "اللعبة":continue
+        if not hits:continue
+        href,title=hits[0]
+        targets=[href]
+        if re.search(r"eps\d+",href,re.I):
+            targets.append(re.sub(r"eps\d+","eps1",href,flags=re.I))
+        for episode_url in targets:
+            ep=fetch(o,episode_url);show("ARABSEED-DEEP","episode",ep)
+            doc=BeautifulSoup(ep["body"],"html.parser")
+            h1=doc.select_one("h1")
+            print("ARABSEED-DEEP episodeTitle",(h1.get_text(" ",strip=True) if h1 else "missing")[:105])
+            for selector in ["a.watch__btn[href]",".episodes__list a[href]","[data-post-id]","li[data-server]","li[data-src]","li[data-quality]","[data-link]"]:
+                nodes=doc.select(selector)
+                print("ARABSEED-DEEP",selector,len(nodes),[(n.get_text(" ",strip=True)[:36],list(n.attrs.keys())) for n in nodes[:3]])
+            watch=doc.select_one("a.watch__btn[href]")
+            watch_urls=[urljoin(ep["url"],watch.get("href",""))] if watch else [episode_url.rstrip("/")+"/watch/"]
+            for watchurl in watch_urls[:1]:
+                wr=fetch(o,watchurl,referer=ep["url"]);show("ARABSEED-DEEP","watch",wr)
+                wdoc=BeautifulSoup(wr["body"],"html.parser")
+                for selector in ["[data-quality]","[data-post]","[data-post-id]","li[data-server]","li[data-src]","[data-link]","iframe[src]","video[src]","source[src]"]:
+                    nodes=wdoc.select(selector)
+                    sample=[]
+                    for n in nodes[:3]:
+                        sample.append({key:value[:45] for key,value in n.attrs.items()
+                                       if key in ("data-quality","data-qu","data-server","data-post","data-post-id","class") and isinstance(value,str)})
+                    print("ARABSEED-DEEP WATCH",selector,len(nodes),"sample",sample)
+                for pattern in ["get__quality__servers","get__watch__server","csrf__token","m3u8","mp4","wp-admin/admin-ajax.php"]:
+                    print("ARABSEED-DEEP WATCH has",pattern, pattern.lower() in wr["body"].lower())
+
 def wecima():
     name="WECIMA";o=client();base="https://wecima.ac"
     main=fetch(o,base);show(name,"main",main)
@@ -157,7 +204,7 @@ def cimaclub():
         matches=links(r,lambda u,a:"/series/" in urlparse(u).path or "مسلسل" in a["title"] or "اللعبة" in a["title"])
         print(name,"relevant_links:",len(matches),"sample:",[(urlparse(u).path[:85],t[:60]) for u,t in matches[:4]])
 
-for method in (arabseed,wecima,cimaclub):
+for method in (arabseed,arabseed_episode_deep_probe,wecima,cimaclub):
     print("---",method.__name__,"---",flush=True)
     try:method()
     except Exception as exc:
