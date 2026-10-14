@@ -22,14 +22,6 @@ class MOOSAArabicProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
-    // Only native Arabic titles from the source. Obvious foreign dubs are
-    // not presented as Arabic originals; never machine-translate names.
-    private val dubbedTitle = Regex("""(?i)(?:مدبلج(?:ة)?|dubbed|دبلجة)""")
-
-    private fun SearchResponse.isNativeArabicListing(): Boolean =
-        name.isNotBlank() && name !in setOf("مشاهدة", "شاهد", "-->") &&
-            !dubbedTitle.containsMatchIn(name)
-
     private fun Element.titleText(): String =
         selectFirst("h1,h2,h3,.entry-title,.title")?.text()?.trim()
             ?.takeIf { it.isNotEmpty() }
@@ -45,14 +37,10 @@ class MOOSAArabicProvider : MainAPI() {
             parents().firstOrNull { it.titleText().isNotBlank() }?.titleText().orEmpty()
         }
         if (title.isBlank()) return null
-        val img = anchor.selectFirst("img") ?: anchor.parents()
-            .firstOrNull { it.selectFirst("img") != null }?.selectFirst("img")
-        val poster = img?.let {
-            sequenceOf("data-src", "data-original", "data-lazy-src", "src")
-                .map(it::attr).firstOrNull { value ->
-                    value.isNotBlank() && !value.startsWith("data:", true)
-                }?.let(::fixUrl)
-        }
+        val poster = anchor.selectFirst("img")?.let {
+            it.attr("data-src").ifEmpty { it.attr("src") }
+        } ?: anchor.parents().firstOrNull { it.selectFirst("img") != null }
+            ?.selectFirst("img")?.let { it.attr("data-src").ifEmpty { it.attr("src") } }
         val tvType = if (href.contains("/series/")) TvType.TvSeries else TvType.Movie
         return if (tvType == TvType.TvSeries) {
             newTvSeriesSearchResponse(title, href, tvType) { posterUrl = poster }
@@ -61,71 +49,96 @@ class MOOSAArabicProvider : MainAPI() {
         }
     }
 
-    // Use Ak​​wam's ACTUAL Arabic sections. No TMDB titles, no title matching.
-    // /movies?section=29 and /series?section=29 are the site's own filters.
+    // These are Akwam's real Arabic sections. Dubbed titles are split using
+    // Akwam's own "مدبلج" marker, not another site's title matching.
     override val mainPage = mainPageOf(
-        "$mainUrl/movies?section=29&page=" to "الأفلام العربية",
-        "$mainUrl/series?section=29&page=" to "المسلسلات العربية"
+        "$mainUrl/movies?section=29&page=" to "أحدث الأفلام العربية",
+        "$mainUrl/series?section=29&page=" to "أحدث المسلسلات العربية",
+        "$mainUrl/movies?section=29&page=|dubbed|" to "أفلام مدبلجة للعربية",
+        "$mainUrl/series?section=29&page=|dubbed|" to "مسلسلات مدبلجة للعربية"
     )
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val doc = app.get(request.data + page).document
-        // Akwam repeats an overlay, watch button and proper title link for
-        // each entry. Parse BEFORE deduplicating; choose the informative title.
-        return newHomePageResponse(request.name, nativeCards(doc))
-    }
-
-    // The source uses several anchors per card. Never dedupe until its
-    // native URL and descriptive name have both been extracted.
-    private fun nativeCards(doc: org.jsoup.nodes.Document): List<SearchResponse> =
+    private fun parseCards(doc: org.jsoup.nodes.Document): List<SearchResponse> =
         doc.select("a[href*='/series/'],a[href*='/movie/']")
             .mapNotNull { it.toSearchResponse() }
+            .filter {
+                it.name.isNotBlank() &&
+                    it.name.trim() !in setOf("مشاهدة", "شاهد", "-->")
+            }
+            // Each Akwam card has multiple overlays linking to the same URL.
             .groupBy { it.url }
-            .values.mapNotNull { group ->
-                group.filter { it.isNativeArabicListing() }
-                    .maxByOrNull { it.name.length }
+            .values
+            .mapNotNull { group ->
+                group.maxByOrNull { it.name.trim().length }
             }
 
-    private suspend fun searchPage(query: String, page: Int): Pair<List<SearchResponse>, Boolean> {
-        val clean = query.trim()
-        if (clean.isBlank() || page !in 1..50) return emptyList<SearchResponse>() to false
-        val encoded = URLEncoder.encode(clean, "UTF-8")
-        val address = "$mainUrl/search?q=$encoded" + if (page > 1) "&page=$page" else ""
-        val doc = app.get(address).document
-        val parsed = nativeCards(doc)
-        val next = doc.select("a[href*='page=']").any { link ->
-            Regex("""[?&]page=(\d+)""").find(link.attr("abs:href"))
-                ?.groupValues?.getOrNull(1)?.toIntOrNull() == page + 1
-        }
-        if (page != 1) return parsed to next
+    private fun isDubbed(title: String): Boolean =
+        Regex("""مدبلج(?:ة|\s+للعربية|\s+مصري)?""", RegexOption.IGNORE_CASE)
+            .containsMatchIn(title)
 
-        // Akwam may not include season 1 among recent search results.
-        // Resolve it only through Akwam's own related-season navigation.
+    private fun pageHasNext(doc: org.jsoup.nodes.Document, page: Int): Boolean =
+        doc.select("a[href*='page=']").any { link ->
+            Regex("""[?&]page=(\d+)""")
+                .find(link.attr("href"))?.groupValues?.getOrNull(1)
+                ?.toIntOrNull() == page + 1
+        }
+
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        val section = request.data.substringBefore("|dubbed|")
+        val dubbedOnly = request.data.contains("|dubbed|")
+        val doc = app.get(section + page).document
+        val items = parseCards(doc).filter { item ->
+            isDubbed(item.name) == dubbedOnly
+        }
+        return newHomePageResponse(request.name, items, pageHasNext(doc, page))
+    }
+
+    private suspend fun searchPage(
+        query: String, page: Int
+    ): Pair<List<SearchResponse>, Boolean> {
+        val clean = query.trim()
+        if (clean.isEmpty() || page !in 1..50) return emptyList<SearchResponse>() to false
+        val encoded = URLEncoder.encode(clean, "UTF-8")
+        val url = "$mainUrl/search?q=$encoded&page=$page"
+        val doc = app.get(url).document
+        val parsed = parseCards(doc)
+
+        // For a plain title, optionally recover season 1 from Akwam's real
+        // "other seasons" navigation. Do not waste multiple network requests.
         val normalized = clean.replace(Regex("""\s+"""), " ").trim()
-        val base = !Regex("""(?:الموسم|موسم|الجزء|جزء|season|part|(?:^|\s)ج\s*\d)""",
-            RegexOption.IGNORE_CASE).containsMatchIn(normalized) &&
-            !normalized.contains(Regex("""\d"""))
-        val foundBase = parsed.any {
-            it is TvSeriesSearchResponse && it.name.trim().equals(normalized, true)
-        }
-        if (!base || foundBase) return parsed to next
-        val candidate = parsed.firstOrNull {
+        val isBareTitle = page == 1 &&
+            !Regex("""(?:الموسم|موسم|جزء|الجزء|season|part|(?:^|\s)ج\s*\d|\d)""",
+                RegexOption.IGNORE_CASE).containsMatchIn(normalized)
+        val alreadyFound = parsed.any {
             it is TvSeriesSearchResponse &&
-                it.name.startsWith(normalized, ignoreCase = true) &&
-                it.name.contains("موسم")
-        } ?: return parsed to next
-        val historical = withTimeoutOrNull(3500L) {
-            try {
-                val other = app.get(candidate.url).document
-                val link = other.select("a[href*='/series/']").firstOrNull {
-                    it.text().replace(Regex("""\s+"""), " ").trim().equals(normalized, true)
-                }
-                link?.attr("abs:href")?.takeIf(String::isNotBlank)?.let {
-                    newTvSeriesSearchResponse(normalized, it, TvType.TvSeries)
-                }
-            } catch (_: Exception) { null }
+                it.name.replace(Regex("""\s+"""), " ").trim()
+                    .equals(normalized, ignoreCase = true)
         }
-        return (parsed + listOfNotNull(historical)).distinctBy { it.url } to next
+        val seasonPage = if (isBareTitle && !alreadyFound) {
+            parsed.firstOrNull {
+                it is TvSeriesSearchResponse &&
+                    it.name.startsWith(normalized, ignoreCase = true) &&
+                    (it.name.contains("الموسم") || it.name.contains("موسم"))
+            }
+        } else null
+
+        val related = if (seasonPage != null) {
+            withTimeoutOrNull(3000L) {
+                val relatedDoc = app.get(seasonPage.url).document
+                relatedDoc.select("a[href*='/series/']").firstNotNullOfOrNull { anchor ->
+                    val title = anchor.text().replace(Regex("""\s+"""), " ").trim()
+                    if (!title.equals(normalized, true)) return@firstNotNullOfOrNull null
+                    val href = anchor.attr("abs:href")
+                        .ifBlank { fixUrl(anchor.attr("href")) }
+                    href.takeIf(String::isNotBlank)?.let {
+                        newTvSeriesSearchResponse(normalized, it, TvType.TvSeries)
+                    }
+                }
+            }
+        } else null
+
+        return (parsed + listOfNotNull(related)).distinctBy { it.url } to
+            pageHasNext(doc, page)
     }
 
     override suspend fun search(query: String): List<SearchResponse> =
@@ -175,15 +188,26 @@ class MOOSAArabicProvider : MainAPI() {
     }
 
     private fun String.seasonNumber(): Int? {
-        val text = normalizedDigits().lowercase()
-        Regex("(?:الموسم|موسم|season|s|ج|جزء|الجزء)[\\s:_-]*(\\d{1,2})", RegexOption.IGNORE_CASE)
+        val text = normalizedDigits().lowercase().trim()
+        // Only parse title text. Site URLs end in unrelated database IDs.
+        Regex("""(?:الموسم|موسم|season|الجزء|جزء|(?:^|\s)ج)[\s:_-]*(\d{1,2})""",
+            RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
         val words = listOf(
             "الاول" to 1, "الأول" to 1, "الثاني" to 2, "الثالث" to 3,
             "الرابع" to 4, "الخامس" to 5, "السادس" to 6, "السابع" to 7,
             "الثامن" to 8, "التاسع" to 9, "العاشر" to 10
         )
-        return words.firstOrNull { text.contains("الموسم " + it.first) || text.contains("season " + it.first) }?.second
+        words.firstOrNull {
+            text.contains("الموسم " + it.first) ||
+                text.contains("season " + it.first)
+        }?.let { return it.second }
+        // Akwam calls some seasons simply "العتاولة 2".
+        // Never confuse an episode label (الحلقة 10) with a season.
+        if (Regex("""(?:الحلقة|حلقه|حلقة|episode|ep)[\s:_-]*\d+""",
+                RegexOption.IGNORE_CASE).containsMatchIn(text)) return null
+        return Regex("""\s+([1-9]|[12]\d|30)$""")
+            .find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }
 
     private fun publishedYear(doc: org.jsoup.nodes.Document): Int? {
@@ -200,12 +224,8 @@ class MOOSAArabicProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
         val title = doc.selectFirst("h1.entry-title,h1")?.text()?.trim().orEmpty()
-        val poster = doc.selectFirst("meta[property=og:image]")
-            ?.attr("content")?.takeIf(String::isNotBlank)?.let(::fixUrl)
-            ?: doc.selectFirst("img")?.let { img ->
-                sequenceOf("data-src", "data-original", "src").map(img::attr)
-                    .firstOrNull(String::isNotBlank)?.let(::fixUrl)
-            }
+        val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
+            ?: doc.selectFirst("img")?.let { it.attr("data-src").ifEmpty { it.attr("src") } }
         val isSeries = url.contains("/series/")
         val episodeAnchors = if (isSeries) doc.select("a[href*='/episode/']") else emptyList()
         if (!isSeries) {
@@ -215,14 +235,10 @@ class MOOSAArabicProvider : MainAPI() {
                 plot = doc.select("meta[name=description]").attr("content")
             }
         }
-        // Akwam's title "العتاولة 2" means season 2. Never interpret
-        // the numeric episode ID or a bare "حلقة 30" as a season.
-        val pageSeason = title.seasonNumber()
-            ?: Regex("""\s+(\d{1,2})\s*$""").find(title.normalizedDigits())
-                ?.groupValues?.getOrNull(1)?.toIntOrNull()?.takeIf { it in 2..20 }
-            ?: 1
+        val pageSeason = title.seasonNumber() ?: 1
+        // Akwam repeats each episode as both a text card and an image
+        // overlay. Keep the first, descriptive anchor for each native URL.
         val episodes = episodeAnchors
-            .filter { it.text().isNotBlank() || it.attr("title").isNotBlank() }
             .distinctBy { it.attr("abs:href").ifEmpty { it.attr("href") } }
             .mapNotNull { a ->
                 val href = a.attr("abs:href").ifEmpty { fixUrl(a.attr("href")) }
@@ -238,13 +254,16 @@ class MOOSAArabicProvider : MainAPI() {
 
                 // The series title establishes the page season; season 1
                 // intentionally has no explicit season name on Akwam.
+                val episodeSeason = pageSeason
                 newEpisode(href) {
                     name = episodeNumber?.let { "الحلقة $it" } ?: episodeName
                     episode = episodeNumber
-                    season = pageSeason
+                    season = episodeSeason
                 }
             }
-            .sortedWith(compareBy({ it.season ?: 1 }, { it.episode ?: Int.MAX_VALUE }))
+            // Show 1, 2, 3... regardless of newest-first website order.
+            .sortedWith(compareBy<Episode>({ it.season ?: 1 },
+                { it.episode ?: Int.MAX_VALUE }))
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             posterUrl = poster
             year = publishedYear(doc)
@@ -359,6 +378,8 @@ class MOOSAArabicProvider : MainAPI() {
     ): Boolean {
         val visited = linkedSetOf<String>()
         val pending = mutableListOf(PlayerPage(data, 0, mainUrl))
+        val startedAt = System.nanoTime()
+        val maxDurationMs = 22_000L
         var cursor = 0
         var emitted = false
         var foundDirectHdTransport = false
@@ -463,7 +484,12 @@ class MOOSAArabicProvider : MainAPI() {
                 "Referer" to referer,
                 "Accept" to "*/*"
             )
-            val urlQuality = qualityFromMediaUrl(mediaUrl) ?: qualityHint
+            val pathQuality = qualityFromMediaUrl(mediaUrl)
+            // A contradictory explicitly low-quality CDN label overrides
+            // a higher page-tab hint; never inflate an actual 480p filename.
+            val urlQuality = if (pathQuality != null && qualityHint != null)
+                minOf(pathQuality, qualityHint)
+            else qualityHint ?: pathQuality
             // Don't request SD HLS manifests even when encountered in JS.
             if (urlQuality != null && urlQuality < MOOSAQualityPolicy.MIN_HEIGHT) {
                 return
@@ -536,11 +562,15 @@ class MOOSAArabicProvider : MainAPI() {
         // expensive page crawl as soon as its HD HTTP transport is delivered;
         // continuing through 40 Akwam/iframe pages made the result spinner
         // wait long after the only usable server had already been discovered.
-        while (cursor < pending.size && cursor < 18 && !foundDirectHdTransport) {
+        while (cursor < pending.size &&
+            cursor < 24 &&
+            (System.nanoTime() - startedAt) / 1_000_000L < maxDurationMs &&
+            !foundDirectHdTransport
+        ) {
             val (url, depth, referer, qualityHint) = pending[cursor++]
             if (!visited.add(url)) continue
             val response = try {
-                withTimeoutOrNull(8000L) {
+                withTimeoutOrNull(6500L) {
                     app.get(
                         url,
                         headers = mapOf(
@@ -550,8 +580,10 @@ class MOOSAArabicProvider : MainAPI() {
                         ),
                         referer = referer
                     )
-                }
-            } catch (_: Exception) { null } ?: continue
+                } ?: continue
+            } catch (_: Exception) {
+                continue
+            }
             // The short domain currently redirects to another Akwam host.
             // Relative player links must be resolved against the final URL.
             val pageUrl = response.url
@@ -579,7 +611,7 @@ class MOOSAArabicProvider : MainAPI() {
                         java.net.URI(pageUrl).resolve(raw).toString()
                     }.getOrNull() ?: continue
 
-                    if (depth < 4 && !visited.contains(absolute)) {
+                    if (depth < 3 && !visited.contains(absolute)) {
                         pending.add(PlayerPage(absolute, depth + 1, pageUrl, quality))
                     }
                 }
@@ -617,14 +649,6 @@ class MOOSAArabicProvider : MainAPI() {
                 if (absolute == url) continue
                 val host = runCatching { java.net.URI(absolute).host?.lowercase().orEmpty() }.getOrNull().orEmpty()
                 if (host.isBlank()) continue
-                // The main content page may embed unrelated advertising.
-                // When quality tabs exist, prefer those actual source links.
-                if (depth == 0 && qualityTabs.isNotEmpty() &&
-                    !absolute.contains("/link/") &&
-                    !absolute.contains("/download/") &&
-                    !absolute.contains("/watch/") &&
-                    element.closest("div.tab-content.quality") == null
-                ) continue
                 val isOwnHost = host == ownHost ||
                     host == "akwam.ss" || host.endsWith(".akwam.ss") ||
                     host == "akwam.net" || host.endsWith(".akwam.net") ||
@@ -648,18 +672,22 @@ class MOOSAArabicProvider : MainAPI() {
                     continue
                 }
 
-                if (depth < 4 && (isOwnHost || isKnownWrapper)) {
+                if (depth < 3 && (isOwnHost || isKnownWrapper)) {
                     pending.add(PlayerPage(absolute, depth + 1, pageUrl, elementQuality))
                     continue
                 }
 
                 try {
-                    withTimeoutOrNull(6500L) {
-                        loadExtractor(absolute, pageUrl, subtitleCallback) { link ->
-                            if (link.quality == Qualities.Unknown.value &&
-                                elementQuality != null) link.quality = elementQuality
-                            emitLink(link)
+                    loadExtractor(absolute, pageUrl, subtitleCallback) { link ->
+                        // Infer resolution only when this specific Akwam
+                        // quality tab identifies the target.
+                        if (
+                            link.quality == Qualities.Unknown.value &&
+                            elementQuality != null
+                        ) {
+                            link.quality = elementQuality
                         }
+                        emitLink(link)
                     }
                 } catch (_: Exception) {
                     // Keep traversing the server page even when CloudStream has no extractor for its host.
@@ -672,7 +700,7 @@ class MOOSAArabicProvider : MainAPI() {
                     absolute.contains("serv=", true) ||
                     absolute.contains("server=", true) ||
                     absolute.contains("/watch/", true) || absolute.contains("/download/", true)
-                if (depth < 4 && isServerTarget && !visited.contains(absolute)) {
+                if (depth < 3 && isServerTarget && !visited.contains(absolute)) {
                     pending.add(PlayerPage(absolute, depth + 1, pageUrl, elementQuality))
                 }
             }
