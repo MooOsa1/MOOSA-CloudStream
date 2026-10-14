@@ -516,7 +516,7 @@ object MOOSACatalog {
                 mapOf(
                     "query" to query,
                     "page" to page.toString(),
-                    "language" to (if (Regex("""[\u0600-\u06FF]""").containsMatchIn(query)) "ar-SA" else "en-US"),
+                    "language" to "en-US",
                     "include_adult" to "false"
                 )
             )
