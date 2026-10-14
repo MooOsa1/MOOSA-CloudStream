@@ -2800,7 +2800,7 @@ class MOOSAHubProvider : TmdbProvider() {
     private suspend fun isReadableSubtitle(sub: SubtitleFile): Boolean {
         val url = sub.url
         if (!validStreamingUrl(url)) return false
-        if (Regex("""(?i)\\.(?:zip|rar|7z|gz)(?:[?#]|$)""").containsMatchIn(url)) return false
+        if (Regex("""(?i)\.(?:zip|rar|7z|gz)(?:[?#]|$)""").containsMatchIn(url)) return false
         val body = timed(2300L) {
             app.get(
                 url,
