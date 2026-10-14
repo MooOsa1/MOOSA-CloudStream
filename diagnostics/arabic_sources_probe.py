@@ -174,6 +174,38 @@ def arabseed_episode_deep_probe():
                     print("ARABSEED-DEEP WATCH",selector,len(nodes),"sample",sample)
                 for pattern in ["get__quality__servers","get__watch__server","csrf__token","m3u8","mp4","wp-admin/admin-ajax.php"]:
                     print("ARABSEED-DEEP WATCH has",pattern, pattern.lower() in wr["body"].lower())
+                for sel in ["li[data-server]","li[data-quality]","iframe[src]","a[href*='download']"]:
+                    matches=wdoc.select(sel)
+                    print("ARABSEED-DEEP attributes",sel,[
+                        {k:(urlparse(v).hostname if "link" in k or k=="src" else v[:75]) for k,v in n.attrs.items() if isinstance(v,str) and k.startswith("data-") or k=="src"}
+                        for n in matches[:7]
+                    ])
+                scripts=[n.get("src","") for n in wdoc.select("script[src]")]
+                print("ARABSEED-DEEP scripts count",len(scripts),"sample",scripts[-15:])
+                post_el=wdoc.select_one("li[data-post][data-server]")
+                if post_el:
+                    post=post_el.get("data-post","")
+                    for endpoint in ["/get__quality__servers/","/get__watch__server/"]:
+                        for quality in ([1080,720] if "quality" in endpoint else [480]):
+                            data={"post_id":post,"quality":str(quality)}
+                            if "watch" in endpoint: data["server"]="0"
+                            aj=fetch(o,base+endpoint,data,referer=watchurl)
+                            show("ARABSEED-DEEP",f"ajax {endpoint} q{quality}",aj)
+                            print("ARABSEED-DEEP ajax-json",aj["body"][:200].replace("\n"," "))
+
+
+    for suffix in [
+        "/find/?word="+quote("اللعبة")+"&type=",
+        "/?s="+quote("اللعبة")+"&paged=2",
+        "/page/2/?s="+quote("اللعبة"),
+        "/?s="+quote("اللعبة")+"&page=2"
+    ]:
+        r=fetch(o,base+suffix)
+        doc=BeautifulSoup(r["body"],"html.parser")
+        hits=[a.get("title") for a in doc.select("a[title][href]")
+              if "لعب" in (a.get("title") or "")]
+        show("ARABSEED-DEEP","pagination/alt-search "+urlparse(suffix).path,r)
+        print("ARABSEED-DEEP alternate hits count",len(hits),"first",hits[:2],"last",hits[-2:])
 
 def wecima():
     name="WECIMA";o=client();base="https://wecima.ac"
