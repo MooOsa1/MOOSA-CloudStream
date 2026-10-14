@@ -136,6 +136,23 @@ class MOOSAHubProvider : TmdbProvider() {
         val overview: String? = null
     )
 
+    private data class TmdbTranslationCollection(
+        @JsonProperty("translations")
+        val translations: List<TmdbTranslationEntry> = emptyList()
+    )
+    private data class TmdbTranslationEntry(
+        @JsonProperty("iso_639_1")
+        val language: String? = null,
+        @JsonProperty("iso_3166_1")
+        val region: String? = null,
+        @JsonProperty("data")
+        val data: TmdbTranslationData? = null
+    )
+    private data class TmdbTranslationData(
+        @JsonProperty("overview")
+        val overview: String? = null
+    )
+
     private data class TmdbSeasonDetail(
         @JsonProperty("name")
         val name: String? = null,
@@ -2055,59 +2072,70 @@ class MOOSAHubProvider : TmdbProvider() {
         }
     }
 
+    private fun verifiedArabicSynopsis(raw: String?): String? =
+        cleanSynopsis(raw)?.takeIf { text ->
+            text.count { it in '\u0600'..'\u06FF' } >= 10 &&
+                text.count { it in '\u0600'..'\u06FF' } * 4 >= text.count { it.isLetter() }
+        }
+
     private suspend fun resolveArabicSynopsis(
         tmdbId: Int?,
         isTv: Boolean,
         englishFallback: String?
     ): String? {
-        val id = tmdbId ?: return null
+        // No English synopsis is published as Arabic. If no official
+        // Arabic plot exists, explicitly say it is unavailable instead of
+        // showing untranslated prose or inventing translated content.
+        val placeholder = "الوصف العربي غير متوفر لهذا العمل حاليًا."
+        verifiedArabicSynopsis(englishFallback)?.let { return it }
+        val id = tmdbId ?: return placeholder
         val type = if (isTv) "tv" else "movie"
         val cacheKey = "$type:$id"
-
-        synopsisCache[cacheKey]?.let {
-            cleanSynopsis(it)?.let { clean ->
-                return clean
-            }
+        synopsisCache[cacheKey]?.let { cached ->
+            if (cached == placeholder) return cached
+            verifiedArabicSynopsis(cached)?.let { return it }
         }
 
-        for (
-            language in
-            listOf("ar-SA", "ar-AE", "ar-EG", "ar")
-        ) {
-            val overview = timed(1800L) {
+        val locales = listOf("ar-SA", "ar-EG", "ar-AE", "ar")
+        for (language in locales) {
+            val localized = timed(1500L) {
                 app.get(
                     "$tmdbApiUrl/$type/$id",
                     params = mapOf(
                         "api_key" to tmdbApiKey,
                         "language" to language
                     )
-                ).parsedSafe<TmdbOverview>()
-                    ?.overview
+                ).parsedSafe<TmdbOverview>()?.overview
             }
+            verifiedArabicSynopsis(localized)?.let {
+                synopsisCache[cacheKey] = it
+                return it
+            }
+        }
 
-            val clean = cleanSynopsis(overview)
-            if (
-                !clean.isNullOrBlank() &&
-                clean.any {
-                    it in '\u0600'..'\u06FF'
+        // TMDB's translations endpoint can contain an official Arabic
+        // overview even when the locale-specific detail endpoint is empty.
+        val translations = timed(2500L) {
+            app.get(
+                "$tmdbApiUrl/$type/$id/translations",
+                params = mapOf("api_key" to tmdbApiKey)
+            ).parsedSafe<TmdbTranslationCollection>()
+        }
+        val fromTranslations = translations?.translations.orEmpty()
+            .asSequence()
+            .filter { it.language.equals("ar", ignoreCase = true) }
+            .sortedBy { entry ->
+                when (entry.region?.uppercase()) {
+                    "SA" -> 0
+                    "EG" -> 1
+                    "AE" -> 2
+                    else -> 3
                 }
-            ) {
-                synopsisCache[cacheKey] = clean
-                return clean
             }
-        }
-
-        val fallback =
-            cleanSynopsis(englishFallback)
-
-        // No machine translation. Prefer published TMDB Arabic text;
-        // otherwise retain the source's original synopsis.
-        val result = fallback
-
-        if (!result.isNullOrBlank()) {
-            synopsisCache[cacheKey] = result
-        }
-
+            .mapNotNull { verifiedArabicSynopsis(it.data?.overview) }
+            .firstOrNull()
+        val result = fromTranslations ?: placeholder
+        synopsisCache[cacheKey] = result
         return result
     }
 
