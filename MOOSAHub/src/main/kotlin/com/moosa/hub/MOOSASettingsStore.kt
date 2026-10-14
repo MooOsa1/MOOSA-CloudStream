@@ -16,6 +16,7 @@ object MOOSASettingsStore {
     private const val KEY_DISABLED_SERVERS = "disabled_servers"
     private const val KEY_SOURCE_PROFILES = "source_profiles"
     private const val KEY_SERVER_PROFILES = "server_profiles"
+    private const val KEY_GLOBAL_QUALITY_POLICY = "global_quality_policy_version"
 
     @Volatile
     private var prefs: SharedPreferences? = null
@@ -41,6 +42,13 @@ object MOOSASettingsStore {
 
     fun setDisabledSources(values: Set<String>) {
         prefs?.edit()?.putStringSet(KEY_DISABLED_SOURCES, values.toSet())?.commit()
+    }
+
+    fun globalQualityPolicyVersion(): Int =
+        prefs?.getInt(KEY_GLOBAL_QUALITY_POLICY, 0) ?: 0
+
+    fun setGlobalQualityPolicyVersion(version: Int) {
+        prefs?.edit()?.putInt(KEY_GLOBAL_QUALITY_POLICY, version)?.apply()
     }
 
     fun verifyLinks(): Boolean =
