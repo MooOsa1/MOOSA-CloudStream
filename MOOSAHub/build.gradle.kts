@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 63
+version = 64
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v63: emergency rollback to v61 proven playback; undo persistent v62 host-wide negative quality priorities and hidden sources
+// v64: fast Arabic Akwam-first loading; immediate HD playback callback; stop redundant crawling and slow external lookups; preserve v63 host-priority recovery
