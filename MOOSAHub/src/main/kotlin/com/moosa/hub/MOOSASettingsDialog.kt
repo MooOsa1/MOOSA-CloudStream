@@ -376,14 +376,7 @@ class MOOSASettingsDialog : DialogFragment() {
                 "Verify off"
             }
 
-        val arabic =
-            if (MOOSASettingsStore.arabicFastMode()) {
-                "Arabic fast"
-            } else {
-                "Arabic normal"
-            }
-
-        return "$verify • $arabic"
+        return verify
     }
 
     private fun subtitleSummary(): String {
@@ -480,15 +473,8 @@ class MOOSASettingsDialog : DialogFragment() {
     }
 
     private fun openPlaybackOptions() {
-        val labels = arrayOf(
-            "Verify stream links before showing them",
-            "Fast Arabic subtitle mode"
-        )
-
-        val checked = booleanArrayOf(
-            MOOSASettingsStore.verifyLinks(),
-            MOOSASettingsStore.arabicFastMode()
-        )
+        val labels = arrayOf("Verify stream links before showing them")
+        val checked = booleanArrayOf(MOOSASettingsStore.verifyLinks())
 
         AlertDialog.Builder(requireContext())
             .setTitle("Playback")
@@ -504,11 +490,6 @@ class MOOSASettingsDialog : DialogFragment() {
                 MOOSASettingsStore
                     .setVerifyLinks(
                         checked[0]
-                    )
-
-                MOOSASettingsStore
-                    .setArabicFastMode(
-                        checked[1]
                     )
 
                 Toast.makeText(

@@ -1623,6 +1623,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val available = apis
             .filter { api ->
+                !isArabicProvider(api) &&
                 api !== this &&
                     (
                         api.providerType ==
@@ -2252,6 +2253,8 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         val detail = detailJob.await()
+        // The original-language Arabic catalogue moved to MOOSA Arabic.
+        if (detail?.originalLanguage.equals("ar", ignoreCase = true)) return@coroutineScope null
         val effectiveImdbId = imdbJob.await()
         val arabicOverview = synopsisJob.await()
 
@@ -2905,6 +2908,7 @@ class MOOSAHubProvider : TmdbProvider() {
         callback: (ExtractorLink) -> Unit
     ): Boolean = coroutineScope {
         val request = tryParseJson<HubPlaybackRequest>(data) ?: return@coroutineScope false
+        if (request.originalLanguage.equals("ar", ignoreCase = true)) return@coroutineScope false
         val allProviders = playbackProviders(request)
         val fastArabic = request.originalLanguage.equals("ar", true) &&
             MOOSASettingsStore.arabicFastMode()

@@ -50,6 +50,7 @@ object MOOSASourceTester {
         apis
             .filter {
                 it.name != "MOOSA Hub" &&
+                    !it.lang.equals("ar", ignoreCase = true) &&
                     it.providerType == ProviderType.DirectProvider
             }
             .distinctBy { key(it) }
