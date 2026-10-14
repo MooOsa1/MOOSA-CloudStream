@@ -49,6 +49,10 @@ for season, url in PAGES:
 
 queries = [
     "اللعبة",
+    "اللعبة الموسم الاول",
+    "اللعبة الموسم الأول",
+    "مسلسل اللعبة",
+    "اللعبة 2020",
     "اللعبة الموسم الثاني",
     "اللعبة الموسم الثالث",
     "اللعبة الموسم الرابع",
@@ -59,5 +63,5 @@ for query in queries:
     results = [(href,label) for href,label,_ in anchors(raw,final) if "/series/" in urlparse(href).path]
     unique = list(dict(((href,label),(href,label)) for href,label in results).values())
     print(f"SEARCH {query!r}: host={urlparse(final).hostname} html={len(raw)} results={len(unique)}")
-    for href,label in unique[:8]:
+    for href,label in unique[:30]:
         print(f"  {urlparse(href).path[:135]} TITLE {label[:90]!r}")
