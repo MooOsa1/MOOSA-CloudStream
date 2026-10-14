@@ -32,6 +32,9 @@ import com.lagradost.cloudstream3.syncproviders.SyncIdName
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.M3u8Helper
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
@@ -2892,6 +2895,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val emittedLink = AtomicBoolean(false)
         val completedProviders = AtomicInteger(0)
         val shownLinks = AtomicInteger(0)
+        val verifiedMediaLinks =
+            Collections.synchronizedList(mutableListOf<ExtractorLink>())
         val callbackLock = Any()
 
         val externalSubtitleJob = async {
@@ -2918,6 +2923,8 @@ class MOOSAHubProvider : TmdbProvider() {
             batch.amap { api ->
                 var providerWorked = false
                 val candidateLinks =
+                    Collections.synchronizedList(mutableListOf<ExtractorLink>())
+                val unresolvedHlsMasters =
                     Collections.synchronizedList(mutableListOf<ExtractorLink>())
                 val extracted = AtomicInteger(0)
                 val invalidUrls = AtomicInteger(0)
@@ -2971,7 +2978,15 @@ class MOOSAHubProvider : TmdbProvider() {
                             // consume time, network requests or source slots.
                             val height = MOOSAQualityPolicy.height(link)
                             if (height == null || height <= 0) {
-                                unknownQualityUrls.incrementAndGet()
+                                // External plugins often return an HLS master
+                                // with quality=Unknown. Read its actual HLS
+                                // resolution variants instead of discarding
+                                // 4K/1080p just because the master is unlabeled.
+                                if (link.isM3u8) {
+                                    unresolvedHlsMasters += link
+                                } else {
+                                    unknownQualityUrls.incrementAndGet()
+                                }
                                 return
                             }
                             if (!MOOSAQualityPolicy.acceptsHeight(height)) {
@@ -3088,6 +3103,44 @@ class MOOSAHubProvider : TmdbProvider() {
                             }
                         }
 
+                        // Expand unknown-quality HLS master playlists from
+                        // both bundled AND external plugins. A resolution
+                        // must be explicitly advertised in the real playlist;
+                        // generic HD/auto names are never promoted to 720p.
+                        for (master in unresolvedHlsMasters
+                            .distinctBy { it.url }
+                            .take(5)
+                        ) {
+                            val variants = timed(6500L) {
+                                M3u8Helper().m3u8Generation(
+                                    M3u8Helper.M3u8Stream(
+                                        streamUrl = master.url,
+                                        quality = null,
+                                        headers = master.getAllHeaders()
+                                    ),
+                                    false
+                                )
+                            }.orEmpty()
+
+                            for (variant in variants) {
+                                val resolution = variant.quality
+                                if (!MOOSAQualityPolicy.acceptsHeight(resolution)) {
+                                    continue
+                                }
+                                val stream = newExtractorLink(
+                                    source = master.source,
+                                    name = "${master.name} ${resolution}p",
+                                    url = variant.streamUrl,
+                                    type = ExtractorLinkType.M3U8
+                                ) {
+                                    referer = master.referer
+                                    quality = resolution!!
+                                    headers = master.headers
+                                }
+                                collectLink(stream)
+                            }
+                        }
+
                         MOOSAPlaybackDiagnostics.update(
                             api,
                             "Episode matched: ${extracted.get()} extracted, " +
@@ -3146,10 +3199,10 @@ class MOOSAHubProvider : TmdbProvider() {
                                     emittedLink.set(true)
                                     shownLinks.incrementAndGet()
                                     MOOSAProgress.linkAvailable()
-
-                                    synchronized(callbackLock) {
-                                        callback(link)
-                                    }
+                                    // Do not emit in network-return order.
+                                    // Buffer all verified sources so 2160p
+                                    // always precedes 1080p, then 720p.
+                                    verifiedMediaLinks += link
                                     true
                                 } else {
                                     if (!verified) {
@@ -3246,6 +3299,24 @@ class MOOSAHubProvider : TmdbProvider() {
                 providerWorked
             }
         }
+
+        // A global sort is necessary: per-provider sorting alone cannot
+        // prioritize an external 4K stream over an earlier Akwam 720p.
+        // Sorted after ALL participating providers have returned.
+        verifiedMediaLinks
+            .distinctBy(::linkKey)
+            .sortedWith(
+                compareByDescending<ExtractorLink> {
+                    MOOSAQualityPolicy.height(it) ?: 0
+                }.thenBy {
+                    if (it.url.startsWith("https://", true)) 0 else 1
+                }
+            )
+            .forEach { link ->
+                synchronized(callbackLock) {
+                    callback(link)
+                }
+            }
 
         MOOSAProgress.serversReady(shownLinks.get())
         MOOSAProgress.subtitles()
