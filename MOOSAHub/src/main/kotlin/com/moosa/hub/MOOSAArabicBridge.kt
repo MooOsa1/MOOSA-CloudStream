@@ -248,9 +248,11 @@ internal object MOOSAArabicBridge {
                 )
             }
 
-        return (base + seasonVariants)
+        // Search the real show name first, then requested season variants.
+        // A long alias list previously crowded out the precise season query.
+        return (base.take(2) + seasonVariants.take(4) + base.drop(2))
             .distinctBy(::normalize)
-            .take(14)
+            .take(8)
     }
 
     private fun explicitSeason(value: String): Int? {
@@ -347,7 +349,7 @@ internal object MOOSAArabicBridge {
         aliases: List<String>
     ): MOOSAHubProvider.ProviderTarget? {
         val kind = kindOf(api) ?: return null
-        val queries = queryList(request, aliases)
+        val queries = queryList(request, aliases).take(6)
         val seenUrls = linkedSetOf<String>()
 
         MOOSAPlaybackDiagnostics.update(
