@@ -1,0 +1,15 @@
+name: Probe Arabic dubbed source and mirrors (development)
+on:
+  push:
+    branches: ["fix/arabic-v3-dubbed-servers"]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install HTML parser
+        run: python3 -m pip install --quiet beautifulsoup4
+      - name: Check native Akwam dubbing sections and MP4 mirrors
+        run: python3 diagnostics/moosa_arabic_dubbed_servers_probe.py
