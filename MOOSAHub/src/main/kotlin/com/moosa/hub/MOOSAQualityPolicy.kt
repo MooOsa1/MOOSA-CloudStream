@@ -38,8 +38,21 @@ object MOOSAQualityPolicy {
             ?: labeledHeight(link.url)
     }
 
+    /**
+     * Filter displayed server labels, never the file URL. Working Akwam
+     * streams can legitimately use /download/ in their page or CDN URL.
+     */
+    private val forbiddenServerLabel = Regex(
+        """(?i)download|down\\s*load|داونلود|داون\\s*لود|تحميل|تنزيل"""
+    )
+
+    fun hasForbiddenLabel(link: ExtractorLink): Boolean =
+        forbiddenServerLabel.containsMatchIn(link.name) ||
+            forbiddenServerLabel.containsMatchIn(link.source)
+
     fun accepts(link: ExtractorLink): Boolean =
-        (height(link) ?: 0) >= MIN_HEIGHT
+        !hasForbiddenLabel(link) &&
+            (height(link) ?: 0) >= MIN_HEIGHT
 
     fun acceptsHeight(height: Int?): Boolean =
         height != null && height >= MIN_HEIGHT
