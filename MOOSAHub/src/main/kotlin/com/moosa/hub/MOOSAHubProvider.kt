@@ -3164,7 +3164,17 @@ class MOOSAHubProvider : TmdbProvider() {
                                         ignoreCase = true
                                     ) in directHttpMirrors
                             }
-                            .sortedByDescending(::inferQuality)
+                            .sortedWith(
+                                compareByDescending<ExtractorLink>(::inferQuality)
+                                    // When equal-resolution mirrors exist,
+                                    // prefer servers that transferred the
+                                    // previous 64 KiB test faster on THIS
+                                    // device; never demote 4K below 1080p.
+                                    .thenByDescending {
+                                        MOOSAServerRegistry.sampledMbps(it)
+                                            ?: 0.0
+                                    }
+                            )
 
                         for (linkBatch in candidates.chunked(linkProbeBatchSize)) {
                             linkBatch.amap { link ->
@@ -3245,10 +3255,24 @@ class MOOSAHubProvider : TmdbProvider() {
                     }
 
                     if (providerWorked) {
+                        val measured = candidateLinks
+                            .mapNotNull(MOOSAServerRegistry::sampledMbps)
+                            .maxOrNull()
+                        val quality = candidateLinks.maxOfOrNull(::inferQuality) ?: 0
+                        val rateInfo = measured?.let { speed ->
+                            val label = String.format(
+                                java.util.Locale.US, "%.1f", speed
+                            )
+                            val mayBuffer = (quality >= 2160 && speed < 8.0) ||
+                                (quality >= 1080 && quality < 2160 && speed < 2.5) ||
+                                (quality in 720..1079 && speed < 1.0)
+                            " • CDN sample $label Mbps" +
+                                if (mayBuffer) " (possible buffering)" else ""
+                        }.orEmpty()
                         MOOSAPlaybackDiagnostics.update(
                             api,
                             "Playback ready • ${acceptedLinks.get()} verified, " +
-                                "${failedProbes.get()} probe failures"
+                                "${failedProbes.get()} probe failures" + rateInfo
                         )
 
                         providerHealth.merge(api.name, 3) { old, add ->
