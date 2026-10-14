@@ -114,11 +114,14 @@ object MOOSASeeAll {
             }
         )
 
+        // CloudStream hardcodes nextFocusUp to the ORIGINAL title ID.
+        // Removing focusability here in v73 made the adjacent action
+        // unreachable by the remote. Keep that native focus anchor alive.
         header.setOnFocusChangeListener(null)
         header.setOnClickListener(null)
         header.setOnKeyListener(null)
-        header.isClickable = false
-        header.isFocusable = false
+        header.isClickable = true
+        header.isFocusable = true
         header.isFocusableInTouchMode = false
         header.alpha = 1f
         header.background = null
@@ -147,6 +150,38 @@ object MOOSASeeAll {
         actionForTitle[header] = WeakReference(action)
         styleAction(action, false)
         wireAction(host, header, action)
+
+        // HomeChildItemAdapter.nextFocusUp also points at the original
+        // home_child_more_info ID. Redirect its focus to the actual
+        // SHOW MORE button while keeping original title and ID intact.
+        header.setOnFocusChangeListener { view, focused ->
+            if (focused) {
+                view.post {
+                    if (view.hasFocus() && view.isAttachedToWindow &&
+                        action.isAttachedToWindow && action.isShown
+                    ) action.requestFocus()
+                }
+            }
+        }
+        // Fallback: even if a TV firmware dispatches OK before the focus
+        // handoff, the native title performs exactly the same action.
+        header.setOnClickListener { action.performClick() }
+        header.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                keyCode == KeyEvent.KEYCODE_ENTER ||
+                keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+            ) {
+                if (event.action == KeyEvent.ACTION_UP) {
+                    action.performClick()
+                }
+                true
+            } else {
+                false
+            }
+        }
+        // Explicit link for native TV focus search; covers variants
+        // where focusFromTouch bypasses the title's posted redirect.
+        findHorizontalCarousel(oldParent)?.nextFocusUpId = action.id
         return action
     }
 
