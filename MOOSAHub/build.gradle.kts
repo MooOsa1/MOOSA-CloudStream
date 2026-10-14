@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 51
+version = 52
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v51: native Arabic resolvers for current ArabSeed/MySeed and Akwam routes
+// v52: multi-source Arabic playback with ArabSeed quality AJAX, WeCima and CimaClub fallbacks
