@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 53
+version = 54
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v53: Arabic original-title-first search, season-specific matching, standalone episode validation and improved diagnostics
+// v54: source watch-button routing, data-src quality servers, playable download mirrors, and per-stage extraction diagnostics
