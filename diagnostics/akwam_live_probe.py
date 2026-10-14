@@ -104,5 +104,13 @@ if links:
         )
         unsafe_seek = request(target, page_url, "bytes=1048576-1048639", insecure=True)
         show("Unverified-cert MP4 seek", unsafe_seek)
+        # Check whether the CDN offers a real HTTP endpoint or upgrades to TLS.
+        http_url = target.replace("https://", "http://", 1)
+        plain = request(http_url, page_url, "bytes=0-63")
+        show("HTTP transport (diagnosis only)", plain)
+        print(
+            "HTTP final scheme: " +
+            (urlparse(plain.get("url", "")).scheme or "none")
+        )
 else:
     print("Cannot test CDN from this runner: page did not expose direct target.")
