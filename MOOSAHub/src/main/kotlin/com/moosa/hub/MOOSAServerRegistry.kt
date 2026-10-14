@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
@@ -349,10 +350,29 @@ object MOOSAServerRegistry {
                             Regex("""(?i)filename[^;]*\.(?:mp4|m4v|mkv|webm|mov|ts)""")
                                 .containsMatchIn(disposition)
 
+                        // Some signed CDN URLs do not end in .mp4. For an
+                        // octet-stream response, recognize MP4's ftyp box in
+                        // the first bytes of a successful partial response.
+                        val hasMp4Signature =
+                            if (response.isSuccessful && isGenericMime && isPartial) {
+                                runCatching {
+                                    response.text.take(32)
+                                        .let { prefix ->
+                                            prefix.length >= 8 &&
+                                                prefix.substring(4, 8) == "ftyp"
+                                        }
+                                }.getOrDefault(false)
+                            } else {
+                                false
+                            }
+
                         val valid = response.isSuccessful &&
                             (
                                 isVideoMime ||
-                                    (isGenericMime && isPartial && hasVideoExtension)
+                                    (
+                                        isGenericMime && isPartial &&
+                                            (hasVideoExtension || hasMp4Signature)
+                                        )
                                 )
 
                         val reason = when {
@@ -362,8 +382,8 @@ object MOOSAServerRegistry {
                                 "Non-video Content-Type: $contentType"
                             isGenericMime && !isPartial ->
                                 "Generic response without byte-range proof"
-                            isGenericMime && !hasVideoExtension ->
-                                "Generic response without video file identity"
+                            isGenericMime && !hasVideoExtension && !hasMp4Signature ->
+                                "Generic response without MP4 signature"
                             valid -> "Video MIME and ranged GET confirmed"
                             else -> "Media response not confirmed"
                         }
@@ -371,6 +391,8 @@ object MOOSAServerRegistry {
                         ProbeCheck(valid, reason)
                     }
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Throwable) {
                 ProbeCheck(
                     false,
