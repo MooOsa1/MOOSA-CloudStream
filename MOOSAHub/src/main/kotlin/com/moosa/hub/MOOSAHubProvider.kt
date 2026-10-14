@@ -2772,18 +2772,8 @@ class MOOSAHubProvider : TmdbProvider() {
         }
     }
 
-    private fun inferQuality(link: ExtractorLink): Int {
-        if (link.quality >= 720) return link.quality
-
-        val text = "${link.name} ${link.source} ${link.url}".lowercase()
-        return when {
-            "2160" in text || "4k" in text || "uhd" in text -> 2160
-            "1440" in text || "qhd" in text || "2k" in text -> 1440
-            "1080" in text || "fhd" in text || "fullhd" in text || "full hd" in text -> 1080
-            "720" in text || Regex("""\bhd\b""").containsMatchIn(text) -> 720
-            else -> link.quality
-        }
-    }
+    private fun inferQuality(link: ExtractorLink): Int =
+        MOOSAQualityPolicy.height(link) ?: 0
 
     private fun validStreamingUrl(url: String): Boolean =
         url.startsWith("https://", ignoreCase = true) ||
@@ -2922,6 +2912,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 val extracted = AtomicInteger(0)
                 val invalidUrls = AtomicInteger(0)
                 val disabledUrls = AtomicInteger(0)
+                val lowQualityUrls = AtomicInteger(0)
+                val unknownQualityUrls = AtomicInteger(0)
                 val failedProbes = AtomicInteger(0)
                 val acceptedLinks = AtomicInteger(0)
                 val failedReasons = ConcurrentHashMap<String, AtomicInteger>()
@@ -2956,6 +2948,21 @@ class MOOSAHubProvider : TmdbProvider() {
                                 invalidUrls.incrementAndGet()
                                 return
                             }
+
+                            // Reject SD and unknown links BEFORE probing them.
+                            // Displaying only HD is not enough: SD should not
+                            // consume time, network requests or source slots.
+                            val height = MOOSAQualityPolicy.height(link)
+                            if (height == null || height <= 0) {
+                                unknownQualityUrls.incrementAndGet()
+                                return
+                            }
+                            if (!MOOSAQualityPolicy.acceptsHeight(height)) {
+                                lowQualityUrls.incrementAndGet()
+                                return
+                            }
+                            if (link.quality <= 0) link.quality = height
+
                             // A "Download" label can refer to a directly playable
                             // MP4/HLS stream. Let the actual media probe decide.
                             MOOSAServerRegistry.record(link)
@@ -3068,7 +3075,8 @@ class MOOSAHubProvider : TmdbProvider() {
                             api,
                             "Episode matched: ${extracted.get()} extracted, " +
                                 "${candidateLinks.size} candidates, " +
-                                "${invalidUrls.get()} invalid, ${disabledUrls.get()} disabled"
+                                "${invalidUrls.get()} invalid, ${disabledUrls.get()} disabled, " +
+                                "${lowQualityUrls.get()} SD skipped, ${unknownQualityUrls.get()} unknown skipped"
                         )
 
                         val candidates = candidateLinks
@@ -3173,7 +3181,9 @@ class MOOSAHubProvider : TmdbProvider() {
                                 candidateLinks.isEmpty() ->
                                     "Episode matched • ${extracted.get()} URLs, " +
                                         "${invalidUrls.get()} invalid, " +
-                                        "${disabledUrls.get()} disabled"
+                                        "${disabledUrls.get()} disabled, " +
+                                        "${lowQualityUrls.get()} SD skipped, " +
+                                        "${unknownQualityUrls.get()} unknown skipped"
                                 else -> {
                                     val reasons = failedReasons.entries
                                         .sortedByDescending { it.value.get() }
