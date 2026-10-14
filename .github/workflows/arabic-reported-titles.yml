@@ -1,0 +1,17 @@
+name: Diagnose reported Arabic titles
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/arabic_reported_titles_probe.py"
+      - ".github/workflows/arabic-reported-titles.yml"
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet beautifulsoup4
+      - name: Inspect exact Arabic title search results without media downloading
+        run: python3 diagnostics/arabic_reported_titles_probe.py
