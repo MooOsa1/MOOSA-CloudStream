@@ -198,6 +198,17 @@ class AkwamProvider : MainAPI() {
         return words.firstOrNull { text.contains("الموسم " + it.first) || text.contains("season " + it.first) }?.second
     }
 
+    private fun publishedYear(doc: org.jsoup.nodes.Document): Int? {
+        // Never read the first four-digit number from the entire HTML:
+        // Akwam shows unrelated recommended movies and their years.
+        val raw = doc.selectFirst(
+            "meta[itemprop=datePublished], meta[property='video:release_date'], " +
+                "meta[property='article:published_time']"
+        )?.attr("content").orEmpty()
+        return Regex("""\b(?:19|20)\d{2}\b""")
+            .find(raw)?.value?.toIntOrNull()
+    }
+
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
         val title = doc.selectFirst("h1.entry-title,h1")?.text()?.trim().orEmpty()
@@ -208,7 +219,7 @@ class AkwamProvider : MainAPI() {
         if (!isSeries) {
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
                 posterUrl = poster
-                year = Regex("\\b(19|20)\\d{2}\\b").find(doc.text())?.value?.toIntOrNull()
+                year = publishedYear(doc)
                 plot = doc.select("meta[name=description]").attr("content")
             }
         }
@@ -241,7 +252,7 @@ class AkwamProvider : MainAPI() {
             }
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             posterUrl = poster
-            year = Regex("\\b(19|20)\\d{2}\\b").find(doc.text())?.value?.toIntOrNull()
+            year = publishedYear(doc)
             plot = doc.select("meta[name=description]").attr("content")
         }
     }
