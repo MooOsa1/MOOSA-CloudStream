@@ -10,8 +10,10 @@ internal object MOOSAPlaybackDiagnostics {
     @Volatile
     private var header: String = "Playback diagnostics"
 
+    // Some providers update mainUrl after a redirect. Tracking by the URL
+    // accidentally creates a second diagnostic row for the same provider.
     private fun key(api: MainAPI): String =
-        "${api.name}|${api.mainUrl}|${api.javaClass.name}"
+        "${api.javaClass.name}|${System.identityHashCode(api)}"
 
     fun start(
         request: MOOSAHubProvider.HubPlaybackRequest,
