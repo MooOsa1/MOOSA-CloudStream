@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 64
+version = 65
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v64: fast Arabic Akwam-first loading; immediate HD playback callback; stop redundant crawling and slow external lookups; preserve v63 host-priority recovery
+// v65: Arabic fast lane Akwam-first, immediate HD, skip redundant crawling/Downet TLS, no slow subtitle wait; v63 settings recovery maintained
