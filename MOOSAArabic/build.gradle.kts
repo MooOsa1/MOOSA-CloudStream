@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-version = 2
+version = 1
 
 android {
     compileOptions {
@@ -16,7 +16,7 @@ tasks.withType<KotlinJvmCompile>().configureEach {
 
 cloudstream {
     language = "ar"
-    description = "مصدر عربي من أكوام: حلقات مرتبة، بحث متعدد الصفحات، وجودات معلنة من الموقع"
+    description = "أفلام ومسلسلات عربية من أقسام أكوام الأصلية، بدون TMDB أو مطابقة خارجية"
     authors = listOf("MOOSA")
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
@@ -26,4 +26,5 @@ cloudstream {
 dependencies {
     val cloudstream by configurations
     cloudstream("com.lagradost:cloudstream3:pre-release")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 }
