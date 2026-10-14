@@ -642,10 +642,11 @@ class ArabSeedProvider : MainAPI() {
         csrf: String,
         server: WatchServer
     ): String? {
-        server.link
-            ?.let { unwrapServerLink(it, watchUrl) }
-            ?.let { return it }
-
+        // MySeed's quality list contains stale data-link values. The
+        // browser does not play them directly: it POSTs the selected
+        // post_id + quality + server + CSRF token to get__watch__server.
+        // Always use that endpoint, otherwise the "1080p" list points to
+        // the old 480p server (or an invalid relative host name).
         val body = try {
             app.post(
                 "$origin/get__watch__server/",
@@ -665,6 +666,9 @@ class ArabSeedProvider : MainAPI() {
         } catch (_: Throwable) {
             return null
         }
+
+        val json = runCatching { JSONObject(body) }.getOrNull()
+        if (json?.optString("type") != "success") return null
 
         return parseServerResponse(body, origin)
             ?.let { unwrapServerLink(it, watchUrl) }
