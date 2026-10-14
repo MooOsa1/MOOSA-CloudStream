@@ -1,0 +1,16 @@
+name: Probe Arabic source endpoints
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/arabic_sources_probe.py"
+      - ".github/workflows/arabic-sources-probe.yml"
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test ArabSeed, WeCima and CimaClub discovery
+        run: python3 diagnostics/arabic_sources_probe.py
