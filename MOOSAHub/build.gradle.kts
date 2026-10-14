@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 52
+version = 53
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v52: multi-source Arabic playback with ArabSeed quality AJAX, WeCima and CimaClub fallbacks
+// v53: Arabic original-title-first search, season-specific matching, standalone episode validation and improved diagnostics
