@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 72
+version = 73
 
 
 android {
@@ -53,3 +53,6 @@ dependencies {
 
 // v72: stable directional focus on SHOW MORE, correct More Info navigation,
 // validated non-empty subtitles, official Arabic overviews, broader Indian catalog.
+
+// v73: stable standalone SHOW MORE button unaffected by CloudStream
+// rebinds, and vertical focus restoration for offscreen previous rows.

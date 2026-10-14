@@ -9,6 +9,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.view.KeyEvent
+import android.view.Gravity
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -34,7 +36,10 @@ object MOOSASeeAll {
         WeakHashMap<ViewGroup, ViewTreeObserver.OnGlobalLayoutListener>()
     private val headerRefs =
         ConcurrentHashMap<String, WeakReference<TextView>>()
-    private val boundHeaders = WeakHashMap<TextView, String>()
+    // The host adapter rewrites home_child_more_info.text on rebind.
+    // Never mutate that text to add SHOW MORE: a separate persistent view
+    // survives a recycled item's text reset without flickering.
+    private val actionForTitle = WeakHashMap<TextView, WeakReference<TextView>>()
     private var headerRefreshScheduled = false
     private var lastBrowseOpenAt = 0L
 
@@ -49,14 +54,138 @@ object MOOSASeeAll {
         }, 90L)
     }
 
-    private fun styleHeader(header: TextView, focused: Boolean) {
-        val density = header.resources.displayMetrics.density
-        header.alpha = if (focused) 1f else 0.94f
-        header.setTextColor(if (focused) Color.rgb(16, 16, 18) else Color.WHITE)
-        header.background = GradientDrawable().apply {
+    private fun styleAction(button: TextView, focused: Boolean) {
+        val density = button.resources.displayMetrics.density
+        button.alpha = 1f
+        button.setTextColor(if (focused) Color.rgb(16, 16, 18) else Color.WHITE)
+        button.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = 6f * density
             setColor(if (focused) Color.rgb(245, 245, 246) else Color.TRANSPARENT)
+        }
+    }
+
+    private fun actionFor(header: TextView): TextView? =
+        actionForTitle[header]?.get()?.takeIf { it.parent === header.parent }
+
+    private fun installAction(header: TextView): TextView? {
+        actionFor(header)?.let { return it }
+
+        val host = activity ?: return null
+        val originalName = header.text?.toString()?.trim().orEmpty()
+        if (states[originalName] == null) return null
+
+        val oldParent = header.parent as? LinearLayout ?: return null
+        // The host's TV row is a vertical LinearLayout; the action is
+        // inserted once per row and never changes the host's bound title.
+        if (oldParent.orientation != LinearLayout.VERTICAL) return null
+
+        val titleIndex = oldParent.indexOfChild(header)
+        if (titleIndex < 0) return null
+        val oldParams = header.layoutParams as? LinearLayout.LayoutParams ?: return null
+        val context = header.context
+        val density = context.resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        val toolbar = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
+
+        oldParent.removeViewAt(titleIndex)
+        oldParent.addView(
+            toolbar, titleIndex,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+        toolbar.addView(
+            header,
+            LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+            ).apply {
+                // Keep the TV navigation rail inset on the title.
+                marginStart = oldParams.marginStart
+                topMargin = oldParams.topMargin
+                bottomMargin = oldParams.bottomMargin
+            }
+        )
+
+        header.setOnFocusChangeListener(null)
+        header.setOnClickListener(null)
+        header.setOnKeyListener(null)
+        header.isClickable = false
+        header.isFocusable = false
+        header.isFocusableInTouchMode = false
+        header.alpha = 1f
+        header.background = null
+        header.setTextColor(Color.WHITE)
+
+        val action = TextView(context).apply {
+            id = View.generateViewId()
+            text = "SHOW MORE  ›"
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setPadding(dp(11), dp(8), dp(11), dp(8))
+            isClickable = true
+            isFocusable = true
+            isFocusableInTouchMode = false
+            setOnFocusChangeListener { view, focused ->
+                styleAction(view as TextView, focused)
+            }
+        }
+        toolbar.addView(
+            action,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = dp(16) }
+        )
+        actionForTitle[header] = WeakReference(action)
+        styleAction(action, false)
+        wireAction(host, header, action)
+        return action
+    }
+
+    private fun wireAction(
+        host: android.app.Activity,
+        title: TextView,
+        button: TextView
+    ) {
+        button.setOnKeyListener { _, keyCode, event ->
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (event.action == KeyEvent.ACTION_DOWN)
+                        focusInPreviousVisibleRow(host, title)
+                    true
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    if (event.action == KeyEvent.ACTION_DOWN)
+                        focusCardDirectlyBelowHeader(host, title)
+                    true
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                else -> false
+            }
+        }
+        button.setOnClickListener {
+            val now = SystemClock.uptimeMillis()
+            val state = states[title.text?.toString()?.trim().orEmpty()]
+                ?: return@setOnClickListener
+            if (now - lastBrowseOpenAt < 650L ||
+                !button.isAttachedToWindow || !button.isShown ||
+                !host.hasWindowFocus() ||
+                homeMasterRecycler(host)?.isShown != true
+            ) return@setOnClickListener
+
+            lastBrowseOpenAt = now
+            headerRefs[state.request.name] = WeakReference(title)
+            captureParentPosition(host, title, state)
+            MOOSABrowseDialog.show(host, state.api, state.request)
         }
     }
 
@@ -175,120 +304,101 @@ object MOOSASeeAll {
         return manager.findViewByPosition(first)?.let(::requestCardFocus) ?: false
     }
 
-    private fun focusInPreviousVisibleRow(
+    private fun focusPreviousTarget(
         host: android.app.Activity,
-        header: TextView
+        previous: View
     ): Boolean {
-        val master = homeMasterRecycler(host) ?: return false
-        val row = directChildOf(master, header) ?: return false
-        val currentIndex = master.getChildAdapterPosition(row)
-        if (currentIndex <= 0) return false
-
-        val previous = master.findViewHolderForAdapterPosition(currentIndex - 1)
-            ?.itemView ?: return false
-        if (!previous.isShown) return false
-
-        // Request the previous category header, which is not inside the
-        // horizontal RecyclerView. Never let FocusFinder request an offscreen
-        // right-hand poster and scroll its parent sideways.
         val headerId = host.resources.getIdentifier(
             "home_child_more_info", "id", host.packageName
         )
         if (headerId != 0) {
-            val previousHeader = previous.findViewById<View>(headerId)
-            if (previousHeader?.isShown == true && previousHeader.isFocusable) {
-                return previousHeader.requestFocus()
+            val title = previous.findViewById<TextView>(headerId)
+            if (title != null && title.isShown) {
+                val button = installAction(title)
+                if (button?.isShown == true && button.requestFocus()) return true
             }
         }
 
         val carousel = findHorizontalCarousel(previous) ?: return false
         val manager = carousel.layoutManager as? LinearLayoutManager ?: return false
         val first = manager.findFirstVisibleItemPosition().coerceAtLeast(0)
+        val last = manager.findLastVisibleItemPosition()
+        if (last < first) return false
+        for (index in first..last) {
+            val card = manager.findViewByPosition(index) ?: continue
+            if (card.left >= carousel.paddingLeft &&
+                card.right <= carousel.width - carousel.paddingRight &&
+                requestCardFocus(card)
+            ) return true
+        }
         return manager.findViewByPosition(first)?.let(::requestCardFocus) ?: false
     }
 
-    private fun applyHeaders() {
-        val currentActivity = activity ?: return
-        val root =
-            currentActivity.findViewById<ViewGroup>(android.R.id.content)
-                ?: return
-
-        val headers = mutableListOf<TextView>()
-        collectHeaders(root, headers)
-
-        headers.forEach { header ->
-            val original = originalHeaderText(header.text?.toString().orEmpty())
-            val state = states[original] ?: return@forEach
-            val expectedText = "${state.request.name}  SHOW MORE  ›"
-
-            // Rows are rebound/recycled by CloudStream. Bind only on a real
-            // category change, not on every frame/layout event.
-            if (boundHeaders[header] == state.request.name &&
-                header.text?.toString() == expectedText
-            ) {
-                return@forEach
+    private fun focusHomeSelector(host: android.app.Activity): Boolean {
+        for (name in listOf("home_change_api", "navigation_home", "nav_rail_view")) {
+            val id = host.resources.getIdentifier(name, "id", host.packageName)
+            if (id != 0) {
+                val control = host.findViewById<View>(id)
+                if (control?.isShown == true && control.requestFocus()) return true
             }
-            boundHeaders[header] = state.request.name
-            if (header.text?.toString() != expectedText) {
-                header.text = expectedText
-            }
-            header.contentDescription = "${state.request.name}. Show more."
-            header.isClickable = true
-            header.isFocusable = true
-            header.isFocusableInTouchMode = false
+        }
+        return false
+    }
 
-            header.setOnFocusChangeListener { view, focused ->
-                styleHeader(view as TextView, focused)
-            }
-            styleHeader(header, header.hasFocus())
-            headerRefs[state.request.name] = WeakReference(header)
+    private fun focusInPreviousVisibleRow(
+        host: android.app.Activity,
+        title: TextView
+    ): Boolean {
+        val master = homeMasterRecycler(host) ?: return focusHomeSelector(host)
+        val row = directChildOf(master, title) ?: return focusHomeSelector(host)
+        val position = master.getChildAdapterPosition(row)
+        if (position == RecyclerView.NO_POSITION) return focusHomeSelector(host)
+        val target = position - 1
 
-            // Android already calls performClick() for remote DPAD_CENTER
-            // and Enter. Do NOT install an ACTION_UP onKey callback too:
-            // it opened two dialogs from one physical key press.
-            header.setOnKeyListener { _, keyCode, event ->
-                if (keyCode !in listOf(
-                        KeyEvent.KEYCODE_DPAD_UP,
-                        KeyEvent.KEYCODE_DPAD_DOWN,
-                        KeyEvent.KEYCODE_DPAD_LEFT,
-                        KeyEvent.KEYCODE_DPAD_RIGHT
-                    )
-                ) {
-                    false
-                } else if (event.action == KeyEvent.ACTION_UP) {
-                    // Consume matching key-up events: the app should not
-                    // perform a second default focus search afterwards.
-                    true
-                } else if (event.action == KeyEvent.ACTION_DOWN) {
-                    when (keyCode) {
-                        KeyEvent.KEYCODE_DPAD_UP ->
-                            focusInPreviousVisibleRow(currentActivity, header)
-                        KeyEvent.KEYCODE_DPAD_DOWN,
-                        KeyEvent.KEYCODE_DPAD_LEFT ->
-                            focusCardDirectlyBelowHeader(currentActivity, header)
-                        else -> true // RIGHT on the rightmost header stays put.
-                    }
-                    // Even if the target isn't loaded, do not delegate
-                    // to FocusFinder (which causes horizontal row drift).
-                    true
+        // The first adapter slot is CloudStream's preview header, not a
+        // content row; UP should exit to the provider selector.
+        if (target <= 0) return focusHomeSelector(host)
+
+        master.findViewHolderForAdapterPosition(target)
+            ?.itemView?.takeIf { it.isShown }
+            ?.let { if (focusPreviousTarget(host, it)) return true }
+
+        // RecyclerView recycles the previous row when it moves offscreen.
+        // UP should scroll the VERTICAL master list to attach it, then focus
+        // its button. Do not ask Android's FocusFinder for a distant card.
+        val manager = master.layoutManager as? LinearLayoutManager
+            ?: return focusHomeSelector(host)
+        manager.scrollToPositionWithOffset(target, 0)
+
+        fun retry(remaining: Int) {
+            master.post {
+                if (host.isFinishing || host.isDestroyed ||
+                    !master.isShown || !host.hasWindowFocus()
+                ) return@post
+                val item = master.findViewHolderForAdapterPosition(target)?.itemView
+                if (item != null && item.isShown &&
+                    focusPreviousTarget(host, item)
+                ) return@post
+                if (remaining > 0) {
+                    mainHandler.postDelayed({ retry(remaining - 1) }, 60L)
                 } else {
-                    true
+                    focusHomeSelector(host)
                 }
             }
-            header.setOnClickListener {
-                val now = SystemClock.uptimeMillis()
-                if (now - lastBrowseOpenAt < 650L ||
-                    !header.isShown || !header.isAttachedToWindow ||
-                    !currentActivity.hasWindowFocus() ||
-                    homeMasterRecycler(currentActivity)?.isShown != true
-                ) {
-                    return@setOnClickListener
-                }
-                lastBrowseOpenAt = now
-                headerRefs[state.request.name] = WeakReference(header)
-                captureParentPosition(currentActivity, header, state)
-                MOOSABrowseDialog.show(currentActivity, state.api, state.request)
-            }
+        }
+        retry(4)
+        return true
+    }
+
+    private fun applyHeaders() {
+        val host = activity ?: return
+        val root = host.findViewById<ViewGroup>(android.R.id.content) ?: return
+        val titles = mutableListOf<TextView>()
+        collectHeaders(root, titles)
+        titles.forEach { title ->
+            // The host owns title text; we only install a sibling button.
+            // Recycling does not toggle the button or revert its label.
+            installAction(title)
         }
     }
 
@@ -398,17 +508,13 @@ object MOOSASeeAll {
     }
 
     fun restoreFocus(categoryName: String) {
-        val currentActivity = activity ?: return
-        // Never force master/child RecyclerViews to scroll as an aftereffect
-        // of closing SHOW MORE. This previously caused horizontal drift.
+        val host = activity ?: return
         mainHandler.postDelayed({
-            val master = homeMasterRecycler(currentActivity) ?: return@postDelayed
-            if (!master.isShown || !currentActivity.hasWindowFocus()) {
-                return@postDelayed
-            }
-            val header = headerRefs[categoryName]?.get()
-            if (header?.isShown == true && header.isAttachedToWindow) {
-                header.requestFocus()
+            val master = homeMasterRecycler(host) ?: return@postDelayed
+            if (!master.isShown || !host.hasWindowFocus()) return@postDelayed
+            val title = headerRefs[categoryName]?.get()
+            if (title?.isShown == true && title.isAttachedToWindow) {
+                actionFor(title)?.requestFocus()
             }
         }, 100L)
     }
