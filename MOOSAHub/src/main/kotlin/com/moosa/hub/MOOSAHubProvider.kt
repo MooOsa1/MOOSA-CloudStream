@@ -2820,10 +2820,6 @@ class MOOSAHubProvider : TmdbProvider() {
             Collections.synchronizedList(
                 mutableListOf<SubtitleFile>()
             )
-        val fallbackLinks =
-            Collections.synchronizedList(
-                mutableListOf<ExtractorLink>()
-            )
         val emittedLink = AtomicBoolean(false)
         val completedProviders = AtomicInteger(0)
         val shownLinks = AtomicInteger(0)
@@ -2859,6 +2855,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 val disabledUrls = AtomicInteger(0)
                 val failedProbes = AtomicInteger(0)
                 val acceptedLinks = AtomicInteger(0)
+                val failedReasons = ConcurrentHashMap<String, AtomicInteger>()
 
                 try {
                     MOOSAPlaybackDiagnostics.update(
@@ -3014,8 +3011,14 @@ class MOOSAHubProvider : TmdbProvider() {
                                     return@amap false
                                 }
 
+                                // Do not allow untested Arabic source mirrors:
+                                // fallback URLs previously bypassed verification,
+                                // then were shown even after the probe failed.
                                 val verified =
-                                    !MOOSASettingsStore.verifyLinks() ||
+                                    (
+                                        !request.originalLanguage.equals("ar", true) &&
+                                            !MOOSASettingsStore.verifyLinks()
+                                        ) ||
                                         verifyStreamingLink(link)
 
                                 if (
@@ -3035,21 +3038,12 @@ class MOOSAHubProvider : TmdbProvider() {
                                 } else {
                                     if (!verified) {
                                         failedProbes.incrementAndGet()
-                                    }
-                                    if (
-                                        !verified &&
-                                        !seenLinks.contains(key) &&
-                                        (
-                                            !request.originalLanguage.equals(
-                                                "ar",
-                                                ignoreCase = true
-                                            ) ||
-                                                isArabicProvider(api) ||
-                                                MOOSAArabicBridge.supports(api) ||
-                                                isStreamPlayProvider(api)
-                                            )
-                                    ) {
-                                        fallbackLinks += link
+                                        val reason = MOOSAServerRegistry
+                                            .lastProbeReason(link)
+                                            ?: "Unverified link"
+                                        failedReasons
+                                            .computeIfAbsent(reason) { AtomicInteger(0) }
+                                            .incrementAndGet()
                                     }
                                     false
                                 }
@@ -3090,9 +3084,17 @@ class MOOSAHubProvider : TmdbProvider() {
                                     "Episode matched • ${extracted.get()} URLs, " +
                                         "${invalidUrls.get()} invalid, " +
                                         "${disabledUrls.get()} disabled"
-                                else ->
+                                else -> {
+                                    val reasons = failedReasons.entries
+                                        .sortedByDescending { it.value.get() }
+                                        .take(2)
+                                        .joinToString("; ") {
+                                            "${it.key} x${it.value.get()}"
+                                        }
                                     "Episode matched • ${candidateLinks.distinctBy(::linkKey).size} candidates; " +
-                                        "${failedProbes.get()} failed verification, 0 confirmed"
+                                        "${failedProbes.get()} failed checks, 0 confirmed" +
+                                        if (reasons.isNotBlank()) " • $reasons" else ""
+                                }
                             }
                             MOOSAPlaybackDiagnostics.update(api, reportStatus)
                         }
@@ -3124,26 +3126,6 @@ class MOOSAHubProvider : TmdbProvider() {
 
                 providerWorked
             }
-        }
-
-        if (
-            shownLinks.get() == 0 &&
-            fallbackLinks.isNotEmpty()
-        ) {
-            fallbackLinks
-                .distinctBy(::linkKey)
-                .sortedByDescending(::inferQuality)
-                .take(10)
-                .forEach { link ->
-                    val key = linkKey(link)
-                    if (seenLinks.add(key)) {
-                        emittedLink.set(true)
-                        shownLinks.incrementAndGet()
-                        MOOSAProgress.linkAvailable()
-
-                        callback(link)
-                    }
-                }
         }
 
         MOOSAProgress.serversReady(shownLinks.get())
