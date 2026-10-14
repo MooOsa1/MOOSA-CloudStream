@@ -68,3 +68,25 @@ if candidate:
                       "captcha",any(x in phtml.lower() for x in ("just a moment", "captcha","cloudflare challenge")),
                       flush=True)
 
+
+                if host=="vidara.to":
+                    code=urlparse(player).path.rstrip("/").rsplit("/",1)[-1]
+                    body=json.dumps({"filecode":code,"device":"web"}).encode()
+                    headers={"User-Agent":UA,"Content-Type":"application/json"}
+                    try:
+                        with urlopen(Request("https://vidara.to/api/stream",headers=headers,data=body),timeout=12) as api:
+                            rawinfo=api.read(150000).decode("utf8","replace")
+                            info=json.loads(rawinfo)
+                            playlist=info.get("streaming_url","")
+                            print("VIDARA_API",api.status,"title",str(info.get("title",""))[:100],
+                                  "playlist",bool(playlist),"host",urlparse(playlist).hostname,flush=True)
+                            if playlist:
+                                ps,purl,manifest=request(playlist,ref=player)
+                                qualities=re.findall(r"RESOLUTION=\d+x(\d+)",manifest,re.I)
+                                print("VIDARA_PLAYLIST","status",ps,"host",urlparse(purl).hostname,
+                                      "size",len(manifest),"hls",manifest.lstrip().startswith("#EXTM3U"),
+                                      "resolutions",qualities[:18],"segments",manifest.count("#EXTINF:"),
+                                      flush=True)
+                    except (HTTPError,URLError,OSError,ValueError) as e:
+                        print("VIDARA_API_FAIL",type(e).__name__,
+                              "reason",str(getattr(e,"reason",e))[:110],flush=True)
