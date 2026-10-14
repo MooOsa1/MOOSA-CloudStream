@@ -275,6 +275,9 @@ class CimaClubProvider : MainAPI() {
 
         suspend fun emitTarget(raw: String, referer: String) {
             val target = fix(raw, referer) ?: return
+            val declaredQuality = MOOSAQualityPolicy.labeledHeight(target)
+            if (declaredQuality != null &&
+                declaredQuality < MOOSAQualityPolicy.MIN_HEIGHT) return
             if (!seen.add(target)) return
 
             if (
