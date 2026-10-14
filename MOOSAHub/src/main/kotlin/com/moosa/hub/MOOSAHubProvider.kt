@@ -3034,7 +3034,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                             host == "downet.net" ||
                                             host.endsWith(".downet.net")
                                         ) {
-                                            "$host|${inferQuality(link)}"
+                                            "${link.url.substringBefore("://").lowercase()}|$host|${inferQuality(link)}"
                                         } else null
                                     } else null
 
