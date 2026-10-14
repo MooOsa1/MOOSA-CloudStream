@@ -2852,6 +2852,13 @@ class MOOSAHubProvider : TmdbProvider() {
         for (batch in providers.chunked(providerBatchSize)) {
             batch.amap { api ->
                 var providerWorked = false
+                val candidateLinks =
+                    Collections.synchronizedList(mutableListOf<ExtractorLink>())
+                val extracted = AtomicInteger(0)
+                val invalidUrls = AtomicInteger(0)
+                val disabledUrls = AtomicInteger(0)
+                val failedProbes = AtomicInteger(0)
+                val acceptedLinks = AtomicInteger(0)
 
                 try {
                     MOOSAPlaybackDiagnostics.update(
@@ -2875,13 +2882,6 @@ class MOOSAHubProvider : TmdbProvider() {
                             api,
                             "Target found • requesting links"
                         )
-                        val candidateLinks =
-                            Collections.synchronizedList(mutableListOf<ExtractorLink>())
-                        val extracted = AtomicInteger(0)
-                        val invalidUrls = AtomicInteger(0)
-                        val disabledUrls = AtomicInteger(0)
-                        val failedProbes = AtomicInteger(0)
-
                         fun collectLink(link: ExtractorLink) {
                             extracted.incrementAndGet()
                             if (!validStreamingUrl(link.url)) {
@@ -3023,6 +3023,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                     seenLinks.add(key)
                                 ) {
                                     providerWorked = true
+                                    acceptedLinks.incrementAndGet()
                                     emittedLink.set(true)
                                     shownLinks.incrementAndGet()
                                     MOOSAProgress.linkAvailable()
@@ -3071,8 +3072,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     if (providerWorked) {
                         MOOSAPlaybackDiagnostics.update(
                             api,
-                            "Playback ready • ${candidateLinks.size - failedProbes.get()} " +
-                                "verified, ${failedProbes.get()} probe failures"
+                            "Playback ready • ${acceptedLinks.get()} verified, " +
+                                "${failedProbes.get()} probe failures"
                         )
 
                         providerHealth.merge(api.name, 3) { old, add ->
