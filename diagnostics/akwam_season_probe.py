@@ -18,7 +18,7 @@ PAGES = [
 
 def fetch(url):
     try:
-        with urlopen(Request(url, headers={"User-Agent": UA, "Accept-Language": "ar,en;q=0.7"}), timeout=15) as r:
+        with urlopen(Request(quote(url, safe=":/?&=%#@;,+"), headers={"User-Agent": UA, "Accept-Language": "ar,en;q=0.7"}), timeout=15) as r:
             return r.url, r.read(500_000).decode("utf-8", "replace")
     except (URLError, TimeoutError) as e:
         print("FETCH FAILED", type(e).__name__, str(e)[:130])
@@ -104,8 +104,8 @@ for season, series_url in PAGES:
     candidate = downet_links[0]
     candidate_http = candidate.replace("https://", "http://", 1)
     request = Request(
-        candidate_http,
-        headers={"User-Agent": UA, "Referer": dl_final, "Range": "bytes=0-63"}
+        quote(candidate_http, safe=":/?&=%#@;,+"),
+        headers={"User-Agent": UA, "Referer": quote(dl_final, safe=":/?&=%#@;,+"), "Range": "bytes=0-63"}
     )
     try:
         with urlopen(request, timeout=15) as response:
