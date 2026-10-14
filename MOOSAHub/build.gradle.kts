@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 55
+version = 56
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v55: Akwam quality paths and hosts; strict media probes, zero dead-link fallbacks, diagnostic HTTP reasons
+// v56: validated Downet TLS failure; explicit HTTP video alternative with real MP4/range probes
