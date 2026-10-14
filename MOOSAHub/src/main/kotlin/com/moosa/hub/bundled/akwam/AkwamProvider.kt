@@ -214,6 +214,50 @@ class AkwamProvider : MainAPI() {
         }.distinct()
     }
 
+    private data class PlayerPage(
+        val url: String,
+        val depth: Int,
+        val referer: String,
+        val qualityHint: Int? = null
+    )
+
+    // Quality tab IDs are site-provided identifiers, not video URL guesses.
+    // Verified against current Akwam CloudStream provider implementations.
+    private fun qualityFromTab(element: Element): Int? {
+        val id = Regex("""\d+""")
+            .find(element.attr("id"))
+            ?.value
+            ?.toIntOrNull()
+
+        val mapped = when (id) {
+            2 -> 360
+            3 -> 480
+            4 -> 720
+            5 -> 1080
+            else -> null
+        }
+        if (mapped != null) return mapped
+
+        val label = listOf(
+            element.attr("data-quality"),
+            element.attr("title"),
+            element.attr("aria-label")
+        ).firstOrNull { it.isNotBlank() }.orEmpty()
+
+        return Regex("""(?i)(?<!\d)(2160|1440|1080|720|480|360)p?(?!\d)""")
+            .find(label)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+    }
+
+    private fun qualityFromMediaUrl(url: String): Int? =
+        Regex("""(?i)(?<!\d)(2160|1440|1080|720|576|480|360)p?(?!\d)""")
+            .find(java.net.URI(url).path.orEmpty())
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -221,13 +265,14 @@ class AkwamProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val visited = linkedSetOf<String>()
-        val pending = mutableListOf(Triple(data, 0, mainUrl))
+        val pending = mutableListOf(PlayerPage(data, 0, mainUrl))
         var cursor = 0
         var emitted = false
         val ownHost = runCatching { java.net.URI(mainUrl).host.lowercase() }.getOrNull().orEmpty()
         val desktopUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
         val emittedMediaUrls = linkedSetOf<String>()
+        val mediaHostCounters = mutableMapOf<String, Int>()
 
         fun emitLink(link: ExtractorLink) {
             if (emittedMediaUrls.add(link.url.trim())) {
@@ -236,7 +281,28 @@ class AkwamProvider : MainAPI() {
             }
         }
 
-        suspend fun emitMedia(mediaUrl: String, referer: String) {
+        fun labelFor(url: String, quality: Int): String {
+            val host = runCatching { java.net.URI(url).host.orEmpty() }
+                .getOrDefault("")
+                .removePrefix("www.")
+                .ifBlank { "Direct" }
+            val key = "$host|$quality"
+            val index = (mediaHostCounters[key] ?: 0) + 1
+            mediaHostCounters[key] = index
+
+            val q = if (quality in listOf(2160, 1440, 1080, 720, 480, 360)) {
+                " ${quality}p"
+            } else {
+                " • quality unknown"
+            }
+            return "Akwam$q • $host" + if (index > 1) " • mirror $index" else ""
+        }
+
+        suspend fun emitMedia(
+            mediaUrl: String,
+            referer: String,
+            qualityHint: Int? = null
+        ) {
             val isHls = mediaUrl.contains(".m3u8", true) ||
                 mediaUrl.contains("playlist", true)
             val headers = mapOf(
@@ -244,8 +310,7 @@ class AkwamProvider : MainAPI() {
                 "Referer" to referer,
                 "Accept" to "*/*"
             )
-            val urlQuality = Regex("""(?i)(2160|1440|1080|720|576|480|360)(?:p)?""")
-                .find(mediaUrl)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            val urlQuality = qualityFromMediaUrl(mediaUrl) ?: qualityHint
 
             if (isHls) {
                 val variants = try {
@@ -263,10 +328,13 @@ class AkwamProvider : MainAPI() {
 
                 if (variants.isNotEmpty()) {
                     for (variant in variants) {
-                        val quality = variant.quality ?: urlQuality ?: Qualities.Unknown.value
+                        val quality = variant.quality
+                            ?.takeUnless { it == Qualities.Unknown.value }
+                            ?: urlQuality
+                            ?: Qualities.Unknown.value
                         val link = newExtractorLink(
                             source = this.name,
-                            name = "${this.name} HLS",
+                            name = labelFor(variant.streamUrl, quality) + " • HLS",
                             url = variant.streamUrl,
                             type = ExtractorLinkType.M3U8
                         ) {
@@ -295,7 +363,7 @@ class AkwamProvider : MainAPI() {
             } ?: Qualities.Unknown.value
             val link = newExtractorLink(
                 source = this.name,
-                name = if (isHls) "${this.name} HLS" else "${this.name} Stream",
+                name = labelFor(mediaUrl, quality) + if (isHls) " • HLS" else "",
                 url = mediaUrl,
                 type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
             ) {
@@ -308,7 +376,7 @@ class AkwamProvider : MainAPI() {
         }
 
         while (cursor < pending.size && cursor < 40) {
-            val (url, depth, referer) = pending[cursor++]
+            val (url, depth, referer, qualityHint) = pending[cursor++]
             if (!visited.add(url)) continue
             val response = try {
                 app.get(
@@ -327,8 +395,38 @@ class AkwamProvider : MainAPI() {
             // Relative player links must be resolved against the final URL.
             val pageUrl = response.url
             val page = response.document
-            for (media in extractEmbeddedMediaUrls(response.text, pageUrl)) {
-                emitMedia(media, pageUrl)
+
+            // Read quality tabs first so /link/ and /download/ wrappers keep
+            // their confirmed Akwam quality throughout redirects.
+            val qualityTabs = page.select("div.tab-content.quality")
+                .sortedByDescending { qualityFromTab(it) ?: 0 }
+            for (tab in qualityTabs) {
+                val quality = qualityFromTab(tab)
+                for (anchor in tab.select("a[href]")) {
+                    val raw = anchor.attr("href")
+                    if (
+                        !raw.contains("/link/") &&
+                        !raw.contains("/download/") &&
+                        !raw.contains("/watch/")
+                    ) continue
+
+                    val absolute = runCatching {
+                        java.net.URI(pageUrl).resolve(raw).toString()
+                    }.getOrNull() ?: continue
+
+                    if (depth < 4 && !visited.contains(absolute)) {
+                        pending.add(PlayerPage(absolute, depth + 1, pageUrl, quality))
+                    }
+                }
+            }
+
+            // The content landing page may contain unrelated video ads.
+            // When Akwam quality tabs exist, prefer their specific linked
+            // watch/download pages instead of scanning all landing scripts.
+            if (depth > 0 || qualityTabs.isEmpty()) {
+                for (media in extractEmbeddedMediaUrls(response.text, pageUrl)) {
+                    emitMedia(media, pageUrl, qualityHint)
+                }
             }
 
             val selectors = "li[data-link],a.watchBTn,a.link-show,a.aplr-link,a[data-link],a[href*='/watch/'],a[href*='/download/'],a[href*='serv='],a.link-download[href],a.link-btn[href],a[href*='downet.net'],a[href*='.mp4'],div.btn-loader > a[href],a.download-link[href],div.tab-content.quality a[href],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]";
@@ -363,18 +461,30 @@ class AkwamProvider : MainAPI() {
                     element.tagName().equals("source", true) ||
                     Regex("""(?i)\.(?:m3u8|mp4|webm|mov)(?:[?#]|$)""").containsMatchIn(absolute)
 
+                val elementQuality = element.closest("div.tab-content.quality")
+                    ?.let(::qualityFromTab)
+                    ?: qualityHint
+
                 if (isDirectMedia) {
-                    emitMedia(absolute, pageUrl)
+                    emitMedia(absolute, pageUrl, elementQuality)
                     continue
                 }
 
                 if (depth < 4 && (isOwnHost || isKnownWrapper)) {
-                    pending.add(Triple(absolute, depth + 1, pageUrl))
+                    pending.add(PlayerPage(absolute, depth + 1, pageUrl, elementQuality))
                     continue
                 }
 
                 try {
                     loadExtractor(absolute, pageUrl, subtitleCallback) { link ->
+                        // Infer resolution only when this specific Akwam
+                        // quality tab identifies the target.
+                        if (
+                            link.quality == Qualities.Unknown.value &&
+                            elementQuality != null
+                        ) {
+                            link.quality = elementQuality
+                        }
                         emitLink(link)
                     }
                 } catch (_: Exception) {
@@ -389,7 +499,7 @@ class AkwamProvider : MainAPI() {
                     absolute.contains("server=", true) ||
                     absolute.contains("/watch/", true) || absolute.contains("/download/", true)
                 if (depth < 4 && isServerTarget && !visited.contains(absolute)) {
-                    pending.add(Triple(absolute, depth + 1, pageUrl))
+                    pending.add(PlayerPage(absolute, depth + 1, pageUrl, elementQuality))
                 }
             }
         }
