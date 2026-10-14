@@ -1,0 +1,16 @@
+name: Test Akwam CDN reachability
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/akwam_live_probe.py"
+      - ".github/workflows/akwam-live-probe.yml"
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe actual episode MP4 headers and byte ranges
+        run: python3 diagnostics/akwam_live_probe.py
