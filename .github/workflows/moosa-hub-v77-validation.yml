@@ -35,7 +35,7 @@ jobs:
           assert "if (indianTop) item else enrichArtwork(item, forceTv)" in catalog
           assert "https://translate.googleapis.com/translate_a/single" in provider
           assert "https://api.mymemory.translated.net/get" in provider
-          assert "val label = if (focused) \"SHOW MORE  ›\" else \"›\"" in (b/"MOOSASeeAll.kt").read_text()
+          assert "ValueAnimator.ofInt(fromWidth, targetWidth)" in (b/"MOOSASeeAll.kt").read_text()
           assert "translateSynopsisExternally(english)" in provider
           assert 'base.plot = arabicOverview' in provider
           assert 'base.plot = cleanSynopsis(base.plot)' not in provider
