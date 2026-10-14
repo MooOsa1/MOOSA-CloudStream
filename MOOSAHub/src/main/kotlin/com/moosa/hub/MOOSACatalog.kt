@@ -20,6 +20,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+import java.util.TimeZone
 
 object MOOSACatalog {
     private const val TMDB_API = "https://api.themoviedb.org/3"
@@ -38,14 +42,64 @@ object MOOSACatalog {
     private data class CatalogPage(
         val items: List<SearchResponse>,
         val totalPages: Int,
-        val ranking: Map<String, Pair<Double, Int>> = emptyMap()
+        val ranking: Map<String, Pair<Double, Int>> = emptyMap(),
+        val popularity: Map<String, Double> = emptyMap()
     )
 
     private fun isIndianTop(
         path: String,
         options: Map<String, String>
     ): Boolean =
-        path == "/discover/movie" && options["with_origin_country"] == "IN"
+        path == "/discover/movie" &&
+            options["with_origin_country"] == "IN" &&
+            options["sort_by"] == "vote_average.desc"
+
+    private fun isTrendingIndian(
+        path: String,
+        options: Map<String, String>
+    ): Boolean =
+        path == "/discover/movie" &&
+            options["with_origin_country"] == "IN" &&
+            options["sort_by"] == "popularity.desc"
+
+    private fun indianTrendingDateWindow(): Map<String, String> {
+        // Rolling 24 months avoids a hardcoded year that silently gets
+        // stale. Constrain by real release date, not arbitrary random
+        // recommendations or titles whose premiere is still in the future.
+        val utc = TimeZone.getTimeZone("UTC")
+        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = utc
+        }
+        val calendar = Calendar.getInstance(utc)
+        val today = formatter.format(calendar.time)
+        calendar.add(Calendar.MONTH, -24)
+        val since = formatter.format(calendar.time)
+        return mapOf(
+            "primary_release_date.gte" to since,
+            "primary_release_date.lte" to today
+        )
+    }
+
+    private fun queryOptions(
+        path: String,
+        extras: Map<String, String>
+    ): Map<String, String> = when {
+        path == "/movie/top_rated" -> extras + ("region" to "US")
+        isTrendingIndian(path, extras) -> extras + indianTrendingDateWindow()
+        else -> extras
+    }
+
+    private fun exactIndianPopularityOrder(
+        pages: List<CatalogPage>,
+        items: List<SearchResponse>
+    ): List<SearchResponse> {
+        val byUrl = pages.flatMap { it.popularity.entries }
+            .associate { it.key to it.value }
+        return items.sortedWith(
+            compareByDescending<SearchResponse> { byUrl[it.url] ?: 0.0 }
+                .thenBy { it.name }
+        )
+    }
 
     private fun exactIndianRatingOrder(
         pages: List<CatalogPage>,
@@ -92,6 +146,7 @@ object MOOSACatalog {
         @JsonProperty("first_air_date") val firstAirDate: String? = null,
         @JsonProperty("vote_average") val voteAverage: Double? = null,
         @JsonProperty("vote_count") val voteCount: Int? = null,
+        @JsonProperty("popularity") val popularity: Double? = null,
         @JsonProperty("media_type") val mediaType: String? = null
     ) {
         // Use familiar English catalog titles; keep Arabic productions in Arabic.
@@ -380,6 +435,9 @@ object MOOSACatalog {
             totalPages = response.totalPages.coerceAtLeast(1),
             ranking = responses.associate { (search, item) ->
                 search.url to ((item.voteAverage ?: 0.0) to (item.voteCount ?: 0))
+            },
+            popularity = responses.associate { (search, item) ->
+                search.url to (item.popularity ?: 0.0)
             }
         )
     }
@@ -389,8 +447,11 @@ object MOOSACatalog {
         "/trending/tv/week" to "Trending Series",
         "/movie/top_rated" to "Top Rated Movies",
         "/tv/top_rated" to "Top Rated Series",
-        // Ranked by TMDB votes with a meaningful minimum vote sample.
-        // v72's 35-vote floor exposed obscure titles with inflated scores.
+        // Popular Indian narrative films released within the previous 24
+        // months, sorted by TMDB's live popularity (not randomized picks).
+        // The date window is injected dynamically in queryOptions().
+        "/discover/movie?with_origin_country=IN&sort_by=popularity.desc&vote_count.gte=50&vote_average.gte=6.2&without_genres=99" to "Trending Indian Movies",
+        // Distinct from trending: all-time top-ranked Indian films by rating.
         "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7&without_genres=99" to "Top Indian Movies"
     )
 
@@ -407,15 +468,15 @@ object MOOSACatalog {
             parts[0] to parts[1]
         }
         val isTv = path.contains("/tv/") || path == "/discover/tv"
-        val options = if (path == "/movie/top_rated") {
-            extras + ("region" to "US")
-        } else {
-            extras
-        }
+        val options = queryOptions(path, extras)
 
         // Offer a meaningful Indian selection on the home shelf instead
         // of just 20 over-filtered results. Other home shelves stay light.
-        val pagesPerBatch = if (request.name == "Top Indian Movies") 3 else PAGES_PER_BATCH
+        val pagesPerBatch = when (request.name) {
+            "Top Indian Movies" -> 3
+            "Trending Indian Movies" -> 2
+            else -> PAGES_PER_BATCH
+        }
         val firstTmdbPage = ((page.coerceAtLeast(1) - 1) * pagesPerBatch) + 1
         val first = listPage(api, path, firstTmdbPage, isTv, options)
         val maxPage = minOf(first.totalPages, 500)
@@ -439,10 +500,12 @@ object MOOSACatalog {
 
         val fetchedPages = listOf(first) + extraPages.map { it.await() }
         val unsorted = fetchedPages.flatMap { it.items }.distinctBy { it.url }
-        val allItems = if (isIndianTop(path, options)) {
-            exactIndianRatingOrder(fetchedPages, unsorted)
-        } else {
-            unsorted
+        val allItems = when {
+            isIndianTop(path, options) ->
+                exactIndianRatingOrder(fetchedPages, unsorted)
+            isTrendingIndian(path, options) ->
+                exactIndianPopularityOrder(fetchedPages, unsorted)
+            else -> unsorted
         }
 
         val lastFetchedPage = minOf(
@@ -493,11 +556,7 @@ object MOOSACatalog {
             parts[0] to parts[1]
         }
         val isTv = path.contains("/tv/") || path == "/discover/tv"
-        val options = if (path == "/movie/top_rated") {
-            extras + ("region" to "US")
-        } else {
-            extras
-        }
+        val options = queryOptions(path, extras)
 
         val safeStart = startPage.coerceAtLeast(1)
         val first = listPage(api, path, safeStart, isTv, options)
@@ -528,10 +587,12 @@ object MOOSACatalog {
 
         val fetchedPages = listOf(first) + rest.map { it.await() }
         val unsorted = fetchedPages.flatMap { it.items }.distinctBy { it.url }
-        val items = if (isIndianTop(path, options)) {
-            exactIndianRatingOrder(fetchedPages, unsorted)
-        } else {
-            unsorted
+        val items = when {
+            isIndianTop(path, options) ->
+                exactIndianRatingOrder(fetchedPages, unsorted)
+            isTrendingIndian(path, options) ->
+                exactIndianPopularityOrder(fetchedPages, unsorted)
+            else -> unsorted
         }
 
         BrowseBatch(
