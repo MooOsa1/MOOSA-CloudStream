@@ -1568,36 +1568,30 @@ class MOOSAHubProvider : TmdbProvider() {
             .map { it.name.lowercase() }
             .toSet()
 
+        val arabicRequest = request.originalLanguage.equals("ar", true)
+        // WeCima is blocked by Cloudflare in our 2026-10-14 probe, and
+        // CimaClub returned no content cards. TopCinema has no confirmed
+        // playable source. Keep their standalone plugins available, but stop
+        // wasting the Hub's automatic lookup budget on unverified sources.
+        val experimentalBundled = setOf("WeCima", "CimaClub", "TopCinema")
+
         return available
             .filter { api ->
-                isBundledArabicProvider(api) ||
-                    api.name.lowercase() !in bundledNames
+                (isBundledArabicProvider(api) ||
+                    api.name.lowercase() !in bundledNames) &&
+                    !(arabicRequest && isBundledArabicProvider(api) &&
+                        api.name in experimentalBundled)
             }
             .sortedWith(
                 compareByDescending<MainAPI> {
-                    if (isBundledArabicProvider(it)) {
-                        3
-                    } else if (
-                        request.originalLanguage.equals(
-                            "ar",
-                            ignoreCase = true
-                        ) &&
-                        MOOSAArabicBridge.supports(it)
-                    ) {
-                        2
-                    } else if (
-                        request.originalLanguage.equals(
-                            "ar",
-                            ignoreCase = true
-                        ) &&
-                        it.lang.equals(
-                            "ar",
-                            ignoreCase = true
-                        )
-                    ) {
-                        1
-                    } else {
-                        0
+                    when {
+                        arabicRequest && isAkwamProvider(it) -> 6
+                        arabicRequest && it.name.equals("ShahidWBas", true) -> 5
+                        arabicRequest && isArabSeedProvider(it) -> 4
+                        isBundledArabicProvider(it) -> 3
+                        arabicRequest && MOOSAArabicBridge.supports(it) -> 2
+                        arabicRequest && it.lang.equals("ar", true) -> 1
+                        else -> 0
                     }
                 }.thenByDescending {
                     providerHealth[it.name] ?: 0
@@ -1648,7 +1642,11 @@ class MOOSAHubProvider : TmdbProvider() {
             if (
                 System.currentTimeMillis() -
                     cached.createdAt <
-                    cacheLifetimeMs
+                    if (request.originalLanguage.equals("ar", true)) {
+                        3 * 60 * 1000L
+                    } else {
+                        cacheLifetimeMs
+                    }
             ) {
                 return cached.target
             }
