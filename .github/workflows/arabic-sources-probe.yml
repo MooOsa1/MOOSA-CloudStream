@@ -7,6 +7,7 @@ on:
       - "diagnostics/arabic_sources_probe.py"
       - "diagnostics/arabseed_download_probe.py"
       - "diagnostics/arabseed_arabic_regression.py"
+      - "diagnostics/original_title_arabic_playback_probe.py"
       - ".github/workflows/arabic-sources-probe.yml"
 jobs:
   probe:
@@ -22,3 +23,5 @@ jobs:
         run: python3 diagnostics/arabseed_download_probe.py
       - name: Check Arabic ArabSeed episodes and movies
         run: python3 diagnostics/arabseed_arabic_regression.py
+      - name: Diagnose original names and Arabic CDN throughput
+        run: python3 diagnostics/original_title_arabic_playback_probe.py
