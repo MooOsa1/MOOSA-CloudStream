@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 75
+version = 76
 
 
 android {
@@ -62,3 +62,6 @@ dependencies {
 
 // v75: a compact arrow-only SHOW MORE control that reveals the label on
 // remote focus; retains v74 button activation and directional focus.
+
+// v76: 190ms SHOW MORE focus-expand and 150ms blur-collapse animations;
+// preserves v75 arrow, v74 click activation and fixed D-pad routing.
