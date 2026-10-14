@@ -55,3 +55,33 @@ for q in ["اللعبة","الفيل الأزرق","الكينج"]:
                 for i in places[:2]],flush=True)
         print("EXTERNAL_IFRAMES",[urlparse(urljoin(final,e.get("src",""))).hostname for e in doc.select("iframe[src]")[:12]],flush=True)
         print("INTERNAL_LINKS",[(urlparse(u).path[:110],title[:75]) for u,title,a in links(doc,final) if title and any(w in title.lower() for w in ["مشاهدة","شاهد","server","سيرفر","الحلقة"])][:17],flush=True)
+
+        # Inspect watch/embed subpages separately. Landing is NOT the player.
+        embed=re.search(r'["\x27]embedUrl["\x27]\s*:\s*["\x27]([^"\x27]+)',pbody,re.I)
+        candidate_urls=[]
+        if embed:candidate_urls.append(("JSONLD_EMBED",embed.group(1).replace("\\/","/")))
+        for link,title,anchor in links(doc,final):
+            if any(hint in title for hint in ("الذهاب لصفحة المشاهدة","شاهد الآن","مشاهدة الآن")):
+                candidate_urls.append(("WATCH_LINK",link))
+        if not candidate_urls:
+            candidate_urls.append(("WATCH_DEFAULT",item_url.rstrip("/")+"/watch/"))
+        for kind,url in list(dict((u,(kind,u)) for kind,u in candidate_urls).values())[:3]:
+            code,landing,htmlbody=req(url,referer=final)
+            panel=BeautifulSoup(htmlbody,"html.parser")
+            frames=[urlparse(urljoin(landing,e.get("src",""))).hostname for e in panel.select("iframe[src]")]
+            print("SUBPAGE",kind,"status",code,"hostname",urlparse(landing).hostname,
+                  "path",urlparse(landing).path[:95],"html_len",len(htmlbody),
+                  "frames",frames[:8],"server_count",len(panel.select("[data-server],[data-url],[data-src],li.server")),
+                  "players",len(panel.select("video,source")),
+                  "quality_mentions",[str(q) for q in [2160,1080,720] if str(q) in htmlbody],
+                  "scripts",len(panel.select("script[src]")),
+                  "title",panel.title.get_text(" ",strip=True)[:75] if panel.title else "",flush=True)
+            print("SUBPAGE_ELEMENTS",kind,[
+                (e.name,e.get("class"),str(e.get("data-server") or e.get("data-url") or e.get("data-src") or "")[:45])
+                for e in panel.select("[data-server],[data-url],[data-src]")[:8]
+            ],flush=True)
+            print("SUBPAGE_LINKS",kind,[
+                (urlparse(l).hostname,urlparse(l).path[:75],name[:45])
+                for l,name,a in links(panel,landing) if "سيرفر" in name or "1080" in name or "720" in name
+            ][:8],flush=True)
+
