@@ -8,7 +8,7 @@ from urllib.request import Request,urlopen
 from urllib.error import HTTPError,URLError
 from bs4 import BeautifulSoup
 UA="Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36"
-base="https://topcima.online"
+base="https://www.topcinema.vip"
 def request(url,ref=None):
     h={"User-Agent":UA,"Accept":"text/html,application/json,*/*"}
     if ref:h["Referer"]=ref
