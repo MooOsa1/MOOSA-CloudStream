@@ -208,21 +208,11 @@ class AkwamProvider : MainAPI() {
         if (!isSeries) {
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
                 posterUrl = poster
-                // The document may contain unrelated recommendations'
-                // years. Read only the film's explicit release-year field.
-                year = Regex(
-                    """(?:السنة|سنة الانتاج|سنة الإنتاج|سنة العرض)\s*[:：]?\s*((?:19|20)\d{2})"""
-                ).find(doc.text())?.groupValues?.getOrNull(1)?.toIntOrNull()
+                year = Regex("\\b(19|20)\\d{2}\\b").find(doc.text())?.value?.toIntOrNull()
                 plot = doc.select("meta[name=description]").attr("content")
             }
         }
-        // Akwam sometimes represents a season by a bare trailing number:
-        // "العتاولة 2" instead of "العتاولة الموسم الثاني". Without this,
-        // every episode was incorrectly marked as season 1.
         val pageSeason = (title + " " + url).seasonNumber()
-            ?: Regex("""(?:^|\s)(\d{1,2})\s*$""")
-                .find(title)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                ?.takeIf { it in 1..30 }
         val episodes = episodeAnchors.distinctBy { it.attr("abs:href").ifEmpty { it.attr("href") } }
             .mapNotNull { a ->
                 val href = a.attr("abs:href").ifEmpty { fixUrl(a.attr("href")) }
