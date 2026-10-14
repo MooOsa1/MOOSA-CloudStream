@@ -3,6 +3,9 @@
 ## Playback quality floor
 
 - Minimum accepted video height: **720p**, preferred: **1080p or higher**.
+- **Never display links whose server/source name includes Download, تحميل, داونلود or تنزيل** (case-insensitive English).
+- Filter by **displayed server/source name**, not URLs: Akwam's confirmed video may use a `/download/` URL route.
+- Reject disallowed labels **before media probing**; do not fetch ArabSeed's download-server list automatically.
 - Skip known 240p, 360p, 480p, 540p and 576p before extraction/probing where providers expose resolution metadata.
 - Skip extracted links with unknown height instead of pretending they are HD.
 - Prefer a provider-supplied resolution from a quality selector/HLS rendition over a URL or file name.
@@ -14,8 +17,8 @@
 | Source | Status | How it is used |
 |---|---|---|
 | Akwam | User-confirmed S1–S5 playback | First Arabic source. Preserve working HD/downet behavior. |
-| ShahidWBas | Candidate; site/play pages currently reachable, playback unconfirmed | Second source; only confirmed 720p+ HLS rendition or quality-labeled extractor links. |
-| ArabSeed / MySeed | Search and episode HTML work; external hosts not reliably playable | Secondary search, exact season/episode match, high-resolution mirrors only. |
+| ShahidWBas | Candidate; user reported no playback | Standalone test only; excluded from automatic Arabic lookup until a real playback test passes. |
+| ArabSeed / MySeed | Search works, playback unconfirmed on user's device | Standalone test only; excluded from automatic Arabic lookup. Download-server crawling disabled. |
 | WeCima | Cloudflare HTTP 403 in probe | Standalone only; excluded from automatic Arabic lookup. |
 | CimaClub | HTTP 200 but no content cards returned on sampled searches | Standalone only; excluded from automatic Arabic lookup. |
 | TopCinema | No confirmed playable source | Standalone only; excluded from automatic Arabic lookup. |
