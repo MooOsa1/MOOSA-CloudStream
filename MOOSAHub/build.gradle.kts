@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 58
+version = 59
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v58: discover season-one via linked Akwam season pages, avoid wrong-season search early exit, and fix episode season labeling
+// v59: migrate ArabSeed to current search pagination; require precise episode matching; unwrap Base64 download mirrors (Akwam v58 behavior unchanged)
