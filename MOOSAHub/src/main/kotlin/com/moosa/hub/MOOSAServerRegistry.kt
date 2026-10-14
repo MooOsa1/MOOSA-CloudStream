@@ -282,8 +282,7 @@ object MOOSAServerRegistry {
                         val response = app.get(
                             link.url,
                             headers = headers,
-                            referer = link.referer,
-                            verify = false
+                            referer = link.referer
                         )
                         if (!response.isSuccessful) {
                             ProbeCheck(false, "HLS HTTP ${response.code}")
@@ -307,8 +306,7 @@ object MOOSAServerRegistry {
                         val response = app.get(
                             link.url,
                             headers = headers,
-                            referer = link.referer,
-                            verify = false
+                            referer = link.referer
                         )
                         val valid = response.isSuccessful &&
                             response.text.contains("<MPD")
@@ -324,8 +322,7 @@ object MOOSAServerRegistry {
                         val response = app.get(
                             link.url,
                             headers = headers + mapOf("Range" to "bytes=0-2047"),
-                            referer = link.referer,
-                            verify = false
+                            referer = link.referer
                         )
                         val contentType = response.headers["Content-Type"]
                             .orEmpty().substringBefore(';').trim().lowercase()
@@ -399,8 +396,7 @@ object MOOSAServerRegistry {
                                     headers = headers + mapOf(
                                         "Range" to "bytes=1048576-1048607"
                                     ),
-                                    referer = link.referer,
-                                    verify = false
+                                    referer = link.referer
                                 )
                                 val seekRange =
                                     seekResponse.headers["Content-Range"].orEmpty()
