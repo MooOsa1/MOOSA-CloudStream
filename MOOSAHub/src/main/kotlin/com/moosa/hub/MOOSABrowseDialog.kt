@@ -6,6 +6,10 @@ import android.graphics.Color
 import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import androidx.lifecycle.Lifecycle
+import java.lang.reflect.Proxy
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -46,7 +50,19 @@ class MOOSABrowseDialog : DialogFragment() {
     private var lastPage = 0
     private var hasNext = true
     private var loading = false
-    private var navigatingToResult = false
+    private var waitingForResult = false
+    private var resultDestinationSeen = false
+    private var genuineHomeReturnObserved = false
+    private var returnPosition = 0
+    private var navController: Any? = null
+    private var destinationListener: Any? = null
+    private val returnHandler = Handler(Looper.getMainLooper())
+    private var pendingReturn: Runnable? = null
+
+    private fun cancelPendingReturn() {
+        pendingReturn?.let(returnHandler::removeCallbacks)
+        pendingReturn = null
+    }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
@@ -182,10 +198,14 @@ class MOOSABrowseDialog : DialogFragment() {
                 callback.action == SEARCH_ACTION_LOAD ||
                 callback.action == SEARCH_ACTION_PLAY_FILE
             ) {
-                // Close the overlay before opening results/player.
-                // Never keep it hidden and automatically show it on resume.
-                navigatingToResult = true
-                dismissAllowingStateLoss()
+                // Preserve the list and selected item. Only show it again
+                // after a verified result/player -> home navigation.
+                returnPosition = callback.position.coerceAtLeast(0)
+                waitingForResult = true
+                resultDestinationSeen = false
+                genuineHomeReturnObserved = false
+                cancelPendingReturn()
+                dialog?.hide()
             }
 
             handleSearchClickCallback(callback)
@@ -228,6 +248,8 @@ class MOOSABrowseDialog : DialogFragment() {
             dismissAllowingStateLoss()
         }
 
+        installNavigationReturnWatcher()
+
         lifecycleScope.launch {
             loadInitial()
         }
@@ -239,15 +261,182 @@ class MOOSABrowseDialog : DialogFragment() {
         }
     }
 
+    private fun destinationName(activity: AppCompatActivity, dest: Any?): String {
+        val id = try {
+            dest?.javaClass?.methods?.firstOrNull {
+                it.name == "getId" && it.parameterCount == 0
+            }?.invoke(dest) as? Int ?: 0
+        } catch (_: Throwable) { 0 }
+        return try {
+            if (id != 0) activity.resources.getResourceEntryName(id).lowercase() else ""
+        } catch (_: Throwable) { "" }
+    }
+
+    private fun isHome(name: String): Boolean =
+        name == "navigation_home" || name.endsWith("_home")
+
+    private fun isContent(name: String): Boolean =
+        "result" in name || "navigation_player" in name ||
+            name.endsWith("_player")
+
+    private fun homeActuallyVisible(host: AppCompatActivity): Boolean {
+        if (host.isFinishing || host.isDestroyed ||
+            !host.hasWindowFocus() ||
+            !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        ) return false
+        val id = host.resources.getIdentifier(
+            "home_master_recycler", "id", host.packageName
+        )
+        if (id == 0) return false
+        val home = host.findViewById<View>(id) ?: return false
+        return home.isAttachedToWindow && home.isShown
+    }
+
+    private fun scheduleVerifiedHomeReturn(host: AppCompatActivity, controller: Any) {
+        cancelPendingReturn()
+        val action = object : Runnable {
+            override fun run() {
+                pendingReturn = null
+                val current = try {
+                    controller.javaClass.methods.firstOrNull {
+                        it.name == "getCurrentDestination" && it.parameterCount == 0
+                    }?.invoke(controller)
+                } catch (_: Throwable) { null }
+                // Never restore just because the Activity resumed from a
+                // screen saver. A real content -> home transition must have
+                // been observed AND the home UI must now be foreground.
+                if (!waitingForResult || !resultDestinationSeen ||
+                    !isHome(destinationName(host, current)) ||
+                    !homeActuallyVisible(host) ||
+                    host.supportFragmentManager.isStateSaved
+                ) return
+
+                waitingForResult = false
+                resultDestinationSeen = false
+                genuineHomeReturnObserved = false
+                dialog?.show()
+                recycler.post {
+                    val position = returnPosition.coerceIn(
+                        0, (adapter.itemCount - 1).coerceAtLeast(0)
+                    )
+                    (recycler.layoutManager as? GridLayoutManager)
+                        ?.scrollToPositionWithOffset(position, 0)
+                    recycler.post {
+                        recycler.layoutManager?.findViewByPosition(position)
+                            ?.requestFocus()
+                    }
+                }
+            }
+        }
+        pendingReturn = action
+        returnHandler.postDelayed(action, 1100L)
+    }
+
+    private fun installNavigationReturnWatcher() {
+        val host = activity as? AppCompatActivity ?: return
+        val navId = host.resources.getIdentifier(
+            "nav_host_fragment", "id", host.packageName
+        )
+        if (navId == 0) return
+        val navHost = host.supportFragmentManager.findFragmentById(navId)
+            ?: return
+        val controller = try {
+            navHost.javaClass.methods.firstOrNull {
+                it.name == "getNavController" && it.parameterCount == 0
+            }?.invoke(navHost)
+        } catch (_: Throwable) { null } ?: return
+        val klass = try {
+            Class.forName("androidx.navigation.NavController\$OnDestinationChangedListener")
+        } catch (_: Throwable) { return }
+
+        val listener = Proxy.newProxyInstance(
+            klass.classLoader, arrayOf(klass)
+        ) { _, method, args ->
+            if (method.name == "onDestinationChanged" && waitingForResult) {
+                val name = destinationName(host, args?.getOrNull(1))
+                when {
+                    isContent(name) -> {
+                        resultDestinationSeen = true
+                        genuineHomeReturnObserved = false
+                        cancelPendingReturn()
+                        dialog?.hide()
+                    }
+                    resultDestinationSeen && isHome(name) -> {
+                        genuineHomeReturnObserved = true
+                        scheduleVerifiedHomeReturn(host, controller)
+                    }
+                    else -> {
+                        genuineHomeReturnObserved = false
+                        cancelPendingReturn()
+                    }
+                }
+            }
+            null
+        }
+        try {
+            controller.javaClass.methods.firstOrNull {
+                it.name == "addOnDestinationChangedListener" &&
+                    it.parameterCount == 1
+            }?.invoke(controller, listener)
+            navController = controller
+            destinationListener = listener
+        } catch (_: Throwable) {
+            navController = null
+            destinationListener = null
+        }
+    }
+
+    override fun onDestroy() {
+        cancelPendingReturn()
+        val controller = navController
+        val listener = destinationListener
+        if (controller != null && listener != null) {
+            try {
+                controller.javaClass.methods.firstOrNull {
+                    it.name == "removeOnDestinationChangedListener" &&
+                        it.parameterCount == 1
+                }?.invoke(controller, listener)
+            } catch (_: Throwable) { }
+        }
+        navController = null
+        destinationListener = null
+        super.onDestroy()
+    }
+
     override fun onDismiss(dialog: android.content.DialogInterface) {
+        cancelPendingReturn()
         super.onDismiss(dialog)
-        if (!navigatingToResult) {
+        if (!waitingForResult) {
             MOOSASeeAll.restoreFocus(request.name)
+        }
+    }
+
+    override fun onStop() {
+        cancelPendingReturn()
+        super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // A return-to-home event can arrive while Android is still paused.
+        // Only retry that already-observed navigation, never restore merely
+        // because the TV screen saver was dismissed.
+        if (waitingForResult && resultDestinationSeen &&
+            genuineHomeReturnObserved
+        ) {
+            val host = activity as? AppCompatActivity
+            val controller = navController
+            if (host != null && controller != null) {
+                scheduleVerifiedHomeReturn(host, controller)
+            }
         }
     }
 
     override fun onStart() {
         super.onStart()
+        // DialogFragment.show() runs on every lifecycle start even when the
+        // dialog was explicitly hidden. Keep it hidden over an active player.
+        if (waitingForResult) dialog?.hide()
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
@@ -264,7 +453,8 @@ class MOOSABrowseDialog : DialogFragment() {
 
         progress.visibility = View.VISIBLE
         progress.isIndeterminate = true
-        status.text = "Loading…"
+        status.visibility = View.GONE
+        status.text = ""
 
         try {
             val batch = withContext(Dispatchers.IO) {
@@ -283,14 +473,8 @@ class MOOSABrowseDialog : DialogFragment() {
 
             adapter.submitList(items.toList())
 
-            status.text = when {
-                items.isEmpty() ->
-                    "No titles available"
-                hasNext ->
-                    "${items.size} titles • more available"
-                else ->
-                    "${items.size} titles"
-            }
+            status.text = if (items.isEmpty()) "No titles available" else ""
+            status.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
 
             recycler.post {
                 recycler.layoutManager
@@ -299,6 +483,7 @@ class MOOSABrowseDialog : DialogFragment() {
             }
         } catch (_: Throwable) {
             status.text = "Could not load this category"
+            status.visibility = View.VISIBLE
         } finally {
             progress.visibility = View.GONE
             progress.isIndeterminate = false
@@ -324,8 +509,8 @@ class MOOSABrowseDialog : DialogFragment() {
 
         progress.visibility = View.VISIBLE
         progress.isIndeterminate = true
-        status.text =
-            "${items.size} titles • loading more…"
+        status.text = ""
+        status.visibility = View.GONE
 
         try {
             val batch = withContext(Dispatchers.IO) {
@@ -353,11 +538,11 @@ class MOOSABrowseDialog : DialogFragment() {
                 hasNext = false
             }
 
-            status.text =
-                "${items.size} titles${if (hasNext) " • more available" else ""}"
+            status.text = ""
+            status.visibility = View.GONE
         } catch (_: Throwable) {
-            status.text =
-                "${items.size} titles • retry when you scroll again"
+            status.text = "Could not load more titles"
+            status.visibility = View.VISIBLE
         } finally {
             progress.visibility = View.GONE
             progress.isIndeterminate = false
