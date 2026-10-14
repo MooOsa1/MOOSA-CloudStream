@@ -1,0 +1,41 @@
+name: Validate MOOSA Hub TV focus and browse (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v70-tv-focus-ui"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Build both plugins without publishing
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Verify versions and UI regressions
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path("MOOSAHub/src/main/kotlin/com/moosa/hub")
+          browse=(base/"MOOSABrowseDialog.kt").read_text()
+          more=(base/"MOOSASeeAll.kt").read_text()
+          plugins={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert plugins == {"MOOSAHub":70,"MOOSAArabic":3},plugins
+          assert "dialog?.hide()" not in browse
+          assert "dialog?.show()" not in browse
+          assert "installNavigationReturnWatcher" not in browse
+          assert "dismissAllowingStateLoss()" in browse
+          assert "pageCount = 2" in browse
+          assert "header.setOnKeyListener(null)" in more
+          assert "scheduleHeaderRefresh()" in more
+          assert "Color.rgb(245, 245, 246)" in more
+          assert "scrollToPositionWithOffset(" not in more.split("fun restoreFocus(categoryName: String) {")[1]
+          print("PASS: safe TV navigation and only two plugin versions")
+          PY

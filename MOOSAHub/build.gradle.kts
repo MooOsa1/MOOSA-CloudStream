@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 69
+version = 70
 
 
 android {
@@ -38,6 +38,10 @@ dependencies {
 // v66: real TMDB original names, correct MySeed Arabic episode/season indexing, HD Ajax discovery and verified fallback, local Downet CDN speed samples
 
 // v67: request each ArabSeed HD server through its real get__watch__server AJAX endpoint rather than stale SD data-link
+
+// v70: close SHOW MORE before playback instead of restoring it on TV resume;
+ // coalesce layout observer updates, remove duplicate DPAD_CENTER handling,
+ // use a neutral white focus bar and black browse dialog; smaller paging.
 
 // v68: familiar catalog titles in English, genuine Arabic-script metadata,
 // exact Arabic season/episode search, Akwam episode-number repair, real
