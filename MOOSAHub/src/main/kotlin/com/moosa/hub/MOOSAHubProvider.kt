@@ -2900,28 +2900,19 @@ class MOOSAHubProvider : TmdbProvider() {
         val fastArabic = request.originalLanguage.equals("ar", true) &&
             MOOSASettingsStore.arabicFastMode()
 
-        // Fast lane: check user-confirmed Akwam first by itself. Only if
-        // Akwam yields no playable link do we try a few external fallbacks.
-        // Previously 10+ sources could each spend 40-100 seconds searching,
-        // while the native spinner still waited for loadLinks() to return.
-        val firstAkwam = allProviders.firstOrNull(::isAkwamProvider)
-        val providers = if (fastArabic && firstAkwam != null) {
-            listOf(firstAkwam) +
-                allProviders
-                    .filterNot { it === firstAkwam }
-                    .filter { api ->
-                        api.lang.equals("ar", true) ||
-                            MOOSAArabicBridge.supports(api)
-                    }
-                    .take(3)
-        } else if (fastArabic) {
-            allProviders.filter {
-                it.lang.equals("ar", true) ||
-                    MOOSAArabicBridge.supports(it)
-            }.take(4)
-        } else {
-            allProviders
-        }
+        // Collect independent Arabic alternatives in one bounded parallel batch.
+        // Stopping immediately at the first Akwam result hid ArabSeed/TopCinema,
+        // even when a different host would stream more smoothly.
+        val providers = if (fastArabic) {
+            val priority = allProviders.filter { api ->
+                isAkwamProvider(api) || isArabSeedProvider(api) ||
+                    (isBundledArabicProvider(api) && api.name.equals("TopCinema", true))
+            }
+            val extra = allProviders.filterNot { it in priority }
+                .filter { api -> api.lang.equals("ar", true) || MOOSAArabicBridge.supports(api) }
+                .take(1)
+            (priority + extra).distinctBy { it.name.lowercase() }.take(4)
+        } else allProviders
 
         MOOSAPlaybackDiagnostics.start(
             request,
@@ -2999,13 +2990,10 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val aliases = aliasesJob.await()
 
-        val providerBatchSize = if (fastArabic) {
-            // Akwam is a separate first batch, so successful playback can
-            // finish without waiting for unsuccessful external providers.
-            1
-        } else {
-            MOOSASettingsStore.providerConcurrency()
-        }
+        // Resolve up to three Arabic sources together; finish as soon as the
+        // initial batch has returned so no fourth slow source blocks playback.
+        val providerBatchSize = if (fastArabic) 3
+            else MOOSASettingsStore.providerConcurrency()
 
         for (batch in providers.chunked(providerBatchSize)) {
             batch.amap { api ->
