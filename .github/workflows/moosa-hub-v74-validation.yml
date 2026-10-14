@@ -1,0 +1,40 @@
+name: Validate MOOSA Hub v74 TV activation (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v74-showmore-dpad-activate"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both plugins without release
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Assert home control remains reachable by TV remote
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          code=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASeeAll.kt").read_text()
+          versions={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert versions=={"MOOSAHub":74,"MOOSAArabic":3},versions
+          assert "header.isFocusable = true" in code
+          assert "header.isClickable = true" in code
+          assert "header.setOnFocusChangeListener { view, focused ->" in code
+          assert "action.requestFocus()" in code
+          assert "header.setOnClickListener { action.performClick() }" in code
+          assert "KeyEvent.KEYCODE_DPAD_CENTER" in code
+          assert "KeyEvent.KEYCODE_ENTER" in code
+          assert "findHorizontalCarousel(oldParent)?.nextFocusUpId = action.id" in code
+          assert "manager.scrollToPositionWithOffset(target, 0)" in code
+          assert "header.text = expectedText" not in code
+          print("PASS: original CloudStream focus target retained, OK and DPAD routed")
+          PY
