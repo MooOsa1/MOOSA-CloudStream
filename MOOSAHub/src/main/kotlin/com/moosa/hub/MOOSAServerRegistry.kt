@@ -174,11 +174,9 @@ object MOOSAServerRegistry {
         val item = entries[key] ?: return
 
         synchronized(item) {
-            item.lastResult = when {
-                result -> true
-                item.lastResult == true -> true
-                else -> false
-            }
+            // Do not keep a server marked as healthy after its latest
+            // signed URL has expired or been rejected.
+            item.lastResult = result
         }
     }
 
@@ -341,8 +339,18 @@ object MOOSAServerRegistry {
                         // Inspect the real first 32 binary bytes, not response.text.
                         val prefix = ByteArray(32)
                         val count = response.body.byteStream().use { stream ->
-                            stream.read(prefix)
-                        }.coerceAtLeast(0)
+                            var read = 0
+                            while (read < prefix.size) {
+                                val n = stream.read(
+                                    prefix,
+                                    read,
+                                    prefix.size - read
+                                )
+                                if (n <= 0) break
+                                read += n
+                            }
+                            read
+                        }
 
                         fun asciiAt(offset: Int, value: String): Boolean =
                             count >= offset + value.length &&
@@ -364,13 +372,16 @@ object MOOSAServerRegistry {
                         val recognizedVideoBytes =
                             mp4Signature || ebmlSignature || flvSignature ||
                                 aviSignature || tsSignature
-                        val isVideoMime =
-                            contentType.startsWith("video/") ||
-                                contentType == "application/mp4" ||
-                                contentType == "application/x-matroska" ||
-                                contentType == "application/octet-stream"
+                        val isClearlyNonVideoMime =
+                            contentType.startsWith("text/") ||
+                                contentType.contains("html") ||
+                                contentType.contains("json")
+                        // A real video signature is stronger than MIME,
+                        // because some CDNs label MP4 as x-download.
                         val validFirstChunk = response.isSuccessful &&
-                            count > 0 && isVideoMime && recognizedVideoBytes
+                            count >= 12 &&
+                            !isClearlyNonVideoMime &&
+                            recognizedVideoBytes
 
                         // This CDN may return 200 with a valid MP4 header but
                         // refuse byte-range seeking, breaking progressive playback.
@@ -410,7 +421,8 @@ object MOOSAServerRegistry {
                         val reason = when {
                             !response.isSuccessful -> "Media HTTP ${response.code}"
                             count == 0 -> "Empty media response"
-                            !isVideoMime -> "Non-video Content-Type: $contentType"
+                            isClearlyNonVideoMime ->
+                                "Non-video Content-Type: $contentType"
                             !recognizedVideoBytes ->
                                 "Response has no recognized video signature"
                             !seekable -> seekReason
