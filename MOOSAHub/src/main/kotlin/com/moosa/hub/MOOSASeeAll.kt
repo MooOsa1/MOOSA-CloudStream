@@ -1,6 +1,8 @@
 package com.moosa.hub
 
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -31,6 +33,31 @@ object MOOSASeeAll {
         WeakHashMap<ViewGroup, ViewTreeObserver.OnGlobalLayoutListener>()
     private val headerRefs =
         ConcurrentHashMap<String, WeakReference<TextView>>()
+    private val boundHeaders = WeakHashMap<TextView, String>()
+    private var headerRefreshScheduled = false
+    private var lastBrowseOpenAt = 0L
+
+    private fun scheduleHeaderRefresh() {
+        // CloudStream dispatches many global-layout events while rows scroll.
+        // Coalesce them; never modify TextView text on every layout callback.
+        if (headerRefreshScheduled) return
+        headerRefreshScheduled = true
+        mainHandler.postDelayed({
+            headerRefreshScheduled = false
+            applyHeaders()
+        }, 90L)
+    }
+
+    private fun styleHeader(header: TextView, focused: Boolean) {
+        val density = header.resources.displayMetrics.density
+        header.alpha = if (focused) 1f else 0.94f
+        header.setTextColor(if (focused) Color.rgb(16, 16, 18) else Color.WHITE)
+        header.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 6f * density
+            setColor(if (focused) Color.rgb(245, 245, 246) else Color.TRANSPARENT)
+        }
+    }
 
     fun register(
         api: MOOSAHubProvider,
@@ -41,10 +68,10 @@ object MOOSASeeAll {
     ) {
         if (items.isEmpty()) return
 
-        states[request.name] = CategoryState(
-            api = api,
-            request = request
-        )
+        val existing = states[request.name]
+        if (existing == null || existing.request.data != request.data) {
+            states[request.name] = CategoryState(api = api, request = request)
+        }
 
         mainHandler.post {
             installObserver()
@@ -60,7 +87,7 @@ object MOOSASeeAll {
             if (observedRoots.containsKey(root)) return
 
             val listener = ViewTreeObserver.OnGlobalLayoutListener {
-                applyHeaders()
+                scheduleHeaderRefresh()
             }
             observedRoots[root] = listener
             root.viewTreeObserver.addOnGlobalLayoutListener(listener)
@@ -107,65 +134,49 @@ object MOOSASeeAll {
         collectHeaders(root, headers)
 
         headers.forEach { header ->
-            val original =
-                originalHeaderText(header.text?.toString().orEmpty())
+            val original = originalHeaderText(header.text?.toString().orEmpty())
             val state = states[original] ?: return@forEach
+            val expectedText = "${state.request.name}  SHOW MORE  ›"
 
-            header.text = "${state.request.name}  SHOW MORE  ›"
-            header.contentDescription =
-                "${state.request.name}. Show more."
+            // Rows are rebound/recycled by CloudStream. Bind only on a real
+            // category change, not on every frame/layout event.
+            if (boundHeaders[header] == state.request.name &&
+                header.text?.toString() == expectedText
+            ) {
+                return@forEach
+            }
+            boundHeaders[header] = state.request.name
+            if (header.text?.toString() != expectedText) {
+                header.text = expectedText
+            }
+            header.contentDescription = "${state.request.name}. Show more."
             header.isClickable = true
             header.isFocusable = true
             header.isFocusableInTouchMode = false
-            header.alpha = 0.92f
 
             header.setOnFocusChangeListener { view, focused ->
-                view.alpha = if (focused) 1f else 0.92f
-                view.setBackgroundColor(
-                    if (focused) {
-                        Color.argb(120, 24, 101, 180)
-                    } else {
-                        Color.TRANSPARENT
-                    }
-                )
+                styleHeader(view as TextView, focused)
             }
-
+            styleHeader(header, header.hasFocus())
             headerRefs[state.request.name] = WeakReference(header)
 
-            val open = {
-                headerRefs[state.request.name] = WeakReference(header)
-                captureParentPosition(
-                    currentActivity,
-                    header,
-                    state
-                )
-                MOOSABrowseDialog.show(
-                    currentActivity,
-                    state.api,
-                    state.request
-                )
-            }
-
+            // Android already calls performClick() for remote DPAD_CENTER
+            // and Enter. Do NOT install an ACTION_UP onKey callback too:
+            // it opened two dialogs from one physical key press.
+            header.setOnKeyListener(null)
             header.setOnClickListener {
-                open()
-            }
-
-            header.setOnKeyListener { _, keyCode, event ->
-                if (
-                    event.action ==
-                        android.view.KeyEvent.ACTION_UP &&
-                    (
-                        keyCode ==
-                            android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
-                            keyCode ==
-                                android.view.KeyEvent.KEYCODE_ENTER
-                        )
+                val now = SystemClock.uptimeMillis()
+                if (now - lastBrowseOpenAt < 650L ||
+                    !header.isShown || !header.isAttachedToWindow ||
+                    !currentActivity.hasWindowFocus() ||
+                    homeMasterRecycler(currentActivity)?.isShown != true
                 ) {
-                    open()
-                    true
-                } else {
-                    false
+                    return@setOnClickListener
                 }
+                lastBrowseOpenAt = now
+                headerRefs[state.request.name] = WeakReference(header)
+                captureParentPosition(currentActivity, header, state)
+                MOOSABrowseDialog.show(currentActivity, state.api, state.request)
             }
         }
     }
@@ -277,14 +288,17 @@ object MOOSASeeAll {
 
     fun restoreFocus(categoryName: String) {
         val currentActivity = activity ?: return
-        val state = states[categoryName] ?: return
-
+        // Never force master/child RecyclerViews to scroll as an aftereffect
+        // of closing SHOW MORE. This previously caused horizontal drift.
         mainHandler.postDelayed({
-            focusExactParentRow(
-                currentActivity,
-                state
-            )
-        }, 120L)
+            val master = homeMasterRecycler(currentActivity) ?: return@postDelayed
+            if (!master.isShown || !currentActivity.hasWindowFocus()) {
+                return@postDelayed
+            }
+            val header = headerRefs[categoryName]?.get()
+            if (header?.isShown == true && header.isAttachedToWindow) {
+                header.requestFocus()
+            }
+        }, 100L)
     }
-
 }
