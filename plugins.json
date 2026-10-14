@@ -1,10 +1,10 @@
 [
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-d8b22129c09a27a2b11286c668842894ab77c1056070fd8411f69fd3fd9b5b0a",
+        "fileHash": "sha256-a8dbf6655973bdf775ef76ab3a8f6511446627fdc4a6787d400f4deeb23547c5",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 380809,
+        "fileSize": 381963,
         "status": 1,
         "language": "en",
         "authors": [
