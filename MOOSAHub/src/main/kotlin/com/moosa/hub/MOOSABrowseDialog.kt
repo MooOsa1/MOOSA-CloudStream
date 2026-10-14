@@ -539,7 +539,7 @@ class MOOSABrowseDialog : DialogFragment() {
             }
 
             status.text = ""
-            status.visibility = View.GONE"
+            status.visibility = View.GONE
         } catch (_: Throwable) {
             status.text = "Could not load more titles"
             status.visibility = View.VISIBLE
