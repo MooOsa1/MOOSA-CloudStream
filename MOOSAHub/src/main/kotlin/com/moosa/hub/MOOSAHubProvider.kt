@@ -72,7 +72,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val isTv: Boolean = false,
         val originalLanguage: String? = null,
         val season: Int? = null,
-        val episode: Int? = null
+        val episode: Int? = null,
+        val titleAliases: List<String> = emptyList()
     )
 
     private data class CachedTarget(
@@ -212,7 +213,9 @@ class MOOSAHubProvider : TmdbProvider() {
         val voteAverage: Double? = null
     ) {
         val displayTitle: String
-            get() = title ?: name ?: originalTitle ?: originalName ?: ""
+            get() = sequenceOf(originalTitle, originalName, title, name)
+                .filterNotNull().map(String::trim)
+                .firstOrNull(String::isNotBlank).orEmpty()
 
         val year: Int?
             get() = (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull()
@@ -1981,56 +1984,6 @@ class MOOSAHubProvider : TmdbProvider() {
         }
     }
 
-    private suspend fun translateSynopsisToArabic(
-        text: String
-    ): String? {
-        val source = cleanSynopsis(text) ?: return null
-
-        val response = timed(3000L) {
-            app.get(
-                "https://translate.googleapis.com/translate_a/single",
-                params = mapOf(
-                    "client" to "gtx",
-                    "sl" to "auto",
-                    "tl" to "ar",
-                    "dt" to "t",
-                    "q" to source
-                )
-            ).text
-        } ?: return null
-
-        val translated = try {
-            val root = JSONArray(response)
-            val segments = root.optJSONArray(0)
-                ?: return null
-
-            buildString {
-                for (index in 0 until segments.length()) {
-                    val segment =
-                        segments.optJSONArray(index)
-                            ?: continue
-                    val value =
-                        segment.optString(0)
-                            .trim()
-
-                    if (value.isNotBlank()) {
-                        if (isNotEmpty()) append(' ')
-                        append(value)
-                    }
-                }
-            }
-        } catch (_: Throwable) {
-            return null
-        }
-
-        return cleanSynopsis(translated)
-            ?.takeIf { clean ->
-                clean.any {
-                    ch -> ch in '\u0600'..'\u06FF'
-                }
-            }
-    }
-
     private suspend fun resolveArabicSynopsis(
         tmdbId: Int?,
         isTv: Boolean,
@@ -2076,14 +2029,9 @@ class MOOSAHubProvider : TmdbProvider() {
         val fallback =
             cleanSynopsis(englishFallback)
 
-        val translated =
-            fallback?.let {
-                translateSynopsisToArabic(it)
-            }
-
-        val result =
-            cleanSynopsis(translated)
-                ?: fallback
+        // No machine translation. Prefer published TMDB Arabic text;
+        // otherwise retain the source's original synopsis.
+        val result = fallback
 
         if (!result.isNullOrBlank()) {
             synopsisCache[cacheKey] = result
@@ -2247,26 +2195,10 @@ class MOOSAHubProvider : TmdbProvider() {
                 meta.title
                     ?: meta.name
 
-            val preferredName =
-                when (
-                    meta.originalLanguage
-                        ?.lowercase()
-                ) {
-                    "ar",
-                    "en" ->
-                        originalName
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?: localizedName
-
-                    else ->
-                        localizedName
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?: originalName
-                }
+            // Original credited names in all languages, no translated title.
+            val preferredName = originalName
+                ?.takeIf { it.isNotBlank() }
+                ?: localizedName?.takeIf { it.isNotBlank() }
 
             if (!preferredName.isNullOrBlank()) {
                 base.name = preferredName
@@ -2341,6 +2273,19 @@ class MOOSAHubProvider : TmdbProvider() {
             base.backgroundPosterUrl = background
         }
 
+        val detectedOriginalLanguage =
+            detail?.originalLanguage?.takeIf { it.isNotBlank() }
+                ?: if (Regex("""[\u0600-\u06FF]""").containsMatchIn(base.name)) {
+                    "ar"
+                } else null
+
+        // TMDB provides both the official original and official localized
+        // names. Carry them as aliases instead of machine-translating.
+        val sourceTitleAliases = listOfNotNull(
+            detail?.originalTitle, detail?.originalName,
+            detail?.title, detail?.name
+        ).filter(String::isNotBlank).distinct()
+
         when (base) {
             is MovieLoadResponse -> {
                 base.dataUrl = HubPlaybackRequest(
@@ -2349,8 +2294,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     imdbId = effectiveImdbId,
                     tmdbId = tmdbId,
                     isTv = false,
-                    originalLanguage =
-                        detail?.originalLanguage
+                    originalLanguage = detectedOriginalLanguage,
+                    titleAliases = sourceTitleAliases
                 ).toJson()
                 base
             }
@@ -2363,8 +2308,8 @@ class MOOSAHubProvider : TmdbProvider() {
                         imdbId = effectiveImdbId,
                         tmdbId = tmdbId,
                         isTv = isTv,
-                        originalLanguage =
-                            detail?.originalLanguage,
+                        originalLanguage = detectedOriginalLanguage,
+                        titleAliases = sourceTitleAliases,
                         season = episode.season,
                         episode = episode.episode
                     ).toJson()
@@ -2931,6 +2876,7 @@ class MOOSAHubProvider : TmdbProvider() {
             ) {
                 buildList {
                     add(request.title)
+                    addAll(request.titleAliases)
                     request.season?.let { season ->
                         add("${request.title} الموسم $season")
                         arabicSeasonWord(season)?.let { ordinal ->
@@ -2941,7 +2887,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     }
                 }
             } else {
-                playbackAliases(request)
+                (request.titleAliases + playbackAliases(request))
+                    .distinctBy(::canonicalTitle)
             }
         }
 
