@@ -1141,6 +1141,29 @@ class MOOSAHubProvider : TmdbProvider() {
         api.name.equals("Akwam", ignoreCase = true) ||
             api.javaClass.name.endsWith(".AkwamProvider")
 
+    private fun isArabSeedProvider(api: MainAPI): Boolean =
+        api.name.equals("ArabSeed", ignoreCase = true) &&
+            isBundledArabicProvider(api)
+
+    private fun arabSeedEpisodeConfirmed(
+        api: MainAPI,
+        result: SearchResponse,
+        request: HubPlaybackRequest,
+        wantSeries: Boolean
+    ): Boolean {
+        if (!isArabSeedProvider(api) || !wantSeries) return true
+
+        // MySeed lists individual episodes as separate search entries.
+        // A matching show/season but the wrong EP must never stop search.
+        val season = request.season ?: return false
+        val episode = request.episode ?: return false
+        val listedEpisode = explicitArabicEpisodeNumber(result.name) ?: return false
+        val listedSeason = explicitSeasonNumber(result.name)
+
+        return listedEpisode == episode &&
+            (listedSeason == season || (season == 1 && listedSeason == null))
+    }
+
     // Akwam lists each season as a separate series page. A plain base-title
     // hit is season 1, not evidence that seasons 2/3 were found. Keep searching
     // until a result explicitly identifies the requested season.
@@ -1221,75 +1244,47 @@ class MOOSAHubProvider : TmdbProvider() {
                     add("$alias $year")
                 }
             }
-        }.distinct().take(18)
+        }.distinct().take(if (isArabSeedProvider(api)) 3 else 18)
 
-        val results =
-            mutableListOf<SearchResponse>()
+        val results = mutableListOf<SearchResponse>()
 
         for ((index, query) in queryVariants.withIndex()) {
-            val first = timed(
-                searchTimeoutFor(
-                    api,
-                    request
-                )
-            ) {
-                api.search(query, 1)
-                    ?.items
-                    .orEmpty()
-            }.orEmpty()
-
-            results += first
-
-            val hasStrict = first.any {
-                akwamSeasonConfirmed(api, it, request, wantSeries) &&
-                    strictSearchScore(
-                        it,
-                        aliases,
-                        year,
-                        wantSeries,
-                        originalLanguage,
-                        season
-                    ) >= 90
+            val maxPages = when {
+                // Akwam ignores pagination; its search already finds seasons.
+                isAkwamProvider(api) -> 1
+                // MySeed's public search has actual WordPress-style pages;
+                // older episodes can appear on pages 3-5.
+                isArabSeedProvider(api) && wantSeries && index == 0 -> 5
+                index < 2 -> 2
+                else -> 1
             }
 
-            if (hasStrict) break
-
-            // This bundled Akwam provider has one search endpoint and
-            // ignores a page number; retrying "page 2" repeats page 1.
-            if (index < 2 && !isAkwamProvider(api)) {
-                val second = timed(
-                    searchTimeoutFor(
-                        api,
-                        request
-                    )
-                ) {
-                    api.search(query, 2)
-                        ?.items
-                        .orEmpty()
+            for (page in 1..maxPages) {
+                val found = timed(searchTimeoutFor(api, request)) {
+                    api.search(query, page)?.items.orEmpty()
                 }.orEmpty()
+                results += found
 
-                results += second
-
-                if (
-                    second.any {
-                        akwamSeasonConfirmed(api, it, request, wantSeries) &&
-                            strictSearchScore(
-                                it,
-                                aliases,
-                                year,
-                                wantSeries,
-                                originalLanguage,
-                                season
-                            ) >= 90
-                    }
-                ) {
-                    break
+                val matchingEpisode = found.any { item ->
+                    akwamSeasonConfirmed(api, item, request, wantSeries) &&
+                        arabSeedEpisodeConfirmed(api, item, request, wantSeries) &&
+                        strictSearchScore(
+                            item,
+                            aliases,
+                            year,
+                            wantSeries,
+                            originalLanguage,
+                            season
+                        ) >= 90
                 }
+                if (matchingEpisode) {
+                    return results.distinctBy { it.url }
+                }
+                if (found.isEmpty()) break
             }
         }
 
-        return results
-            .distinctBy { it.url }
+        return results.distinctBy { it.url }
     }
 
     private data class MatchedLoad(
@@ -1454,7 +1449,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val candidates = searchResults
             .asSequence()
             .filter {
-                akwamSeasonConfirmed(api, it, request, wantSeries)
+                akwamSeasonConfirmed(api, it, request, wantSeries) &&
+                    arabSeedEpisodeConfirmed(api, it, request, wantSeries)
             }
             .map {
                 it to strictSearchScore(
@@ -1621,7 +1617,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v14",
+        "strict-v15",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
