@@ -29,6 +29,7 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.ui.AutofitRecyclerView
 import com.lagradost.cloudstream3.ui.setRecycledViewPool
 import com.lagradost.cloudstream3.ui.search.SEARCH_ACTION_LOAD
+import com.lagradost.cloudstream3.ui.search.SEARCH_ACTION_SHOW_METADATA
 import com.lagradost.cloudstream3.ui.search.SEARCH_ACTION_PLAY_FILE
 import com.lagradost.cloudstream3.ui.search.SearchAdapter
 import com.lagradost.cloudstream3.ui.search.SearchHelper.handleSearchClickCallback
@@ -51,6 +52,7 @@ class MOOSABrowseDialog : DialogFragment() {
     private var hasNext = true
     private var loading = false
     private var waitingForResult = false
+    private var metadataPreviewRequested = false
     private var resultDestinationSeen = false
     private var genuineHomeReturnObserved = false
     private var returnPosition = 0
@@ -194,10 +196,18 @@ class MOOSABrowseDialog : DialogFragment() {
             recycler,
             request.horizontalImages
         ) { callback ->
+            if (callback.action == SEARCH_ACTION_SHOW_METADATA) {
+                // CloudStream's long press opens a separate preview.
+                // Its More Info button navigates later without invoking
+                // SEARCH_ACTION_LOAD. Track that navigation as well.
+                returnPosition = callback.position.coerceAtLeast(0)
+                metadataPreviewRequested = true
+            }
             if (
                 callback.action == SEARCH_ACTION_LOAD ||
                 callback.action == SEARCH_ACTION_PLAY_FILE
             ) {
+                metadataPreviewRequested = false
                 // Preserve the list and selected item. Only show it again
                 // after a verified result/player -> home navigation.
                 returnPosition = callback.position.coerceAtLeast(0)
@@ -313,6 +323,7 @@ class MOOSABrowseDialog : DialogFragment() {
 
                 waitingForResult = false
                 resultDestinationSeen = false
+                metadataPreviewRequested = false
                 genuineHomeReturnObserved = false
                 dialog?.show()
                 recycler.post {
@@ -352,22 +363,36 @@ class MOOSABrowseDialog : DialogFragment() {
         val listener = Proxy.newProxyInstance(
             klass.classLoader, arrayOf(klass)
         ) { _, method, args ->
-            if (method.name == "onDestinationChanged" && waitingForResult) {
+            if (method.name == "onDestinationChanged") {
                 val name = destinationName(host, args?.getOrNull(1))
-                when {
-                    isContent(name) -> {
-                        resultDestinationSeen = true
+                if (isContent(name) &&
+                    (waitingForResult || metadataPreviewRequested)
+                ) {
+                    // More Info in CloudStream's preview bypasses the normal
+                    // SearchAdapter LOAD action. Hide the preserved overlay
+                    // when the results page actually becomes the destination.
+                    waitingForResult = true
+                    metadataPreviewRequested = false
+                    resultDestinationSeen = true
+                    genuineHomeReturnObserved = false
+                    cancelPendingReturn()
+                    dialog?.hide()
+                } else if (waitingForResult) {
+                    when {
+                        isContent(name) -> {
+                            resultDestinationSeen = true
                         genuineHomeReturnObserved = false
                         cancelPendingReturn()
-                        dialog?.hide()
-                    }
-                    resultDestinationSeen && isHome(name) -> {
-                        genuineHomeReturnObserved = true
-                        scheduleVerifiedHomeReturn(host, controller)
-                    }
-                    else -> {
-                        genuineHomeReturnObserved = false
-                        cancelPendingReturn()
+                            dialog?.hide()
+                        }
+                        resultDestinationSeen && isHome(name) -> {
+                            genuineHomeReturnObserved = true
+                            scheduleVerifiedHomeReturn(host, controller)
+                        }
+                        else -> {
+                            genuineHomeReturnObserved = false
+                            cancelPendingReturn()
+                        }
                     }
                 }
             }
