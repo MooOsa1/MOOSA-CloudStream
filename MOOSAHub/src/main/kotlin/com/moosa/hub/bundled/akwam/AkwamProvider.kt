@@ -9,6 +9,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.moosa.hub.MOOSAQualityPolicy
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
@@ -365,6 +366,9 @@ class AkwamProvider : MainAPI() {
         // timeout commonly discarded HTTP alternatives before emitting them.
         @Suppress("DEPRECATION")
         fun emitLink(link: ExtractorLink) {
+            // No SD and no unknown-resolution links, even in standalone
+            // Akwam. Keep the confirmed 720p/1080p Downet paths intact.
+            if (!MOOSAQualityPolicy.accepts(link)) return
             if (!emittedMediaUrls.add(link.url.trim())) return
 
             callback(link)
@@ -433,6 +437,9 @@ class AkwamProvider : MainAPI() {
             referer: String,
             qualityHint: Int? = null
         ) {
+            if (qualityHint != null && qualityHint < MOOSAQualityPolicy.MIN_HEIGHT) {
+                return
+            }
             val isHls = mediaUrl.contains(".m3u8", true) ||
                 mediaUrl.contains("playlist", true)
             val headers = mapOf(
@@ -532,6 +539,10 @@ class AkwamProvider : MainAPI() {
                 .sortedByDescending { qualityFromTab(it) ?: 0 }
             for (tab in qualityTabs) {
                 val quality = qualityFromTab(tab)
+                // Skip SD tabs before scheduling their /link/ pages.
+                if (quality != null && !MOOSAQualityPolicy.acceptsHeight(quality)) {
+                    continue
+                }
                 for (anchor in tab.select("a[href]")) {
                     val raw = anchor.attr("href")
                     if (
@@ -594,6 +605,10 @@ class AkwamProvider : MainAPI() {
                 val elementQuality = element.closest("div.tab-content.quality")
                     ?.let(::qualityFromTab)
                     ?: qualityHint
+                if (
+                    elementQuality != null &&
+                    !MOOSAQualityPolicy.acceptsHeight(elementQuality)
+                ) continue
 
                 if (isDirectMedia) {
                     emitMedia(absolute, pageUrl, elementQuality)
