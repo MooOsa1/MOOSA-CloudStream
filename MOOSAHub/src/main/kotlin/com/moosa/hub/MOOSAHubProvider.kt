@@ -1157,7 +1157,10 @@ class MOOSAHubProvider : TmdbProvider() {
         // A matching show/season but the wrong EP must never stop search.
         val season = request.season ?: return false
         val episode = request.episode ?: return false
-        val listedEpisode = explicitArabicEpisodeNumber(result.name) ?: return false
+        // A source may also provide a genuine series collection page
+        // without an episode number. Let its load() provide verified episodes.
+        val listedEpisode = explicitArabicEpisodeNumber(result.name)
+            ?: return true
         val listedSeason = explicitSeasonNumber(result.name)
 
         return listedEpisode == episode &&
