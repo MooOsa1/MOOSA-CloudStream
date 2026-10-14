@@ -101,3 +101,46 @@ if samples:
                 except Exception:
                     print("  REQUEST",endpoint,field,status,"response_start",res[:65],flush=True)
                 if '"type":"success"' in res or '"html"' in res:break
+
+        # Inspect only the publicly advertised 720p and 1080p choices.
+        # Neither the AJAX token nor actual signed video URLs are logged.
+        if csrf:
+            for level in (720,1080):
+                st,_,payload=fetch(base+"/get__quality__servers/",watchFinal,post={
+                    "post_id":postid,"quality":str(level),"csrf_token":csrf
+                })
+                try:
+                    info=json.loads(payload)
+                    listed=BeautifulSoup(info.get("html",""),"html.parser")
+                    servers=listed.select("li[data-server], li[data-src], li[data-link]")
+                    sample=[{
+                        "id":e.get("data-server"),
+                        "quality":e.get("data-qu"),
+                        "label":e.get("data-server-name","")[:55],
+                        "host":urlparse(e.get("data-link","")).hostname,
+                        "direct":e.get("data-direct-arabseed")
+                    } for e in servers[:6]]
+                    print("HD_SERVERS",level,st,info.get("type"),"count",len(servers),
+                          "samples",sample,flush=True)
+                    for e in servers[:2]:
+                        sid=e.get("data-server","")
+                        post=e.get("data-post","") or postid
+                        q=e.get("data-qu","") or str(level)
+                        st2,_,player=fetch(base+"/get__watch__server/",watchFinal,post={
+                            "post_id":post,"quality":q,"server":sid,
+                            "csrf_token":csrf
+                        })
+                        p=json.loads(player)
+                        target=p.get("server","")
+                        print("HD_PLAYER",level,"server",sid,"HTTP",st2,
+                              "type",p.get("type"),"host",urlparse(target).hostname,
+                              "path_kind","vids.php" if "vids.php" in target else "other",flush=True)
+                        if p.get("type")!="success" or not target:continue
+                        wrapped=urljoin(watchFinal,target)
+                        st3,u3,embed=fetch(wrapped,watchFinal,max_len=180000)
+                        snippet=BeautifulSoup(embed,"html.parser")
+                        iframes=snippet.select("iframe[src]")
+                        print("HD_WRAPPER",level,"status",st3,"bytes",len(embed),
+                              "iframe_hosts",[urlparse(urljoin(u3,e.get("src",""))).hostname for e in iframes[:2]],flush=True)
+                except Exception as e:
+                    print("HD_ERROR",level,type(e).__name__,str(e)[:110],flush=True)
