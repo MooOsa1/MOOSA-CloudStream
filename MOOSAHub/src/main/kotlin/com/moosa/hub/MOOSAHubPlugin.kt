@@ -29,6 +29,14 @@ class MOOSAHubPlugin : Plugin() {
         registerMainAPI(TopCinemaProvider())
         registerMainAPI(WeCimaProvider())
         registerMainAPI(MOOSAHubProvider())
+
+        // Apply CloudStream's native quality priorities to every profile.
+        // This also affects independent external plugins opened directly.
+        // Run outside the UI thread to avoid slow settings writes on TV.
+        Thread(
+            { MOOSAGlobalQualitySetup.applyIfNeeded() },
+            "MOOSA-HD-Quality-Setup"
+        ).start()
     }
 
     private fun currentActivity(): Activity? {
