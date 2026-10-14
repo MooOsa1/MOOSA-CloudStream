@@ -253,6 +253,23 @@ internal object MOOSAArabicBridge {
             .take(14)
     }
 
+    private fun explicitSeason(value: String): Int? {
+        val normalized = normalize(value)
+        val token = Regex(
+            """(?:^|\s)(?:الموسم|موسم|الجزء|جزء|ج|season|part)\s*(\d{1,2}|الاول|الاولى|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)(?=\s|$)""",
+            RegexOption.IGNORE_CASE
+        ).find(normalized)?.groupValues?.getOrNull(1) ?: return null
+
+        return token.toIntOrNull() ?: mapOf(
+            "الاول" to 1, "الاولى" to 1,
+            "الثاني" to 2, "الثالث" to 3,
+            "الرابع" to 4, "الخامس" to 5,
+            "السادس" to 6, "السابع" to 7,
+            "الثامن" to 8, "التاسع" to 9,
+            "العاشر" to 10
+        )[token]
+    }
+
     private fun episodeData(
         loaded: TvSeriesLoadResponse,
         request: MOOSAHubProvider.HubPlaybackRequest,
@@ -278,29 +295,25 @@ internal object MOOSAArabicBridge {
                 .filter { it > 0 }
                 .distinct()
 
-        if (knownSeasons.isNotEmpty()) {
+        // A season-specific result can expose one season of episodes
+        // indexed as season 1. Never remap explicit seasons 2, 3, 4, etc.
+        if (knownSeasons.isNotEmpty() && knownSeasons != listOf(1)) {
             return null
         }
 
         val seasonIsProven =
             season == 1 ||
-                Regex(
-                    """(?:الموسم|موسم|season)\s*$season\b""",
-                    RegexOption.IGNORE_CASE
-                ).containsMatchIn(normalize(candidateTitle)) ||
-                aliases.any {
-                    val normalizedAlias = normalize(it)
-                    normalizedAlias.contains(Regex("""\b$season\b""")) &&
-                        scoreTitle(candidateTitle, listOf(it)) >= 90
-                }
+                (
+                    explicitSeason(candidateTitle) == season &&
+                        scoreTitle(candidateTitle, aliases) >= 88
+                )
 
-        if (!seasonIsProven) {
-            return null
-        }
+        if (!seasonIsProven) return null
 
         return loaded.episodes
             .firstOrNull {
-                it.episode == episode
+                it.episode == episode &&
+                    (it.season == null || it.season == 1)
             }
             ?.data
             ?.takeIf { it.isNotBlank() }
@@ -360,7 +373,12 @@ internal object MOOSAArabicBridge {
             val candidates =
                 results
                     .filter {
-                        seenUrls.add(it.url)
+                        seenUrls.add(it.url) &&
+                            (
+                                !request.isTv ||
+                                    explicitSeason(it.name) == null ||
+                                    explicitSeason(it.name) == request.season
+                            )
                     }
                     .map {
                         it to scoreTitle(
@@ -410,6 +428,10 @@ internal object MOOSAArabicBridge {
                     }
 
                     if (
+                        (
+                            explicitSeason(series.name) != null &&
+                                explicitSeason(series.name) != request.season
+                        ) ||
                         scoreTitle(
                             series.name,
                             aliases
