@@ -273,27 +273,56 @@ class AkwamProvider : MainAPI() {
 
         val emittedMediaUrls = linkedSetOf<String>()
         val mediaHostCounters = mutableMapOf<String, Int>()
-        val downetTlsFallbacks = linkedMapOf<String, ExtractorLink>()
 
+        // Emit an HTTP mirror immediately when the source is found. In v56
+        // this happened after the entire page crawl, so the 45s resolver
+        // timeout commonly discarded HTTP alternatives before emitting them.
+        @Suppress("DEPRECATION")
         fun emitLink(link: ExtractorLink) {
-            if (emittedMediaUrls.add(link.url.trim())) {
-                callback(link)
-                emitted = true
+            if (!emittedMediaUrls.add(link.url.trim())) return
 
-                // Downet has an invalid TLS trust chain on a public runner.
-                // Preserve HTTPS first and make HTTP an explicitly named option.
-                val isDownet = runCatching {
-                    val host = java.net.URI(link.url).host.orEmpty().lowercase()
-                    host == "downet.net" || host.endsWith(".downet.net")
-                }.getOrDefault(false)
-                if (
-                    isDownet &&
-                    link.url.startsWith("https://", ignoreCase = true) &&
-                    link.type == ExtractorLinkType.VIDEO
-                ) {
-                    downetTlsFallbacks[link.url] = link
-                }
+            callback(link)
+            emitted = true
+
+            val isDownet = runCatching {
+                val host = java.net.URI(link.url).host.orEmpty().lowercase()
+                host == "downet.net" || host.endsWith(".downet.net")
+            }.getOrDefault(false)
+
+            if (
+                !isDownet ||
+                !link.url.startsWith("https://", ignoreCase = true) ||
+                link.type != ExtractorLinkType.VIDEO
+            ) return
+
+            // Public MP4 transport alternative; explicitly disclose that
+            // the HTTP stream is unencrypted. Never send auth headers.
+            val httpUrl = link.url.replaceFirst(
+                "https://",
+                "http://",
+                ignoreCase = true
+            )
+            if (!emittedMediaUrls.add(httpUrl)) return
+
+            val host = runCatching {
+                java.net.URI(httpUrl).host.orEmpty()
+            }.getOrDefault("downet.net")
+            val safeHeaders = link.headers.filterKeys { key ->
+                !key.equals("Cookie", true) &&
+                    !key.equals("Authorization", true) &&
+                    !key.equals("Proxy-Authorization", true)
             }
+
+            val alternate = ExtractorLink(
+                source = this.name,
+                name = "Akwam HTTP (غير مشفر) • $host",
+                url = httpUrl,
+                referer = link.referer,
+                quality = link.quality,
+                headers = safeHeaders,
+                type = ExtractorLinkType.VIDEO
+            )
+            callback(alternate)
         }
 
         fun labelFor(url: String, quality: Int): String {
@@ -518,36 +547,6 @@ class AkwamProvider : MainAPI() {
                 }
             }
         }
-        // Only public direct Downet media can use this alternative.
-        // Playback remains a user choice from the source list; do not
-        // turn off certificate validation or carry authentication cookies.
-        for (httpsLink in downetTlsFallbacks.values) {
-            val httpUrl = httpsLink.url.replaceFirst(
-                "https://",
-                "http://",
-                ignoreCase = true
-            )
-            val host = runCatching {
-                java.net.URI(httpUrl).host.orEmpty()
-            }.getOrDefault("downet.net")
-            val safeHeaders = httpsLink.headers.filterKeys { key ->
-                !key.equals("Cookie", true) &&
-                    !key.equals("Authorization", true) &&
-                    !key.equals("Proxy-Authorization", true)
-            }
-            val httpLink = newExtractorLink(
-                source = this.name,
-                name = "Akwam HTTP (غير مشفر) • $host",
-                url = httpUrl,
-                type = ExtractorLinkType.VIDEO
-            ) {
-                referer = httpsLink.referer
-                quality = httpsLink.quality
-                headers = safeHeaders
-            }
-            emitLink(httpLink)
-        }
-
         return emitted
     }
 }
