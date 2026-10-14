@@ -120,3 +120,11 @@ if candidate:
                     except (HTTPError,URLError,OSError,ValueError) as e:
                         print("VIDARA_API_FAIL",type(e).__name__,
                               "reason",str(getattr(e,"reason",e))[:110],flush=True)
+
+
+for query in ["سيكو سيكو","الحريفة","ولاد رزق","الهوى سلطان","أحمد وأحمد"]:
+    url=base+"/wp-json/wp/v2/search?search="+quote(query)+"&per_page=10"
+    status,final,raw=request(url)
+    arr=json.loads(raw) if raw.lstrip().startswith("[") else []
+    print("FILM_SEARCH",query,"status",status,"count",len(arr),
+          "titles",[str(x.get("title",""))[:85] for x in arr[:4]],flush=True)
