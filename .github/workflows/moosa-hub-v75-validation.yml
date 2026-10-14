@@ -1,0 +1,41 @@
+name: Validate MOOSA Hub v75 compact SHOW MORE (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v75-compact-showmore-arrow"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both plugins without publishing
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Verify arrow-on-idle and existing remote focus flow
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          code=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASeeAll.kt").read_text()
+          versions={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert versions=={"MOOSAHub":75,"MOOSAArabic":3},versions
+          assert 'val label = if (focused) "SHOW MORE  ›" else "›"' in code
+          assert 'if (button.text?.toString() != label) button.text = label' in code
+          assert 'text = "›"' in code
+          assert 'contentDescription = "Show more in $originalName"' in code
+          assert "header.isFocusable = true" in code
+          assert "header.setOnClickListener { action.performClick() }" in code
+          assert "action.requestFocus()" in code
+          assert "KeyEvent.KEYCODE_DPAD_CENTER" in code
+          assert "focusInPreviousVisibleRow" in code
+          assert "focusCardDirectlyBelowHeader" in code
+          assert "header.text = expectedText" not in code
+          print("PASS: arrow idle, label focused, v74 focus and click preserved")
+          PY
