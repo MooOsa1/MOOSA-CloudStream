@@ -208,7 +208,11 @@ class AkwamProvider : MainAPI() {
         if (!isSeries) {
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
                 posterUrl = poster
-                year = Regex("\\b(19|20)\\d{2}\\b").find(doc.text())?.value?.toIntOrNull()
+                // The document may contain unrelated recommendations'
+                // years. Read only the film's explicit release-year field.
+                year = Regex(
+                    """(?:السنة|سنة الانتاج|سنة الإنتاج|سنة العرض)\s*[:：]?\s*((?:19|20)\d{2})"""
+                ).find(doc.text())?.groupValues?.getOrNull(1)?.toIntOrNull()
                 plot = doc.select("meta[name=description]").attr("content")
             }
         }
