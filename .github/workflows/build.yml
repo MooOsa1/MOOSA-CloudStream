@@ -10,7 +10,6 @@ on:
       - main
     paths-ignore:
       - "*.md"
-      - "repo.json"
       - "plugins.json"
 
 concurrency:
@@ -49,16 +48,30 @@ jobs:
           cd "$GITHUB_WORKSPACE/src"
           gradle make makePluginsJson
           gradle ensureJarCompatibility
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          allowed = {"MOOSAHub", "MOOSAArabic"}
+          plugins = json.loads(Path("build/plugins.json").read_text())
+          names = [plugin["internalName"] for plugin in plugins]
+          assert len(names) == len(allowed) and set(names) == allowed, (
+              f"Only MOOSAHub and MOOSAArabic can be published, found {names}")
+          repo = json.loads(Path("repo.json").read_text())
+          expected = "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/plugins.json"
+          assert repo["pluginLists"] == [expected], "Unexpected external plugin list"
+          print("Verified exactly two internal plugins and no external plugin directory")
+          PY
           rm -f "$GITHUB_WORKSPACE/builds"/*.cs3 "$GITHUB_WORKSPACE/builds"/plugins.json
           cp **/build/*.cs3 "$GITHUB_WORKSPACE/builds"/
           cp build/plugins.json "$GITHUB_WORKSPACE/builds"/plugins.json
+          cp repo.json "$GITHUB_WORKSPACE/builds"/repo.json
 
       - name: Publish builds
         run: |
           cd "$GITHUB_WORKSPACE/builds"
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add .
+          git add -A
           if git diff --cached --quiet; then
             exit 0
           fi
