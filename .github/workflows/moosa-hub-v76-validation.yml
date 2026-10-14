@@ -1,0 +1,50 @@
+name: Validate MOOSA Hub v76 animated SHOW MORE (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v76-animated-showmore"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both plugins without publication
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Validate focus animation and remote activation regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          code=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASeeAll.kt").read_text()
+          versions={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert versions=={"MOOSAHub":76,"MOOSAArabic":3},versions
+          for token in [
+              "ValueAnimator.ofInt(fromWidth, targetWidth)",
+              "duration = if (focused) 190L else 150L",
+              "val previous = button.tag as? ValueAnimator",
+              "previous?.cancel()",
+              "if (button.tag !== animation) return",
+              "Gravity.END or Gravity.CENTER_VERTICAL",
+              "ellipsize = TextUtils.TruncateAt.START",
+              'button.text = if (focused) expandedText else "›"',
+              "styleAction(action, false, animate = false)",
+              "header.isFocusable = true",
+              "header.setOnClickListener { action.performClick() }",
+              "KeyEvent.KEYCODE_DPAD_CENTER",
+              "focusInPreviousVisibleRow",
+              "focusCardDirectlyBelowHeader",
+          ]:
+              assert token in code, token
+          assert "header.text = expectedText" not in code
+          print("PASS: animated arrow, cancelled stale animations, v74 activation and DPAD")
+          PY

@@ -1,6 +1,11 @@
 package com.moosa.hub
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.graphics.Color
+import android.text.TextUtils
+import android.view.animation.DecelerateInterpolator
 import android.graphics.drawable.GradientDrawable
 import android.os.SystemClock
 import android.os.Handler
@@ -54,21 +59,73 @@ object MOOSASeeAll {
         }, 90L)
     }
 
-    private fun styleAction(button: TextView, focused: Boolean) {
-        // This is the separate v74 action TextView, not CloudStream's
-        // original title. The arrow remains right-aligned while the label
-        // expands to its left on focus, without replacing the native
-        // focus anchor or introducing a second clickable view.
-        val label = if (focused) "SHOW MORE  ›" else "›"
-        if (button.text?.toString() != label) button.text = label
-
+    private fun styleAction(
+        button: TextView,
+        focused: Boolean,
+        animate: Boolean = true
+    ) {
+        // Animate only the width of the existing v74 focusable/clickable
+        // TextView. The right edge stays anchored in the horizontal toolbar,
+        // while text is progressively revealed toward the left.
+        // Never animate the original CloudStream title or the carousel.
         val density = button.resources.displayMetrics.density
-        button.alpha = 1f
-        button.setTextColor(if (focused) Color.rgb(16, 16, 18) else Color.WHITE)
+        val collapsedWidth = (44f * density).toInt()
+        val expandedText = "SHOW MORE  ›"
+        val expandedWidth = (
+            button.paint.measureText(expandedText) +
+                button.paddingLeft + button.paddingRight + 4f * density
+            ).toInt().coerceAtLeast(collapsedWidth + (24f * density).toInt())
+        val targetWidth = if (focused) expandedWidth else collapsedWidth
+
+        // Cancelling a previous focus transition must not let its completion
+        // callback overwrite the next transition's text or width.
+        val previous = button.tag as? ValueAnimator
+        button.tag = null
+        previous?.cancel()
+
         button.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = 6f * density
             setColor(if (focused) Color.rgb(245, 245, 246) else Color.TRANSPARENT)
+        }
+        button.setTextColor(if (focused) Color.rgb(16, 16, 18) else Color.WHITE)
+
+        val params = button.layoutParams ?: return
+        val fromWidth = if (params.width > 0) params.width else collapsedWidth
+        if (focused && button.text?.toString() != expandedText) {
+            button.text = expandedText
+        }
+        if (!animate || fromWidth == targetWidth) {
+            params.width = targetWidth
+            button.layoutParams = params
+            button.text = if (focused) expandedText else "›"
+            return
+        }
+
+        ValueAnimator.ofInt(fromWidth, targetWidth).apply {
+            duration = if (focused) 190L else 150L
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { animator ->
+                if (button.tag !== this) return@addUpdateListener
+                val width = animator.animatedValue as Int
+                if (button.layoutParams.width != width) {
+                    button.layoutParams.width = width
+                    button.requestLayout()
+                }
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (button.tag !== animation) return
+                    button.tag = null
+                    button.layoutParams.width = targetWidth
+                    button.requestLayout()
+                    if (!focused && !button.hasFocus()) {
+                        button.text = "›"
+                    }
+                }
+            })
+            button.tag = this
+            start()
         }
     }
 
@@ -139,7 +196,9 @@ object MOOSASeeAll {
             text = "›"
             contentDescription = "Show more in $originalName"
             textSize = 17f
-            gravity = Gravity.CENTER
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.START
             minWidth = dp(44)
             minHeight = dp(40)
             setPadding(dp(11), dp(8), dp(11), dp(8))
@@ -153,12 +212,12 @@ object MOOSASeeAll {
         toolbar.addView(
             action,
             LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(44),
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { marginEnd = dp(16) }
         )
         actionForTitle[header] = WeakReference(action)
-        styleAction(action, false)
+        styleAction(action, false, animate = false)
         wireAction(host, header, action)
 
         // HomeChildItemAdapter.nextFocusUp also points at the original
