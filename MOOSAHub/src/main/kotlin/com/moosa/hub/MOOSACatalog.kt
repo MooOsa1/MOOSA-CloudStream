@@ -71,16 +71,14 @@ object MOOSACatalog {
         @JsonProperty("vote_count") val voteCount: Int? = null,
         @JsonProperty("media_type") val mediaType: String? = null
     ) {
-        // TMDB original_title/original_name is the production's original
-        // credited title. Do not replace it with translated display names,
-        // regardless of original language (Arabic, English, Hindi, Korean...).
+        // Use familiar English catalog titles; keep Arabic productions in Arabic.
+        // Original credited names are search aliases, not display names.
         val displayName: String
-            get() = sequenceOf(
-                originalTitle,
-                originalName,
-                title,
-                name
-            ).filterNotNull().map(String::trim)
+            get() = (if (originalLanguage == "ar") {
+                sequenceOf(originalTitle, originalName, title, name)
+            } else {
+                sequenceOf(title, name, originalTitle, originalName)
+            }).filterNotNull().map(String::trim)
                 .firstOrNull(String::isNotBlank).orEmpty()
 
         val year: Int?
