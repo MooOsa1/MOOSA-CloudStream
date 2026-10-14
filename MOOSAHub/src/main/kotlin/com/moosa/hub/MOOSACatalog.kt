@@ -343,16 +343,11 @@ object MOOSACatalog {
         }
 
         return CatalogPage(
+            // CloudStream can render its default cover. Dropping a
+            // movie merely because TMDB lacks artwork prematurely makes
+            // entire discovery pages look empty, especially for Indian films.
             items = enriched.mapNotNull { item ->
-                val hasArtwork =
-                    !item.posterPath.isNullOrBlank() ||
-                        !item.backdropPath.isNullOrBlank()
-
-                if (hasArtwork) {
-                    item.toResponse(api, forceTv)
-                } else {
-                    null
-                }
+                item.toResponse(api, forceTv)
             },
             totalPages =
                 response.totalPages.coerceAtLeast(1)
@@ -364,7 +359,7 @@ object MOOSACatalog {
         "/trending/tv/week" to "Trending Series",
         "/movie/top_rated" to "Top Rated Movies",
         "/tv/top_rated" to "Top Rated Series",
-        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200" to "Top Indian Movies"
+        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=35" to "Top Indian Movies"
     )
 
     suspend fun home(
@@ -386,7 +381,10 @@ object MOOSACatalog {
             extras
         }
 
-        val firstTmdbPage = ((page.coerceAtLeast(1) - 1) * PAGES_PER_BATCH) + 1
+        // Offer a meaningful Indian selection on the home shelf instead
+        // of just 20 over-filtered results. Other home shelves stay light.
+        val pagesPerBatch = if (request.name == "Top Indian Movies") 3 else PAGES_PER_BATCH
+        val firstTmdbPage = ((page.coerceAtLeast(1) - 1) * pagesPerBatch) + 1
         val first = listPage(api, path, firstTmdbPage, isTv, options)
         val maxPage = minOf(first.totalPages, 500)
 
@@ -399,7 +397,7 @@ object MOOSACatalog {
         }
 
         val extraPages = ((firstTmdbPage + 1)..minOf(
-            firstTmdbPage + PAGES_PER_BATCH - 1,
+            firstTmdbPage + pagesPerBatch - 1,
             maxPage
         )).map { tmdbPage ->
             async {
@@ -415,7 +413,7 @@ object MOOSACatalog {
         }.distinctBy { it.url }
 
         val lastFetchedPage = minOf(
-            firstTmdbPage + PAGES_PER_BATCH - 1,
+            firstTmdbPage + pagesPerBatch - 1,
             maxPage
         )
 

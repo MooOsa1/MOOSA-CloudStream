@@ -33,6 +33,8 @@ import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
@@ -132,6 +134,23 @@ class MOOSAHubProvider : TmdbProvider() {
     )
 
     private data class TmdbOverview(
+        @JsonProperty("overview")
+        val overview: String? = null
+    )
+
+    private data class TmdbTranslationCollection(
+        @JsonProperty("translations")
+        val translations: List<TmdbTranslationEntry> = emptyList()
+    )
+    private data class TmdbTranslationEntry(
+        @JsonProperty("iso_639_1")
+        val language: String? = null,
+        @JsonProperty("iso_3166_1")
+        val region: String? = null,
+        @JsonProperty("data")
+        val data: TmdbTranslationData? = null
+    )
+    private data class TmdbTranslationData(
         @JsonProperty("overview")
         val overview: String? = null
     )
@@ -2055,59 +2074,70 @@ class MOOSAHubProvider : TmdbProvider() {
         }
     }
 
+    private fun verifiedArabicSynopsis(raw: String?): String? =
+        cleanSynopsis(raw)?.takeIf { text ->
+            text.count { it in '\u0600'..'\u06FF' } >= 10 &&
+                text.count { it in '\u0600'..'\u06FF' } * 4 >= text.count { it.isLetter() }
+        }
+
     private suspend fun resolveArabicSynopsis(
         tmdbId: Int?,
         isTv: Boolean,
         englishFallback: String?
     ): String? {
-        val id = tmdbId ?: return null
+        // No English synopsis is published as Arabic. If no official
+        // Arabic plot exists, explicitly say it is unavailable instead of
+        // showing untranslated prose or inventing translated content.
+        val placeholder = "الوصف العربي غير متوفر لهذا العمل حاليًا."
+        verifiedArabicSynopsis(englishFallback)?.let { return it }
+        val id = tmdbId ?: return placeholder
         val type = if (isTv) "tv" else "movie"
         val cacheKey = "$type:$id"
-
-        synopsisCache[cacheKey]?.let {
-            cleanSynopsis(it)?.let { clean ->
-                return clean
-            }
+        synopsisCache[cacheKey]?.let { cached ->
+            if (cached == placeholder) return cached
+            verifiedArabicSynopsis(cached)?.let { return it }
         }
 
-        for (
-            language in
-            listOf("ar-SA", "ar-AE", "ar-EG", "ar")
-        ) {
-            val overview = timed(1800L) {
+        val locales = listOf("ar-SA", "ar-EG", "ar-AE", "ar")
+        for (language in locales) {
+            val localized = timed(1500L) {
                 app.get(
                     "$tmdbApiUrl/$type/$id",
                     params = mapOf(
                         "api_key" to tmdbApiKey,
                         "language" to language
                     )
-                ).parsedSafe<TmdbOverview>()
-                    ?.overview
+                ).parsedSafe<TmdbOverview>()?.overview
             }
+            verifiedArabicSynopsis(localized)?.let {
+                synopsisCache[cacheKey] = it
+                return it
+            }
+        }
 
-            val clean = cleanSynopsis(overview)
-            if (
-                !clean.isNullOrBlank() &&
-                clean.any {
-                    it in '\u0600'..'\u06FF'
+        // TMDB's translations endpoint can contain an official Arabic
+        // overview even when the locale-specific detail endpoint is empty.
+        val translations = timed(2500L) {
+            app.get(
+                "$tmdbApiUrl/$type/$id/translations",
+                params = mapOf("api_key" to tmdbApiKey)
+            ).parsedSafe<TmdbTranslationCollection>()
+        }
+        val fromTranslations = translations?.translations.orEmpty()
+            .asSequence()
+            .filter { it.language.equals("ar", ignoreCase = true) }
+            .sortedBy { entry ->
+                when (entry.region?.uppercase()) {
+                    "SA" -> 0
+                    "EG" -> 1
+                    "AE" -> 2
+                    else -> 3
                 }
-            ) {
-                synopsisCache[cacheKey] = clean
-                return clean
             }
-        }
-
-        val fallback =
-            cleanSynopsis(englishFallback)
-
-        // No machine translation. Prefer published TMDB Arabic text;
-        // otherwise retain the source's original synopsis.
-        val result = fallback
-
-        if (!result.isNullOrBlank()) {
-            synopsisCache[cacheKey] = result
-        }
-
+            .mapNotNull { verifiedArabicSynopsis(it.data?.overview) }
+            .firstOrNull()
+        val result = fromTranslations ?: placeholder
+        synopsisCache[cacheKey] = result
         return result
     }
 
@@ -2728,91 +2758,99 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     private suspend fun fetchExternalSubtitles(
-        request: HubPlaybackRequest,
-        onArabic: (SubtitleFile) -> Unit
+        request: HubPlaybackRequest
     ): List<SubtitleFile> = coroutineScope {
         val imdb = resolveSubtitleImdb(request) ?: return@coroutineScope emptyList()
         val cacheKey = subtitleCacheKey(request, imdb)
 
         subtitleCache[cacheKey]?.let { cached ->
             if (System.currentTimeMillis() - cached.createdAt < subtitleCacheLifetimeMs) {
-                cached.items
-                    .filter {
-                        subtitleLanguage(it.lang, it.langTag) ==
-                            PreferredSubtitleLanguage.ARABIC
-                    }
-                    .sortedByDescending(::subtitleScore)
-                    .forEach(onArabic)
                 return@coroutineScope cached.items
             }
             subtitleCache.remove(cacheKey)
         }
 
-        val v3 = async {
-            fetchOpenSubtitlesV3(request, imdb).also { subtitles ->
-                subtitles
-                    .filter {
-                        subtitleLanguage(it.lang, it.langTag) ==
-                            PreferredSubtitleLanguage.ARABIC
-                    }
-                    .sortedByDescending(::subtitleScore)
-                    .forEach(onArabic)
+        // List endpoints only: never publish links until their actual text
+        // has been checked. Some index APIs return empty, zipped, 404 or
+        // mislabelled legacy-encoding files under valid Arabic labels.
+        val v3 = async { fetchOpenSubtitlesV3(request, imdb) }
+        val legacy = async { fetchOpenSubtitlesLegacy(request, imdb) }
+        val wyzie = async { fetchWyzieSubtitles(request, imdb) }
+        val subDl = async { fetchSubDlSubtitles(request, imdb) }
+        val all = (v3.await() + legacy.await() + wyzie.await() + subDl.await())
+            .filter { it.url.startsWith("http", ignoreCase = true) }
+            .filterNot {
+                val url = it.url.substringBefore("?").lowercase()
+                url.endsWith(".zip") || url.endsWith(".rar") ||
+                    url.endsWith(".7z") || url.endsWith(".gz")
             }
-        }
-
-        val legacy = async {
-            fetchOpenSubtitlesLegacy(request, imdb).also { subtitles ->
-                subtitles
-                    .filter {
-                        subtitleLanguage(it.lang, it.langTag) ==
-                            PreferredSubtitleLanguage.ARABIC
-                    }
-                    .sortedByDescending(::subtitleScore)
-                    .forEach(onArabic)
-            }
-        }
-
-        val wyzie = async {
-            fetchWyzieSubtitles(request, imdb).also { subtitles ->
-                subtitles
-                    .filter {
-                        subtitleLanguage(it.lang, it.langTag) ==
-                            PreferredSubtitleLanguage.ARABIC
-                    }
-                    .sortedByDescending(::subtitleScore)
-                    .forEach(onArabic)
-            }
-        }
-
-        val subDl = async {
-            fetchSubDlSubtitles(request, imdb).also { subtitles ->
-                subtitles
-                    .filter {
-                        subtitleLanguage(it.lang, it.langTag) ==
-                            PreferredSubtitleLanguage.ARABIC
-                    }
-                    .sortedByDescending(::subtitleScore)
-                    .forEach(onArabic)
-            }
-        }
-
-        val all = (
-            v3.await() +
-                legacy.await() +
-                wyzie.await() +
-                subDl.await()
-            )
             .distinctBy { it.url }
             .sortedByDescending(::subtitleScore)
 
         if (all.isNotEmpty()) {
             subtitleCache[cacheKey] = CachedSubtitleList(
-                createdAt = System.currentTimeMillis(),
-                items = all
+                createdAt = System.currentTimeMillis(), items = all
             )
         }
-
         all
+    }
+
+    private val subtitleTiming = Regex(
+        """(?m)(?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3}\s*-->\s*(?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3}"""
+    )
+
+    private suspend fun isReadableSubtitle(sub: SubtitleFile): Boolean {
+        val url = sub.url
+        if (!validStreamingUrl(url)) return false
+        if (Regex("""(?i)\.(?:zip|rar|7z|gz)(?:[?#]|$)""").containsMatchIn(url)) return false
+        val body = timed(2300L) {
+            app.get(
+                url,
+                headers = mapOf(
+                    "Accept" to "text/plain,text/vtt,*/*",
+                    "Range" to "bytes=0-32767"
+                )
+            ).text.take(32_768)
+        } ?: return false
+
+        if (body.isBlank() || body.contains('\uFFFD') ||
+            body.contains("\u0000") ||
+            body.contains("<html", ignoreCase = true) ||
+            body.contains("<!DOCTYPE", ignoreCase = true)
+        ) return false
+
+        if (!subtitleTiming.containsMatchIn(body)) return false
+        val content = body.substringAfter("-->", body)
+        val arabicCount = content.count { it in '\u0600'..'\u06FF' }
+        val latinCount = content.count { it in 'A'..'Z' || it in 'a'..'z' }
+        return when (subtitleLanguage(sub.lang, sub.langTag)) {
+            PreferredSubtitleLanguage.ARABIC -> arabicCount >= 8
+            PreferredSubtitleLanguage.ENGLISH -> latinCount >= 12
+            PreferredSubtitleLanguage.OTHER -> false
+        }
+    }
+
+    private suspend fun filterReadableSubtitles(
+        subtitles: List<SubtitleFile>
+    ): List<SubtitleFile> = coroutineScope {
+        // Bound traffic and latency: examine the highest-ranked six Arabic
+        // and three English candidate subtitles concurrently.
+        val shortlist = subtitles
+            .distinctBy { it.url }
+            .sortedByDescending(::subtitleScore)
+            .groupBy { subtitleLanguage(it.lang, it.langTag) }
+            .let { byLanguage ->
+                byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(6) +
+                    byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(3)
+            }
+        val gate = kotlinx.coroutines.sync.Semaphore(4)
+        shortlist.map { subtitle ->
+            async {
+                gate.withPermit {
+                    if (isReadableSubtitle(subtitle)) subtitle else null
+                }
+            }
+        }.awaitAll().filterNotNull().sortedByDescending(::subtitleScore)
     }
 
     private fun normalizeNativeSubtitle(
@@ -2988,19 +3026,7 @@ class MOOSAHubProvider : TmdbProvider() {
         val callbackLock = Any()
 
         val externalSubtitleJob = async {
-            timed(6500L) {
-                fetchExternalSubtitles(request) { subtitle ->
-                    if (
-                        seenSubtitles.add(
-                            subtitle.url
-                        )
-                    ) {
-                        subtitleCallback(
-                            subtitle
-                        )
-                    }
-                }
-            } ?: emptyList()
+            timed(6500L) { fetchExternalSubtitles(request) } ?: emptyList()
         }
 
         val aliases = aliasesJob.await()
@@ -3091,28 +3117,9 @@ class MOOSAHubProvider : TmdbProvider() {
                                 target.data,
                                 isCasting,
                                 { subtitle ->
-                                    normalizeNativeSubtitle(subtitle, api.name)?.let { normalized ->
-                                        if (normalized.url.isBlank()) return@let
-
-                                        when (
-                                            subtitleLanguage(
-                                                normalized.lang,
-                                                normalized.langTag
-                                            )
-                                        ) {
-                                            PreferredSubtitleLanguage.ARABIC -> {
-                                                if (seenSubtitles.add(normalized.url)) {
-                                                    subtitleCallback(normalized)
-                                                }
-                                            }
-
-                                            PreferredSubtitleLanguage.ENGLISH -> {
-                                                nativeSubtitles += normalized
-                                            }
-
-                                            PreferredSubtitleLanguage.OTHER -> Unit
-                                        }
-                                    }
+                                    normalizeNativeSubtitle(subtitle, api.name)
+                                        ?.takeIf { it.url.isNotBlank() }
+                                        ?.let(nativeSubtitles::add)
                                 },
                                 { link ->
                                     collectLink(link)
@@ -3139,43 +3146,9 @@ class MOOSAHubProvider : TmdbProvider() {
                                         freshTarget.data,
                                         isCasting,
                                         { subtitle ->
-                                            normalizeNativeSubtitle(
-                                                subtitle,
-                                                api.name
-                                            )?.let { normalized ->
-                                                if (
-                                                    normalized.url.isBlank()
-                                                ) {
-                                                    return@let
-                                                }
-
-                                                when (
-                                                    subtitleLanguage(
-                                                        normalized.lang,
-                                                        normalized.langTag
-                                                    )
-                                                ) {
-                                                    PreferredSubtitleLanguage.ARABIC -> {
-                                                        if (
-                                                            seenSubtitles.add(
-                                                                normalized.url
-                                                            )
-                                                        ) {
-                                                            subtitleCallback(
-                                                                normalized
-                                                            )
-                                                        }
-                                                    }
-
-                                                    PreferredSubtitleLanguage.ENGLISH -> {
-                                                        nativeSubtitles +=
-                                                            normalized
-                                                    }
-
-                                                    PreferredSubtitleLanguage.OTHER ->
-                                                        Unit
-                                                }
-                                            }
+                                            normalizeNativeSubtitle(subtitle, api.name)
+                                                ?.takeIf { it.url.isNotBlank() }
+                                                ?.let(nativeSubtitles::add)
                                         },
                                         { link ->
                                             collectLink(link)
@@ -3417,18 +3390,9 @@ class MOOSAHubProvider : TmdbProvider() {
                 externalSubtitleJob.await()
             }
 
-        val remainingSubtitles = (
-            nativeSubtitles +
-                externalSubtitles.filter {
-                    subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ENGLISH
-                }
-            )
-            .filter {
-                subtitleLanguage(it.lang, it.langTag) != PreferredSubtitleLanguage.OTHER
-            }
-            .distinctBy { it.url }
-            .sortedByDescending(::subtitleScore)
-
+        val remainingSubtitles = filterReadableSubtitles(
+            nativeSubtitles + externalSubtitles
+        )
         remainingSubtitles.forEach { subtitle ->
             if (seenSubtitles.add(subtitle.url)) {
                 try {
