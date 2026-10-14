@@ -1,0 +1,17 @@
+name: Check TopCinema Arabic episode streams
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/topcinema_live_episode.py"
+      - ".github/workflows/topcinema-live-episode.yml"
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet beautifulsoup4
+      - name: Inspect TopCinema Arabic episode servers
+        run: python3 diagnostics/topcinema_live_episode.py
