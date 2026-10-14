@@ -37,8 +37,31 @@ object MOOSACatalog {
 
     private data class CatalogPage(
         val items: List<SearchResponse>,
-        val totalPages: Int
+        val totalPages: Int,
+        val ranking: Map<String, Pair<Double, Int>> = emptyMap()
     )
+
+    private fun isIndianTop(
+        path: String,
+        options: Map<String, String>
+    ): Boolean =
+        path == "/discover/movie" && options["with_origin_country"] == "IN"
+
+    private fun exactIndianRatingOrder(
+        pages: List<CatalogPage>,
+        items: List<SearchResponse>
+    ): List<SearchResponse> {
+        // TMDB's vote_average.desc search can return a slightly different
+        // order than the API's exposed vote_average decimal values.
+        // Sort the fetched pages by the actual rating; break rating ties by
+        // vote count so the recognized, well-reviewed films lead.
+        val byUrl = pages.flatMap { it.ranking.entries }
+            .associate { it.key to it.value }
+        return items.sortedWith(
+            compareByDescending<SearchResponse> { byUrl[it.url]?.first ?: 0.0 }
+                .thenByDescending { byUrl[it.url]?.second ?: 0 }
+        )
+    }
 
     private data class TmdbImages(
         @JsonProperty("posters")
@@ -334,23 +357,30 @@ object MOOSACatalog {
             tryParseJson<Page>(body)
                 ?: return CatalogPage(emptyList(), 1)
 
+        val indianTop = path == "/discover/movie" &&
+            extra["with_origin_country"] == "IN"
         val enriched = coroutineScope {
             response.results.map { item ->
                 async {
-                    enrichArtwork(item, forceTv)
+                    // Keep this ranking responsive even when old Indian
+                    // catalogue entries have no uploaded poster. CloudStream
+                    // can show a default cover until artwork exists.
+                    if (indianTop) item else enrichArtwork(item, forceTv)
                 }
             }.awaitAll()
         }
 
+        val responses = enriched.mapNotNull { item ->
+            item.toResponse(api, forceTv)?.let { it to item }
+        }
+
         return CatalogPage(
-            // CloudStream can render its default cover. Dropping a
-            // movie merely because TMDB lacks artwork prematurely makes
-            // entire discovery pages look empty, especially for Indian films.
-            items = enriched.mapNotNull { item ->
-                item.toResponse(api, forceTv)
-            },
-            totalPages =
-                response.totalPages.coerceAtLeast(1)
+            // CloudStream can render its default cover for missing artwork.
+            items = responses.map { it.first },
+            totalPages = response.totalPages.coerceAtLeast(1),
+            ranking = responses.associate { (search, item) ->
+                search.url to ((item.voteAverage ?: 0.0) to (item.voteCount ?: 0))
+            }
         )
     }
 
@@ -359,7 +389,9 @@ object MOOSACatalog {
         "/trending/tv/week" to "Trending Series",
         "/movie/top_rated" to "Top Rated Movies",
         "/tv/top_rated" to "Top Rated Series",
-        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=35" to "Top Indian Movies"
+        // Ranked by TMDB votes with a meaningful minimum vote sample.
+        // v72's 35-vote floor exposed obscure titles with inflated scores.
+        "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7&without_genres=99" to "Top Indian Movies"
     )
 
     suspend fun home(
@@ -405,12 +437,13 @@ object MOOSACatalog {
             }
         }
 
-        val allItems = buildList {
-            addAll(first.items)
-            extraPages.forEach { deferred ->
-                addAll(deferred.await().items)
-            }
-        }.distinctBy { it.url }
+        val fetchedPages = listOf(first) + extraPages.map { it.await() }
+        val unsorted = fetchedPages.flatMap { it.items }.distinctBy { it.url }
+        val allItems = if (isIndianTop(path, options)) {
+            exactIndianRatingOrder(fetchedPages, unsorted)
+        } else {
+            unsorted
+        }
 
         val lastFetchedPage = minOf(
             firstTmdbPage + pagesPerBatch - 1,
@@ -493,12 +526,13 @@ object MOOSACatalog {
             emptyList()
         }
 
-        val items = buildList {
-            addAll(first.items)
-            rest.forEach { deferred ->
-                addAll(deferred.await().items)
-            }
-        }.distinctBy { it.url }
+        val fetchedPages = listOf(first) + rest.map { it.await() }
+        val unsorted = fetchedPages.flatMap { it.items }.distinctBy { it.url }
+        val items = if (isIndianTop(path, options)) {
+            exactIndianRatingOrder(fetchedPages, unsorted)
+        } else {
+            unsorted
+        }
 
         BrowseBatch(
             items = items,

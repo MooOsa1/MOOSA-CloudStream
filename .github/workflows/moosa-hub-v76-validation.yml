@@ -2,8 +2,6 @@ name: Validate MOOSA Hub v76 animated SHOW MORE (no release)
 on:
   push:
     branches: ["fix/moosa-hub-v76-animated-showmore"]
-  pull_request:
-    branches: ["main"]
   workflow_dispatch:
 jobs:
   validate:
