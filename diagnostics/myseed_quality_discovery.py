@@ -67,10 +67,37 @@ if samples:
             loc=jsbody.find(pat)
             print(" JS_SNIPPET",pat,jsbody[max(0,loc-70):loc+170].replace("\n"," ")[:230],flush=True)
     print("QUALITY_SERVER_HTTP")
+    inline_text="\n".join(script.get_text() for script in wd.select("script:not([src])"))
+    token_match=re.search(
+        r"""csrf__token['"]?\s*:\s*['"]([^'"]{6,})['"]""",
+        inline_text
+    )
+    csrf=token_match.group(1) if token_match else ""
+    print(" TOKEN_PRESENT",bool(csrf))
+    for js in scripts:
+        if "autoptimize" not in js: continue
+        status,_,jsbody=fetch(js,watchFinal,max_len=900000)
+        for keyword in ["get__quality__servers","get__watch__server"]:
+            at=jsbody.find(keyword)
+            if at>=0:
+                snippet=jsbody[at:at+850]
+                snippet=re.sub(r"""csrf__token\s*[:=]\s*['"][^'"]+['"]""","csrf__token:<redacted>",snippet)
+                print(" AJAX_CODE",keyword,snippet[:750].replace("\n"," "),flush=True)
+        break
     li=wd.select_one("li[data-server][data-post]")
     postid=li.get("data-post","") if li else ""
     if postid:
         for endpoint in ["/get__quality__servers/","/get__watch__server/"]:
             data={"post_id":postid,"quality":"720","server":"0"}
-            status,fin,res=fetch(base+endpoint,watchFinal,post=data)
-            print("  REQUEST",endpoint,status,"len",len(res),"response_start",res[:100].replace("\n"," "),flush=True)
+            for field in ["csrf_token","csrf__token","token","_token"]:
+                if not csrf:break
+                payload={**data,field:csrf}
+                status,fin,res=fetch(base+endpoint,watchFinal,post=payload)
+                try:
+                    obj=json.loads(res)
+                    print("  REQUEST",endpoint,"csrf_field",field,status,
+                          "type",obj.get("type"),"json_keys",list(obj.keys()),
+                          "html_bytes",len(obj.get("html","")),"server_host",urlparse(obj.get("server","")).hostname,flush=True)
+                except Exception:
+                    print("  REQUEST",endpoint,field,status,"response_start",res[:65],flush=True)
+                if '"type":"success"' in res or '"html"' in res:break
