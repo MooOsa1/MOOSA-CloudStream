@@ -1225,14 +1225,24 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val season = request.season ?: return true
         val explicit = explicitSeasonNumber(result.name)
+        // Akwam also names seasons as "العتاولة 2", not only
+        // "العتاولة الموسم الثاني". Require the prefix to match the
+        // requested series exactly before treating a suffix as a season.
+        val suffix = Regex("""\s+(\d{1,2})\s*$""")
+            .find(normalizeArabicOrthography(result.name))
+        val numberedSeason = suffix?.groupValues?.getOrNull(1)?.toIntOrNull()
+            ?.takeIf { it in 1..30 }
+            ?.takeIf {
+                val prefix = result.name.substring(0, result.name.length - suffix.value.length)
+                canonicalTitle(prefix) == canonicalTitle(request.title)
+            }
+        val foundSeason = explicit ?: numberedSeason
         return if (season == 1) {
-            explicit == 1 ||
-                (
-                    explicit == null &&
-                        canonicalTitle(result.name) == canonicalTitle(request.title)
-                )
+            foundSeason == 1 ||
+                (foundSeason == null &&
+                    canonicalTitle(result.name) == canonicalTitle(request.title))
         } else {
-            explicit == season
+            foundSeason == season
         }
     }
 
@@ -1281,14 +1291,31 @@ class MOOSAHubProvider : TmdbProvider() {
                 cleanAliases
             }
 
+        val isEpisodeIndex = isArabSeedProvider(api) ||
+            api.name.equals("TopCinema", ignoreCase = true)
+        // Episode-indexed Arabic sites need the requested episode, not just
+        // the newest result sharing the show's name.
+        val episodeQueries = if (
+            wantSeries && isEpisodeIndex && originalLanguage.equals("ar", true) &&
+            request.episode != null
+        ) {
+            orderedAliases.filter {
+                Regex("""[\u0600-\u06FF]""").containsMatchIn(it) &&
+                    explicitSeasonNumber(it) == null
+            }.take(2).flatMap { title ->
+                listOf("$title الحلقة ${request.episode}",
+                    "$title الموسم $season الحلقة ${request.episode}")
+            }
+        } else emptyList()
         val queryVariants = buildList {
+            addAll(episodeQueries)
             addAll(orderedAliases)
-            if (year != null) {
-                orderedAliases.take(4).forEach { alias ->
+            if (year != null && !wantSeries) {
+                orderedAliases.take(2).forEach { alias ->
                     add("$alias $year")
                 }
             }
-        }.distinct().take(if (isArabSeedProvider(api)) 3 else 18)
+        }.distinct().take(if (isArabSeedProvider(api)) 6 else if (isEpisodeIndex) 8 else 12)
 
         val results = mutableListOf<SearchResponse>()
 
@@ -1298,7 +1325,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 isAkwamProvider(api) -> 1
                 // MySeed's public search has actual WordPress-style pages;
                 // older episodes can appear on pages 3-5.
-                isArabSeedProvider(api) && wantSeries && index == 0 -> 5
+                isArabSeedProvider(api) && wantSeries && index < 2 -> 3
+                isEpisodeIndex && wantSeries && index < 3 -> 3
                 index < 2 -> 2
                 else -> 1
             }
@@ -1321,7 +1349,14 @@ class MOOSAHubProvider : TmdbProvider() {
                             season
                         ) >= 90
                 }
-                if (matchingEpisode) {
+                val confirmedEpisode = if (isArabSeedProvider(api) && wantSeries) {
+                    found.any { item ->
+                        explicitArabicEpisodeNumber(item.name) == request.episode &&
+                            arabSeedEpisodeConfirmed(api, item, request, true) &&
+                            strictSearchScore(item, aliases, year, true, originalLanguage, season) >= 90
+                    }
+                } else matchingEpisode
+                if (confirmedEpisode) {
                     return results.distinctBy { it.url }
                 }
                 if (found.isEmpty()) break
