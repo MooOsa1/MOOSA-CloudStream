@@ -216,7 +216,13 @@ class AkwamProvider : MainAPI() {
                 plot = doc.select("meta[name=description]").attr("content")
             }
         }
+        // Akwam sometimes represents a season by a bare trailing number:
+        // "العتاولة 2" instead of "العتاولة الموسم الثاني". Without this,
+        // every episode was incorrectly marked as season 1.
         val pageSeason = (title + " " + url).seasonNumber()
+            ?: Regex("""(?:^|\s)(\d{1,2})\s*$""")
+                .find(title)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                ?.takeIf { it in 1..30 }
         val episodes = episodeAnchors.distinctBy { it.attr("abs:href").ifEmpty { it.attr("href") } }
             .mapNotNull { a ->
                 val href = a.attr("abs:href").ifEmpty { fixUrl(a.attr("href")) }
