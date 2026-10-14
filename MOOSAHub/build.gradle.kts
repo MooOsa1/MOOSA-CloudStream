@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 56
+version = 57
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v56: validated Downet TLS failure; explicit HTTP video alternative with real MP4/range probes
+// v57: emit Downet HTTP playback alternative as soon as the direct MP4 is discovered
