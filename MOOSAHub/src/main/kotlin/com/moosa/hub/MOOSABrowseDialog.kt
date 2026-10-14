@@ -52,6 +52,7 @@ class MOOSABrowseDialog : DialogFragment() {
     private var loading = false
     private var waitingForResult = false
     private var resultDestinationSeen = false
+    private var genuineHomeReturnObserved = false
     private var returnPosition = 0
     private var navController: Any? = null
     private var destinationListener: Any? = null
@@ -202,6 +203,7 @@ class MOOSABrowseDialog : DialogFragment() {
                 returnPosition = callback.position.coerceAtLeast(0)
                 waitingForResult = true
                 resultDestinationSeen = false
+                genuineHomeReturnObserved = false
                 cancelPendingReturn()
                 dialog?.hide()
             }
@@ -311,6 +313,7 @@ class MOOSABrowseDialog : DialogFragment() {
 
                 waitingForResult = false
                 resultDestinationSeen = false
+                genuineHomeReturnObserved = false
                 dialog?.show()
                 recycler.post {
                     val position = returnPosition.coerceIn(
@@ -354,12 +357,18 @@ class MOOSABrowseDialog : DialogFragment() {
                 when {
                     isContent(name) -> {
                         resultDestinationSeen = true
+                        genuineHomeReturnObserved = false
                         cancelPendingReturn()
                         dialog?.hide()
                     }
-                    resultDestinationSeen && isHome(name) ->
+                    resultDestinationSeen && isHome(name) -> {
+                        genuineHomeReturnObserved = true
                         scheduleVerifiedHomeReturn(host, controller)
-                    else -> cancelPendingReturn()
+                    }
+                    else -> {
+                        genuineHomeReturnObserved = false
+                        cancelPendingReturn()
+                    }
                 }
             }
             null
@@ -405,6 +414,22 @@ class MOOSABrowseDialog : DialogFragment() {
     override fun onStop() {
         cancelPendingReturn()
         super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // A return-to-home event can arrive while Android is still paused.
+        // Only retry that already-observed navigation, never restore merely
+        // because the TV screen saver was dismissed.
+        if (waitingForResult && resultDestinationSeen &&
+            genuineHomeReturnObserved
+        ) {
+            val host = activity as? AppCompatActivity
+            val controller = navController
+            if (host != null && controller != null) {
+                scheduleVerifiedHomeReturn(host, controller)
+            }
+        }
     }
 
     override fun onStart() {
