@@ -175,6 +175,38 @@ object MOOSASeeAll {
         return manager.findViewByPosition(first)?.let(::requestCardFocus) ?: false
     }
 
+    private fun focusInPreviousVisibleRow(
+        host: android.app.Activity,
+        header: TextView
+    ): Boolean {
+        val master = homeMasterRecycler(host) ?: return false
+        val row = directChildOf(master, header) ?: return false
+        val currentIndex = master.getChildAdapterPosition(row)
+        if (currentIndex <= 0) return false
+
+        val previous = master.findViewHolderForAdapterPosition(currentIndex - 1)
+            ?.itemView ?: return false
+        if (!previous.isShown) return false
+
+        // Request the previous category header, which is not inside the
+        // horizontal RecyclerView. Never let FocusFinder request an offscreen
+        // right-hand poster and scroll its parent sideways.
+        val headerId = host.resources.getIdentifier(
+            "home_child_more_info", "id", host.packageName
+        )
+        if (headerId != 0) {
+            val previousHeader = previous.findViewById<View>(headerId)
+            if (previousHeader?.isShown == true && previousHeader.isFocusable) {
+                return previousHeader.requestFocus()
+            }
+        }
+
+        val carousel = findHorizontalCarousel(previous) ?: return false
+        val manager = carousel.layoutManager as? LinearLayoutManager ?: return false
+        val first = manager.findFirstVisibleItemPosition().coerceAtLeast(0)
+        return manager.findViewByPosition(first)?.let(::requestCardFocus) ?: false
+    }
+
     private fun applyHeaders() {
         val currentActivity = activity ?: return
         val root =
@@ -215,14 +247,32 @@ object MOOSASeeAll {
             // and Enter. Do NOT install an ACTION_UP onKey callback too:
             // it opened two dialogs from one physical key press.
             header.setOnKeyListener { _, keyCode, event ->
-                if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (keyCode !in listOf(
+                        KeyEvent.KEYCODE_DPAD_UP,
+                        KeyEvent.KEYCODE_DPAD_DOWN,
+                        KeyEvent.KEYCODE_DPAD_LEFT,
+                        KeyEvent.KEYCODE_DPAD_RIGHT
+                    )
+                ) {
                     false
+                } else if (event.action == KeyEvent.ACTION_UP) {
+                    // Consume matching key-up events: the app should not
+                    // perform a second default focus search afterwards.
+                    true
                 } else if (event.action == KeyEvent.ACTION_DOWN) {
-                    // Keep DOWN navigation inside the current row rather than
-                    // causing CloudStream to shift the carousel to the right.
-                    focusCardDirectlyBelowHeader(currentActivity, header)
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_DPAD_UP ->
+                            focusInPreviousVisibleRow(currentActivity, header)
+                        KeyEvent.KEYCODE_DPAD_DOWN,
+                        KeyEvent.KEYCODE_DPAD_LEFT ->
+                            focusCardDirectlyBelowHeader(currentActivity, header)
+                        else -> true // RIGHT on the rightmost header stays put.
+                    }
+                    // Even if the target isn't loaded, do not delegate
+                    // to FocusFinder (which causes horizontal row drift).
+                    true
                 } else {
-                    false
+                    true
                 }
             }
             header.setOnClickListener {
