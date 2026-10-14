@@ -1,0 +1,17 @@
+name: Check ArabSeed Arabic search
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/arabseed_arabic_regression.py"
+      - ".github/workflows/arabseed-live-regression.yml"
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet beautifulsoup4
+      - name: Compare Arabic search pages and inspect rendered data
+        run: python3 diagnostics/arabseed_arabic_regression.py
