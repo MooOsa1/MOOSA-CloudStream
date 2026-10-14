@@ -323,9 +323,12 @@ class AkwamProvider : MainAPI() {
             } catch (_: Exception) {
                 continue
             }
+            // The short domain currently redirects to another Akwam host.
+            // Relative player links must be resolved against the final URL.
+            val pageUrl = response.url
             val page = response.document
-            for (media in extractEmbeddedMediaUrls(response.text, url)) {
-                emitMedia(media, url)
+            for (media in extractEmbeddedMediaUrls(response.text, pageUrl)) {
+                emitMedia(media, pageUrl)
             }
 
             val selectors = "li[data-link],a.watchBTn,a.link-show,a.aplr-link,a[data-link],a[href*='/watch/'],a[href*='/download/'],a[href*='serv='],a.link-download[href],a.link-btn[href],a[href*='downet.net'],a[href*='.mp4'],div.btn-loader > a[href],a.download-link[href],div.tab-content.quality a[href],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]";
@@ -342,7 +345,7 @@ class AkwamProvider : MainAPI() {
                     when {
                         raw.startsWith("http://", true) || raw.startsWith("https://", true) -> raw
                         raw.startsWith("//") -> "https:$raw"
-                        else -> java.net.URI(url).resolve(raw).toString()
+                        else -> java.net.URI(pageUrl).resolve(raw).toString()
                     }
                 } catch (_: Exception) {
                     continue
@@ -351,7 +354,9 @@ class AkwamProvider : MainAPI() {
                 val host = runCatching { java.net.URI(absolute).host?.lowercase().orEmpty() }.getOrNull().orEmpty()
                 if (host.isBlank()) continue
                 val isOwnHost = host == ownHost ||
-                    host.endsWith(".akwam.ss") || host.endsWith(".akwam.net") || host.endsWith(".ak.sv") || host == "ak.sv"
+                    host == "akwam.ss" || host.endsWith(".akwam.ss") ||
+                    host == "akwam.net" || host.endsWith(".akwam.net") ||
+                    host == "ak.sv" || host.endsWith(".ak.sv")
                 val isKnownWrapper = false
                 val isIframe = element.tagName().equals("iframe", ignoreCase = true)
                 val isDirectMedia = element.tagName().equals("video", true) ||
@@ -359,17 +364,17 @@ class AkwamProvider : MainAPI() {
                     Regex("""(?i)\.(?:m3u8|mp4|webm|mov)(?:[?#]|$)""").containsMatchIn(absolute)
 
                 if (isDirectMedia) {
-                    emitMedia(absolute, url)
+                    emitMedia(absolute, pageUrl)
                     continue
                 }
 
                 if (depth < 4 && (isOwnHost || isKnownWrapper)) {
-                    pending.add(Triple(absolute, depth + 1, url))
+                    pending.add(Triple(absolute, depth + 1, pageUrl))
                     continue
                 }
 
                 try {
-                    loadExtractor(absolute, url, subtitleCallback) { link ->
+                    loadExtractor(absolute, pageUrl, subtitleCallback) { link ->
                         emitLink(link)
                     }
                 } catch (_: Exception) {
@@ -384,7 +389,7 @@ class AkwamProvider : MainAPI() {
                     absolute.contains("server=", true) ||
                     absolute.contains("/watch/", true) || absolute.contains("/download/", true)
                 if (depth < 4 && isServerTarget && !visited.contains(absolute)) {
-                    pending.add(Triple(absolute, depth + 1, url))
+                    pending.add(Triple(absolute, depth + 1, pageUrl))
                 }
             }
         }
