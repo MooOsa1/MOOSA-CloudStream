@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 74
+version = 75
 
 
 android {
@@ -59,3 +59,6 @@ dependencies {
 
 // v74: keep CloudStream's native title focus anchor and delegate remote OK
 // to the separate SHOW MORE action. Fixes v73 unclickable TV focus.
+
+// v75: a compact arrow-only SHOW MORE control that reveals the label on
+// remote focus; retains v74 button activation and directional focus.

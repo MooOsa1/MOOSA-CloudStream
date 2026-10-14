@@ -55,6 +55,13 @@ object MOOSASeeAll {
     }
 
     private fun styleAction(button: TextView, focused: Boolean) {
+        // This is the separate v74 action TextView, not CloudStream's
+        // original title. The arrow remains right-aligned while the label
+        // expands to its left on focus, without replacing the native
+        // focus anchor or introducing a second clickable view.
+        val label = if (focused) "SHOW MORE  ›" else "›"
+        if (button.text?.toString() != label) button.text = label
+
         val density = button.resources.displayMetrics.density
         button.alpha = 1f
         button.setTextColor(if (focused) Color.rgb(16, 16, 18) else Color.WHITE)
@@ -129,9 +136,12 @@ object MOOSASeeAll {
 
         val action = TextView(context).apply {
             id = View.generateViewId()
-            text = "SHOW MORE  ›"
-            textSize = 15f
+            text = "›"
+            contentDescription = "Show more in $originalName"
+            textSize = 17f
             gravity = Gravity.CENTER
+            minWidth = dp(44)
+            minHeight = dp(40)
             setPadding(dp(11), dp(8), dp(11), dp(8))
             isClickable = true
             isFocusable = true
