@@ -2,6 +2,7 @@
 """Public Akwam episode/CDN smoke probe. Never prints signed media URLs."""
 import html
 import socket
+import ssl
 from html.parser import HTMLParser
 from urllib.request import Request, urlopen
 from urllib.parse import urljoin, urlparse, quote
@@ -23,7 +24,7 @@ class Anchors(HTMLParser):
         if href:
             self.links.append(html.unescape(href).strip())
 
-def request(url, referer=None, byterange=None):
+def request(url, referer=None, byterange=None, insecure=False):
     headers = {"User-Agent": ua, "Accept": "*/*"}
     if referer:
         headers["Referer"] = referer
@@ -31,7 +32,8 @@ def request(url, referer=None, byterange=None):
         headers["Range"] = byterange
     req = Request(url, headers=headers, method="GET")
     try:
-        with urlopen(req, timeout=14) as response:
+        context = ssl._create_unverified_context() if insecure else None
+        with urlopen(req, timeout=14, context=context) as response:
             return {
                 "status": response.status,
                 "url": response.url,
@@ -90,5 +92,17 @@ if links:
         len(middle.get("body", b""))>0
     )
     print(f"Progressive playback seek test: {'PASS' if seek_ok else 'FAIL'}")
+    # Diagnostics only: determine whether TLS is the sole blocker.
+    # This result is NEVER passed to the app or used to enable unsafe playback.
+    if begin.get("status") == 0 and "CERTIFICATE_VERIFY_FAILED" in begin.get("error", ""):
+        print("Retesting *for diagnosis only* with certificate verification disabled")
+        unsafe_begin = request(target, page_url, "bytes=0-63", insecure=True)
+        show("Unverified-cert MP4 start", unsafe_begin)
+        print(
+            "Unverified-cert MP4 signature: " +
+            str(unsafe_begin.get("body", b"")[4:8] == b"ftyp")
+        )
+        unsafe_seek = request(target, page_url, "bytes=1048576-1048639", insecure=True)
+        show("Unverified-cert MP4 seek", unsafe_seek)
 else:
     print("Cannot test CDN from this runner: page did not expose direct target.")
