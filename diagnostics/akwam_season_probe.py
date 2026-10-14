@@ -65,3 +65,56 @@ for query in queries:
     print(f"SEARCH {query!r}: host={urlparse(final).hostname} html={len(raw)} results={len(unique)}")
     for href,label in unique[:30]:
         print(f"  {urlparse(href).path[:135]} TITLE {label[:90]!r}")
+
+
+print("\nFIRST-EPISODE CDN PROBES (HTTP fallback, first range only)")
+for season, series_url in PAGES:
+    final, page = fetch(series_url)
+    episode_links = [
+        (href, label) for href, label, _ in anchors(page, final)
+        if "/episode/" in urlparse(href).path
+    ]
+    first = next((
+        href for href, label in episode_links
+        if re.search(r"حلقة\s*1(?:\D|$)", label)
+        or "/الحلقة-1" in href
+    ), None)
+    if first is None:
+        print(f" S{season}: no E1 page link")
+        continue
+
+    ep_final, ep_body = fetch(first)
+    download_links = [
+        href for href, _, _ in anchors(ep_body, ep_final)
+        if "/download/" in urlparse(href).path
+    ]
+    if not download_links:
+        print(f" S{season}: E1 page found, no download page")
+        continue
+
+    dl_final, dl_body = fetch(download_links[0])
+    downet_links = [
+        href for href, _, _ in anchors(dl_body, dl_final)
+        if (urlparse(href).hostname or "").endswith(".downet.net")
+    ]
+    if not downet_links:
+        print(f" S{season}: download page found, no Downet direct link")
+        continue
+
+    candidate = downet_links[0]
+    candidate_http = candidate.replace("https://", "http://", 1)
+    request = Request(
+        candidate_http,
+        headers={"User-Agent": UA, "Referer": dl_final, "Range": "bytes=0-63"}
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            prefix = response.read(64)
+            print(
+                f" S{season}: CDN={urlparse(candidate_http).hostname} "
+                f"HTTP={response.status} range={response.headers.get('Content-Range', '')[:40]} "
+                f"MP4={prefix[4:8] == b'ftyp'} "
+                f"media_filename={urlparse(candidate).path.rsplit('/',1)[-1][:85]}"
+            )
+    except (URLError, TimeoutError) as error:
+        print(f" S{season}: media range request failed {type(error).__name__}: {str(error)[:85]}")
