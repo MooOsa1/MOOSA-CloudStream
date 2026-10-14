@@ -87,7 +87,7 @@ class ArabSeedProvider : MainAPI() {
         val cleanTitle = title.trim()
         // ArabSeed indexes single Arabic episodes as posts, not full
         // seasons. Don't identify them as movies solely by their post path.
-        if (Regex("""(?:الحلقة|الحلقه|حلقة|episode)\\s*\\d""",
+        if (Regex("""(?:الحلقة|الحلقه|حلقة|episode)\s*\d""",
                 RegexOption.IGNORE_CASE).containsMatchIn(cleanTitle)) return false
         return decoded.contains("فيلم-") ||
             decoded.contains("/movie", ignoreCase = true) ||
@@ -307,7 +307,7 @@ class ArabSeedProvider : MainAPI() {
         // posts. The old provider converted every post lacking a related
         // episode list to a MOVIE, making the Hub reject Arabic series.
         val numberedEpisode = Regex(
-            """(?i)(?:الحلقة|الحلقه|حلقة|episode|ep)\\s*[:#-]?\\s*(\\d{1,4})"""
+            """(?i)(?:الحلقة|الحلقه|حلقة|episode|ep)\s*[:#-]?\s*(\d{1,4})"""
         ).find(title.normalizedDigits())
             ?.groupValues?.getOrNull(1)?.toIntOrNull()
         val isEpisodePost = numberedEpisode != null &&
@@ -317,10 +317,10 @@ class ArabSeedProvider : MainAPI() {
             val season = pageSeason ?: 1
             val seriesName = title
                 .replace(Regex(
-                    """(?i)\\s*(?:الموسم|موسم|season|الجزء|جزء)\\s*(?:\\d{1,2}|الاول|الأول|الثاني|الثالث|الرابع|الخامس|السادس).*"""
+                    """(?i)\s*(?:الموسم|موسم|season|الجزء|جزء)\s*(?:\d{1,2}|الاول|الأول|الثاني|الثالث|الرابع|الخامس|السادس).*"""
                 ), "")
-                .replace(Regex("""(?i)\\s*(?:الحلقة|الحلقه|حلقة|episode|ep)\\s*\\d{1,4}.*"""), "")
-                .replace(Regex("""^\\s*مسلسل\\s+"""), "")
+                .replace(Regex("""(?i)\s*(?:الحلقة|الحلقه|حلقة|episode|ep)\s*\d{1,4}.*"""), "")
+                .replace(Regex("""^\s*مسلسل\s+"""), "")
                 .trim().ifBlank { title }
 
             return newTvSeriesLoadResponse(
