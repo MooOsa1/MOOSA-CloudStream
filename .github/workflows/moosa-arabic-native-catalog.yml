@@ -1,0 +1,17 @@
+name: Test native MOOSA Arabic catalog
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/moosa_arabic_native_catalog.py"
+      - ".github/workflows/moosa-arabic-native-catalog.yml"
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet beautifulsoup4
+      - name: Confirm Akwam Arabic categories and direct series pages
+        run: python3 diagnostics/moosa_arabic_native_catalog.py
