@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 59
+version = 60
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v59: migrate ArabSeed to current search pagination; require precise episode matching; unwrap Base64 download mirrors (Akwam v58 behavior unchanged)
+// v60: hard 720p+ floor across bundled playback, 1080p first, new ShahidWBas candidate, prioritize verified Arabic sources, 3-minute Arabic target refresh
