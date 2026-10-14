@@ -10,6 +10,7 @@ import com.moosa.hub.bundled.akwam.AkwamProvider
 import com.moosa.hub.bundled.arabseed.ArabSeedProvider
 import com.moosa.hub.bundled.cimaclub.CimaClubProvider
 import com.moosa.hub.bundled.topcinema.TopCinemaProvider
+import com.moosa.hub.bundled.wecima.WeCimaProvider
 
 @CloudstreamPlugin
 class MOOSAHubPlugin : Plugin() {
@@ -24,6 +25,7 @@ class MOOSAHubPlugin : Plugin() {
         registerMainAPI(ArabSeedProvider())
         registerMainAPI(CimaClubProvider())
         registerMainAPI(TopCinemaProvider())
+        registerMainAPI(WeCimaProvider())
         registerMainAPI(MOOSAHubProvider())
     }
 
