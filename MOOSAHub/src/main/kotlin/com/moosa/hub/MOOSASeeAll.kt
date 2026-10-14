@@ -8,6 +8,7 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.view.KeyEvent
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -124,6 +125,56 @@ object MOOSASeeAll {
     private fun originalHeaderText(value: String): String =
         value.substringBefore("  SHOW MORE").trim()
 
+    private fun findHorizontalCarousel(root: View): RecyclerView? {
+        if (root is RecyclerView) {
+            val layout = root.layoutManager as? LinearLayoutManager
+            if (layout?.orientation == LinearLayoutManager.HORIZONTAL) return root
+        }
+        if (root is ViewGroup) {
+            for (i in 0 until root.childCount) {
+                findHorizontalCarousel(root.getChildAt(i))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun requestCardFocus(view: View): Boolean {
+        if (!view.isShown) return false
+        if (view.isFocusable && view.requestFocus()) return true
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                if (requestCardFocus(view.getChildAt(i))) return true
+            }
+        }
+        return false
+    }
+
+    private fun focusCardDirectlyBelowHeader(
+        host: android.app.Activity,
+        header: TextView
+    ): Boolean {
+        val master = homeMasterRecycler(host) ?: return false
+        val parentRow = directChildOf(master, header) ?: return false
+        val carousel = findHorizontalCarousel(parentRow) ?: return false
+        val manager = carousel.layoutManager as? LinearLayoutManager ?: return false
+
+        // Explicitly target a card already on screen, not Android's
+        // nearest-focus guess at the extreme right of the horizontal row.
+        val first = manager.findFirstVisibleItemPosition().coerceAtLeast(0)
+        val last = manager.findLastVisibleItemPosition()
+        if (last < first) return false
+        for (position in first..last) {
+            val card = manager.findViewByPosition(position) ?: continue
+            if (card.width == 0 || card.left < carousel.paddingLeft ||
+                card.right > carousel.width - carousel.paddingRight
+            ) continue
+            if (requestCardFocus(card)) return true
+        }
+        // The first/last partially clipped cards may be all that is visible.
+        // Prefer a currently attached one; never issue horizontal scroll.
+        return manager.findViewByPosition(first)?.let(::requestCardFocus) ?: false
+    }
+
     private fun applyHeaders() {
         val currentActivity = activity ?: return
         val root =
@@ -163,7 +214,17 @@ object MOOSASeeAll {
             // Android already calls performClick() for remote DPAD_CENTER
             // and Enter. Do NOT install an ACTION_UP onKey callback too:
             // it opened two dialogs from one physical key press.
-            header.setOnKeyListener(null)
+            header.setOnKeyListener { _, keyCode, event ->
+                if (keyCode != KeyEvent.KEYCODE_DPAD_DOWN) {
+                    false
+                } else if (event.action == KeyEvent.ACTION_DOWN) {
+                    // Keep DOWN navigation inside the current row rather than
+                    // causing CloudStream to shift the carousel to the right.
+                    focusCardDirectlyBelowHeader(currentActivity, header)
+                } else {
+                    false
+                }
+            }
             header.setOnClickListener {
                 val now = SystemClock.uptimeMillis()
                 if (now - lastBrowseOpenAt < 650L ||
