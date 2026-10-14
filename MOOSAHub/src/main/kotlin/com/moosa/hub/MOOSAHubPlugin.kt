@@ -22,12 +22,6 @@ class MOOSAHubPlugin : Plugin() {
         openSettings = { ctx ->
             MOOSASettingsDialog.show(ctx)
         }
-        registerMainAPI(AkwamProvider())
-        registerMainAPI(ArabSeedProvider())
-        registerMainAPI(ShahidWBasProvider())
-        registerMainAPI(CimaClubProvider())
-        registerMainAPI(TopCinemaProvider())
-        registerMainAPI(WeCimaProvider())
         registerMainAPI(MOOSAHubProvider())
 
         // v62 inadvertently hid all playable sources on some devices.

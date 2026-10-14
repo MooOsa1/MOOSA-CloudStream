@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 68
+version = 69
 
 
 android {
@@ -20,7 +20,7 @@ tasks.withType<KotlinJvmCompile>().configureEach {
 
 cloudstream {
     language = "en"
-    description = "English catalog, Arabic synopsis, and multi-source playback"
+    description = "Global movies and series with Arabic subtitles; Arabic originals in separate MOOSA Arabic plugin"
     authors = listOf("MOOSA")
     status = 1
     tvTypes = listOf("Movie", "TvSeries")

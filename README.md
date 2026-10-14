@@ -32,3 +32,10 @@ Check source rights, Fire TV compatibility, playable titles, original audio, Ara
 MOOSAMovies uses TMDB metadata through CloudStream's built-in TMDB provider.
 
 This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+
+## Native Arabic source extension (2026-10-14)
+
+**MOOSA Arabic** is an independent CloudStream plugin available from the same repository. Its movie and show listings, original site names, series episode URLs, and media servers come directly from Akwam; it does not use TMDB or cross-provider title matching. Its home sections are Akwam's own `movies?section=29` and `series?section=29`. It is intended for Arabic site content (Akwam's Arabic sections can also contain Arabic-dubbed foreign titles).
+
+**MOOSA Hub v69** no longer exposes Arabic-origin catalog items, categories or Arabic provider registrations. It retains Arabic subtitles for international movies and series. Update and restart CloudStream after installing `MOOSAArabic v1` to refresh provider registration. MOOSA Arabic does not guarantee that every source URL streams on all devices, and quality is not claimed until playback is checked on the device.

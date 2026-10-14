@@ -120,6 +120,8 @@ object MOOSACatalog {
         api: MainAPI,
         forceTv: Boolean? = null
     ): SearchResponse? {
+        // Arabic originals are listed natively by MOOSA Arabic, not TMDB.
+        if (originalLanguage.equals("ar", ignoreCase = true)) return null
         val contentId = id ?: return null
         val titleText =
             displayName.trim().takeIf { it.isNotBlank() }
@@ -362,8 +364,6 @@ object MOOSACatalog {
         "/trending/tv/week" to "Trending Series",
         "/movie/top_rated" to "Top Rated Movies",
         "/tv/top_rated" to "Top Rated Series",
-        "/discover/movie?with_original_language=ar&sort_by=popularity.desc" to "Arabic Movies",
-        "/discover/tv?with_original_language=ar&sort_by=popularity.desc" to "Arabic Series",
         "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200" to "Top Indian Movies"
     )
 
