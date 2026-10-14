@@ -20,7 +20,7 @@ object MOOSAQualityPolicy {
         """(?i)(?:^|[\s._/=?&#-])(2160|1440|1080|720|576|540|480|360|240)p?(?=$|[\s._/=?&#-])"""
     )
 
-    private fun qualityToken(value: String): Int? =
+    fun labeledHeight(value: String): Int? =
         explicitResolution.find(value)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
     fun height(link: ExtractorLink): Int? {
@@ -33,9 +33,9 @@ object MOOSAQualityPolicy {
 
         // Explicit CDN labels or filenames are secondary evidence. A bare
         // "HD" or a four-digit episode number is not a resolution.
-        return qualityToken(link.name)
-            ?: qualityToken(link.source)
-            ?: qualityToken(link.url)
+        return labeledHeight(link.name)
+            ?: labeledHeight(link.source)
+            ?: labeledHeight(link.url)
     }
 
     fun accepts(link: ExtractorLink): Boolean =
