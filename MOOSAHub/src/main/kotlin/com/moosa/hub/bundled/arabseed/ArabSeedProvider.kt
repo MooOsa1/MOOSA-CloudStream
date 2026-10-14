@@ -708,23 +708,22 @@ class ArabSeedProvider : MainAPI() {
         ) {
             if (!MOOSAQualityPolicy.acceptsHeight(qualityHint)) return
             val normalized = normalizeUrl(url, watchUrl) ?: return
-            if (!seen.add(normalized)) return
+            if (MOOSAQualityPolicy.isDownloadName(label)) return
 
             val isHls = normalized.contains(".m3u8", true)
             val quality = inferDirectQuality(normalized, qualityHint)
-
-            callback(
-                newExtractorLink(
-                    source = name,
-                    name = "$name • $label",
-                    url = normalized,
-                    type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                ) {
-                    referer = watchUrl
-                    this.quality = quality
-                    headers = requestHeaders + mapOf("Referer" to watchUrl)
-                }
-            )
+            val link = newExtractorLink(
+                source = name,
+                name = "$name • $label",
+                url = normalized,
+                type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+            ) {
+                referer = watchUrl
+                this.quality = quality
+                headers = requestHeaders + mapOf("Referer" to watchUrl)
+            }
+            if (!MOOSAQualityPolicy.accepts(link) || !seen.add(normalized)) return
+            callback(link)
             emitted = true
         }
 
@@ -786,7 +785,10 @@ class ArabSeedProvider : MainAPI() {
             server: WatchServer,
             target: String
         ): Int {
-            if (!MOOSAQualityPolicy.acceptsHeight(server.quality)) return 0
+            if (
+                !MOOSAQualityPolicy.acceptsHeight(server.quality) ||
+                    MOOSAQualityPolicy.isDownloadName(server.label)
+            ) return 0
             val before = seen.size
 
             if (
@@ -936,89 +938,8 @@ class ArabSeedProvider : MainAPI() {
             }
         }
 
-        // Download page can expose direct/high-bitrate mirrors that are not in watch servers.
-        val downloadUrl = contentDoc
-            ?.selectFirst("a.download__btn[href], .download__btn[href]")
-            ?.let { normalizeUrl(it.attr("href"), contentPage?.url ?: postUrl) }
-            ?: "$basePostUrl/download/"
-        try {
-            val downloadResponse = app.get(
-                downloadUrl,
-                headers = requestHeaders,
-                referer = postUrl
-            )
-
-            if (downloadResponse.code in 200..299) {
-                val downloadDoc =
-                    Jsoup.parse(
-                        downloadResponse.text,
-                        downloadResponse.url
-                    )
-
-                val targets =
-                    downloadDoc.select(
-                        "ul.downloads__links__list a[href], a.download__item[href], a[href*='.mp4'], a[href*='.m3u8']"
-                    )
-                        .mapNotNull { anchor ->
-                            val label = anchor.text().trim()
-                            val quality = Regex(
-                                """(?i)(?:^|\W)(2160|1440|1080|720|480|360)p(?:\W|$)"""
-                            ).find(label)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                            if (!MOOSAQualityPolicy.acceptsHeight(quality)) {
-                                return@mapNotNull null
-                            }
-
-                            val raw = normalizeUrl(
-                                anchor.attr("href"),
-                                downloadResponse.url
-                            ) ?: return@mapNotNull null
-                            val target = unwrapServerLink(
-                                raw,
-                                downloadResponse.url
-                            ) ?: return@mapNotNull null
-                            Triple(target, label, quality!!)
-                        }
-                        .distinctBy { it.first }
-                        .take(8)
-
-                for ((target, label, quality) in targets) {
-                    if (
-                        target.contains(".mp4", true) ||
-                        target.contains(".m3u8", true)
-                    ) {
-                        emitDirect(
-                            target,
-                            quality,
-                            "Download - $label"
-                        )
-                        continue
-                    }
-
-                    try {
-                        loadExtractor(
-                            target,
-                            downloadResponse.url,
-                            subtitleCallback
-                        ) { link ->
-                            if (link.quality == Qualities.Unknown.value) {
-                                link.quality = quality
-                            }
-                            if (
-                                MOOSAQualityPolicy.accepts(link) &&
-                                seen.add(link.url.trim())
-                            ) {
-                                callback(link)
-                                emitted = true
-                            }
-                        }
-                    } catch (_: Throwable) {
-                        // Keep trying remaining download mirrors.
-                    }
-                }
-            }
-        } catch (_: Throwable) {
-            // Watch path is still valid when download page is unavailable.
-        }
+        // Download-labelled mirrors are intentionally not crawled.
+        // Only watch servers with confirmed 720p+ quality are eligible.
 
         return emitted
     }
