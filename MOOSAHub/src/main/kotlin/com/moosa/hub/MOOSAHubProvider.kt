@@ -2856,6 +2856,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 val failedProbes = AtomicInteger(0)
                 val acceptedLinks = AtomicInteger(0)
                 val failedReasons = ConcurrentHashMap<String, AtomicInteger>()
+                val emittedAkwamMirrors =
+                    ConcurrentHashMap.newKeySet<String>()
 
                 try {
                     MOOSAPlaybackDiagnostics.update(
@@ -3021,9 +3023,28 @@ class MOOSAHubProvider : TmdbProvider() {
                                         ) ||
                                         verifyStreamingLink(link)
 
+                                val mirrorIdentity =
+                                    if (api.name.equals("Akwam", true)) {
+                                        val host = runCatching {
+                                            java.net.URI(link.url).host
+                                                ?.lowercase()
+                                                .orEmpty()
+                                        }.getOrDefault("")
+                                        if (
+                                            host == "downet.net" ||
+                                            host.endsWith(".downet.net")
+                                        ) {
+                                            "$host|${inferQuality(link)}"
+                                        } else null
+                                    } else null
+
                                 if (
                                     verified &&
-                                    seenLinks.add(key)
+                                    seenLinks.add(key) &&
+                                    (
+                                        mirrorIdentity == null ||
+                                            emittedAkwamMirrors.add(mirrorIdentity)
+                                        )
                                 ) {
                                     providerWorked = true
                                     acceptedLinks.incrementAndGet()
