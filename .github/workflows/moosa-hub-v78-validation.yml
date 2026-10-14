@@ -70,11 +70,23 @@ jobs:
               assert items, f"page {page} returned no Indian films"
               assert all(x.get("vote_count",0)>=50 and x.get("vote_average",0)>=6.2 for x in items)
               assert all(99 not in x.get("genre_ids",[]) for x in items)
-              assert sum("IN" in x.get("origin_country",[]) for x in items)>=int(len(items)*0.8)
+              # Movie discover cards do NOT return origin_country.
+              # Verify production origins from actual movie detail records.
               all_items.extend(items)
               print("PAGE",page,"TOTAL",result.get("total_results"),"COUNT",len(items))
           assert len(all_items)>=15, "Not enough recognized Indian movies to fill the category"
           ranked=sorted(all_items,key=lambda x:(-x.get("popularity",0),x.get("title","")))
+          sample=ranked[:6]
+          actual_indian=0
+          for movie in sample:
+              detail_url="https://api.themoviedb.org/3/movie/"+str(movie["id"])+"?"+urllib.parse.urlencode({"api_key":key,"language":"en-US"})
+              with urllib.request.urlopen(urllib.request.Request(detail_url,headers={"User-Agent":"Mozilla/5.0"}),timeout=12) as detail_response:
+                  metadata=json.load(detail_response)
+              countries=[c.get("iso_3166_1") for c in metadata.get("production_countries",[])]
+              is_indian="IN" in countries
+              actual_indian+=int(is_indian)
+              print("ORIGIN",movie["title"],countries,movie.get("popularity"))
+          assert actual_indian>=4, "TMDB discover filter yielded too many non-Indian productions"
           print("TRENDING_INDIAN_SAMPLE",[(x.get("title"),round(x.get("popularity",0),2),x.get("vote_count")) for x in ranked[:12]])
-          print("PASS: live TMDB Indian films meet nationality, rating, popularity and non-documentary filters")
+          print("PASS: live TMDB Indian films meet production-country, rating, popularity and non-documentary filters")
           PY
