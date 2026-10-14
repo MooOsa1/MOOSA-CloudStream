@@ -30,12 +30,12 @@ class MOOSAHubPlugin : Plugin() {
         registerMainAPI(WeCimaProvider())
         registerMainAPI(MOOSAHubProvider())
 
-        // Apply CloudStream's native quality priorities to every profile.
-        // This also affects independent external plugins opened directly.
-        // Run outside the UI thread to avoid slow settings writes on TV.
+        // v62 inadvertently hid all playable sources on some devices.
+        // Recover the host-wide profile settings once, asynchronously.
+        // Never automatically enforce global priority/hiding again.
         Thread(
-            { MOOSAGlobalQualitySetup.applyIfNeeded() },
-            "MOOSA-HD-Quality-Setup"
+            { MOOSAGlobalQualitySetup.restoreV62PrioritiesIfNeeded() },
+            "MOOSA-v62-Playback-Recovery"
         ).start()
     }
 
