@@ -1,0 +1,16 @@
+name: Audit alternative Arabic provider health
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "diagnostics/arabic_candidate_health.py"
+      - ".github/workflows/arabic-candidates-health.yml"
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect independent provider reachability
+        run: python3 diagnostics/arabic_candidate_health.py
