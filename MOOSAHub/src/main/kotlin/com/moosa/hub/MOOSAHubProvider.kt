@@ -2716,11 +2716,6 @@ class MOOSAHubProvider : TmdbProvider() {
         }
     }
 
-    private fun isDownloadLabeled(link: ExtractorLink): Boolean {
-        val label = "${link.name} ${link.source}".lowercase()
-        return "download" in label || "تحميل" in label
-    }
-
     private fun validStreamingUrl(url: String): Boolean =
         url.startsWith("https://", ignoreCase = true) ||
             url.startsWith("http://", ignoreCase = true)
@@ -2882,6 +2877,26 @@ class MOOSAHubProvider : TmdbProvider() {
                         )
                         val candidateLinks =
                             Collections.synchronizedList(mutableListOf<ExtractorLink>())
+                        val extracted = AtomicInteger(0)
+                        val invalidUrls = AtomicInteger(0)
+                        val disabledUrls = AtomicInteger(0)
+                        val failedProbes = AtomicInteger(0)
+
+                        fun collectLink(link: ExtractorLink) {
+                            extracted.incrementAndGet()
+                            if (!validStreamingUrl(link.url)) {
+                                invalidUrls.incrementAndGet()
+                                return
+                            }
+                            // A "Download" label can refer to a directly playable
+                            // MP4/HLS stream. Let the actual media probe decide.
+                            MOOSAServerRegistry.record(link)
+                            if (MOOSAServerRegistry.isDisabled(link)) {
+                                disabledUrls.incrementAndGet()
+                                return
+                            }
+                            candidateLinks += link
+                        }
 
                         timed(linksTimeoutFor(api, request)) {
                             api.loadLinks(
@@ -2912,16 +2927,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                     }
                                 },
                                 { link ->
-                                    if (
-                                        validStreamingUrl(link.url) &&
-                                        !isDownloadLabeled(link)
-                                    ) {
-                                        MOOSAServerRegistry.record(link)
-
-                                        if (!MOOSAServerRegistry.isDisabled(link)) {
-                                            candidateLinks += link
-                                        }
-                                    }
+                                    collectLink(link)
                                 }
                             )
                         }
@@ -2983,22 +2989,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                             }
                                         },
                                         { link ->
-                                            if (
-                                                validStreamingUrl(
-                                                    link.url
-                                                ) &&
-                                                !isDownloadLabeled(link)
-                                            ) {
-                                                MOOSAServerRegistry
-                                                    .record(link)
-
-                                                if (
-                                                    !MOOSAServerRegistry
-                                                        .isDisabled(link)
-                                                ) {
-                                                    candidateLinks += link
-                                                }
-                                            }
+                                            collectLink(link)
                                         }
                                     )
                                 }
@@ -3007,7 +2998,9 @@ class MOOSAHubProvider : TmdbProvider() {
 
                         MOOSAPlaybackDiagnostics.update(
                             api,
-                            "Provider returned ${candidateLinks.size} link(s)"
+                            "Episode matched: ${extracted.get()} extracted, " +
+                                "${candidateLinks.size} candidates, " +
+                                "${invalidUrls.get()} invalid, ${disabledUrls.get()} disabled"
                         )
 
                         val candidates = candidateLinks
@@ -3039,6 +3032,9 @@ class MOOSAHubProvider : TmdbProvider() {
                                     }
                                     true
                                 } else {
+                                    if (!verified) {
+                                        failedProbes.incrementAndGet()
+                                    }
                                     if (
                                         !verified &&
                                         !seenLinks.contains(key) &&
@@ -3075,24 +3071,29 @@ class MOOSAHubProvider : TmdbProvider() {
                     if (providerWorked) {
                         MOOSAPlaybackDiagnostics.update(
                             api,
-                            "Playback ready"
+                            "Playback ready • ${candidateLinks.size - failedProbes.get()} " +
+                                "verified, ${failedProbes.get()} probe failures"
                         )
 
                         providerHealth.merge(api.name, 3) { old, add ->
                             (old + add).coerceAtMost(24)
                         }
                     } else {
-                        if (
-                            !MOOSAPlaybackDiagnostics
-                                .report()
-                                .contains(
-                                    "${api.name}: No matching page or episode"
-                                )
-                        ) {
-                            MOOSAPlaybackDiagnostics.update(
-                                api,
-                                "No usable playback links"
-                            )
+                        // Keep the original matching/search diagnostic when
+                        // no target was found. Don't overwrite it with "No links".
+                        if (target != null) {
+                            val reportStatus = when {
+                                extracted.get() == 0 ->
+                                    "Episode matched • extractor returned 0 links"
+                                candidateLinks.isEmpty() ->
+                                    "Episode matched • ${extracted.get()} URLs, " +
+                                        "${invalidUrls.get()} invalid, " +
+                                        "${disabledUrls.get()} disabled"
+                                else ->
+                                    "Episode matched • ${candidateLinks.distinctBy(::linkKey).size} candidates; " +
+                                        "${failedProbes.get()} failed verification, 0 confirmed"
+                            }
+                            MOOSAPlaybackDiagnostics.update(api, reportStatus)
                         }
 
                         providerHealth.merge(api.name, -2) { old, add ->
