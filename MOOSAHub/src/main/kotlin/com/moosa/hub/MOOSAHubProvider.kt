@@ -1569,11 +1569,13 @@ class MOOSAHubProvider : TmdbProvider() {
             .toSet()
 
         val arabicRequest = request.originalLanguage.equals("ar", true)
-        // WeCima is blocked by Cloudflare in our 2026-10-14 probe, and
-        // CimaClub returned no content cards. TopCinema has no confirmed
-        // playable source. Keep their standalone plugins available, but stop
-        // wasting the Hub's automatic lookup budget on unverified sources.
-        val experimentalBundled = setOf("WeCima", "CimaClub", "TopCinema")
+        // Only bundled Akwam has user-confirmed Arabic playback.
+        // Leave failed candidates available as standalone providers for
+        // testing, but don't waste the Hub's Arabic lookup budget on them.
+        // This is a temporary quarantine, not a claim that they never work.
+        val experimentalBundled = setOf(
+            "WeCima", "CimaClub", "TopCinema", "ArabSeed", "ShahidWBas"
+        )
 
         return available
             .filter { api ->
@@ -2910,6 +2912,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 val extracted = AtomicInteger(0)
                 val invalidUrls = AtomicInteger(0)
                 val disabledUrls = AtomicInteger(0)
+                val downloadNamesSkipped = AtomicInteger(0)
                 val lowQualityUrls = AtomicInteger(0)
                 val unknownQualityUrls = AtomicInteger(0)
                 val failedProbes = AtomicInteger(0)
@@ -2946,6 +2949,12 @@ class MOOSAHubProvider : TmdbProvider() {
                                 invalidUrls.incrementAndGet()
                                 return
                             }
+                            // Source/server display names, never the URL path:
+                            // Akwam's valid MP4 can be hosted via /download/.
+                            if (MOOSAQualityPolicy.hasForbiddenLabel(link)) {
+                                downloadNamesSkipped.incrementAndGet()
+                                return
+                            }
 
                             // Reject SD and unknown links BEFORE probing them.
                             // Displaying only HD is not enough: SD should not
@@ -2961,8 +2970,8 @@ class MOOSAHubProvider : TmdbProvider() {
                             }
                             if (link.quality <= 0) link.quality = height
 
-                            // A "Download" label can refer to a directly playable
-                            // MP4/HLS stream. Let the actual media probe decide.
+                            // Only eligible playback names and 720p+ streams
+                            // reach network probing or the visible source list.
                             MOOSAServerRegistry.record(link)
                             if (MOOSAServerRegistry.isDisabled(link)) {
                                 disabledUrls.incrementAndGet()
@@ -3074,6 +3083,7 @@ class MOOSAHubProvider : TmdbProvider() {
                             "Episode matched: ${extracted.get()} extracted, " +
                                 "${candidateLinks.size} candidates, " +
                                 "${invalidUrls.get()} invalid, ${disabledUrls.get()} disabled, " +
+                                "${downloadNamesSkipped.get()} downloads skipped, " +
                                 "${lowQualityUrls.get()} SD skipped, ${unknownQualityUrls.get()} unknown skipped"
                         )
 
@@ -3180,6 +3190,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                     "Episode matched • ${extracted.get()} URLs, " +
                                         "${invalidUrls.get()} invalid, " +
                                         "${disabledUrls.get()} disabled, " +
+                                        "${downloadNamesSkipped.get()} downloads skipped, " +
                                         "${lowQualityUrls.get()} SD skipped, " +
                                         "${unknownQualityUrls.get()} unknown skipped"
                                 else -> {
