@@ -448,6 +448,10 @@ class AkwamProvider : MainAPI() {
                 "Accept" to "*/*"
             )
             val urlQuality = qualityFromMediaUrl(mediaUrl) ?: qualityHint
+            // Don't request SD HLS manifests even when encountered in JS.
+            if (urlQuality != null && urlQuality < MOOSAQualityPolicy.MIN_HEIGHT) {
+                return
+            }
 
             if (isHls) {
                 val variants = try {
