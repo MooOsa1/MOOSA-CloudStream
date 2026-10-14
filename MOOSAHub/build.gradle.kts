@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 65
+version = 66
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v65: Arabic fast lane Akwam-first, immediate HD, skip redundant crawling/Downet TLS, no slow subtitle wait; v63 settings recovery maintained
+// v66: real TMDB original names, correct MySeed Arabic episode/season indexing, HD Ajax discovery and verified fallback, local Downet CDN speed samples
