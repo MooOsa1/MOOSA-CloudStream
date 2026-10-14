@@ -3163,8 +3163,34 @@ class MOOSAHubProvider : TmdbProvider() {
                                 "${lowQualityUrls.get()} SD skipped, ${unknownQualityUrls.get()} unknown skipped"
                         )
 
-                        val candidates = candidateLinks
+                        val allCandidates = candidateLinks
                             .distinctBy(::linkKey)
+
+                        // Akwam Downet HTTPS still uses an untrusted TLS
+                        // certificate on the tested path. If Akwam also
+                        // supplied the exact HTTP mirror, don't spend up to
+                        // two 6.5-second TLS probes on the known-bad URL.
+                        // Keep HTTPS for every other host and for Downet
+                        // links with no HTTP alternative.
+                        val directHttpMirrors = allCandidates
+                            .asSequence()
+                            .filter {
+                                it.url.startsWith("http://", true) &&
+                                    it.url.contains(".downet.net/", true)
+                            }
+                            .map { it.url }
+                            .toSet()
+
+                        val candidates = allCandidates
+                            .filterNot { link ->
+                                link.url.startsWith("https://", true) &&
+                                    link.url.contains(".downet.net/", true) &&
+                                    link.url.replaceFirst(
+                                        "https://",
+                                        "http://",
+                                        ignoreCase = true
+                                    ) in directHttpMirrors
+                            }
                             .sortedByDescending(::inferQuality)
 
                         for (linkBatch in candidates.chunked(linkProbeBatchSize)) {
@@ -3323,7 +3349,18 @@ class MOOSAHubProvider : TmdbProvider() {
         MOOSAProgress.serversReady(shownLinks.get())
         MOOSAProgress.subtitles()
 
-        val externalSubtitles = externalSubtitleJob.await()
+        val externalSubtitles =
+            if (fastArabic && emittedLink.get()) {
+                // Once an Arabic-title video is verified, don't keep the
+                // native loading dialog open for unrelated subtitle APIs.
+                val ready = withTimeoutOrNull(800L) {
+                    externalSubtitleJob.await()
+                }.orEmpty()
+                externalSubtitleJob.cancel()
+                ready
+            } else {
+                externalSubtitleJob.await()
+            }
 
         val remainingSubtitles = (
             nativeSubtitles +
