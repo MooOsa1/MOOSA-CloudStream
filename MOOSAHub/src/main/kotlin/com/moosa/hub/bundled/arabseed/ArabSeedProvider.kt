@@ -651,7 +651,7 @@ class ArabSeedProvider : MainAPI() {
 
         val buttonWatchUrl = contentDoc
             ?.selectFirst("a.watch__btn[href], .watch__btn[href]")
-            ?.let { normalizeUrl(it.attr("href"), contentPage.url) }
+            ?.let { normalizeUrl(it.attr("href"), contentPage?.url ?: postUrl) }
 
         val basePostUrl = postUrl
             .removeSuffix("/watch")
@@ -930,7 +930,7 @@ class ArabSeedProvider : MainAPI() {
         // Download page can expose direct/high-bitrate mirrors that are not in watch servers.
         val downloadUrl = contentDoc
             ?.selectFirst("a.download__btn[href], .download__btn[href]")
-            ?.let { normalizeUrl(it.attr("href"), contentPage.url) }
+            ?.let { normalizeUrl(it.attr("href"), contentPage?.url ?: postUrl) }
             ?: "$basePostUrl/download/"
         try {
             val downloadResponse = app.get(
