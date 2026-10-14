@@ -157,9 +157,16 @@ def arabseed_episode_deep_probe():
             doc=BeautifulSoup(ep["body"],"html.parser")
             h1=doc.select_one("h1")
             print("ARABSEED-DEEP episodeTitle",(h1.get_text(" ",strip=True) if h1 else "missing")[:105])
-            for selector in ["a.watch__btn[href]",".episodes__list a[href]","[data-post-id]","li[data-server]","li[data-src]","li[data-quality]","[data-link]"]:
+            for selector in ["a.watch__btn[href]","a[href*='download']",".episodes__list a[href]","[data-post-id]","li[data-server]","li[data-src]","li[data-quality]","[data-link]"]:
                 nodes=doc.select(selector)
                 print("ARABSEED-DEEP",selector,len(nodes),[(n.get_text(" ",strip=True)[:36],list(n.attrs.keys())) for n in nodes[:3]])
+            download_buttons=[(a.get_text(" ",strip=True)[:50],urljoin(ep["url"],a.get("href",""))) for a in doc.select("a[href*='download']")]
+            print("ARABSEED-DEEP download candidates",[(label,urlparse(u).path[:100]) for label,u in download_buttons[:6]])
+            for label,u in download_buttons[:2]:
+                dl=fetch(o,u,referer=ep["url"]);show("ARABSEED-DEEP","download "+label,dl)
+                dd=BeautifulSoup(dl["body"],"html.parser")
+                print("ARABSEED-DEEP DOWNLOAD anchors",[(a.get_text(" ",strip=True)[:45],urlparse(urljoin(dl["url"],a.get("href",""))).hostname)
+                     for a in dd.select("a[href]") if re.search("1080|720|480|server|download|تحميل",a.get_text(" ",strip=True),re.I)][:12])
             watch=doc.select_one("a.watch__btn[href]")
             watch_urls=[urljoin(ep["url"],watch.get("href",""))] if watch else [episode_url.rstrip("/")+"/watch/"]
             for watchurl in watch_urls[:1]:
@@ -194,6 +201,14 @@ def arabseed_episode_deep_probe():
                             print("ARABSEED-DEEP ajax-json",aj["body"][:200].replace("\n"," "))
 
 
+    for page in range(2,9):
+        r=fetch(o,base+"/page/"+str(page)+"/?s="+quote("اللعبة"))
+        doc=BeautifulSoup(r["body"],"html.parser")
+        titles=[a.get("title","") for a in doc.select("a[title][href]")
+                if "لعب" in a.get("title","")]
+        print("ARABSEED-DEEP PAGE",page,"status",r["status"],"hits",len(titles),
+              "first",titles[:2],"last",titles[-2:],
+              "S5E1",any("الموسم الخامس الحلقة 1 " in t for t in titles),flush=True)
     for suffix in [
         "/find/?word="+quote("اللعبة")+"&type=",
         "/?s="+quote("اللعبة")+"&paged=2",
