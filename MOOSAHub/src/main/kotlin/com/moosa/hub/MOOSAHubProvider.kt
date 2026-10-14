@@ -2080,50 +2080,99 @@ class MOOSAHubProvider : TmdbProvider() {
                 text.count { it in '\u0600'..'\u06FF' } * 4 >= text.count { it.isLetter() }
         }
 
+    private suspend fun translateSynopsisExternally(source: String?): String? {
+        // Only translate the plot, NEVER titles, search aliases, or names.
+        // No user/account data is sent to the translation provider.
+        val clean = cleanSynopsis(source) ?: return null
+        verifiedArabicSynopsis(clean)?.let { return it }
+        // A public, unofficial Google Translate web endpoint may be rate
+        // limited. Keep it optional with a short timeout and validate output.
+        val google = timed(3500L) {
+            val raw = app.get(
+                "https://translate.googleapis.com/translate_a/single",
+                params = mapOf(
+                    "client" to "gtx",
+                    "sl" to "auto",
+                    "tl" to "ar",
+                    "dt" to "t",
+                    "q" to clean.take(3500)
+                )
+            ).text
+            val parts = JSONArray(raw).optJSONArray(0) ?: return@timed null
+            buildString {
+                for (index in 0 until parts.length()) {
+                    append(parts.optJSONArray(index)?.optString(0).orEmpty())
+                }
+            }
+        }
+        verifiedArabicSynopsis(google)?.let { return it }
+
+        // MyMemory's documented anonymous API allows at most 500 bytes
+        // per query and a low shared daily quota. It is only a backup for
+        // SHORT synopses; never silently truncate a long story.
+        if (clean.toByteArray(Charsets.UTF_8).size > 450) return null
+        val myMemory = timed(2700L) {
+            val response = app.get(
+                "https://api.mymemory.translated.net/get",
+                params = mapOf("q" to clean, "langpair" to "en|ar")
+            ).text
+            val json = org.json.JSONObject(response)
+            if (json.optInt("responseStatus", 0) != 200) return@timed null
+            json.optJSONObject("responseData")
+                ?.optString("translatedText")
+                ?.replace("&quot;", "\"")
+                ?.replace("&#39;", "'")
+                ?.replace("&amp;", "&")
+        }
+        return verifiedArabicSynopsis(myMemory)
+    }
+
     private suspend fun resolveArabicSynopsis(
         tmdbId: Int?,
         isTv: Boolean,
         englishFallback: String?
     ): String? {
-        // No English synopsis is published as Arabic. If no official
-        // Arabic plot exists, explicitly say it is unavailable instead of
-        // showing untranslated prose or inventing translated content.
-        val placeholder = "الوصف العربي غير متوفر لهذا العمل حاليًا."
-        verifiedArabicSynopsis(englishFallback)?.let { return it }
-        val id = tmdbId ?: return placeholder
+        val source = cleanSynopsis(englishFallback)
+        verifiedArabicSynopsis(source)?.let { return it }
+        val id = tmdbId ?: return translateSynopsisExternally(source)
         val type = if (isTv) "tv" else "movie"
         val cacheKey = "$type:$id"
-        synopsisCache[cacheKey]?.let { cached ->
-            if (cached == placeholder) return cached
-            verifiedArabicSynopsis(cached)?.let { return it }
-        }
+        // Do not cache missing-plot placeholders. Retry on the next visit
+        // if a translation service was temporarily blocked.
+        synopsisCache[cacheKey]?.let(::verifiedArabicSynopsis)?.let { return it }
 
+        // Prioritize authentic Arabic TMDB descriptions. Parallel locale
+        // lookups reduce the delay relative to four sequential requests.
         val locales = listOf("ar-SA", "ar-EG", "ar-AE", "ar")
-        for (language in locales) {
-            val localized = timed(1500L) {
-                app.get(
-                    "$tmdbApiUrl/$type/$id",
-                    params = mapOf(
-                        "api_key" to tmdbApiKey,
-                        "language" to language
-                    )
-                ).parsedSafe<TmdbOverview>()?.overview
-            }
-            verifiedArabicSynopsis(localized)?.let {
-                synopsisCache[cacheKey] = it
-                return it
-            }
+        val localized = coroutineScope {
+            locales.map { language ->
+                async {
+                    timed(1800L) {
+                        app.get(
+                            "$tmdbApiUrl/$type/$id",
+                            params = mapOf(
+                                "api_key" to tmdbApiKey,
+                                "language" to language
+                            )
+                        ).parsedSafe<TmdbOverview>()?.overview
+                    }
+                }
+            }.awaitAll()
+        }
+        localized.firstNotNullOfOrNull(::verifiedArabicSynopsis)?.let {
+            synopsisCache[cacheKey] = it
+            return it
         }
 
-        // TMDB's translations endpoint can contain an official Arabic
-        // overview even when the locale-specific detail endpoint is empty.
+        // Official Arabic translation entries can exist even when a locale
+        // detail API has no plot.
         val translations = timed(2500L) {
             app.get(
                 "$tmdbApiUrl/$type/$id/translations",
                 params = mapOf("api_key" to tmdbApiKey)
             ).parsedSafe<TmdbTranslationCollection>()
         }
-        val fromTranslations = translations?.translations.orEmpty()
+        translations?.translations.orEmpty()
             .asSequence()
             .filter { it.language.equals("ar", ignoreCase = true) }
             .sortedBy { entry ->
@@ -2135,10 +2184,29 @@ class MOOSAHubProvider : TmdbProvider() {
                 }
             }
             .mapNotNull { verifiedArabicSynopsis(it.data?.overview) }
-            .firstOrNull()
-        val result = fromTranslations ?: placeholder
-        synopsisCache[cacheKey] = result
-        return result
+            .firstOrNull()?.let {
+                synopsisCache[cacheKey] = it
+                return it
+            }
+
+        // The English description is fetched only when there is nothing
+        // worth translating in the base metadata.
+        val english = source ?: timed(1800L) {
+            app.get(
+                "$tmdbApiUrl/$type/$id",
+                params = mapOf(
+                    "api_key" to tmdbApiKey,
+                    "language" to "en-US"
+                )
+            ).parsedSafe<TmdbOverview>()?.overview
+        }
+        translateSynopsisExternally(english)?.let {
+            synopsisCache[cacheKey] = it
+            return it
+        }
+        // No made-up description and no misleading untranslated English
+        // text labelled Arabic. A temporary outage remains retryable.
+        return null
     }
 
     private suspend fun tmdbDetail(
@@ -2325,11 +2393,9 @@ class MOOSAHubProvider : TmdbProvider() {
             if (!preferredName.isNullOrBlank()) base.name = preferredName
         }
 
-        if (!arabicOverview.isNullOrBlank()) {
-            base.plot = arabicOverview
-        } else {
-            base.plot = cleanSynopsis(base.plot)
-        }
+        // Never silently restore an English plot after Arabic translation
+        // fails. Only description metadata is translated; names remain TMDB.
+        base.plot = arabicOverview
 
         val reliableScore =
             detail?.voteAverage
