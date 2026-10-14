@@ -476,7 +476,7 @@ class ArabSeedProvider : MainAPI() {
 
             json?.optString("html")
                 ?.replace("\\/", "/")
-                ?.replace("\\"", """)
+                ?.replace("\\\"", "\"")
                 ?.takeIf { it.isNotBlank() }
                 ?.let { html ->
                     val doc = Jsoup.parse(html, baseUrl)
@@ -528,7 +528,7 @@ class ArabSeedProvider : MainAPI() {
 
         val html = json.optString("html")
             .replace("\\/", "/")
-            .replace("\\"", """)
+            .replace("\\\"", "\"")
 
         val doc = Jsoup.parse(html, origin)
         val servers = doc.select("li[data-server]")
