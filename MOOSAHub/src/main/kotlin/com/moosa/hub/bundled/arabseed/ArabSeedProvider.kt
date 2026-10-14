@@ -273,12 +273,16 @@ class ArabSeedProvider : MainAPI() {
         val postUrl = url.substringBefore("#").trimEnd('/')
         if (!postUrl.startsWith("http")) return null
 
-        val watchUrl = "$postUrl/watch/"
-        val html = getHtml(watchUrl, postUrl)
-            ?: getHtml(postUrl)
+        // Content pages contain the series/episode list; /watch/ is a
+        // player page and may have no series metadata.
+        val html = getHtml(postUrl)
+            ?: getHtml("$postUrl/watch/", postUrl)
             ?: return null
-
-        val doc = Jsoup.parse(html, watchUrl)
+        val doc = Jsoup.parse(html, postUrl)
+        val watchUrl = doc.selectFirst("a.watch__btn[href]")
+            ?.absUrl("href")
+            ?.takeIf { it.isNotBlank() }
+            ?: "$postUrl/watch/"
 
         val title = doc.selectFirst(".as-hero-title, h1, .entry-title, .post-title")
             ?.text()
@@ -358,6 +362,22 @@ class ArabSeedProvider : MainAPI() {
 
     private fun unwrapServerLink(raw: String, base: String): String? {
         val normalized = normalizeUrl(raw, base) ?: return null
+        // ArabSeed redirects can wrap the actual host inside a query
+        // parameter. Passing this wrapper to loadExtractor never yields video.
+        val wrapped = when {
+            normalized.contains("/watch/?url=", true) ->
+                normalized.substringAfter("url=").substringBefore("&")
+            normalized.contains("/download/?download_url=", true) ->
+                normalized.substringAfter("download_url=").substringBefore("&")
+            else -> null
+        }
+        if (wrapped != null) {
+            val decoded = runCatching {
+                URLDecoder.decode(wrapped, "UTF-8")
+            }.getOrDefault(wrapped)
+            return normalizeUrl(decoded, base)
+        }
+
         if (!normalized.contains("/vid/?id=", true)) return normalized
 
         return try {
@@ -428,7 +448,14 @@ class ArabSeedProvider : MainAPI() {
         element: Element,
         fallbackQuality: Int
     ): WatchServer? {
+        val link =
+            element.attr("data-src")
+                .ifBlank { element.attr("data-link") }
+                .ifBlank { element.attr("data-url") }
+                .trim()
+                .takeIf { it.isNotBlank() }
         val id = element.attr("data-server").trim()
+            .ifBlank { link?.hashCode()?.toString().orEmpty() }
         if (id.isBlank()) return null
 
         val quality =
@@ -443,11 +470,6 @@ class ArabSeedProvider : MainAPI() {
                 .ifBlank { element.text() }
                 .trim()
                 .ifBlank { "Server $id" }
-
-        val link =
-            element.attr("data-link")
-                .trim()
-                .takeIf { it.isNotBlank() }
 
         return WatchServer(
             id = id,
@@ -531,7 +553,8 @@ class ArabSeedProvider : MainAPI() {
             .replace("\\\"", "\"")
 
         val doc = Jsoup.parse(html, origin)
-        val servers = doc.select("li[data-server]")
+        // Current MySeed returns li[data-src], often without data-server.
+        val servers = doc.select("li[data-server], li[data-src], li[data-link]")
             .mapNotNull { parseServerElement(it, quality) }
             .toMutableList()
 
@@ -613,19 +636,65 @@ class ArabSeedProvider : MainAPI() {
         val postUrl = data.substringBefore("#").trimEnd('/')
         if (!postUrl.startsWith("http")) return false
 
-        val requestedWatchUrl = "$postUrl/watch/"
-        val response = try {
+        // A post/episode URL is NOT necessarily the watch URL. ArabSeed
+        // exposes the real player URL via the .watch__btn element.
+        val contentPage = runCatching {
             app.get(
-                requestedWatchUrl,
-                headers = requestHeaders,
-                referer = postUrl
+                postUrl,
+                headers = requestHeaders
             )
-        } catch (_: Throwable) {
-            return false
+        }.getOrNull()
+
+        val contentDoc = contentPage
+            ?.takeIf { it.code in 200..299 }
+            ?.let { Jsoup.parse(it.text, it.url) }
+
+        val buttonWatchUrl = contentDoc
+            ?.selectFirst("a.watch__btn[href], .watch__btn[href]")
+            ?.let { normalizeUrl(it.attr("href"), contentPage.url) }
+
+        val basePostUrl = postUrl
+            .removeSuffix("/watch")
+            .removeSuffix("/download")
+            .trimEnd('/')
+
+        val potentialUrls = linkedSetOf<String>()
+        if (buttonWatchUrl != null) potentialUrls += buttonWatchUrl
+        if (postUrl.endsWith("/watch", true)) potentialUrls += "$postUrl/"
+        if (postUrl.contains("/watch/", true)) potentialUrls += postUrl
+        potentialUrls += "$basePostUrl/watch/"
+        potentialUrls += postUrl
+
+        var playerResponse: com.lagradost.nicehttp.NiceResponse? = null
+
+        for (candidate in potentialUrls) {
+            val attempt = try {
+                app.get(
+                    candidate,
+                    headers = requestHeaders,
+                    referer = contentPage?.url ?: postUrl
+                )
+            } catch (_: Throwable) {
+                continue
+            }
+            if (attempt.code !in 200..299) continue
+
+            val candidateDoc = Jsoup.parse(attempt.text, attempt.url)
+            val hasPlayer =
+                candidateDoc.select(
+                    ".servers__list, li[data-src], li[data-server], li[data-quality], " +
+                        "iframe[src], video[src], video source[src], [data-link]"
+                ).isNotEmpty() ||
+                    csrfToken(attempt.text) != null
+
+            if (hasPlayer) {
+                playerResponse = attempt
+                break
+            }
+            if (playerResponse == null) playerResponse = attempt
         }
 
-        if (response.code !in 200..299) return false
-
+        val response = playerResponse ?: return false
         val watchUrl = response.url
         val origin = runCatching {
             val uri = java.net.URI(watchUrl)
@@ -766,6 +835,13 @@ class ArabSeedProvider : MainAPI() {
         val csrf = csrfToken(html)
         val postId = postIdFrom(html, doc)
         val qualities = advertisedQualities(doc)
+            .ifEmpty {
+                if (csrf != null && postId != null) {
+                    listOf(1080, 720, 480)
+                } else {
+                    emptyList()
+                }
+            }
 
         var successfulQualityLevels = 0
 
@@ -815,7 +891,7 @@ class ArabSeedProvider : MainAPI() {
         // Visible/active servers are a fallback when the AJAX quality API is missing.
         if (!emitted) {
             val visibleServers =
-                doc.select("li[data-server], [data-link], iframe[src], iframe[data-src]")
+                doc.select("li[data-server], li[data-src], [data-link], iframe[src], iframe[data-src]")
                     .mapNotNull { element ->
                         val serverId = element.attr("data-server").trim()
                         val quality =
@@ -828,8 +904,8 @@ class ArabSeedProvider : MainAPI() {
                                 .ifBlank { element.selectFirst("span")?.text().orEmpty() }
                                 .ifBlank { "Server" }
                         val raw =
-                            element.attr("data-link")
-                                .ifBlank { element.attr("data-src") }
+                            element.attr("data-src")
+                                .ifBlank { element.attr("data-link") }
                                 .ifBlank { element.attr("src") }
                                 .trim()
 
@@ -852,7 +928,10 @@ class ArabSeedProvider : MainAPI() {
         }
 
         // Download page can expose direct/high-bitrate mirrors that are not in watch servers.
-        val downloadUrl = "$postUrl/download/"
+        val downloadUrl = contentDoc
+            ?.selectFirst("a.download__btn[href], .download__btn[href]")
+            ?.let { normalizeUrl(it.attr("href"), contentPage.url) }
+            ?: "$basePostUrl/download/"
         try {
             val downloadResponse = app.get(
                 downloadUrl,
