@@ -85,3 +85,27 @@ for q in ["اللعبة","الفيل الأزرق","الكينج"]:
                 for l,name,a in links(panel,landing) if "سيرفر" in name or "1080" in name or "720" in name
             ][:8],flush=True)
 
+
+            print("SUBPAGE_SERVERS",kind,[
+                {"attrs":{k:(urlparse(v).hostname if k in ("data-url","data-src","data-link") else v[:50])
+                    for k,v in li.attrs.items() if isinstance(v,str) and k in ("data-url","data-src","data-link","class")},
+                 "label":li.get_text(" ",strip=True)[:65]}
+                for li in panel.select(".server-item,li[data-server]")[:7]
+            ],flush=True)
+            if kind in ("JSONLD_EMBED","WATCH_LINK"):
+                for iframe in panel.select("iframe[src]")[:2]:
+                    inner=urljoin(landing,iframe.get("src",""))
+                    if not (urlparse(inner).hostname or "").endswith("upbom.cam"): continue
+                    c,player,htmlplayer=req(inner,referer=landing)
+                    ds=BeautifulSoup(htmlplayer,"html.parser")
+                    print("VIDEO_HOST",kind,"status",c,
+                          "host",urlparse(player).hostname,"bytes",len(htmlplayer),
+                          "title",ds.title.get_text(" ",strip=True)[:60] if ds.title else "",
+                          "iframes",[urlparse(x.get("src","")).hostname for x in ds.select("iframe[src]")[:6]],
+                          "tags",len(ds.select("video,source")),
+                          "has_mp4",bool(re.search(r"\.mp4",htmlplayer,re.I)),
+                          "has_m3u8",bool(re.search(r"\.m3u8",htmlplayer,re.I)),
+                          "has_jwplayer","jwplayer" in htmlplayer.lower(),
+                          "has_packed","eval(function(p,a,c,k,e" in htmlplayer,
+                          "scripts",[urlparse(x.get("src","")).hostname for x in ds.select("script[src]")[:8]],
+                          flush=True)
