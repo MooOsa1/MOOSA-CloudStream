@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 61
+version = 62
 
 
 android {
@@ -35,4 +35,4 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
 }
 
-// v61: hide all Download/تحميل/داونلود-named servers, keep 720p+ only, quarantine nonworking Arabic built-ins, preserve Akwam playback
+// v62: unified internal/external 720p+ filters, globally rank 4K > 1080p > 720p, host-app quality profiles, strict Akwam movie/season matching, multi-title diagnostics
