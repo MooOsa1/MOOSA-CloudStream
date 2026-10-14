@@ -8,8 +8,11 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.moosa.hub.MOOSAQualityPolicy
 import org.jsoup.nodes.Element
+import org.jsoup.Jsoup
+import java.net.URLEncoder
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import kotlinx.coroutines.async
@@ -23,7 +26,7 @@ import kotlinx.coroutines.sync.withPermit
 
 class TopCinemaProvider : MainAPI() {
     override var lang = "ar"
-    override var mainUrl = "https://topcima.online"
+    override var mainUrl = "https://www.topcinema.vip"
     override var name = "TopCinema"
     override val usesWebView = false
     override val hasMainPage = true
@@ -180,19 +183,124 @@ class TopCinemaProvider : MainAPI() {
         newHomePageResponse(items)
     }
 
+    // WordPress /posts?search often returned the newest unrelated articles.
+    // The site's current /search endpoint has accurate Arabic episodes.
+    private fun topCinemaSeason(title: String): Int? {
+        val numeric = Regex("""(?:الموسم|الجزء|ج)\s*(\d{1,2})""")
+            .find(title)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        if (numeric != null) return numeric
+
+        val word = Regex(
+            """(?:الموسم|الجزء)\s*(الاول|الأول|الثاني|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)"""
+        ).find(title)?.groupValues?.getOrNull(1) ?: return null
+        return mapOf(
+            "الاول" to 1, "الأول" to 1,
+            "الثاني" to 2, "الثالث" to 3,
+            "الرابع" to 4, "الخامس" to 5,
+            "السادس" to 6, "السابع" to 7,
+            "الثامن" to 8, "التاسع" to 9,
+            "العاشر" to 10
+        )[word]
+    }
+
+    private fun topCinemaSeriesBase(title: String): String {
+        val stripped = title
+            .replace(Regex("""^(?:مشاهدة\s+)?(?:مسلسل|انمي|أنمي)\s+"""), "")
+            .replace(Regex("""\s+(?:الموسم|الجزء|الحلقة|الحلقه|ج\s*\d).*$"""), "")
+            .trim()
+        return stripped.ifBlank { title.trim() }
+    }
+
+    private fun topCinemaEpisode(title: String): Int? =
+        Regex("""(?:الحلقة|الحلقه|حلقة)\s*(\d{1,4})""")
+            .find(title)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
     override suspend fun search(query: String): List<SearchResponse> {
-        val url = "$mainUrl/wp-json/wp/v2/posts?search=$query&per_page=10&_embed"
-        return try {
-            val responseText = app.get(url).text
-            val response = mapper.readValue(responseText, object : com.fasterxml.jackson.core.type.TypeReference<List<WpPost>>() {})
-            response.mapNotNull { it.toSearchResponse() } 
-        } catch (e: Exception) {
-            emptyList()
+        if (query.isBlank()) return emptyList()
+        val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+        val url = "$mainUrl/wp-json/wp/v2/search?search=$encoded&per_page=15"
+        val raw = try {
+            app.get(url, headers = headers).text
+        } catch (_: Exception) {
+            return emptyList()
         }
+        val array = runCatching { org.json.JSONArray(raw) }.getOrNull()
+            ?: return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val rawTitle = Jsoup.parseBodyFragment(
+                item.optString("title", "")
+            ).text().trim()
+            val href = item.optString("url", "").trim()
+            if (rawTitle.isBlank() || !href.startsWith("http")) {
+                return@mapNotNull null
+            }
+
+            val series = rawTitle.contains("مسلسل") ||
+                rawTitle.contains("الحلقة") ||
+                rawTitle.contains("انمي")
+            if (series) {
+                val baseTitle = topCinemaSeriesBase(rawTitle)
+                val season = topCinemaSeason(rawTitle)
+                val displayName = if (season != null) {
+                    "$baseTitle الموسم $season"
+                } else {
+                    baseTitle
+                }
+                newTvSeriesSearchResponse(
+                    displayName, href, TvType.TvSeries
+                )
+            } else {
+                val cleaned = rawTitle
+                    .replace(Regex("""^(?:مشاهدة\s+)?(?:فيلم)\s+"""), "")
+                    .replace(Regex("""\s+(?:مترجم|مدبلج|كامل|اونلاين).*$"""), "")
+                    .trim()
+                newMovieSearchResponse(cleaned.ifBlank { rawTitle }, href, TvType.Movie)
+            }
+        }.distinctBy { it.url }
     }
 
     override suspend fun load(url: String): LoadResponse {
         var doc = app.get(url, headers = headers).document
+
+        // WordPress returns individual episode posts in search, but the
+        // episode itself lists every episode of that season. Keep the
+        // requested season identity and avoid showing the newest E30 as E1.
+        val currentTitle = doc.select("h1").map { it.text().trim() }
+            .firstOrNull { it.startsWith("مسلسل ") && it.contains("الحلقة") }
+        val episodeAnchors = doc.select(
+            ".allepcont a[href], .EpisodesList a[href]"
+        )
+        if (!currentTitle.isNullOrBlank() && episodeAnchors.isNotEmpty()) {
+            val pageSeason = topCinemaSeason(currentTitle) ?: 1
+            val seasonEpisodes = episodeAnchors
+                .mapNotNull { element ->
+                    val episodeUrl = fixUrl(element.attr("href"))
+                    val label = element.text().trim()
+                    val number = topCinemaEpisode(label)
+                        ?: topCinemaEpisode(episodeUrl)
+                        ?: return@mapNotNull null
+                    newEpisode(episodeUrl) {
+                        name = "الحلقة $number"
+                        episode = number
+                        season = pageSeason
+                    }
+                }
+                .distinctBy { it.data }
+
+            if (seasonEpisodes.isNotEmpty()) {
+                return newTvSeriesLoadResponse(
+                    topCinemaSeriesBase(currentTitle),
+                    url,
+                    TvType.TvSeries,
+                    seasonEpisodes
+                ) {
+                    this.posterUrl = doc.select("meta[property='og:image']")
+                        .attr("content")
+                    plot = doc.select(".StoryArea, .Story, .description").text()
+                }
+            }
+        }
         
         // Smart Redirect: If on episode page, find breadcrumb series link
         val seriesLink = doc.select(".breadcrumbs a[href*='/series/'], .breadcrumbs a[href*='/مسلسل/'], .breadcrumbs a:nth-last-child(2)").firstOrNull()
