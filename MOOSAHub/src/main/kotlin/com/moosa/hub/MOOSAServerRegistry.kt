@@ -258,16 +258,26 @@ object MOOSAServerRegistry {
         }
     }
 
-    private suspend fun probeOnce(link: ExtractorLink): Boolean {
+    private data class ProbeCheck(
+        val playable: Boolean,
+        val reason: String
+    )
+
+    // HEAD 200 and empty Content-Type never prove a playable video.
+    private val probeReasons = ConcurrentHashMap<String, String>()
+
+    fun lastProbeReason(link: ExtractorLink): String? =
+        probeReasons[linkKey(link)]
+
+    private suspend fun probeOnce(link: ExtractorLink): ProbeCheck {
         if (
             !link.url.startsWith("http://", ignoreCase = true) &&
             !link.url.startsWith("https://", ignoreCase = true)
-        ) return false
+        ) return ProbeCheck(false, "Invalid URL")
 
-        return withTimeoutOrNull(4500L) {
+        return withTimeoutOrNull(6500L) {
             try {
                 val headers = link.getAllHeaders()
-
                 when {
                     link.isM3u8 -> {
                         val response = app.get(
@@ -276,12 +286,22 @@ object MOOSAServerRegistry {
                             referer = link.referer,
                             verify = false
                         )
-
-                        response.isSuccessful &&
-                            response.text.contains(
-                                "#EXTM3U",
-                                ignoreCase = true
+                        if (!response.isSuccessful) {
+                            ProbeCheck(false, "HLS HTTP ${response.code}")
+                        } else {
+                            val body = response.text
+                                .trimStart('\uFEFF', '\n', '\r', ' ', '\t')
+                            val valid = body.startsWith("#EXTM3U") &&
+                                (
+                                    body.contains("#EXTINF:") ||
+                                        body.contains("#EXT-X-STREAM-INF:") ||
+                                        body.contains("#EXT-X-MAP:")
+                                    )
+                            ProbeCheck(
+                                valid,
+                                if (valid) "HLS manifest confirmed" else "No valid HLS playlist"
                             )
+                        }
                     }
 
                     link.isDash -> {
@@ -291,84 +311,84 @@ object MOOSAServerRegistry {
                             referer = link.referer,
                             verify = false
                         )
-
-                        response.isSuccessful &&
-                            response.text.contains(
-                                "<MPD",
-                                ignoreCase = true
-                            )
+                        val valid = response.isSuccessful &&
+                            response.text.contains("<MPD")
+                        ProbeCheck(
+                            valid,
+                            if (valid) "DASH manifest confirmed"
+                            else "Invalid DASH / HTTP ${response.code}"
+                        )
                     }
 
                     else -> {
-                        fun looksLikeMedia(
-                            successful: Boolean,
-                            contentType: String
-                        ): Boolean {
-                            if (!successful) return false
-
-                            val type = contentType.lowercase()
-
-                            return type.isBlank() ||
-                                (
-                                    !type.contains("text/html") &&
-                                        !type.contains("application/json") &&
-                                        !type.contains("text/plain")
-                                    )
-                        }
-
-                        val head = app.head(
+                        // A ranged GET must identify video. No HEAD-only approval.
+                        val response = app.get(
                             link.url,
-                            headers = headers,
+                            headers = headers + mapOf("Range" to "bytes=0-2047"),
                             referer = link.referer,
                             verify = false
                         )
+                        val contentType = response.headers["Content-Type"]
+                            .orEmpty().substringBefore(';').trim().lowercase()
+                        val contentRange = response.headers["Content-Range"].orEmpty()
+                        val disposition = response.headers["Content-Disposition"]
+                            .orEmpty().lowercase()
+                        val isVideoMime =
+                            contentType.startsWith("video/") ||
+                                contentType == "application/mp4" ||
+                                contentType == "application/x-matroska"
+                        val isGenericMime =
+                            contentType == "application/octet-stream" ||
+                                contentType == "binary/octet-stream"
+                        val isPartial =
+                            response.code == 206 ||
+                                contentRange.startsWith("bytes ", ignoreCase = true)
+                        val hasVideoExtension = Regex(
+                            """(?i)\.(?:mp4|m4v|mkv|webm|mov|ts)(?:[?#]|$)"""
+                        ).containsMatchIn(link.url) ||
+                            Regex("""(?i)filename[^;]*\.(?:mp4|m4v|mkv|webm|mov|ts)""")
+                                .containsMatchIn(disposition)
 
-                        val headType =
-                            head.headers["Content-Type"]
-                                .orEmpty()
+                        val valid = response.isSuccessful &&
+                            (
+                                isVideoMime ||
+                                    (isGenericMime && isPartial && hasVideoExtension)
+                                )
 
-                        if (
-                            looksLikeMedia(
-                                head.isSuccessful,
-                                headType
-                            )
-                        ) {
-                            true
-                        } else {
-                            // Some video hosts answer HEAD with an HTML/403
-                            // response but serve the actual file to a ranged GET.
-                            // Always try the ranged request when HEAD does not
-                            // positively identify media instead of marking a
-                            // playable server as dead.
-                            val ranged = app.get(
-                                link.url,
-                                headers = headers + mapOf(
-                                    "Range" to "bytes=0-4095"
-                                ),
-                                referer = link.referer,
-                                verify = false
-                            )
-
-                            val rangedType =
-                                ranged.headers["Content-Type"]
-                                    .orEmpty()
-
-                            looksLikeMedia(
-                                ranged.isSuccessful,
-                                rangedType
-                            )
+                        val reason = when {
+                            !response.isSuccessful -> "Media HTTP ${response.code}"
+                            contentType.isBlank() -> "Media response has no Content-Type"
+                            !isVideoMime && !isGenericMime ->
+                                "Non-video Content-Type: $contentType"
+                            isGenericMime && !isPartial ->
+                                "Generic response without byte-range proof"
+                            isGenericMime && !hasVideoExtension ->
+                                "Generic response without video file identity"
+                            valid -> "Video MIME and ranged GET confirmed"
+                            else -> "Media response not confirmed"
                         }
+
+                        ProbeCheck(valid, reason)
                     }
                 }
-            } catch (_: Throwable) {
-                false
+            } catch (error: Throwable) {
+                ProbeCheck(
+                    false,
+                    "Request error: ${error.javaClass.simpleName}"
+                )
             }
-        } ?: false
+        } ?: ProbeCheck(false, "Media check timed out")
     }
 
     suspend fun testLink(link: ExtractorLink): Boolean {
-        if (probeOnce(link)) return true
+        val first = probeOnce(link)
+        if (first.playable) {
+            probeReasons[linkKey(link)] = first.reason
+            return true
+        }
         delay(300L)
-        return probeOnce(link)
+        val second = probeOnce(link)
+        probeReasons[linkKey(link)] = second.reason
+        return second.playable
     }
 }
