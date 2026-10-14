@@ -634,6 +634,13 @@ class MOOSAHubProvider : TmdbProvider() {
                 .filter { it.isNotBlank() }
                 .distinct()
 
+        // Even an exact series-title match cannot override an explicit,
+        // contradictory season in the provider result.
+        if (wantSeries && season != null) {
+            val explicit = explicitSeasonNumber(candidate)
+            if (explicit != null && explicit != season) return false
+        }
+
         if (
             candidateCanonical in
                 canonicalAliases
@@ -998,38 +1005,36 @@ class MOOSAHubProvider : TmdbProvider() {
                 base
             }
 
+        // A title such as "اللعبة" must be searched first.  Previously the
+        // generated "اللعبة الموسم 5" occupied the same canonical-title key
+        // and removed the plain query before it reached any provider.
         val generated = buildList {
+            addAll(preferredBase)
             preferredBase
-                .take(8)
+                .take(6)
                 .forEach { title ->
-                    add("$title $season")
-
                     if (
                         Regex("""[\u0600-\u06FF]""")
                             .containsMatchIn(title)
                     ) {
                         add("$title الموسم $season")
-
-                        arabicSeasonWord(season)
-                            ?.let { word ->
-                                add("$title الموسم $word")
-                            }
+                        add("$title الجزء $season")
+                        arabicSeasonWord(season)?.let { word ->
+                            add("$title الموسم $word")
+                            add("$title الجزء $word")
+                        }
+                        add("$title ج$season")
+                    } else {
+                        add("$title Season $season")
                     }
-
-                    add("$title Season $season")
-                    add("$title - $season")
                 }
-
             addAll(seasonNames)
         }
 
-        return (
-            generated +
-                preferredBase
-            )
+        return generated
             .map { it.trim() }
             .filter { it.isNotBlank() }
-            .distinctBy(::canonicalTitle)
+            .distinctBy { normalizeArabicOrthography(normalizeTitle(it)) }
             .take(24)
     }
 
@@ -1134,7 +1139,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val cleanAliases = aliases
             .map { it.trim() }
             .filter { it.isNotBlank() }
-            .distinctBy(::canonicalTitle)
+            // Keep "اللعبة" and "اللعبة الموسم 5" as separate search queries.
+            .distinctBy { normalizeArabicOrthography(normalizeTitle(it)) }
             .take(16)
 
         val queryVariants = buildList {
@@ -1304,16 +1310,21 @@ class MOOSAHubProvider : TmdbProvider() {
             }
         }
 
-        val candidates = searchProvider(
+        val searchResults = searchProvider(
             api = api,
             request = request,
             aliases = aliases,
             year = request.year,
             wantSeries = wantSeries,
-            originalLanguage =
-                request.originalLanguage,
+            originalLanguage = request.originalLanguage,
             season = request.season
         )
+
+        if (searchResults.isEmpty()) {
+            MOOSAPlaybackDiagnostics.update(api, "Search returned no results")
+        }
+
+        val candidates = searchResults
             .asSequence()
             .map {
                 it to strictSearchScore(
@@ -1333,6 +1344,13 @@ class MOOSAHubProvider : TmdbProvider() {
             }
             .take(6)
             .toList()
+
+        if (searchResults.isNotEmpty() && candidates.isEmpty()) {
+            MOOSAPlaybackDiagnostics.update(
+                api,
+                "Search found ${searchResults.size} results, but no matching title/season"
+            )
+        }
 
         for ((match, _) in candidates) {
             val loaded = timed(
@@ -1355,6 +1373,13 @@ class MOOSAHubProvider : TmdbProvider() {
             ) {
                 return loaded
             }
+        }
+
+        if (candidates.isNotEmpty()) {
+            MOOSAPlaybackDiagnostics.update(
+                api,
+                "Title matched, but loading/series identity failed"
+            )
         }
 
         return null
@@ -2946,10 +2971,17 @@ class MOOSAHubProvider : TmdbProvider() {
                             }
                         }
                     } else {
-                        MOOSAPlaybackDiagnostics.update(
-                            api,
-                            "No matching page or episode"
-                        )
+                        val lastStatus = MOOSAPlaybackDiagnostics.status(api)
+                        if (
+                            lastStatus == null ||
+                            lastStatus == "Resolving provider" ||
+                            lastStatus == "Starting Arabic bridge"
+                        ) {
+                            MOOSAPlaybackDiagnostics.update(
+                                api,
+                                "No matching page or episode"
+                            )
+                        }
                     }
 
                     if (providerWorked) {
