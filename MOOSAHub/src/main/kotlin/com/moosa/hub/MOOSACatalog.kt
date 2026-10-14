@@ -74,12 +74,16 @@ object MOOSACatalog {
         // Use familiar English catalog titles; keep Arabic productions in Arabic.
         // Original credited names are search aliases, not display names.
         val displayName: String
-            get() = (if (originalLanguage == "ar") {
-                sequenceOf(originalTitle, originalName, title, name)
-            } else {
-                sequenceOf(title, name, originalTitle, originalName)
-            }).filterNotNull().map(String::trim)
-                .firstOrNull(String::isNotBlank).orEmpty()
+            get() {
+                val names = sequenceOf(title, name, originalTitle, originalName)
+                    .filterNotNull().map(String::trim).filter(String::isNotBlank).toList()
+                // For Arabic productions, prefer an actual Arabic-script title
+                // from TMDB instead of romanized production names.
+                return if (originalLanguage == "ar") {
+                    names.firstOrNull { Regex("""[\u0600-\u06FF]""").containsMatchIn(it) }
+                        ?: names.firstOrNull().orEmpty()
+                } else names.firstOrNull().orEmpty()
+            }
 
         val year: Int?
             get() = (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull()
@@ -316,7 +320,7 @@ object MOOSACatalog {
                 path,
                 mapOf(
                     "page" to page.toString(),
-                    "language" to "en-US",
+                    "language" to (if (extra["with_original_language"] == "ar") "ar-SA" else "en-US"),
                     "include_adult" to "false"
                 ) + extra
             )
@@ -512,7 +516,7 @@ object MOOSACatalog {
                 mapOf(
                     "query" to query,
                     "page" to page.toString(),
-                    "language" to "en-US",
+                    "language" to (if (Regex("""[\u0600-\u06FF]""").containsMatchIn(query)) "ar-SA" else "en-US"),
                     "include_adult" to "false"
                 )
             )
