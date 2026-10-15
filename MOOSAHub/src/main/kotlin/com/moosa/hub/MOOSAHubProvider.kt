@@ -2933,6 +2933,9 @@ class MOOSAHubProvider : TmdbProvider() {
 
         subtitleCache[cacheKey]?.let { cached ->
             if (System.currentTimeMillis() - cached.createdAt < subtitleCacheLifetimeMs) {
+                MOOSASubtitleHealth.update("OpenSubtitles", "Reusing cached index")
+                MOOSASubtitleHealth.update("SubDL", "Reusing cached index")
+                MOOSASubtitleHealth.update("Wyzie", "Reusing cached index")
                 onEarlyCandidates(cached.items)
                 return@coroutineScope emptyList()
             }
@@ -3088,7 +3091,12 @@ class MOOSAHubProvider : TmdbProvider() {
                     if (isReadableSubtitle(subtitle)) {
                         onVerified(subtitle)
                         subtitle
-                    } else null
+                    } else {
+                        MOOSASubtitleHealth.rejected(
+                            MOOSASubtitleHealth.sourceOf(subtitle.lang)
+                        )
+                        null
+                    }
                 }
             }
         }.awaitAll().filterNotNull().sortedByDescending(::subtitleScore)
@@ -3189,6 +3197,7 @@ class MOOSAHubProvider : TmdbProvider() {
         callback: (ExtractorLink) -> Unit
     ): Boolean = coroutineScope {
         val request = tryParseJson<HubPlaybackRequest>(data) ?: return@coroutineScope false
+        MOOSASubtitleHealth.begin(request.title)
         if (request.originalLanguage.equals("ar", ignoreCase = true)) return@coroutineScope false
         val allProviders = playbackProviders(request)
         val fastArabic = request.originalLanguage.equals("ar", true) &&
@@ -3320,6 +3329,9 @@ class MOOSAHubProvider : TmdbProvider() {
                 val track = subtitle.copy(lang = label, url = playbackUrl)
                 try {
                     subtitleCallback(track)
+                    MOOSASubtitleHealth.accepted(
+                        MOOSASubtitleHealth.sourceOf(subtitle.lang)
+                    )
                 } catch (error: Throwable) {
                     logError(error)
                 }
