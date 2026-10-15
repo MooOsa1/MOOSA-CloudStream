@@ -1,0 +1,62 @@
+name: Validate MOOSA Hub v90 SubDL raw download contract (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v90-subdl-download-contract"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile plugins and release metadata
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Check no-range SubDL GET, bounded probes, source-specific diagnostics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          s=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          h=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASubtitleHealth.kt").read_text()
+          ver={p["internalName"]:p["version"] for p in json.loads(Path("build/plugins.json").read_text())}
+          assert ver=={"MOOSAHub":90,"MOOSAArabic":3},ver
+          start=s.index('val probeHeaders = if (source == "SubDL")')
+          end=s.index('val body = timed(4200L)',start)
+          chunk=s[start:end]
+          assert chunk.count('"Range" to "bytes=0-32767"')==1
+          subdl=chunk.split('} else {')[0]
+          other=chunk.split('} else {')[1]
+          assert '"Range"' not in subdl, "SubDL must use complete non-ranged GET"
+          assert '"Range"' in other, "Retain cheap range checks elsewhere"
+          assert 'app.get(url, headers = probeHeaders).text.take(32_768)' in s
+          assert 'subtitleNonCueCategory(body)' in s
+          for label in (
+            'SubDL JSON: download quota/rate limit',
+            'SubDL JSON: file not found',
+            'SubDL JSON: authentication/permission required',
+            'SubDL JSON: server unavailable',
+            'SubDL JSON: download link envelope',
+            'SubDL JSON: unexpected download payload',
+          ):
+            assert label in s,label
+          assert 'MOOSASubtitleHealth.reason(source, subtitleNonCueCategory(body))' in s
+          assert 'val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)' in s
+          assert 'val subtitleExternalSlots = kotlinx.coroutines.sync.Semaphore(3)' in s
+          assert 'withTimeoutOrNull(3200L)' in s
+          assert 'MOOSASubtitleHealth.candidates("SubDL", parsed.size)' in s
+          assert 'MOOSASubtitleHealth.started(source)' in s
+          # Don't put raw response bytes, API keys or URLs into diagnostics.
+          assert 'MOOSASubtitleHealth.reason(source, body)' not in s
+          for secret in ('api_key','Bearer','http://','https://'):
+            assert secret not in h
+          print("PASS: build v90 and verify SubDL direct GET, error classifications and low-I/O limits")
+          PY
