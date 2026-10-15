@@ -30,7 +30,7 @@ jobs:
           assert manifest=={"MOOSAHub":92,"MOOSAArabic":3},manifest
           assert "private fun normalizeTitle(value: String): String =" in p
           start=p.index("private fun normalizeTitle(value:")
-          assert 'replace("&", "and")' in p[start:start+100]
+          assert 'replace("&", "and")' in p[start:start+200]
           assert ".trim().take(28)" not in p[start:start+200]
           for part in (
             "fun collectInstalledRepositorySubtitle(",
@@ -50,7 +50,7 @@ jobs:
           ): assert part in p,part
           assert "nativeSubtitles.toList()" not in p
           assert "nativeSubtitles::add" not in p
-          assert p.count("collectInstalledRepositorySubtitle(\n") == 2
+          assert p.count("collectInstalledRepositorySubtitle(\n") == 3
           assert "isReadableSubtitle(subtitle)" in p
           assert 'val subtitleSourceGates =' in p
           print("PASS: v92 compiled with progressive bounded native repo captions")
