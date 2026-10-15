@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 86
+version = 87
 
 
 android {
@@ -96,3 +96,6 @@ dependencies {
 
 // v86: official SubDL lang-field compatibility and on-device subtitle-source
 // diagnostics; no extra network requests or automatic ZIP downloads.
+
+// v87: release each provider's subtitle candidates independently; inspect
+// further releases only if an initial bounded text check finds too few tracks.
