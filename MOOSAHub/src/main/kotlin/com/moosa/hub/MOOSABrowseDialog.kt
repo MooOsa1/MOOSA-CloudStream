@@ -2,6 +2,8 @@ package com.moosa.hub
 
 import android.app.AlertDialog
 import android.app.Dialog
+import android.view.KeyEvent
+import android.view.animation.DecelerateInterpolator
 import android.content.Context
 import android.graphics.Color
 import android.content.res.ColorStateList
@@ -49,6 +51,21 @@ class MOOSABrowseDialog : DialogFragment() {
     private lateinit var progress: ProgressBar
     private lateinit var status: TextView
     private lateinit var closeButton: Button
+    private lateinit var browseRoot: LinearLayout
+    private var entryPlayed = false
+    private var closingAnimated = false
+    private var focusFilterId = View.NO_ID
+    private var stayOnFilterAfterReload = false
+
+    private data class BrowseSnapshot(
+        val items: List<SearchResponse>,
+        val lastPage: Int,
+        val hasNext: Boolean,
+        val savedAtMs: Long
+    )
+    // In-dialog, source-keyed LRU: no extra HTTP request when the viewer
+    // switches back to a recently selected filter combination.
+    private val browseSnapshots = LinkedHashMap<String, BrowseSnapshot>()
     private lateinit var typeButton: Button
     private lateinit var genreButton: Button
     private lateinit var sortButton: Button
@@ -99,20 +116,33 @@ class MOOSABrowseDialog : DialogFragment() {
         Button(requireContext()).apply {
             id = View.generateViewId()
             this.text = text
-            setTextColor(Color.WHITE)
-            textSize = 12.5f
+            isAllCaps = false
+            setTextColor(Color.rgb(230, 231, 237))
+            textSize = 12f
             isFocusable = true
             isFocusableInTouchMode = false
-            background = rounded(Color.rgb(33, 33, 36), 6, Color.rgb(92, 92, 96))
+            minHeight = 0
+            minimumHeight = 0
+            stateListAnimator = null
+            alpha = 0.88f
+            background = rounded(Color.rgb(30, 32, 39), 10, Color.rgb(65, 69, 82))
             setOnFocusChangeListener { view, focused ->
+                view.animate().cancel()
                 view.background = rounded(
-                    if (focused) Color.rgb(245, 245, 246) else Color.rgb(33, 33, 36),
-                    6,
-                    if (focused) Color.WHITE else Color.rgb(92, 92, 96)
+                    if (focused) Color.rgb(63, 77, 107) else Color.rgb(30, 32, 39),
+                    10,
+                    if (focused) Color.rgb(170, 200, 251) else Color.rgb(65, 69, 82)
                 )
                 (view as Button).setTextColor(
-                    if (focused) Color.rgb(14, 14, 16) else Color.WHITE
+                    if (focused) Color.WHITE else Color.rgb(230, 231, 237)
                 )
+                view.animate()
+                    .alpha(if (focused) 1f else 0.88f)
+                    .scaleX(if (focused) 1.025f else 1f)
+                    .scaleY(if (focused) 1.025f else 1f)
+                    .setDuration(140L)
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
             }
         }
 
@@ -121,14 +151,18 @@ class MOOSABrowseDialog : DialogFragment() {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setPadding(dp(18), dp(14), dp(18), dp(14))
             background = rounded(
-                Color.rgb(12, 12, 14),
-                12,
-                Color.rgb(49, 49, 53),
+                Color.rgb(17, 19, 26),
+                16,
+                Color.rgb(56, 64, 80),
                 1
             )
+            alpha = 0f
+            scaleX = 0.985f
+            scaleY = 0.985f
         }
+        browseRoot = root
 
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -137,7 +171,7 @@ class MOOSABrowseDialog : DialogFragment() {
 
         val title = TextView(context).apply {
             text = request.name
-            textSize = 23f
+            textSize = 21f
             setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
@@ -174,8 +208,8 @@ class MOOSABrowseDialog : DialogFragment() {
                 gravity = Gravity.CENTER_VERTICAL
                 for (button in buttons) {
                     addView(button, LinearLayout.LayoutParams(
-                        0, dp(42), 1f
-                    ).apply { marginEnd = dp(6) })
+                        0, dp(38), 1f
+                    ).apply { marginEnd = dp(7) })
                 }
             }
 
@@ -185,11 +219,12 @@ class MOOSABrowseDialog : DialogFragment() {
         countryButton = focusableButton("")
         resetButton = focusableButton("RESET")
         root.addView(filterRow(typeButton, genreButton),
-            LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(6) })
+            LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(6) })
         root.addView(filterRow(sortButton, countryButton, resetButton),
-            LinearLayout.LayoutParams(-1, dp(48)))
+            LinearLayout.LayoutParams(-1, dp(44)))
 
         typeButton.setOnClickListener {
+            focusFilterId = typeButton.id
             val current = selectedFilters ?: MOOSABrowseFilters.initial(request)
             val labels = arrayOf("Movies", "TV Series")
             AlertDialog.Builder(requireContext())
@@ -202,6 +237,7 @@ class MOOSABrowseDialog : DialogFragment() {
         }
 
         genreButton.setOnClickListener {
+            focusFilterId = genreButton.id
             val current = selectedFilters ?: MOOSABrowseFilters.initial(request)
             val genres = MOOSABrowseFilters.availableGenres(current.isTv)
             val labels = (listOf("All genres") + genres.map { it.label }).toTypedArray()
@@ -218,6 +254,7 @@ class MOOSABrowseDialog : DialogFragment() {
         }
 
         sortButton.setOnClickListener {
+            focusFilterId = sortButton.id
             val current = selectedFilters ?: MOOSABrowseFilters.initial(request)
             val options = MOOSABrowseFilters.sorts
             val index = options.indexOfFirst { it.apiSort == current.sort }.coerceAtLeast(0)
@@ -231,6 +268,7 @@ class MOOSABrowseDialog : DialogFragment() {
         }
 
         countryButton.setOnClickListener {
+            focusFilterId = countryButton.id
             val current = selectedFilters ?: MOOSABrowseFilters.initial(request)
             val options = MOOSABrowseFilters.countries
             val index = options.indexOfFirst { it.code == current.originCountry }.coerceAtLeast(0)
@@ -243,7 +281,32 @@ class MOOSABrowseDialog : DialogFragment() {
                 .setNegativeButton("CANCEL", null).show()
         }
 
-        resetButton.setOnClickListener { applyFilters(null) }
+        resetButton.setOnClickListener {
+            focusFilterId = resetButton.id
+            applyFilters(null)
+        }
+        // Explicit DPAD graph prevents diagonal jumps and focus wrapping.
+        typeButton.nextFocusRightId = genreButton.id
+        genreButton.nextFocusLeftId = typeButton.id
+        typeButton.nextFocusDownId = sortButton.id
+        genreButton.nextFocusDownId = countryButton.id
+        typeButton.nextFocusUpId = closeButton.id
+        genreButton.nextFocusUpId = closeButton.id
+        sortButton.nextFocusUpId = typeButton.id
+        countryButton.nextFocusUpId = genreButton.id
+        resetButton.nextFocusUpId = genreButton.id
+        sortButton.nextFocusRightId = countryButton.id
+        countryButton.nextFocusLeftId = sortButton.id
+        countryButton.nextFocusRightId = resetButton.id
+        resetButton.nextFocusLeftId = countryButton.id
+        listOf(sortButton, countryButton, resetButton).forEach { button ->
+            button.setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
+                    event.action == KeyEvent.ACTION_DOWN &&
+                    adapter.itemCount > 0
+                ) focusFirstVisiblePoster() else false
+            }
+        }
         updateFilterLabels()
 
         progress = ProgressBar(
@@ -255,16 +318,16 @@ class MOOSABrowseDialog : DialogFragment() {
             progress = 0
             progressTintList = ColorStateList.valueOf(Color.WHITE)
             progressBackgroundTintList = ColorStateList.valueOf(Color.rgb(55, 55, 60))
-            visibility = View.GONE
+            visibility = View.INVISIBLE // Reserve space to avoid grid jumping
         }
         root.addView(
             progress,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(6)
+                dp(4)
             ).apply {
-                topMargin = dp(6)
-                bottomMargin = dp(6)
+                topMargin = dp(4)
+                bottomMargin = dp(4)
             }
         )
 
@@ -273,7 +336,7 @@ class MOOSABrowseDialog : DialogFragment() {
             overScrollMode = View.OVER_SCROLL_NEVER
             itemAnimator = null
             setHasFixedSize(true)
-            setItemViewCacheSize(6)
+            setItemViewCacheSize(8)
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
             isFocusable = false
             clipToPadding = false
@@ -349,9 +412,7 @@ class MOOSABrowseDialog : DialogFragment() {
         )
 
         closeButton.nextFocusDownId = typeButton.id
-        closeButton.setOnClickListener {
-            dismissAllowingStateLoss()
-        }
+        closeButton.setOnClickListener { closeWithMotion() }
 
         installNavigationReturnWatcher()
 
@@ -363,6 +424,14 @@ class MOOSABrowseDialog : DialogFragment() {
             requestWindowFeature(Window.FEATURE_NO_TITLE)
             setContentView(root)
             setCanceledOnTouchOutside(true)
+            setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_BACK ||
+                    keyCode == KeyEvent.KEYCODE_ESCAPE
+                ) {
+                    if (event.action == KeyEvent.ACTION_UP) closeWithMotion()
+                    true
+                } else false
+            }
         }
     }
 
@@ -507,6 +576,7 @@ class MOOSABrowseDialog : DialogFragment() {
     }
 
     override fun onDestroy() {
+        if (::browseRoot.isInitialized) browseRoot.animate().cancel()
         // CloudStream may ship an older kotlinx.coroutines runtime without
         // Job.cancel$default. Explicit cause invokes the Job interface method.
         browseJob?.cancel(CancellationException("Show More dialog destroyed"))
@@ -568,6 +638,67 @@ class MOOSABrowseDialog : DialogFragment() {
             )
             setBackgroundDrawableResource(android.R.color.transparent)
         }
+        if (!entryPlayed && ::browseRoot.isInitialized && !waitingForResult) {
+            entryPlayed = true
+            browseRoot.animate()
+                .alpha(1f).scaleX(1f).scaleY(1f)
+                .setDuration(180L)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
+    }
+
+    private fun closeWithMotion() {
+        if (closingAnimated || !::browseRoot.isInitialized) return
+        closingAnimated = true
+        browseRoot.animate().cancel()
+        browseRoot.animate()
+            .alpha(0f).scaleX(0.985f).scaleY(0.985f)
+            .setDuration(145L)
+            .setInterpolator(DecelerateInterpolator())
+            .withEndAction {
+                if (isAdded) dismissAllowingStateLoss()
+            }
+            .start()
+    }
+
+    private fun focusFirstVisiblePoster(): Boolean {
+        if (!::recycler.isInitialized || !::adapter.isInitialized ||
+            adapter.itemCount == 0
+        ) return false
+        val manager = recycler.layoutManager as? GridLayoutManager ?: return false
+        val first = manager.findFirstVisibleItemPosition().coerceAtLeast(0)
+        val card = manager.findViewByPosition(first)
+            ?: manager.findViewByPosition(0)
+        if (card != null) return card.requestFocus()
+        recycler.post {
+            (recycler.layoutManager as? GridLayoutManager)
+                ?.findViewByPosition(first)?.requestFocus()
+        }
+        return true
+    }
+
+    private fun restoreFilterFocus() {
+        if (!::typeButton.isInitialized) return
+        val id = if (focusFilterId == View.NO_ID) typeButton.id else focusFilterId
+        val target = listOf(
+            typeButton, genreButton, sortButton, countryButton, resetButton
+        ).firstOrNull { it.id == id && it.isEnabled } ?: typeButton
+        target.post {
+            if (isAdded && !waitingForResult && !closingAnimated) {
+                target.requestFocus()
+            }
+        }
+    }
+
+    private fun saveSnapshot(key: String) {
+        if (items.isEmpty()) return
+        browseSnapshots[key] = BrowseSnapshot(
+            items.toList(), lastPage, hasNext, android.os.SystemClock.elapsedRealtime()
+        )
+        if (browseSnapshots.size > 6) {
+            browseSnapshots.remove(browseSnapshots.keys.first())
+        }
     }
 
     private fun updateFilterLabels() {
@@ -597,11 +728,31 @@ class MOOSABrowseDialog : DialogFragment() {
         loading = false
         lastPage = 0
         hasNext = true
+        stayOnFilterAfterReload = true
         items.clear()
         adapter.submitList(emptyList())
         recycler.scrollToPosition(0)
         updateFilterLabels()
-        browseJob = lifecycleScope.launch { loadInitial() }
+        recycler.animate().cancel()
+        recycler.alpha = 0.6f
+        val cached = browseSnapshots[selectedRequest().data]
+            ?.takeIf {
+                android.os.SystemClock.elapsedRealtime() - it.savedAtMs < 120_000L
+            }
+        if (cached != null) {
+            items.addAll(cached.items)
+            lastPage = cached.lastPage
+            hasNext = cached.hasNext
+            adapter.submitList(items.toList())
+            progress.visibility = View.INVISIBLE
+            recycler.animate().alpha(1f).setDuration(170L).start()
+            recycler.post { maybeLoadMore() }
+        } else {
+            browseJob = lifecycleScope.launch { loadInitial() }
+        }
+        // Don't steal focus by jumping to the first poster on every filter
+        // change. The user's last touched filter stays selected.
+        restoreFilterFocus()
     }
 
     private suspend fun loadInitial() {
@@ -632,14 +783,18 @@ class MOOSABrowseDialog : DialogFragment() {
             hasNext = batch.hasNext
 
             adapter.submitList(items.toList())
+            saveSnapshot(effectiveRequest.data)
+            recycler.animate().cancel()
+            recycler.animate().alpha(1f).setDuration(175L)
+                .setInterpolator(DecelerateInterpolator()).start()
 
             status.text = if (items.isEmpty()) "No titles available" else ""
             status.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
 
-            recycler.post {
-                recycler.layoutManager
-                    ?.findViewByPosition(0)
-                    ?.requestFocus()
+            if (!stayOnFilterAfterReload) {
+                recycler.post { focusFirstVisiblePoster() }
+            } else {
+                restoreFilterFocus()
             }
         } catch (error: CancellationException) {
             throw error
@@ -650,7 +805,7 @@ class MOOSABrowseDialog : DialogFragment() {
             }
         } finally {
             if (generation != browseGeneration) return
-            progress.visibility = View.GONE
+            progress.visibility = View.INVISIBLE
             progress.isIndeterminate = false
             loading = false
             // Continue requesting pages if the viewport is not scrollable
@@ -705,6 +860,7 @@ class MOOSABrowseDialog : DialogFragment() {
                 lastPage = batch.lastPage
                 hasNext = batch.hasNext
                 adapter.submitList(items.toList())
+                saveSnapshot(effectiveRequest.data)
             } else {
                 hasNext = false
             }
@@ -720,7 +876,7 @@ class MOOSABrowseDialog : DialogFragment() {
             }
         } finally {
             if (generation != browseGeneration) return
-            progress.visibility = View.GONE
+            progress.visibility = View.INVISIBLE
             progress.isIndeterminate = false
             loading = false
             recycler.post { maybeLoadMore() }
