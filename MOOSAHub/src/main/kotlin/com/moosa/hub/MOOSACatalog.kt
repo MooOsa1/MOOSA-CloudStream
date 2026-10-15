@@ -268,10 +268,12 @@ object MOOSACatalog {
                         it == "en"
                 }
 
+        // A valid poster OR backdrop is enough for a home card.
+        // Do not call /images merely because the OTHER optional image is
+        // missing: this previously fanned out into dozens of extra calls.
         val shouldResolveImages =
-            item.posterPath.isNullOrBlank() ||
-                item.backdropPath.isNullOrBlank() ||
-                preferredLanguage == "ar"
+            item.posterPath.isNullOrBlank() &&
+                item.backdropPath.isNullOrBlank()
 
         if (!shouldResolveImages) {
             return item
@@ -393,7 +395,8 @@ object MOOSACatalog {
         path: String,
         page: Int,
         forceTv: Boolean,
-        extra: Map<String, String> = emptyMap()
+        extra: Map<String, String> = emptyMap(),
+        resolveArtwork: Boolean = true
     ): CatalogPage {
         val body = try {
             get(
@@ -412,17 +415,27 @@ object MOOSACatalog {
             tryParseJson<Page>(body)
                 ?: return CatalogPage(emptyList(), 1)
 
+        // The home page must remain cheap to scroll. TMDB /discover and
+        // /trending already provide poster_path/backdrop_path. On home
+        // shelves do not make any per-title /images calls at all.
+        // On Show More pages, only resolve the rare entry with BOTH paths
+        // absent. Never spawn a coroutine for a title with usable artwork.
         val indianTop = path == "/discover/movie" &&
             extra["with_origin_country"] == "IN"
-        val enriched = coroutineScope {
-            response.results.map { item ->
-                async {
-                    // Keep this ranking responsive even when old Indian
-                    // catalogue entries have no uploaded poster. CloudStream
-                    // can show a default cover until artwork exists.
-                    if (indianTop) item else enrichArtwork(item, forceTv)
-                }
-            }.awaitAll()
+        val missingArtwork = if (resolveArtwork && !indianTop) {
+            response.results.withIndex().filter { (_, item) ->
+                item.posterPath.isNullOrBlank() &&
+                    item.backdropPath.isNullOrBlank()
+            }
+        } else emptyList()
+        val artworkFixes = if (missingArtwork.isEmpty()) emptyMap()
+            else coroutineScope {
+                missingArtwork.map { (index, item) ->
+                    async { index to enrichArtwork(item, forceTv) }
+                }.awaitAll().toMap()
+            }
+        val enriched = response.results.mapIndexed { index, item ->
+            artworkFixes[index] ?: item
         }
 
         val responses = enriched.mapNotNull { item ->
@@ -478,7 +491,9 @@ object MOOSACatalog {
             else -> PAGES_PER_BATCH
         }
         val firstTmdbPage = ((page.coerceAtLeast(1) - 1) * pagesPerBatch) + 1
-        val first = listPage(api, path, firstTmdbPage, isTv, options)
+        val first = listPage(
+            api, path, firstTmdbPage, isTv, options, resolveArtwork = false
+        )
         val maxPage = minOf(first.totalPages, 500)
 
         if (first.items.isEmpty() || firstTmdbPage > maxPage) {
@@ -494,7 +509,9 @@ object MOOSACatalog {
             maxPage
         )).map { tmdbPage ->
             async {
-                listPage(api, path, tmdbPage, isTv, options)
+                listPage(
+                    api, path, tmdbPage, isTv, options, resolveArtwork = false
+                )
             }
         }
 
