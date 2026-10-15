@@ -2750,7 +2750,7 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         val payload = base64Encode(
-            """{"id":1,"jsonrpc":"2.0","method":"subtitles.find","params":[null,{"query":{"itemHash":"$query"}}]}""".toByteArray()
+            """{"id":1,"jsonrpc":"2.0","method":"subtitles.find","params":[null,{"query":{"itemHash":"$query"},"supportsZip":false}]}""".toByteArray()
         )
 
         val response = timed(currentSubtitleTimeoutMs()) {
@@ -3003,15 +3003,26 @@ class MOOSAHubProvider : TmdbProvider() {
                 .also { if (it.isNotEmpty()) onEarlyCandidates(it) }
         }
 
+        // Don't mistake English-only indexes for adequate Arabic coverage.
+        // OpenSubtitles legacy is an independent, documented subtitle index.
+        // Only consult it if v3 has fewer than two Arabic candidates.
+        // Begin the fallback as soon as v3 completes instead of waiting for
+        // slower SubDL/Wyzie indexes; still use the existing playback window.
+        val backupJob = async {
+            val primaryIndex = v3.await()
+            if (primaryIndex.count {
+                    subtitleLanguage(it.lang, it.langTag) ==
+                        PreferredSubtitleLanguage.ARABIC
+                } < 2
+            ) {
+                fetchOpenSubtitlesLegacy(request, imdb).also {
+                    if (it.isNotEmpty()) onEarlyCandidates(it)
+                }
+            } else emptyList()
+        }
         val primary = v3.await()
         val supplemental = wyzie.await() + subDl.await()
-        // Do not send a legacy request on every playback. The backup is
-        // invoked only if all three modern source indexes are empty.
-        val backup = if (primary.isEmpty() && supplemental.isEmpty()) {
-            fetchOpenSubtitlesLegacy(request, imdb).also {
-                if (it.isNotEmpty()) onEarlyCandidates(it)
-            }
-        } else emptyList()
+        val backup = backupJob.await()
         val all = (primary + supplemental + backup)
             .filter { validStreamingUrl(it.url) }
             .filterNot {
