@@ -1,0 +1,66 @@
+name: MOOSA Web v1 checks
+on:
+  push:
+    branches: ["feat/moosa-web-v1-player-catalog"]
+    paths: ["MOOSAWeb/**", ".github/workflows/moosa-web-v1.yml"]
+  pull_request:
+    paths: ["MOOSAWeb/**", ".github/workflows/moosa-web-v1.yml"]
+  workflow_dispatch:
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax checks and Node API tests
+        run: npm run check
+      - name: End-to-end HTTP smoke test with no metadata key
+        run: |
+          node server.mjs > /tmp/moosa-web.log 2>&1 &
+          trap 'kill $! 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3000/api/status >/tmp/status.json && break
+            sleep 1
+          done
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          const base = "http://localhost:3000";
+          const status = await (await fetch(base+"/api/status")).json();
+          assert.equal(status.configured, false);
+          const demo = await (await fetch(base+"/api/home")).json();
+          assert.equal(demo.sections[0].items[0].id, "demo-bunny");
+          const movie = await (await fetch(base+"/api/details?type=movie&id=demo-bunny")).json();
+          assert.equal(movie.title, "Big Buck Bunny");
+          const sources = await (await fetch(base+"/api/sources?key=movie:demo-bunny")).json();
+          assert.equal(sources.sources.length, 1);
+          for (const file of ["/","/styles.css","/app.js","/favicon.svg"]) {
+            const response = await fetch(base+file);
+            assert.equal(response.status, 200, file);
+            assert.ok((await response.text()).length > 100, file);
+          }
+          console.log("PASS: web pages, backend metadata, playable demo source and assets");
+          JS
+      - name: Validate metadata keys stay server-side
+        run: |
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import {readFileSync} from "node:fs";
+          const html=readFileSync("public/index.html","utf8");
+          const js=readFileSync("public/app.js","utf8");
+          const backend=readFileSync("server.mjs","utf8");
+          assert.ok(!html.includes("TMDB_API_KEY"));
+          assert.ok(!js.includes("TMDB_API_KEY"));
+          assert.ok(backend.includes("process.env.TMDB_API_KEY"));
+          assert.ok(js.includes("secondsToVtt"));
+          assert.ok(js.includes("subtitleOffset"));
+          assert.ok(js.includes("KeyEvent")===false);
+          assert.ok(js.includes("ArrowDown"));
+          assert.ok(js.includes('data-nav'));
+          console.log("PASS: no public API key, subtitle adjustment and remote controls present");
+          JS
