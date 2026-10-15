@@ -55,7 +55,7 @@ test('CloudStream browser-agent pairing and on-demand movie streams',async()=>{
       ]
     },agent);
     assert.equal(partial.status,200);assert.equal(partial.body.accepted,1);
-    const first=(await get(base,'/api/bridge/result?id='+task.id,browserToken)).body;
+    const first=(await get(base,'/api/bridge/result?id='+task.requestId,browserToken)).body;
     assert.equal(first.done,false);assert.equal(first.sources.length,1);
     assert.equal(first.sources[0].subtitles[0].language,'ar');
     const finish=await post(base,'/api/bridge/report',{
@@ -65,9 +65,9 @@ test('CloudStream browser-agent pairing and on-demand movie streams',async()=>{
       ]
     },agent);
     assert.equal(finish.status,200);assert.equal(finish.body.accepted,2);
-    const last=(await get(base,'/api/bridge/result?id='+task.id,browserToken)).body;
+    const last=(await get(base,'/api/bridge/result?id='+task.requestId,browserToken)).body;
     assert.equal(last.done,true);assert.deepEqual(last.sources.map(x=>x.quality),[2160,1080]);
-    assert.equal((await get(base,'/api/bridge/result?id='+task.id,agent)).status,401);
+    assert.equal((await get(base,'/api/bridge/result?id='+task.requestId,agent)).status,401);
   });
 });
 
