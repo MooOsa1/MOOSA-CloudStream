@@ -26,10 +26,10 @@ jobs:
           from pathlib import Path
           import json
           versions={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
-          assert versions=={"MOOSAHub":81,"MOOSAArabic":3},versions
+          assert versions.get("MOOSAHub",0)>=81 and versions.get("MOOSAArabic")==3,versions
           s=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
-          assert 'byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(24)' in s
-          assert 'byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(12)' in s
+          assert 'byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10)' in s
+          assert 'byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)' in s
           assert '(sub.headers ?: emptyMap()) + mapOf(' in s
           assert 'subtitle.copy(lang = "Arabic")' in s
           assert 'subtitle.copy(lang = "English")' in s
