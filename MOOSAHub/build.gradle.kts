@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 91
+version = 92
 
 
 android {
@@ -111,3 +111,6 @@ dependencies {
 
 // v91: avoid exhausting SubDL daily downloads while probing subtitle lists;
 // stop on quota/rate errors and keep other subtitle sources available.
+
+// v92: emit subtitle files from installed CloudStream repositories during
+// matched provider load, with bounded checks and distinct source attribution.
