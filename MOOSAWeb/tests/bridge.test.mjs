@@ -42,10 +42,11 @@ test('CloudStream browser-agent pairing and on-demand movie streams',async()=>{
     },browserToken);
     assert.equal(find.status,202);
     const task=(await get(base,'/api/bridge/next',agent)).body.task;
-    assert.equal(task.id,find.body.requestId);
+    assert.equal(task.requestId,find.body.requestId);
+    assert.equal(task.id,123);
     assert.equal(task.title,'Example Movie');
     const partial=await post(base,'/api/bridge/report',{
-      requestId:task.id, final:false, sources:[
+      requestId:task.requestId, final:false, sources:[
         {name:'Plugin A • 1080p',quality:1080,url:'https://cdn.example.com/movie.m3u8',
           subtitles:[{url:'https://cdn.example.com/sub.vtt',language:'ar',label:'Arabic'}]},
         {name:'Plugin A • 480p',quality:480,url:'https://cdn.example.com/sd.mp4'},
@@ -58,7 +59,7 @@ test('CloudStream browser-agent pairing and on-demand movie streams',async()=>{
     assert.equal(first.done,false);assert.equal(first.sources.length,1);
     assert.equal(first.sources[0].subtitles[0].language,'ar');
     const finish=await post(base,'/api/bridge/report',{
-      requestId:task.id,final:true,sources:[
+      requestId:task.requestId,final:true,sources:[
         {name:'Plugin B • 4K',quality:2160,url:'https://cdn.example.com/4k.m3u8'},
         {name:'Duplicate',quality:1080,url:'https://cdn.example.com/movie.m3u8'}
       ]
