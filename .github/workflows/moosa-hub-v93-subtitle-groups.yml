@@ -40,7 +40,7 @@ jobs:
               'sourceDetails.startsWith("Wyzie", ignoreCase = true)',
               'sourceDetails.startsWith("Repo: ", ignoreCase = true)',
               '.substringBefore(" • ").trim().take(28)',
-              'langTag = if (language == PreferredSubtitleLanguage.ARABIC) "ar" else "en"',
+              'val track = subtitle.copy(lang = label, url = playbackUrl)',
               'val playbackUrl = if (',
               'subtitleCallback(track)',
               'MOOSASubtitleHealth.accepted(',
