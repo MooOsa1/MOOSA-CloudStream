@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 93
+version = 94
 
 
 android {
@@ -117,3 +117,6 @@ dependencies {
 
 // v93: group subtitle selector entries by language + actual subtitle source.
 // Individual subtitle URLs remain distinct selectable tracks, no A/B/C labels.
+
+// v94: query documented OpenSubtitles legacy backup for sparse Arabic results
+// without waiting on other subtitle hosts or changing the grouped UI.
