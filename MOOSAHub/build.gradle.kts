@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 87
+version = 88
 
 
 android {
@@ -99,3 +99,6 @@ dependencies {
 
 // v87: release each provider's subtitle candidates independently; inspect
 // further releases only if an initial bounded text check finds too few tracks.
+
+// v88: provide fair source-specific subtitle probe slots within global four,
+// count SubDL index-to-candidate exclusions and separate queued/started checks.
