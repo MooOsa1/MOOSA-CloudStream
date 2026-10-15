@@ -1,0 +1,79 @@
+name: Validate MOOSA Hub v79 Indian catalogue coverage and paging (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v79-expand-indian-trending"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both extensions
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Assert focused v79 code and TV pagination behavior
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          versions = {x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert versions == {"MOOSAHub":79,"MOOSAArabic":3}, versions
+          cat=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSACatalog.kt").read_text()
+          ui=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSABrowseDialog.kt").read_text()
+          assert cat.index('"Trending Indian Movies"') < cat.index('"Top Indian Movies"')
+          assert "with_origin_country=IN&sort_by=popularity.desc&vote_count.gte=20&vote_average.gte=6.0&without_genres=99" in cat
+          assert "with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7&without_genres=99" in cat
+          assert "calendar.add(Calendar.MONTH, -36)" in cat
+          assert cat.count("exactIndianPopularityOrder(fetchedPages, unsorted)") == 2
+          assert cat.count("exactIndianRatingOrder(fetchedPages, unsorted)") == 2
+          assert ui.count("recycler.post { maybeLoadMore() }") == 2
+          assert "startPage = lastPage + 1" in ui
+          assert "hasNext = batch.hasNext" in ui
+          print("PASS: larger popularity-only Indian catalogue, preserved Top Indian Movies, reliable paging even without scroll")
+          PY
+      - name: Live TMDB results and Indian origin probe
+        run: |
+          python3 - <<'PY'
+          import json, re, datetime, urllib.parse, urllib.request
+          from pathlib import Path
+          src=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSACatalog.kt").read_text()
+          key=re.search(r'private const val TMDB_KEY = "([^"]+)"',src).group(1)
+          today=datetime.datetime.now(datetime.timezone.utc).date()
+          def months_back_approx(months):
+              y=today.year-(months//12)
+              try:return today.replace(year=y)
+              except ValueError:return today.replace(year=y,day=28)
+          since=months_back_approx(36)
+          opts={"api_key":key,"language":"en-US","include_adult":"false",
+                "with_origin_country":"IN","sort_by":"popularity.desc",
+                "vote_count.gte":20,"vote_average.gte":6.0,
+                "without_genres":"99",
+                "primary_release_date.gte":since.isoformat(),
+                "primary_release_date.lte":today.isoformat()}
+          def getjson(url):
+              with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"}),timeout=20) as r:return json.load(r)
+          allitems=[]
+          for p in (1,2):
+              body=getjson("https://api.themoviedb.org/3/discover/movie?"+urllib.parse.urlencode(dict(opts,page=p)))
+              print("INDIAN_TRENDING",p,"TOTAL",body["total_results"],"FETCHED",len(body["results"]))
+              assert body["total_results"] >= 60, "Catalog still too small to page reliably"
+              assert all(x["vote_count"]>=20 and x["vote_average"]>=6.0 and 99 not in x.get("genre_ids",[]) for x in body["results"])
+              allitems.extend(body["results"])
+          assert len(allitems)>=35, "Two pages should provide at least 35 real Indian films"
+          sorteditems=sorted(allitems,key=lambda x:-x["popularity"])
+          for x in sorteditems[:6]:
+              d=getjson("https://api.themoviedb.org/3/movie/"+str(x["id"])+"?"+urllib.parse.urlencode({"api_key":key}))
+              countries=[z["iso_3166_1"] for z in d.get("production_countries",[])]
+              print("MOVIE",x["title"],"POPULARITY",x["popularity"],"COUNTRIES",countries)
+              assert "IN" in countries, "Unexpected non-Indian film in trending result"
+          print("PASS: expanded high-quality real Indian film selection with working additional TMDB pages")
+          PY
