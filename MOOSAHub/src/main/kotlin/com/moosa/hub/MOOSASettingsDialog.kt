@@ -295,6 +295,14 @@ class MOOSASettingsDialog : DialogFragment() {
             openSubtitleSources()
         }
 
+        val webBridge = card(
+            "W",
+            "Web Bridge",
+            MOOSACloudStreamBridge.status
+        ) {
+            openWebBridge()
+        }
+
         val close = card(
             "×",
             "Close",
@@ -315,8 +323,12 @@ class MOOSASettingsDialog : DialogFragment() {
         addGridRow(root, sources, servers)
         addGridRow(root, performance, playback)
         addGridRow(root, subtitles, close)
-
+        root.addView(webBridge, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(66)
+        ))
         wireFocus()
+        close.nextFocusDownId = webBridge.id
+        webBridge.nextFocusUpId = close.id
 
         android.os.Handler(
             android.os.Looper.getMainLooper()
@@ -433,6 +445,37 @@ class MOOSASettingsDialog : DialogFragment() {
 
         f.nextFocusUpId = d.id
         f.nextFocusLeftId = e.id
+    }
+
+
+    private fun openWebBridge() {
+        val input = EditText(requireContext()).apply {
+            hint = "Paste 14-character pairing code"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        val container = LinearLayout(requireContext()).apply {
+            setPadding(dp(15), dp(8), dp(15), dp(8))
+            addView(input)
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle("MOOSA Web Bridge")
+            .setMessage("Open moosa-web.onrender.com and select Connect CloudStream. " +
+                "Enter the pairing code shown there. " +
+                "Only enabled installed providers are used, and only when you press Play. " +
+                "Current status: " + MOOSACloudStreamBridge.status)
+            .setView(container)
+            .setPositiveButton("Connect") { _, _ ->
+                MOOSACloudStreamBridge.connect(requireContext(), input.text.toString())
+            }
+            .setNeutralButton("Disconnect") { _, _ ->
+                MOOSACloudStreamBridge.disconnect(requireContext())
+                Toast.makeText(requireContext(), "Bridge disconnected", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun openPerformance() {
