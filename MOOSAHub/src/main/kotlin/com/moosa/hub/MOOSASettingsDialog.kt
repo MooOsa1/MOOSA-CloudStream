@@ -530,7 +530,8 @@ class MOOSASettingsDialog : DialogFragment() {
             "SubDL Key",
             "Find more Arabic subtitles (on demand)",
             "Subtitle synchronization tips",
-            "Arabic subtitle priority"
+            "Arabic subtitle priority",
+            "Subtitle diagnostics (last playback)"
         )
 
         AlertDialog.Builder(requireContext())
@@ -593,6 +594,14 @@ class MOOSASettingsDialog : DialogFragment() {
                                 "prioritized in selection, but network arrival order " +
                                 "can vary. Only two languages are emitted by MOOSA Hub."
                             )
+                            .setPositiveButton("OK", null)
+                            .show()
+                    }
+
+                    5 -> {
+                        AlertDialog.Builder(requireContext())
+                            .setTitle("Last subtitle search (no additional requests)")
+                            .setMessage(MOOSASubtitleHealth.report())
                             .setPositiveButton("OK", null)
                             .show()
                     }
