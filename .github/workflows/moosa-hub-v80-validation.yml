@@ -41,8 +41,8 @@ jobs:
           assert "body.count { it == '\\uFFFD' } > 4" in p
           assert "subtitleTiming.containsMatchIn(body)" in p
           assert "PreferredSubtitleLanguage.OTHER -> null" in p
-          assert 'SubtitleFile("Arabic • $source", url)' in p
-          assert 'SubtitleFile("English • $source", url)' in p
+          assert 'PreferredSubtitleLanguage.ARABIC -> "Arabic"' in p
+          assert 'PreferredSubtitleLanguage.ENGLISH -> "English"' in p
           assert "MOOSAArabic" not in str(versions.get("MOOSAHub"))
           print("PASS: v80 source rules, bounded verified fallback, parallel subtitle retrieval")
           PY
