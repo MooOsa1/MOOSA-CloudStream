@@ -2869,10 +2869,14 @@ class MOOSAHubProvider : TmdbProvider() {
                     val raw = file.url ?: return@mapNotNull null
                     // Only SRT and VTT are supported through CloudStream's
                     // URL-subtitle callback. No ASS/SSA/SUB disguised as SRT.
-                    val format = file.format?.trim()?.lowercase()
-                        ?.takeIf { it.isNotBlank() }
-                        ?: file.name?.substringAfterLast('.', "")?.lowercase()
-                    if (format != null && format !in setOf("srt", "vtt")) {
+                    // SubDL's "format" label is not always canonical.
+                    // Explicit ASS/SSA/IDX cannot be passed to CloudStream's
+                    // SRT/VTT-only URL callback; unknown format labels must
+                    // instead be checked from the actual timed text body.
+                    val format = file.format?.trim()?.trimStart('.')?.lowercase()
+                    val suffix = file.name?.substringAfterLast('.', "")?.lowercase()
+                    val unsupported = setOf("ass", "ssa", "idx", "sub", "sup", "ttml")
+                    if (format in unsupported || suffix in unsupported) {
                         return@mapNotNull null
                     }
                     val url = if (raw.startsWith("http")) raw
