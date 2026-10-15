@@ -2931,8 +2931,8 @@ class MOOSAHubProvider : TmdbProvider() {
     private suspend fun fetchExternalSubtitles(
         request: HubPlaybackRequest,
         onEarlyCandidates: suspend (List<SubtitleFile>) -> Unit
-    ): List<SubtitleFile> = coroutineScope {
-        val imdb = resolveSubtitleImdb(request) ?: return@coroutineScope emptyList()
+    ): Unit = coroutineScope {
+        val imdb = resolveSubtitleImdb(request) ?: return@coroutineScope
         val cacheKey = subtitleCacheKey(request, imdb)
 
         subtitleCache[cacheKey]?.let { cached ->
@@ -2941,35 +2941,42 @@ class MOOSAHubProvider : TmdbProvider() {
                 MOOSASubtitleHealth.update("SubDL", "Reusing cached index")
                 MOOSASubtitleHealth.update("Wyzie", "Reusing cached index")
                 onEarlyCandidates(cached.items)
-                return@coroutineScope emptyList()
+                return@coroutineScope
             }
             subtitleCache.remove(cacheKey)
         }
 
-        // List endpoints only: never publish links until their actual text
-        // has been checked. Some index APIs return empty, zipped, 404 or
-        // mislabelled legacy-encoding files under valid Arabic labels.
-        // The legacy Stremio OpenSubtitles RPC returns empty for verified
-        // movie samples. Avoid querying it on *every* playback; reserve it
-        // for an empty primary index to keep working sources responsive.
-        val v3 = async { fetchOpenSubtitlesV3(request, imdb) }
-        val wyzie = async { fetchWyzieSubtitles(request, imdb) }
-        val subDl = async { fetchSubDlSubtitles(request, imdb) }
-        // Deliver the first working OpenSubtitles v3 tracks before awaiting
-        // slower backup sources; don't block the player's subtitle menu.
-        val primary = v3.await()
-            .filter { validStreamingUrl(it.url) }
-            .distinctBy { it.url }
-        if (primary.isNotEmpty()) onEarlyCandidates(primary)
+        // Run all three independent indexes concurrently. Previously an
+        // OpenSubtitles timeout delayed SubDL/Wyzie delivery, and awaiting a
+        // slow Wyzie response also hid a ready SubDL result (or vice versa).
+        // Each source publishes its own candidates immediately; validation
+        // remains separately bounded by the single shared playback semaphore.
+        val v3 = async {
+            fetchOpenSubtitlesV3(request, imdb)
+                .filter { validStreamingUrl(it.url) }
+                .distinctBy { it.url }
+                .also { if (it.isNotEmpty()) onEarlyCandidates(it) }
+        }
+        val wyzie = async {
+            fetchWyzieSubtitles(request, imdb)
+                .also { if (it.isNotEmpty()) onEarlyCandidates(it) }
+        }
+        val subDl = async {
+            fetchSubDlSubtitles(request, imdb)
+                .also { if (it.isNotEmpty()) onEarlyCandidates(it) }
+        }
 
-        // Optional keyed providers have already been searching in parallel.
-        // Never delay a working optional source behind the obsolete RPC.
+        val primary = v3.await()
         val supplemental = wyzie.await() + subDl.await()
+        // Do not send a legacy request on every playback. The backup is
+        // invoked only if all three modern source indexes are empty.
         val backup = if (primary.isEmpty() && supplemental.isEmpty()) {
-            fetchOpenSubtitlesLegacy(request, imdb)
+            fetchOpenSubtitlesLegacy(request, imdb).also {
+                if (it.isNotEmpty()) onEarlyCandidates(it)
+            }
         } else emptyList()
         val all = (primary + supplemental + backup)
-            .filter { it.url.startsWith("http", ignoreCase = true) }
+            .filter { validStreamingUrl(it.url) }
             .filterNot {
                 val url = it.url.substringBefore("?").lowercase()
                 url.endsWith(".zip") || url.endsWith(".rar") ||
@@ -2983,8 +2990,6 @@ class MOOSAHubProvider : TmdbProvider() {
                 createdAt = System.currentTimeMillis(), items = all
             )
         }
-        val primaryUrls = primary.map { it.url }.toHashSet()
-        all.filterNot { it.url in primaryUrls }
     }
 
     private val subtitleTiming = Regex(
@@ -3375,16 +3380,13 @@ class MOOSAHubProvider : TmdbProvider() {
         val externalSubtitleJob = async {
             timed(20_000L) {
                 coroutineScope {
-                    val later = fetchExternalSubtitles(request) { first ->
+                    fetchExternalSubtitles(request) { candidates ->
                         launch {
                             filterReadableSubtitles(
-                                first, ::emitVerifiedSubtitle, subtitleProbeGate
+                                candidates, ::emitVerifiedSubtitle, subtitleProbeGate
                             )
                         }
                     }
-                    filterReadableSubtitles(
-                        later, ::emitVerifiedSubtitle, subtitleProbeGate
-                    )
                 }
             }
         }
