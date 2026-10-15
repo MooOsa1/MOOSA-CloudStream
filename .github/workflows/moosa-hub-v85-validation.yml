@@ -20,7 +20,7 @@ jobs:
           gradle-version: "8.12"
       - name: Compile both extensions and check public manifest versions
         run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
-      - name: Regression: SubDL source formats, strict timestamps, player MIME, low request count
+      - name: "Regression: SubDL source formats, strict timestamps, player MIME, low request count"
         run: |
           python3 - <<'PY'
           from pathlib import Path
