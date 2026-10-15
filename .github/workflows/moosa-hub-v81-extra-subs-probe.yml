@@ -1,0 +1,46 @@
+name: Probe additional Arabic subtitle catalogs (read only)
+on:
+  push:
+    branches: ["fix/moosa-hub-v81-subtitle-language-identity"]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare trusted official and third-party subtitle API results
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.parse, urllib.error, json, re
+          queries=[("movie","tt0816692"),("movie","tt0111161"),("series","tt0944947:1:1")]
+          endpoints=[
+            "https://androsubs.vercel.app/subtitles/{type}/{id}.json",
+            "https://andro-lime.vercel.app/subtitles/{type}/{id}.json",
+          ]
+          def get(url):
+            try:
+              with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"}),timeout=12) as r:
+                return r.status,json.load(r)
+            except Exception as e:return type(e).__name__,{}
+          for typ,ident in queries:
+            orig="https://opensubtitles-v3.strem.io/subtitles/"+typ+"/"+ident+".json"
+            code,body=get(orig)
+            print("BASELINE",typ,ident,code,len(body.get("subtitles",[])),flush=True)
+            for endpoint in endpoints:
+              url=endpoint.format(type=typ,id=ident)
+              code,body=get(url)
+              allsubs=body.get("subtitles",[])
+              arb=[x for x in allsubs if x.get("lang")=="ara"]
+              eng=[x for x in allsubs if x.get("lang") in ("eng","en")]
+              host=urllib.parse.urlsplit(url).hostname
+              print("EXTRA",host,typ,ident,code,len(allsubs),"ARA",len(arb),"ENG",len(eng),"REAL_ARABIC_CANDIDATES",len([x for x in arb if not x.get("id","").startswith("ai-")]),flush=True)
+              if arb:
+                s=next((x for x in arb if x.get("url","").startswith("https://") and not x.get("id","").startswith("ai-")),None)
+                if s:
+                  try:
+                    with urllib.request.urlopen(urllib.request.Request(s["url"],headers={"User-Agent":"Mozilla/5.0"}),timeout=15) as r:raw=r.read(32768)
+                    text=raw.decode("utf-8",errors="replace")
+                    print("AR_TRACK",host,len(raw),bool(re.search(r"\d\d:\d\d:\d\d[,.]\d{3}\s*-->",text)),sum('\u0600'<=c<='\u06ff' for c in text),flush=True)
+                  except Exception as e:print("AR_TRACK_FAIL",host,type(e).__name__,flush=True)
+          PY

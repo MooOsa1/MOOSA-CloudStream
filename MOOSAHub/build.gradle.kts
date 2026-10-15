@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 80
+version = 81
 
 
 android {
@@ -78,3 +78,6 @@ dependencies {
 
 // v80: restore subtitle discovery, validate more real CDN alternatives in parallel
 // with video search, and keep Arabic/English subtitles even on slower links.
+
+// v81: explicit ar/en tracks only at playback; probe more alternate subtitle
+// files and pass native provider headers during content validation.
