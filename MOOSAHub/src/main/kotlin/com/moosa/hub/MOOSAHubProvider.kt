@@ -2867,7 +2867,9 @@ class MOOSAHubProvider : TmdbProvider() {
         val body = timed(4200L) {
             app.get(
                 url,
-                headers = mapOf(
+                // Native providers may require Referer, User-Agent or cookies
+                // to download an otherwise valid subtitle track.
+                headers = (sub.headers ?: emptyMap()) + mapOf(
                     "Accept" to "text/plain,text/vtt,*/*",
                     "Range" to "bytes=0-32767"
                 )
@@ -2896,15 +2898,16 @@ class MOOSAHubProvider : TmdbProvider() {
     private suspend fun filterReadableSubtitles(
         subtitles: List<SubtitleFile>
     ): List<SubtitleFile> = coroutineScope {
-        // Probe fallback tracks too: the first few CDN files may be expired.
-        // Keep a strict bounded shortlist to avoid endless search.
+        // Inspect more candidates when index servers list multiple versions;
+        // discarded/broken links should not starve Arabic or English results.
+        // Keep a bounded list so verification does not block playback forever.
         val shortlist = subtitles
             .distinctBy { it.url }
             .sortedByDescending(::subtitleScore)
             .groupBy { subtitleLanguage(it.lang, it.langTag) }
             .let { byLanguage ->
-                byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(12) +
-                    byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(6)
+                byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(24) +
+                    byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(12)
             }
         val gate = kotlinx.coroutines.sync.Semaphore(6)
         shortlist.map { subtitle ->
@@ -3459,10 +3462,18 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val remainingSubtitles =
             filterReadableSubtitles(nativeSubtitles.toList()) + externalSubtitles
-        remainingSubtitles.forEach { subtitle ->
-            if (seenSubtitles.add(subtitle.url)) {
+        remainingSubtitles.sortedByDescending(::subtitleScore).forEach { subtitle ->
+            // Send exact recognised language names to CloudStream, rather
+            // than source-decorated labels that require fuzzy language parsing.
+            // Other languages are NEVER returned through this provider.
+            val playbackTrack = when (subtitleLanguage(subtitle.lang, subtitle.langTag)) {
+                PreferredSubtitleLanguage.ARABIC -> subtitle.copy(lang = "Arabic")
+                PreferredSubtitleLanguage.ENGLISH -> subtitle.copy(lang = "English")
+                PreferredSubtitleLanguage.OTHER -> null
+            }
+            if (playbackTrack != null && seenSubtitles.add(playbackTrack.url)) {
                 try {
-                    subtitleCallback(subtitle)
+                    subtitleCallback(playbackTrack)
                 } catch (error: Throwable) {
                     logError(error)
                 }
