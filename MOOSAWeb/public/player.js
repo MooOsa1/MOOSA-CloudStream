@@ -93,10 +93,40 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   $('#close-player').focus();
 }
 export function hidePlayer(){
+  document.dispatchEvent(new Event('moosa-player-closed'));
   resetVideo();$('#player-panel').classList.add('hidden');
   if($('#detail-panel').classList.contains('hidden'))$('#overlay').classList.add('hidden');
   previousFocus?.focus?.();
 }
+export function appendPlayerSources(items) {
+  if ($('#player-panel').classList.contains('hidden') || !Array.isArray(items)) return;
+  const picker = $('#player-source');
+  const wasSelected = activeSources[Number(picker.value)]?.url || '';
+  const seen = new Set(activeSources.map(item => item.url));
+  let added = 0;
+  for (const item of items) {
+    if (!item?.url || seen.has(item.url)) continue;
+    seen.add(item.url);
+    activeSources.push(item);
+    added++;
+  }
+  if (!added) return;
+  activeSources.sort((a,b) => (Number(b.quality)||0)-(Number(a.quality)||0));
+  picker.replaceChildren(new Option('اختر السيرفر',''));
+  for (let i=0;i<activeSources.length;i++) {
+    const src=activeSources[i];
+    picker.add(new Option((src.name || 'سيرفر') +
+      (src.quality ? ' • ' + src.quality + 'p' : ''), String(i)));
+  }
+  const restored = wasSelected ? activeSources.findIndex(x => x.url===wasSelected) : -1;
+  if (restored >= 0) picker.value=String(restored);
+  else {
+    picker.value='0';
+    sourceSelected('0');
+  }
+  $('#player-subtitle').textContent=activeSources.length + ' مصدر متاح • الجودة حسب السيرفر';
+}
+
 export function startDemo(){
   $('#player-source').value='';
   $('#player-title').textContent='فيديو تجريبي حر — MDN Flower (CC0)';
