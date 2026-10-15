@@ -22,7 +22,7 @@ Alternatively export `TMDB_API_KEY` in your environment and run `npm start`.
 
 ## Current features
 
-- Real TMDB shelves: trending movies and series, highest-rated films, trending Indian cinema.
+- Real TMDB shelves: trending movies and series, highest-rated films, trending Indian cinema. TV details include a selectable season/episode list.
 - Search, genuine server-side genre/type/country/order filters with pagination; responsive, remote/keyboard-friendly cards.
 - Actual TMDB titles, backdrops, ratings and details (not random synthetic results).
 - Favorites/watchlist persisted **only on your device** via localStorage.
@@ -48,7 +48,7 @@ Edit `data/streams.json` (or point `STREAMS_FILE` to a JSON file). Example:
 }
 ```
 
-Keys use `movie:<TMDB ID>` or `tv:<TMDB ID>`; the manifests are **not** generated from CloudStream plugin sources. Add only streams permitted for browser playback. There is **no proxy to bypass licensing, authentication, CORS or DRM**. The stream list is returned through `/api/streams`, so don't put confidential bearer URLs in public manifests. For private access use an authenticated backend in a later phase.
+Keys use `movie:<TMDB ID>` for movies, `tv:<TMDB ID>` for generic TV sources, and **`tv:<TMDB ID>:<season>:<episode>` for an exact TV episode**. Episode playback requires the exact episode key and never falls back to a generic show link. The site shows real season/episode metadata from TMDB.  the manifests are **not** generated from CloudStream plugin sources. Add only streams permitted for browser playback. There is **no proxy to bypass licensing, authentication, CORS or DRM**. The stream list is returned through `/api/streams`, so don't put confidential bearer URLs in public manifests. For private access use an authenticated backend in a later phase.
 
 For the local video demo, open **تجربة المشغل** and click **تشغيل فيديو تجريبي (CC0)**. Other titles **are not guaranteed to have watchable streams** until configured.
 
