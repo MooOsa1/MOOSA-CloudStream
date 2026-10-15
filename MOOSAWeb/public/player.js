@@ -136,6 +136,7 @@ function adjustCues(value){
   for(const [cue,base] of cueBaseline){try{cue.startTime=Math.max(0,base.start+offset);cue.endTime=Math.max(cue.startTime+0.1,base.end+offset);}catch{}}
 }
 function sourceSelected(value){
+  if(value===''){resetVideo();notice('اختر مصدرًا للتشغيل أو افتح فيديو من جهازك.');return;}
   const src=activeSources[Number(value)];
   if(!src)return;
   $('#player-title').textContent=src.name||'مشغل MOOSA';
