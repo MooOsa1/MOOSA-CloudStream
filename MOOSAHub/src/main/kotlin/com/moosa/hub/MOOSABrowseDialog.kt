@@ -513,6 +513,9 @@ class MOOSABrowseDialog : DialogFragment() {
             progress.visibility = View.GONE
             progress.isIndeterminate = false
             loading = false
+            // Continue requesting pages if the viewport is not scrollable
+            // or if there are too few visible cards to fire a scroll event.
+            recycler.post { maybeLoadMore() }
         }
     }
 
@@ -572,6 +575,7 @@ class MOOSABrowseDialog : DialogFragment() {
             progress.visibility = View.GONE
             progress.isIndeterminate = false
             loading = false
+            recycler.post { maybeLoadMore() }
         }
     }
 
