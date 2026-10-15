@@ -1,0 +1,34 @@
+name: Probe real SubDL Lunchbox Arabic file encodings (read only)
+on:
+  push:
+    branches: ["diagnostics/subtitle-playback-baseline-lunchbox"]
+  workflow_dispatch:
+jobs:
+  read-only-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test actual public ZIP downloads without API key or modification
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,zipfile,io,re
+          urls=[
+           ("PublicHD","https://dl.subdl.com/subtitle/145800-911842.zip"),
+           ("YTS","https://dl.subdl.com/subtitle/3669124-8585975.zip"),
+          ]
+          regex=re.compile(r'(?m)(\d\d:\d\d:\d\d[,.]\d{3})\s*-->\s*(\d\d:\d\d:\d\d[,.]\d{3})')
+          for name,url in urls:
+            try:
+              with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"}),timeout=14) as r:
+                data=r.read(400000)
+                print("ZIP_STATUS",name,r.status,r.headers.get("Content-Type"),len(data),flush=True)
+              z=zipfile.ZipFile(io.BytesIO(data))
+              for item in z.infolist()[:8]:
+                if item.is_dir():continue
+                b=z.read(item)
+                utf=b.decode("utf-8",errors="replace")
+                cp=b.decode("cp1256",errors="replace")
+                print("ZIP_FILE",name,item.filename[:100],"size",len(b),"utf8_replacement",utf.count('\ufffd'),"utf8_arabic",sum('\u0600'<=c<='\u06ff' for c in utf),"cp1256_arabic",sum('\u0600'<=c<='\u06ff' for c in cp),"srt_cues",len(regex.findall(utf)),"is_vtt",utf.lstrip().startswith("WEBVTT"),"bom",b[:3].hex(),flush=True)
+            except Exception as e:print("ZIP_ERROR",name,type(e).__name__,str(e)[:110],flush=True)
+          PY
