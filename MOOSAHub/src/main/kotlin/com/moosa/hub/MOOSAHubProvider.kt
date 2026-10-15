@@ -3063,9 +3063,36 @@ class MOOSAHubProvider : TmdbProvider() {
     private fun subtitleNonCueCategory(body: String): String {
         val head = body.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
             .take(512).lowercase(java.util.Locale.ROOT)
+        if (head.startsWith("{") || head.startsWith("[{")) {
+            // Only report predefined error categories. Never log the raw JSON:
+            // SubDL errors can contain URLs, request data or API credentials.
+            val json = runCatching { org.json.JSONObject(body) }.getOrNull()
+            val value = listOfNotNull(
+                json?.opt("error")?.toString(),
+                json?.opt("code")?.toString(),
+                json?.opt("message")?.toString(),
+                json?.opt("detail")?.toString()
+            ).joinToString(" ").lowercase(java.util.Locale.ROOT)
+                .ifBlank { head }
+            return when {
+                listOf("daily_limit", "download_limit", "quota", "rate_limit",
+                    "too many requests", "limit exceeded").any { it in value } ->
+                    "SubDL JSON: download quota/rate limit"
+                listOf("not found", "file_missing", "does not exist",
+                    "invalid file", "resource_not_found").any { it in value } ->
+                    "SubDL JSON: file not found"
+                listOf("key", "unauthoriz", "forbidden", "authentication",
+                    "access denied", "permission", "paid").any { it in value } ->
+                    "SubDL JSON: authentication/permission required"
+                listOf("service_busy", "temporarily unavailable",
+                    "internal server", "server error").any { it in value } ->
+                    "SubDL JSON: server unavailable"
+                json?.has("url") == true || json?.has("download_url") == true ->
+                    "SubDL JSON: download link envelope"
+                else -> "SubDL JSON: unexpected download payload"
+            }
+        }
         return when {
-            head.startsWith("{") || head.startsWith("[{") ->
-                "JSON response, not SRT/VTT"
             head.startsWith("<") ->
                 "markup response, not SRT/VTT"
             head.contains("too many requests") || head.contains("rate limit") ||
@@ -3097,16 +3124,21 @@ class MOOSAHubProvider : TmdbProvider() {
             MOOSASubtitleHealth.reason(source, "compressed/unsupported")
             return false
         }
+        // SubDL's documented unpacked-file endpoint returns a whole SRT/VTT.
+        // Bazarr also performs a regular GET; the old Range request could
+        // produce JSON error payloads rather than actual subtitle bytes.
+        // Keep the small ranged probe for other providers to avoid extra I/O.
+        val probeHeaders = if (source == "SubDL") {
+            (sub.headers ?: emptyMap()) +
+                mapOf("Accept" to "text/plain,text/vtt,*/*")
+        } else {
+            (sub.headers ?: emptyMap()) + mapOf(
+                "Accept" to "text/plain,text/vtt,*/*",
+                "Range" to "bytes=0-32767"
+            )
+        }
         val body = timed(4200L) {
-            app.get(
-                url,
-                // Native providers may require Referer, User-Agent or cookies
-                // to download an otherwise valid subtitle track.
-                headers = (sub.headers ?: emptyMap()) + mapOf(
-                    "Accept" to "text/plain,text/vtt,*/*",
-                    "Range" to "bytes=0-32767"
-                )
-            ).text.take(32_768)
+            app.get(url, headers = probeHeaders).text.take(32_768)
         } ?: run {
             MOOSASubtitleHealth.reason(source, "download/timeout (possibly 403)")
             return false
