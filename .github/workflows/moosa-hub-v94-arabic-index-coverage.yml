@@ -1,0 +1,64 @@
+name: Verify MOOSA Hub v94 Arabic subtitle fallback (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v94-arabic-fallback-coverage"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile MOOSA Hub and Arabic plugins; validate index
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Verify safe Arabic fallback and no regression in source grouping
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          source=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          meta=json.loads(Path("build/plugins.json").read_text())
+          versions={x["internalName"]:x["version"] for x in meta}
+          assert versions=={"MOOSAHub":94,"MOOSAArabic":3},versions
+          start=source.index("private suspend fun fetchExternalSubtitles(")
+          end=source.index("private val subtitleTiming",start)
+          fetch=source[start:end]
+          # Official legacy index runs only for sparse Arabic v3 coverage;
+          # it is not gated on every modern subtitle service being empty.
+          assert "val backupJob = async {" in fetch
+          assert "val primaryIndex = v3.await()" in fetch
+          assert "PreferredSubtitleLanguage.ARABIC" in fetch
+          assert "} < 2" in fetch
+          assert "if (primary.isEmpty() && supplemental.isEmpty())" not in fetch
+          assert "fetchOpenSubtitlesLegacy(request, imdb)" in fetch
+          assert "val primaryUrls = primaryIndex.map { it.url }.toSet()" in fetch
+          assert ".filterNot { it.url in primaryUrls }" in fetch
+          assert fetch.index("val backupJob = async {") < fetch.index("val supplemental = wyzie.await() + subDl.await()")
+          assert "if (it.isNotEmpty()) onEarlyCandidates(it)" in fetch
+          # The legacy subtitles.find spec supports itemHash as IMDb ID and
+          # supportsZip=false when the client cannot unpack archives.
+          assert '"supportsZip":false' in source
+          assert '"itemHash":"$query"' in source
+          assert "val label = \"$prefix • $origin\"" in source
+          assert 'sourceDetails.startsWith("Repo: ", ignoreCase = true)' in source
+          assert "if (!seenSubtitles.add(subtitle.url)) return" in source
+          assert "val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)" in source
+          assert "val subtitleExternalSlots = kotlinx.coroutines.sync.Semaphore(3)" in source
+          assert "if (source == \"SubDL\") 1 else 2" in source
+          assert "subDlDownloadBlockedUntilMs.updateAndGet" in source
+          assert "withTimeoutOrNull(3200L)" in source
+          # Branch coverage of fallback condition: zero/one Arabic triggers
+          # the backup; two or more Arabic avoids a redundant request.
+          for n, expected in ((0,True),(1,True),(2,False),(3,False),(17,False)):
+              assert (n<2)==expected
+          print("PASS: v94 compiles, expands sparse Arabic search only, preserves quota/latency/grouping")
+          PY
