@@ -1,0 +1,70 @@
+name: Validate MOOSA Hub v88 SubDL source fairness and diagnostics (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v88-subdl-source-fairness"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile plugins and check generated manifest
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Check SubDL pipeline instrumentation, no unbounded requests, no leaked secrets
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          h=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASubtitleHealth.kt").read_text()
+          manifest={it["internalName"]:it["version"] for it in json.loads(Path("build/plugins.json").read_text())}
+          assert manifest=={"MOOSAHub":88,"MOOSAArabic":3},manifest
+          expected=[
+            'MOOSASubtitleHealth.candidates("SubDL", parsed.size)',
+            'MOOSASubtitleHealth.candidates("OpenSubtitles", parsed.size)',
+            'MOOSASubtitleHealth.candidates("Wyzie", parsed.size)',
+            'MOOSASubtitleHealth.omitted("SubDL", "file URL missing")',
+            'MOOSASubtitleHealth.omitted("SubDL", "unknown file language")',
+            'MOOSASubtitleHealth.omitted("SubDL", "unsupported format")',
+            'MOOSASubtitleHealth.queued(source, entries.size)',
+            'MOOSASubtitleHealth.started(source)',
+            'sourceGates.computeIfAbsent(source)',
+            'kotlinx.coroutines.sync.Semaphore(2)',
+            'val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)',
+            'subtitleProbeGate, subtitleSourceGates',
+            'fetchSubDlSubtitles(request, imdb)',
+            'withTimeoutOrNull(3200L)',
+          ]
+          for item in expected: assert item in p,item
+          assert 'val subDl = async {' in p and 'val wyzie = async {' in p
+          assert h.count('@Synchronized')>=7
+          for name in ('candidates','queued','started','omitted'):
+            assert f"fun {name}(" in h, name
+          report=h.split('fun report(): String = buildString {',1)[1]
+          for word in ('usable index URLs','omitted before validation','checks started','sent to player'):
+            assert word in report, word
+          for secret in ('api_key','Bearer','http://','https://'):
+            assert secret not in h,secret
+          print("PASS: actual v88 plugin compiled; stage diagnostics + globally bounded, source-fair probes")
+          PY
+      - name: Validate public SubDL unpack schema (not a private user API response)
+        run: |
+          python3 - <<'PY'
+          import urllib.request
+          with urllib.request.urlopen("https://subdl.com/api-doc",timeout=15) as r:
+              doc=r.read().decode("utf-8",errors="replace")
+          assert "unpack_files" in doc
+          assert "file_n_id" in doc
+          assert "api/v1/subtitles" in doc
+          print("PASS: official API documentation still exposes unpack_files and per-file URLs")
+          PY
