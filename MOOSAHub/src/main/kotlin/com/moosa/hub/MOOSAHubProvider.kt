@@ -43,6 +43,7 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
 import kotlin.math.abs
 
@@ -275,6 +276,9 @@ class MOOSAHubProvider : TmdbProvider() {
     // Remember the actual validated text format so extensionless SubDL VTT
     // links are not handed to ExoPlayer as SRT (which renders no captions).
     private val verifiedSubtitleFormats = ConcurrentHashMap<String, String>()
+    // One SubDL limit response must not trigger another 10 download attempts.
+    private val subDlDownloadBlockedUntilMs = AtomicLong(0L)
+    @Volatile private var subDlDownloadLimitReason = ""
 
     private val cacheLifetimeMs = 20 * 60 * 1000L
     private val subtitleCacheLifetimeMs = 15 * 60 * 1000L
@@ -2817,6 +2821,12 @@ class MOOSAHubProvider : TmdbProvider() {
             MOOSASubtitleHealth.update("SubDL", "No API key configured")
             return emptyList()
         }
+        if (System.currentTimeMillis() < subDlDownloadBlockedUntilMs.get()) {
+            MOOSASubtitleHealth.update(
+                "SubDL", "Download temporarily paused: " + subDlDownloadLimitReason
+            )
+            return emptyList()
+        }
         val isSeries = request.season != null && request.episode != null
 
         val params = buildMap {
@@ -2966,7 +2976,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     .forEach { (source, items) ->
                         MOOSASubtitleHealth.candidates(source, items.size)
                     }
-                onEarlyCandidates(cached.items)
+                cached.items.groupBy { MOOSASubtitleHealth.sourceOf(it.lang) }
+                    .values.forEach { onEarlyCandidates(it) }
                 return@coroutineScope
             }
             subtitleCache.remove(cacheKey)
@@ -3075,9 +3086,12 @@ class MOOSAHubProvider : TmdbProvider() {
             ).joinToString(" ").lowercase(java.util.Locale.ROOT)
                 .ifBlank { head }
             return when {
-                listOf("daily_limit", "download_limit", "quota", "rate_limit",
-                    "too many requests", "limit exceeded").any { it in value } ->
-                    "SubDL JSON: download quota/rate limit"
+                listOf("daily_limit", "download_limit", "quota", "limit exceeded",
+                    "limit reached", "daily download", "exceeded daily").any { it in value } ->
+                    "SubDL JSON: daily download quota"
+                listOf("rate_limit", "too many requests", "slow down",
+                    "rate exceeded", "throttled").any { it in value } ->
+                    "SubDL JSON: temporary rate limit"
                 listOf("not found", "file_missing", "does not exist",
                     "invalid file", "resource_not_found").any { it in value } ->
                     "SubDL JSON: file not found"
@@ -3124,6 +3138,12 @@ class MOOSAHubProvider : TmdbProvider() {
             MOOSASubtitleHealth.reason(source, "compressed/unsupported")
             return false
         }
+        if (source == "SubDL" &&
+            System.currentTimeMillis() < subDlDownloadBlockedUntilMs.get()
+        ) {
+            MOOSASubtitleHealth.reason(source, "download skipped: limit cooldown")
+            return false
+        }
         // SubDL's documented unpacked-file endpoint returns a whole SRT/VTT.
         // Bazarr also performs a regular GET; the old Range request could
         // produce JSON error payloads rather than actual subtitle bytes.
@@ -3156,7 +3176,23 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         if (!subtitleTiming.containsMatchIn(body)) {
-            MOOSASubtitleHealth.reason(source, subtitleNonCueCategory(body))
+            val cause = subtitleNonCueCategory(body)
+            if (source == "SubDL" &&
+                (cause == "SubDL JSON: daily download quota" ||
+                    cause == "SubDL JSON: temporary rate limit")
+            ) {
+                // A rate throttle may clear quickly. Do not hammer daily
+                // download quota errors for the next hour.
+                val pauseMs = if (cause == "SubDL JSON: daily download quota")
+                    60 * 60 * 1000L else 2 * 60 * 1000L
+                val until = System.currentTimeMillis() + pauseMs
+                subDlDownloadBlockedUntilMs.updateAndGet { current ->
+                    maxOf(current, until)
+                }
+                subDlDownloadLimitReason = if (pauseMs > 120_000L)
+                    "daily download quota" else "temporary rate limit"
+            }
+            MOOSASubtitleHealth.reason(source, cause)
             return false
         }
         val hasVttHeader = body.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
@@ -3216,7 +3252,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     // attempts before the player search deadline.
                     // Reserve fairness without increasing total concurrency.
                     val sourceGate = sourceGates.computeIfAbsent(source) {
-                        kotlinx.coroutines.sync.Semaphore(2)
+                        // Avoid parallel download bursts on SubDL's quota.
+                        kotlinx.coroutines.sync.Semaphore(if (source == "SubDL") 1 else 2)
                     }
                     sourceGate.withPermit {
                         suspend fun inspectOne(): SubtitleFile? = gate.withPermit {
@@ -3239,7 +3276,13 @@ class MOOSAHubProvider : TmdbProvider() {
             }.awaitAll().filterNotNull()
         }
 
-        val initial = checkBatch(arabic.take(5) + english.take(3))
+        val isSubDlOnly = subtitles.isNotEmpty() &&
+            subtitles.all { MOOSASubtitleHealth.sourceOf(it.lang) == "SubDL" }
+        // On a free plan, probing 10-20 files per title rapidly burns
+        // the daily download quota. Start with at most three SubDL files.
+        val initial = if (isSubDlOnly)
+            checkBatch(arabic.take(2) + english.take(1))
+        else checkBatch(arabic.take(5) + english.take(3))
         val arabicCount = initial.count {
             subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ARABIC
         }
@@ -3248,8 +3291,15 @@ class MOOSAHubProvider : TmdbProvider() {
         }
         // Do not probe additional files when each language is already
         // represented. A sparse or broken first pass earns a limited retry.
-        val retry = (if (arabicCount < 2) arabic.drop(5).take(9) else emptyList()) +
-            (if (englishCount < 1) english.drop(3).take(4) else emptyList())
+        val retry = if (isSubDlOnly) {
+            if (System.currentTimeMillis() < subDlDownloadBlockedUntilMs.get())
+                emptyList()
+            else (if (arabicCount < 1) arabic.drop(2).take(1) else emptyList()) +
+                (if (englishCount < 1) english.drop(1).take(1) else emptyList())
+        } else {
+            (if (arabicCount < 2) arabic.drop(5).take(9) else emptyList()) +
+                (if (englishCount < 1) english.drop(3).take(4) else emptyList())
+        }
         val additional = if (retry.isNotEmpty()) checkBatch(retry) else emptyList()
         (initial + additional).sortedByDescending(::subtitleScore)
     }
