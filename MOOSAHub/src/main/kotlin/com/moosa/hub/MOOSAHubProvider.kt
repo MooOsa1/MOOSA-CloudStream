@@ -2593,8 +2593,8 @@ class MOOSAHubProvider : TmdbProvider() {
             Regex("""hdtv""").containsMatchIn(text) -> "HDTV"
             Regex("""dvd[ ._-]?rip""").containsMatchIn(text) -> "DVDRip"
             Regex("""hd[ ._-]?rip""").containsMatchIn(text) -> "HDRip"
-            Regex("""(?:hdcam|\\bcam\\b)""").containsMatchIn(text) -> "CAM"
-            Regex("""(?:telesync|\\bhdts\\b|\\bts\\b)""").containsMatchIn(text) -> "TS"
+            Regex("""(?:hdcam|\bcam\b)""").containsMatchIn(text) -> "CAM"
+            Regex("""(?:telesync|\bhdts\b|\bts\b)""").containsMatchIn(text) -> "TS"
             else -> ""
         }
     }
@@ -3179,7 +3179,14 @@ class MOOSAHubProvider : TmdbProvider() {
                             part.startsWith("OpenSubtitles") -> "OpenSubtitles"
                             part.startsWith("SubDL") -> "SubDL"
                             part.startsWith("Wyzie") -> "Wyzie"
-                            else -> subtitleReleaseHint(part).takeIf(String::isNotBlank)
+                            else -> {
+                                val format = subtitleReleaseHint(part)
+                                val fps = Regex("""(\\d{2}(?:\\.\\d{1,2})?)fps""")
+                                    .find(part)?.value
+                                listOf(format.takeIf(String::isNotBlank), fps)
+                                    .filterNotNull().joinToString(" ")
+                                    .takeIf(String::isNotBlank)
+                            }
                         }
                     }.distinct().take(2)
                 val label = (listOf("$prefix #$number") + details).joinToString(" • ")
