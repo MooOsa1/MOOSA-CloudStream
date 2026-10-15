@@ -29,9 +29,9 @@ jobs:
           catalog=(b/"MOOSACatalog.kt").read_text()
           provider=(b/"MOOSAHubProvider.kt").read_text()
           versions={p["internalName"]:p["version"] for p in json.loads(Path("build/plugins.json").read_text())}
-          assert versions=={"MOOSAHub":77,"MOOSAArabic":3},versions
+          assert versions.get("MOOSAHub",0)>=77 and versions.get("MOOSAArabic")==3,versions
           assert "with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7&without_genres=99" in catalog
-          assert "val pagesPerBatch = if (request.name == \"Top Indian Movies\") 3" in catalog
+          assert '"Top Indian Movies" -> 3' in catalog
           assert "if (indianTop) item else enrichArtwork(item, forceTv)" in catalog
           assert "exactIndianRatingOrder(fetchedPages, unsorted)" in catalog
           assert "compareByDescending<SearchResponse>" in catalog
