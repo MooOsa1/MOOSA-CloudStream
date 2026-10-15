@@ -56,9 +56,9 @@ internal object MOOSASubtitleHealth {
 
     /** Excluded while converting API index entries to usable URLs. */
     @Synchronized
-    fun omitted(source: String, reason: String) {
+    fun omitted(source: String, cause: String) {
         omitted[source] = (omitted[source] ?: 0) + 1
-        reason(source, reason)
+        reason(source, cause)
     }
 
     @Synchronized
