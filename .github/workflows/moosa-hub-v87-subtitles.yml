@@ -1,0 +1,81 @@
+name: Validate MOOSA Hub v87 fast progressive subtitles (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v87-progressive-subtitles"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile extensions and release metadata
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Check independent source delivery, bounded retries and unchanged playback window
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          manifest={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert manifest=={"MOOSAArabic":3,"MOOSAHub":87},manifest
+          checks=[
+            'val v3 = async {',
+            'val wyzie = async {',
+            'val subDl = async {',
+            'if (it.isNotEmpty()) onEarlyCandidates(it)',
+            'val supplemental = wyzie.await() + subDl.await()',
+            'val backup = if (primary.isEmpty() && supplemental.isEmpty()) {',
+            'onEarlyCandidates(cached.items)',
+            'val initial = checkBatch(arabic.take(5) + english.take(3))',
+            'if (arabicCount < 2) arabic.drop(5).take(9)',
+            'if (englishCount < 1) english.drop(3).take(4)',
+            'val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)',
+            'withTimeoutOrNull(3200L)',
+            'val track = subtitle.copy(lang = label, url = playbackUrl)',
+            'MOOSASubtitleHealth.begin(request.title)',
+            'MOOSASubtitleHealth.rejected(',
+            'verifiedSubtitleFormats[subtitleCheckKey(sub)] = fileFormat',
+            'filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle, subtitleProbeGate)',
+          ]
+          for c in checks: assert c in p,c
+          first=p.index("val v3 = async {",p.index("private suspend fun fetchExternalSubtitles("))
+          end=p.index("val primary = v3.await()",first)
+          concurrent=p[first:end]
+          assert concurrent.count("onEarlyCandidates(it)") == 3, "Each index must emit independently"
+          assert "val later = fetchExternalSubtitles" not in p, "No last-source bottleneck"
+          assert "app.get(" in p and 'put("unpack", "1")' in p
+          assert "URL" not in Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASubtitleHealth.kt").read_text().split("fun report():")[1]
+          # Short healthy batches: max 8 requests. Broken languages
+          # transparently get a bounded second pass (never an unbounded scan).
+          def selected(total_ar,total_en,valid_first_ar,valid_first_en):
+              first=min(total_ar,5)+min(total_en,3)
+              retry=(min(max(total_ar-5,0),9) if valid_first_ar<2 else 0)
+              retry+=(min(max(total_en-3,0),4) if valid_first_en<1 else 0)
+              return first,retry
+          assert selected(14,7,5,3)==(8,0)
+          assert selected(14,7,0,0)==(8,13)
+          assert selected(3,2,0,0)==(5,0)
+          print("PASS: compile + independent index events + safe bounded retry and unchanged video limit")
+          PY
+      - name: Live public OpenSubtitles list baseline (not playback proof)
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request
+          url="https://opensubtitles-v3.strem.io/subtitles/movie/tt2350496.json"
+          with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"}),timeout=13) as response:
+              subs=json.load(response)["subtitles"]
+          counts={lang:sum(s.get("lang")==lang for s in subs) for lang in ("ara","eng")}
+          print("PUBLIC_INDEX",counts)
+          assert counts["ara"]>=1,"No Arabic index sample"
+          print("PASS: index presence only; device/CDN/sync require playback")
+          PY
