@@ -141,8 +141,9 @@ object MOOSACloudStreamBridge {
                     }
                 }
             } finally {
-                running = false
+                synchronized(this) { running = false }
                 if (!enabled) status = "Disconnected"
+                else start(ctx) // Reconnect after re-pairing with a new token.
             }
         }, "MOOSA-Web-Bridge").start()
     }
