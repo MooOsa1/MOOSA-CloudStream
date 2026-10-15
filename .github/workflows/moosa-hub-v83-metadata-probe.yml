@@ -27,7 +27,7 @@ jobs:
             print("V3",title,"code",code,"count",len(subtitles),flush=True)
             for lang in ("ara","eng"):
               found=[x for x in subtitles if x.get("lang")==lang]
-              print("V3_LANG",title,lang,"count",len(found),"metadata_keys",list(found[0]) if found else [],"id_sample",[x.get("id","")[:120] for x in found[:2]],flush=True)
+              print("V3_LANG",title,lang,"count",len(found),"metadata_keys",list(found[0]) if found else [],"id_sample",[x.get("id","")[:120] for x in found[:2]],"release",[{"sub":x.get("subtitleFileName","")[:80],"movie":x.get("movieReleaseName","")[:80],"format":x.get("releaseFormat"),"fps":x.get("fpsMilli")} for x in found[:2]],flush=True)
             num=imdb.removeprefix("tt").lstrip("0")
             url=f"https://rest.opensubtitles.org/search/imdbid-{num}/sublanguageid-ara"
             code,data=read(url)
