@@ -1,0 +1,72 @@
+name: Diagnose The Lunchbox subtitle timing and source playback (read only)
+on:
+  push:
+    branches: ["diagnostics/subtitle-playback-baseline-lunchbox"]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare actual Arabic subtitle cue timing, formats and release data
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,urllib.parse,json,re,io,zipfile,datetime
+          H={"User-Agent":"Mozilla/5.0","Accept":"application/json,*/*"}
+          def get(url,limit=130000):
+            with urllib.request.urlopen(urllib.request.Request(url,headers=H),timeout=14) as r:
+              return r.status,r.headers.get("content-type",""),r.read(limit)
+          def timecode(s):
+            h,m,s=s.strip().replace(",",".").split(":")
+            return int(h)*3600+int(m)*60+float(s)
+          url="https://opensubtitles-v3.strem.io/subtitles/movie/tt2350496.json"
+          code,ct,data=get(url,1000000)
+          subs=json.loads(data)["subtitles"]
+          print("LUNCHBOX_OSV3",code,"total",len(subs), "arabic",sum(s.get("lang")=="ara" for s in subs),"english",sum(s.get("lang")=="eng" for s in subs),flush=True)
+          for lang in ("ara","eng"):
+            for i,s in enumerate([s for s in subs if s.get("lang")==lang][:8]):
+              print("TRACK",lang,i,"release",str(s.get("movieReleaseName"))[:125],"format",s.get("releaseFormat"),"fpsMilli",s.get("fpsMilli"),"subtitleFileName",str(s.get("subtitleFileName"))[:90],flush=True)
+              url=s.get("url","")
+              if not url.startswith("https://"):continue
+              try:
+                code,ct,b=get(url,600000)
+                txt=b.decode("utf-8",errors="replace")
+                rx=re.compile(r'(?m)(\d\d:\d\d:\d\d[,.]\d{3})\s*-->\s*(\d\d:\d\d:\d\d[,.]\d{3})')
+                matches=rx.findall(txt)
+                start=round(timecode(matches[0][0]),2) if matches else None
+                end=round(timecode(matches[-1][1]),2) if matches else None
+                glyphs=sum('\u0600'<=c<='\u06ff' for c in txt)
+                print("CONTENT",lang,i,code,ct,"bytes",len(b),"cues",len(matches),"start_seconds",start,"end_seconds",end,"arabic_glyphs",glyphs,"replacement",txt.count('\ufffd'),"WEBVTT",txt.lstrip().startswith("WEBVTT"),flush=True)
+              except Exception as e:print("CONTENT_ERROR",lang,i,type(e).__name__,str(e)[:90],flush=True)
+          # SubSource read-only catalogue and inspect one downloadable subtitle ZIP
+          api="https://api.subsource.net/v1"
+          payload=json.dumps({"includeSeasons":False,"limit":15,"query":"tt2350496","signal":"{}"}).encode()
+          req=urllib.request.Request(api+"/movie/search",data=payload,headers={**H,"Content-Type":"application/json"})
+          with urllib.request.urlopen(req,timeout=15) as r: search=json.load(r)
+          matches=search.get("results",[])
+          print("SUBSOURCE_MATCHES",[(x.get("title"),x.get("type"),x.get("link")) for x in matches[:4]],flush=True)
+          selected=next((x for x in matches if x.get("title","").lower().strip() in ("the lunchbox","the lunchbox (dabba)","dabba")),None)
+          if selected:
+            endpoint=api+selected["link"].replace("series","subtitles")
+            code,ct,data=get(endpoint,400000)
+            items=json.loads(data).get("subtitles",[])
+            langcounts={}
+            for x in items:
+              lg=x.get("language","");langcounts[lg]=langcounts.get(lg,0)+1
+            print("SUBSOURCE_INDEX",code,"count",len(items),"languages",langcounts,flush=True)
+            ar=[x for x in items if x.get("language","").lower()=="arabic" and x.get("link")]
+            for i,row in enumerate(ar[:5]):
+              print("SUBSOURCE_AR",i,"release",str(row.get("release_info"))[:160],"type",row.get("release_type"),"link",row.get("link"),flush=True)
+            if ar:
+              code,ct,raw=get(api+"/subtitle/"+ar[0]["link"],100000)
+              detail=json.loads(raw).get("subtitle",{})
+              token=detail.get("download_token")
+              print("SUBSOURCE_DETAIL",code,"release",detail.get("release_info"),"fps",detail.get("framerate"),"token_present",bool(token),flush=True)
+              if token:
+                code,ct,b=get(api+"/subtitle/download/"+token,250000)
+                archive=zipfile.ZipFile(io.BytesIO(b))
+                names=archive.namelist()
+                sample=[(n,len(archive.read(n))) for n in names[:4] if n.lower().endswith((".srt",".vtt"))]
+                print("SUBSOURCE_FILE",code,ct,"compressed",len(b),"files",len(names),"sample_srt_vtt",sample,flush=True)
+          PY
