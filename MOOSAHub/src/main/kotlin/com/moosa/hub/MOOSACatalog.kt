@@ -63,7 +63,7 @@ object MOOSACatalog {
             options["sort_by"] == "popularity.desc"
 
     private fun indianTrendingDateWindow(): Map<String, String> {
-        // Rolling 24 months avoids a hardcoded year that silently gets
+        // Rolling 36 months avoids a hardcoded year that silently gets
         // stale. Constrain by real release date, not arbitrary random
         // recommendations or titles whose premiere is still in the future.
         val utc = TimeZone.getTimeZone("UTC")
@@ -72,7 +72,7 @@ object MOOSACatalog {
         }
         val calendar = Calendar.getInstance(utc)
         val today = formatter.format(calendar.time)
-        calendar.add(Calendar.MONTH, -24)
+        calendar.add(Calendar.MONTH, -36)
         val since = formatter.format(calendar.time)
         return mapOf(
             "primary_release_date.gte" to since,
@@ -447,10 +447,10 @@ object MOOSACatalog {
         "/trending/tv/week" to "Trending Series",
         "/movie/top_rated" to "Top Rated Movies",
         "/tv/top_rated" to "Top Rated Series",
-        // Popular Indian narrative films released within the previous 24
+        // Popular Indian narrative films released within the previous 36
         // months, sorted by TMDB's live popularity (not randomized picks).
         // The date window is injected dynamically in queryOptions().
-        "/discover/movie?with_origin_country=IN&sort_by=popularity.desc&vote_count.gte=50&vote_average.gte=6.2&without_genres=99" to "Trending Indian Movies",
+        "/discover/movie?with_origin_country=IN&sort_by=popularity.desc&vote_count.gte=20&vote_average.gte=6.0&without_genres=99" to "Trending Indian Movies",
         // Distinct from trending: all-time top-ranked Indian films by rating.
         "/discover/movie?with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7&without_genres=99" to "Top Indian Movies"
     )
