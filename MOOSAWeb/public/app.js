@@ -5,7 +5,7 @@ const state = {
   filters: { type: "movie", genre: "", sort: "popular", country: "" },
   search: "", current: null, currentDetails: null, sources: [], player: null,
   hls: null, trackBlob: null, rawSubtitles: "", subtitleOffset: 0,
-  lastFocused: null, lastViewScroll: 0
+  lastFocused: null, lastViewScroll: 0, episode: null, detailGeneration: 0, browseGeneration: 0
 };
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g,
   c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -64,13 +64,13 @@ function hero(item) {
 }
 function row(section, idx) {
   if (!section.items?.length) return "";
-  const target = idx === 1 ? "tv" : "movie";
+  const target = section.items?.find(x => x.type === "tv" || x.type === "movie")?.type || (idx % 2 ? "tv" : "movie");
   return '<section class="section"><div class="section-head"><div><h2>' + escapeHtml(section.title) + '</h2>' +
     '<p>' + escapeHtml(section.subtitle || "") + '</p></div><button class="section-link" data-nav="' + target + '">عرض الكل ←</button></div>' +
     '<div class="rail">' + section.items.map(card).join("") + '</div></section>';
 }
 async function renderHome() {
-  state.view = "home"; setNav("home");
+  state.view = "home"; state.browseGeneration += 1; setNav("home");
   if (!state.home.length) {
     setPage('<div class="loading-page"><div class="skeleton hero-skel"></div><div class="skeleton-line"></div><div class="skeleton-cards"></div></div>', "الرئيسية");
     const data = await api("/api/home");
@@ -94,8 +94,22 @@ async function discover(reset = true) {
   state.view = "discover"; setNav(state.filters.type);
   if (reset) setPage('<div class="skeleton hero-skel" style="height:210px"></div>', "استكشاف");
   const params = new URLSearchParams({ ...state.filters, page: state.page });
+  const generation = ++state.browseGeneration;
   const data = await api("/api/discover?" + params);
-  state.totalPages = data.totalPages || 1; state.results.push(...data.results);
+  if (generation !== state.browseGeneration || state.view !== "discover") return;
+  state.totalPages = data.totalPages || 1;
+  state.results.push(...(data.results || []));
+  // Pagination must not recreate the whole view, scroll to top or move focus.
+  if (!reset) {
+    const grid = $("#content .grid");
+    if (grid) {
+      grid.insertAdjacentHTML("beforeend", (data.results || []).map(card).join(""));
+      const load = $("#content [data-load-more]");
+      if (load && state.page >= state.totalPages) load.remove();
+      else if (load) load.disabled = false;
+      return;
+    }
+  }
   const tags = activeTags();
   setPage('<div class="view-title"><div><span class="eyebrow">DISCOVER</span><h1>' + escapeHtml(tags.join(" • ")) + '</h1><p>النتائج تتغير من المصدر مباشرة عند اختيار الفلاتر</p></div>' +
     '<button class="button small" data-open-filters>☷ الفلاتر</button></div><div class="chip-list">' +
@@ -108,7 +122,7 @@ function empty(message) { return '<div class="empty-state"><div class="empty-ico
 async function search(q) {
   q = q.trim();
   if (!q) return renderHome();
-  state.view = "search"; state.search = q; state.page = 1; setNav("");
+  state.view = "search"; state.search = q; state.page = 1; state.browseGeneration += 1; setNav("");
   setPage('<div class="skeleton hero-skel" style="height:210px"></div>', "البحث");
   const data = await api("/api/search?" + new URLSearchParams({ q }));
   state.results = data.results;
@@ -117,7 +131,7 @@ async function search(q) {
     (state.results.length ? '<div class="grid">' + state.results.map(card).join("") + '</div>' : empty("ما لقينا عنوانًا مطابقًا")), "البحث");
 }
 function showSaved() {
-  state.view = "saved"; setNav("saved");
+  state.view = "saved"; state.browseGeneration += 1; setNav("saved");
   const list = saved();
   setPage('<div class="view-title"><div><span class="eyebrow">WATCHLIST</span><h1>قائمتي ♡</h1><p>محفوظة على هذا المتصفح فقط</p></div></div>' +
     (list.length ? '<div class="grid">' + list.map(card).join("") + '</div>' : empty("قائمتك فاضية حاليًا")), "قائمتي");
@@ -130,6 +144,8 @@ async function openDetails(key) {
   const [type, id] = key.split(":");
   if ((type !== "tv" && type !== "movie") || !id || !/^[\w-]+$/.test(id)) return;
   state.lastFocused = document.activeElement;
+  const generation = ++state.detailGeneration;
+  state.episode = null;
   $("#detail-backdrop").classList.remove("hidden");
   $("#detail-dialog").classList.remove("hidden");
   $("#detail-body").innerHTML = '<div class="skeleton hero-skel"></div>';
@@ -137,6 +153,8 @@ async function openDetails(key) {
   document.querySelector("[data-close-details]").focus();
   try {
     const d = await api("/api/details?" + new URLSearchParams({ type, id }));
+    if (generation !== state.detailGeneration ||
+        $("#detail-dialog").classList.contains("hidden")) return;
     state.current = d; state.currentDetails = d;
     const genres = (d.genres || []).map(x => '<span>' + escapeHtml(x.name) + '</span>').join("");
     const imageStyle = d.backdrop ? 'background-image:url("' + escapeHtml(d.backdrop) + '")' :
@@ -147,13 +165,44 @@ async function openDetails(key) {
       '<div class="detail-badges"><span>' + escapeHtml(d.year || "—") + '</span>' +
       (d.rating ? '<span>★ ' + d.rating.toFixed(1) + '</span>' : "") + (d.runtime ? '<span>' + d.runtime + ' دقيقة</span>' : "") + genres + '</div>' +
       '<p>' + escapeHtml(d.overview || "لا يتوفر وصف عربي لهذا العنوان حاليًا.") + '</p>' +
-      '<div class="detail-actions"><button class="button primary" data-play>▶ تشغيل</button>' +
+      '<div class="detail-actions"><button class="button primary" data-play>' + (type === "tv" ? "▤ اختر حلقة" : "▶ تشغيل") + '</button>' +
       '<button class="button" data-toggle-saved="' + escapeHtml(key) + '">' + (isSaved ? "♥ إزالة من قائمتي" : "♡ حفظ في قائمتي") + '</button></div>' +
+      (type === "tv" && d.seasons?.length ?
+        '<section class="episode-section"><h3>الحلقات والمواسم</h3><label for="season-select">اختر الموسم</label><select id="season-select">' +
+        d.seasons.filter(x=>Number.isInteger(x.season_number)).map(x => '<option value="' + Number(x.season_number) + '">' +
+        escapeHtml(x.name || ("الموسم " + x.season_number)) + '</option>').join("") +
+        '</select><div id="episode-list" class="episode-list"><p>جاري تحميل الحلقات...</p></div></section>' : "") +
       (d.cast?.length ? '<div class="detail-credit">بطولة: ' + escapeHtml(d.cast.join(" • ")) + '</div>' : "") +
       '<div class="detail-credit">توفر العنوان في TMDB لا يعني توفر رابط مشاهدة. المشغل يدعم المصادر التي تملك إذن استخدامها.</div></div>';
+    if (type === "tv" && d.seasons?.length) {
+      const season = d.seasons.find(x => x.season_number > 0) || d.seasons[0];
+      $("#season-select").value = String(season.season_number);
+      loadEpisodes(id, season.season_number, generation);
+    }
   } catch (error) { $("#detail-body").innerHTML = empty(error.message); }
 }
+async function loadEpisodes(id, season, generation = state.detailGeneration) {
+  const list = $("#episode-list");
+  if (!list) return;
+  list.innerHTML = '<p>جاري تحميل الحلقات...</p>';
+  try {
+    const data = await api("/api/episodes?" + new URLSearchParams({ id, season }));
+    if (generation !== state.detailGeneration || !$("#episode-list") ||
+        $("#season-select")?.value !== String(season)) return;
+    $("#episode-list").innerHTML = (data.episodes || []).length ?
+      data.episodes.map(episode =>
+        '<button class="episode-card" data-episode="' + Number(episode.number) + '" data-season="' + Number(season) + '">' +
+        '<span class="episode-still">' + (episode.still ?
+          '<img src="' + escapeHtml(episode.still) + '" alt="" loading="lazy">' : '▶') + '</span>' +
+        '<span class="episode-info"><strong>' + Number(episode.number) + '. ' + escapeHtml(episode.name) +
+        '</strong><small>' + escapeHtml(episode.airDate || "") +
+        '</small><span>' + escapeHtml((episode.overview || "").slice(0, 180)) + '</span></span><span class="episode-arrow">▶</span></button>'
+      ).join("") : '<p>ما لقينا حلقات لهذا الموسم.</p>';
+  } catch { if (generation === state.detailGeneration && $("#episode-list"))
+    $("#episode-list").innerHTML = '<p>تعذر تحميل الحلقات.</p>'; }
+}
 function closeDetails() {
+  state.detailGeneration += 1;
   $("#detail-dialog").classList.add("hidden"); $("#detail-backdrop").classList.add("hidden");
   state.lastFocused?.focus?.(); state.lastFocused = null;
 }
@@ -205,27 +254,36 @@ function playUrl(url, type = "") {
   else if (hls && window.Hls?.isSupported()) {
     state.hls = new window.Hls({ maxBufferLength: 25, enableWorker: true });
     state.hls.loadSource(url); state.hls.attachMedia(video);
+    state.hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
+      video.play().catch(() => message("اضغط تشغيل داخل الفيديو للبدء."));
+    });
     state.hls.on(window.Hls.Events.ERROR, (_, data) => {
       if (data.fatal) message("تعذر تشغيل HLS. تحقق من صلاحية الرابط ودعم CORS.");
     });
   } else if (hls) { message("هذا المتصفح لا يدعم HLS حاليًا. جرّب MP4 أو متصفحًا يدعم HLS."); return; }
   else video.src = url;
   message("إذا تعذر التشغيل، تأكد من صلاحية الرابط ودعم CORS وصيغة الفيديو.");
-  video.play().catch(() => { message("اضغط تشغيل داخل الفيديو للبدء."); });
+  if (!hls || video.canPlayType("application/vnd.apple.mpegurl"))
+    video.play().catch(() => { message("اضغط تشغيل داخل الفيديو للبدء."); });
 }
 async function openPlayer() {
   if (!state.currentDetails) return;
   closeDetails();
-  state.player = { key: keyOf(state.currentDetails), sourceUrl: "" };
+  const baseKey = keyOf(state.currentDetails);
+  const key = state.episode ?
+    baseKey + ":" + state.episode.season + ":" + state.episode.number : baseKey;
+  state.player = { key, sourceUrl: "" };
   $("#player-modal").classList.remove("hidden");
-  $("#player-title").textContent = nameOf(state.currentDetails);
+  $("#player-title").textContent = nameOf(state.currentDetails) +
+    (state.episode ? " • S" + state.episode.season + "E" + state.episode.number : "");
   $("#player-placeholder").classList.remove("hidden");
   $("#source-select").innerHTML = '<option value="">اختر سيرفرًا</option>';
   $("#custom-url").value = "";
   clearSubtitles();
   message("اختر مصدرًا متاحًا أو أضف رابط فيديو مُصرّحًا لك بتشغيله.");
   try {
-    const data = await api("/api/sources?key=" + encodeURIComponent(state.player.key));
+    const data = await api("/api/sources?key=" + encodeURIComponent(key));
+    if (state.player?.key !== key) return;
     state.sources = data.sources || [];
     for (const source of state.sources) {
       const option = document.createElement("option"); option.value = source.id; option.textContent = source.name + " • " + (source.quality || "Auto");
@@ -262,8 +320,11 @@ function secondsToVtt(seconds) {
   return hh + ":" + mm + ":" + ss + "." + mmm;
 }
 function vttToSeconds(raw) {
-  const [hh,mm,ss] = raw.replace(",", ".").split(":");
-  return Number(hh) * 3600 + Number(mm) * 60 + Number(ss);
+  const parts = raw.replace(",", ".").split(":").map(Number);
+  if (parts.some(x => !Number.isFinite(x))) return NaN;
+  return parts.length === 3 ?
+    parts[0] * 3600 + parts[1] * 60 + parts[2] :
+    parts[0] * 60 + parts[1];
 }
 function clearSubtitles() {
   $("#video").querySelectorAll("track").forEach(t => t.remove());
@@ -278,7 +339,7 @@ function applySubtitle() {
   if (!state.rawSubtitles) return;
   let input = state.rawSubtitles.replace(/^\uFEFF/, "").replace(/\r/g, "")
     .replace(/^WEBVTT[^\n]*\n/i, "").trim();
-  const arrow = /^(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})(.*)$/gm;
+  const arrow = /^((?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*((?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3})(.*)$/gm;
   let cues = 0;
   input = input.replace(arrow, (_, a,b,extra) => {
     cues += 1;
@@ -288,7 +349,9 @@ function applySubtitle() {
   if (!cues) { message("صيغة الترجمة غير مدعومة؛ يلزم ملف SRT أو VTT بتوقيتات صحيحة."); return; }
   state.trackBlob = URL.createObjectURL(new Blob(["WEBVTT\n\n" + input + "\n"], { type: "text/vtt" }));
   const track = document.createElement("track");
-  track.kind = "subtitles"; track.label = "الترجمة المختارة"; track.srclang = "ar"; track.src = state.trackBlob; track.default = true;
+  track.kind = "subtitles"; track.label = "الترجمة المختارة";
+  track.srclang = /[\u0600-\u06FF]/.test(state.rawSubtitles) ? "ar" : "en";
+  track.src = state.trackBlob; track.default = true;
   track.addEventListener("load", () => { if (track.track) track.track.mode = "showing"; });
   video.append(track);
   $("#subtitle-offset").textContent = state.subtitleOffset.toFixed(1) + " ثانية";
@@ -313,10 +376,25 @@ document.addEventListener("click", async event => {
   if (button.dataset.detail) return openDetails(button.dataset.detail);
   if (button.dataset.toggleSaved) return toggleSaved(button.dataset.toggleSaved);
   if (button.hasAttribute("data-open-filters")) return openFilters();
-  if (button.hasAttribute("data-play")) return openPlayer();
+  if (button.hasAttribute("data-play")) {
+    if (state.currentDetails?.type === "tv" && $("#episode-list")) {
+      $("#episode-list").scrollIntoView({ block:"nearest", behavior:"smooth" });
+      $("#episode-list").querySelector("button")?.focus(); return;
+    }
+    return openPlayer();
+  }
+  if (button.hasAttribute("data-episode")) {
+    state.episode = { season: Number(button.dataset.season), number: Number(button.dataset.episode) };
+    return openPlayer();
+  }
   if (button.hasAttribute("data-load-more")) {
     state.page += 1; button.disabled = true;
     try { await discover(false); } catch { state.page -= 1; toast("فشل تحميل الصفحة التالية"); button.disabled = false; }
+  }
+});
+$("#detail-dialog").addEventListener("change", event => {
+  if (event.target.id === "season-select") {
+    loadEpisodes(state.currentDetails?.id, Number(event.target.value));
   }
 });
 $("#watchlist-top").addEventListener("click", () => route("saved"));
