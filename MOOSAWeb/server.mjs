@@ -1,9 +1,30 @@
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { join, resolve, extname, sep } from "node:path";
+import { join, resolve, dirname, extname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("./public/", import.meta.url)));
+const sourcesFile = resolve(process.env.MOOSA_SOURCES_FILE || join(dirname(fileURLToPath(import.meta.url)), "sources.local.json"));
+const allowedStream = url => {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || (u.protocol === "http:" && ["localhost","127.0.0.1"].includes(u.hostname));
+  } catch { return false; }
+};
+const authorizedSources = async key => {
+  if (!/^(?:movie|tv):[a-zA-Z0-9:_-]{1,60}$/.test(key)) return [];
+  let registry;
+  try { registry = JSON.parse(await readFile(sourcesFile,"utf8")); }
+  catch { return []; }
+  if (!Object.hasOwn(registry,key) || !Array.isArray(registry[key])) return [];
+  return registry[key].slice(0,15).filter(x =>
+    x && typeof x.id === "string" && typeof x.name === "string" &&
+    typeof x.url === "string" && allowedStream(x.url) && ["mp4","hls"].includes(x.type)
+  ).map(x=>({
+    id:x.id.slice(0,80), name:x.name.slice(0,120),
+    quality:String(x.quality||"Auto").slice(0,40), type:x.type, url:x.url
+  }));
+};
 const KEY = process.env.TMDB_API_KEY || "";
 const TOKEN = process.env.TMDB_READ_ACCESS_TOKEN || "";
 const tmdbEnabled = Boolean(KEY || TOKEN);
@@ -83,7 +104,7 @@ export const metadataRoute = async (pathname, query) => {
   if (pathname === "/api/home") return await sections();
   if (pathname === "/api/sources") {
     const key = query.get("key") || "";
-    return { sources: key === "movie:demo-bunny" ? [DEMO_SOURCE] : [],
+    return { sources: key === "movie:demo-bunny" ? [DEMO_SOURCE] : await authorizedSources(key),
       notice: "Metadata does not include streaming rights or playback links. Add authorized sources only." };
   }
   if (pathname === "/api/genres") {
@@ -111,6 +132,18 @@ export const metadataRoute = async (pathname, query) => {
     if (sort === "newest") params[type === "tv" ? "first_air_date.lte" : "primary_release_date.lte"] = date;
     const d = await api("discover/" + type, params);
     return { results: (d.results || []).map(x => normalized(x, type)), totalPages: d.total_pages || 1 };
+  }
+  if (pathname === "/api/episodes") {
+    const id = safeId(query.get("id"));
+    const season = Number(query.get("season"));
+    if (!id || !Number.isInteger(season) || season < 0 || season > 100)
+      throw Object.assign(new Error("Invalid season"),{ code:400 });
+    const data = await api("tv/" + id + "/season/" + season);
+    return { season, episodes: (data.episodes || []).map(episode => ({
+      number: episode.episode_number, name: episode.name || ("Episode " + episode.episode_number),
+      overview: episode.overview || "", airDate: episode.air_date || "",
+      still: episode.still_path ? "https://image.tmdb.org/t/p/w500" + episode.still_path : ""
+    })) };
   }
   if (pathname === "/api/details") {
     const type = typeSafe(query.get("type")), id = query.get("id");
