@@ -154,15 +154,17 @@ async function loadEpisodes(id,season){
 async function playEpisode(id,season,number,name){
   const current=state.current;if(!current || current.type!=='tv' || String(current.id)!==String(id))return;
   const token=keyFor(current);
+  state.episode={season,number};
   $('#source-info').textContent='جاري البحث عن سيرفر هذه الحلقة...';
   let sources=[];
   try {
     const response=await api('/api/streams?'+new URLSearchParams({media:'tv',id,season,episode:number}));
     sources=response.sources||[];
   }catch{ /* The player can still accept an authorized custom/local video. */ }
-  if(!state.current || keyFor(state.current)!==token)return;
+  if(!state.current || keyFor(state.current)!==token ||
+    state.episode?.season!==season || state.episode?.number!==number ||
+    $('#detail-panel').classList.contains('hidden'))return;
   const title=titleFor(current.partial)+' • S'+season+'E'+number+(name?' • '+name:'');
-  state.episode={season,number};
   closeDetails();
   showPlayer({title,sources});
   if(!sources.length)toast('لا يوجد سيرفر مصرّح به لهذه الحلقة؛ تقدر تستخدم رابطك أو ملفًا محليًا.');
