@@ -9,6 +9,7 @@ internal object MOOSASubtitleHealth {
     private val status = linkedMapOf<String, String>()
     private val delivered = linkedMapOf<String, Int>()
     private val rejected = linkedMapOf<String, Int>()
+    private val reasons = linkedMapOf<String, MutableMap<String, Int>>()
 
     @Synchronized
     fun begin(titleText: String) {
@@ -16,6 +17,7 @@ internal object MOOSASubtitleHealth {
         status.clear()
         delivered.clear()
         rejected.clear()
+        reasons.clear()
         status["OpenSubtitles"] = "waiting"
         status["SubDL"] = "waiting"
         status["Wyzie"] = "waiting"
@@ -34,6 +36,12 @@ internal object MOOSASubtitleHealth {
     @Synchronized
     fun rejected(source: String) {
         rejected[source] = (rejected[source] ?: 0) + 1
+    }
+
+    @Synchronized
+    fun reason(source: String, category: String) {
+        val group = reasons.getOrPut(source) { linkedMapOf() }
+        group[category] = (group[category] ?: 0) + 1
     }
 
     fun sourceOf(label: String): String = when {
@@ -57,7 +65,12 @@ internal object MOOSASubtitleHealth {
                 .append(good)
                 .append(" | rejected/unreadable: ")
                 .append(bad)
-                .append("\n\n")
+                .append("\n")
+            val why = reasons[source].orEmpty().entries
+                .sortedByDescending { it.value }.take(3)
+                .joinToString(" | ") { "${it.key}: ${it.value}" }
+            if (why.isNotBlank()) append("  causes: ").append(why).append("\n")
+            append("\n")
         }
         append("These numbers are from the addon, not proof that the video ")
         append("player rendered the captions. CloudStream embedded tracks ")
