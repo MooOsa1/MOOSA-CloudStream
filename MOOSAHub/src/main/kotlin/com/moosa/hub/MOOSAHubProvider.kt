@@ -3477,8 +3477,6 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val seenLinks = ConcurrentHashMap.newKeySet<String>()
         val seenSubtitles = ConcurrentHashMap.newKeySet<String>()
-        val arabicSubNumber = AtomicInteger(0)
-        val englishSubNumber = AtomicInteger(0)
         // Installed-repository subtitles were previously collected here and
         // not inspected until all video providers finished. On a fast player
         // search they could be cancelled without a single validation attempt.
@@ -3502,38 +3500,30 @@ class MOOSAHubProvider : TmdbProvider() {
                 PreferredSubtitleLanguage.ENGLISH -> PreferredSubtitleLanguage.ENGLISH
                 PreferredSubtitleLanguage.OTHER -> return
             }
-            // CloudStream groups every track with the exact same lang into
-            // ONE selector entry. Keep each verified version distinguishable,
-            // with a recognisable Arabic/English prefix for auto-selection.
+            // CloudStream's source/subtitle dialog groups by the exact
+            // SubtitleData.originalName, which comes directly from this lang.
+            // Share one label per language + origin so each source gets
+            // ONE row. Each distinct validated URL remains an independently
+            // selectable item in that row, even without A/B/C numbering.
             synchronized(callbackLock) {
                 if (!seenSubtitles.add(subtitle.url)) return
-                val number = if (language == PreferredSubtitleLanguage.ARABIC)
-                    arabicSubNumber.incrementAndGet()
-                else englishSubNumber.incrementAndGet()
                 val prefix = if (language == PreferredSubtitleLanguage.ARABIC)
                     "Arabic" else "English"
-                val details = subtitle.lang.substringAfter(" • ", "")
-                    .split(" • ")
-                    .filter { it.isNotBlank() }
-                    .mapNotNull { part ->
-                        when {
-                            part.startsWith("OpenSubtitles Backup") -> "OS Backup"
-                            part.startsWith("OpenSubtitles") -> "OpenSubtitles"
-                            part.startsWith("SubDL") -> "SubDL"
-                            part.startsWith("Wyzie") -> "Wyzie"
-                            part.startsWith("Repo: ") ->
-                                part.removePrefix("Repo: ").take(28)
-                            else -> {
-                                val format = subtitleReleaseHint(part)
-                                val fps = Regex("""(\d{2}(?:\.\d{1,2})?)fps""")
-                                    .find(part)?.value
-                                listOf(format.takeIf(String::isNotBlank), fps)
-                                    .filterNotNull().joinToString(" ")
-                                    .takeIf(String::isNotBlank)
-                            }
-                        }
-                    }.distinct().take(2)
-                val label = (listOf("$prefix #$number") + details).joinToString(" • ")
+                val sourceDetails = subtitle.lang.substringAfter(" • ", "")
+                val origin = when {
+                    sourceDetails.startsWith("OpenSubtitles", ignoreCase = true) ->
+                        "OpenSubtitles"
+                    sourceDetails.startsWith("SubDL", ignoreCase = true) ->
+                        "SubDL"
+                    sourceDetails.startsWith("Wyzie", ignoreCase = true) ->
+                        "Wyzie"
+                    sourceDetails.startsWith("Repo: ", ignoreCase = true) ->
+                        sourceDetails.substringAfter("Repo: ")
+                            .substringBefore(" • ").trim().take(28)
+                            .ifBlank { "Other Repositories" }
+                    else -> "Other Repositories"
+                }
+                val label = "$prefix • $origin"
                 val format = verifiedSubtitleFormats[subtitleCheckKey(subtitle)]
                 // The official CloudStream player infers MIME exclusively
                 // using subtitleFile.url.endsWith("vtt"). HTTP URL fragments
@@ -3544,7 +3534,11 @@ class MOOSAHubProvider : TmdbProvider() {
                     !subtitle.url.substringBefore('#').endsWith(".vtt", true)
                 ) subtitle.url.substringBefore('#') + "#moosa.vtt"
                 else subtitle.url
-                val track = subtitle.copy(lang = label, url = playbackUrl)
+                val track = subtitle.copy(
+                    lang = label,
+                    langTag = if (language == PreferredSubtitleLanguage.ARABIC) "ar" else "en",
+                    url = playbackUrl
+                )
                 try {
                     subtitleCallback(track)
                     MOOSASubtitleHealth.accepted(
