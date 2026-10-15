@@ -114,6 +114,7 @@ async function handle(req,res) {
   try {
     if(req.method !== 'GET' && req.method !== 'HEAD')return err(res,405,'Method not allowed');
     const url=new URL(req.url||'/', 'http://localhost');
+    if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
     if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only'});
     if(url.pathname==='/api/streams'){
       const media=mediaType(url.searchParams.get('media'));
