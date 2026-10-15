@@ -46,6 +46,32 @@ jobs:
           }
           console.log("PASS: web pages, backend metadata, playable demo source and assets");
           JS
+      - name: Chrome headless visual and JavaScript smoke
+        run: |
+          node server.mjs >/tmp/moosa-web-browser.log 2>&1 &
+          trap 'kill $! 2>/dev/null || true' EXIT
+          for i in $(seq 1 25); do
+            curl -fsS http://127.0.0.1:3000/api/status >/dev/null && break
+            sleep 1
+          done
+          command -v google-chrome || command -v chromium || command -v chromium-browser
+          BROWSER=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          "$BROWSER" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --window-size=1440,900 --virtual-time-budget=2500 \
+            --dump-dom http://127.0.0.1:3000 > /tmp/moosa-web-rendered.html 2>/tmp/moosa-chrome-log.txt
+          grep -q "Big Buck Bunny" /tmp/moosa-web-rendered.html
+          grep -q "تجربة المشغل" /tmp/moosa-web-rendered.html
+          "$BROWSER" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
+            --window-size=1440,900 --virtual-time-budget=2300 \
+            --screenshot=/tmp/moosa-web.png http://127.0.0.1:3000 >/dev/null 2>/dev/null
+          test -s /tmp/moosa-web.png
+          echo "PASS: Chrome rendered title cards and created a 1440x900 screenshot"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moosa-web-preview
+          path: /tmp/moosa-web.png
+          if-no-files-found: ignore
       - name: Validate metadata keys stay server-side
         run: |
           node --input-type=module <<'JS'
