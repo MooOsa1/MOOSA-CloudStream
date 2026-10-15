@@ -43,7 +43,8 @@ function card(item, forced){
   button.append(frame,makeEl('span','poster-name',titleFor(item)),makeEl('span','poster-year',yearFor(item)));
   button.addEventListener('click',()=>openDetails({id:item.id,type,partial:item}));return button;
 }
-function renderCards(where,items,forced){where.replaceChildren();let n=0;for(const item of items){const node=card(item,forced);if(node){where.append(node);n++;}}if(!n)where.append(makeEl('div','empty-state','ما حصلنا نتائج مطابقة. جرّب فلتر ثاني.'));}
+function renderCards(where,items,forced){where.replaceChildren();const batch=document.createDocumentFragment();let n=0;for(const item of items){const node=card(item,forced);if(node){batch.append(node);n++;}}if(!n)batch.append(makeEl('div','empty-state','ما حصلنا نتائج مطابقة. جرّب فلتر ثاني.'));where.append(batch);}
+function appendCards(where,items,forced){const batch=document.createDocumentFragment();for(const item of items){const node=card(item,forced);if(node)batch.append(node);}where.append(batch);}
 function showView(which){state.view=which;$('#home-view').classList.toggle('hidden',which!=='home');$('#browse-view').classList.toggle('hidden',which!=='browse');$('#saved-view').classList.toggle('hidden',which!=='saved');$$('.nav-icon[data-nav]').forEach(b=>b.classList.toggle('selected',b.dataset.nav=== (which==='browse'?(state.browse.media==='tv'?'series':'movies'):which)));document.documentElement.scrollTop=0;}
 function showBusyGrid(){const grid=$('#browse-grid');grid.replaceChildren();const loader=makeEl('div','loader');grid.append(loader)}
 function chips(){const el=$('#active-chips');el.replaceChildren();const name=state.browse.media==='tv'?'مسلسلات':'أفلام';let items=[name];if(state.mode==='section'&&state.section)items.push(kinds[state.section]||state.section);else{const genre=GENRES[state.browse.media].find(g=>String(g[0])===state.browse.genre);if(genre)items.push(genre[1]);items.push(SORT_LABELS[state.browse.sort]);if(state.browse.country)items.push(COUNTRY_LABELS[state.browse.country]);}if(state.mode==='search')items=[`نتائج: ${state.query}`];for(const name of items)el.append(makeEl('span','chip',name));}
@@ -62,13 +63,15 @@ async function loadBrowse(append=false){
     const next=(body.results||[]).filter(i=>i && i.id && (i.media_type!=='person'));
     const known=new Set(state.items.map(i=>mediaFor(i)+':'+i.id));const unique=next.filter(x=>{const key=mediaFor(x)+':'+x.id;if(known.has(key))return false;known.add(key);return true});
     state.items.push(...unique);state.hasMore=state.page<Math.min(body.total_pages||1,500)&&next.length>0;
-    renderCards($('#browse-grid'),state.items,state.mode==='search'?undefined:state.browse.media);
+    const grid=$('#browse-grid');const forced=state.mode==='search'?undefined:state.browse.media;
+    if(append)appendCards(grid,unique,forced);
+    else renderCards(grid,state.items,forced);
     loadMore.classList.toggle('hidden',!state.hasMore);
   }catch(e){if(request===state.requestId){if(!append)$('#browse-grid').replaceChildren(makeEl('div','empty-state',e.message));toast(e.message)}}
   finally{if(request===state.requestId){state.busy=false;loadMore.disabled=false;}}
 }
-function browseSection(section){state.section=section;state.mode='section';state.browse={media:section.includes('series')?'tv':'movie',genre:'',sort:'popularity.desc',country:section.startsWith('indian')?'IN':''};$('#browse-title').textContent=kinds[section]||'استكشف';chips();syncFilters();$('#filters-panel').classList.add('hidden');showView('browse');loadBrowse();}
-function browseMedia(type){state.mode='discover';state.section='';state.browse={media:type,genre:'',sort:'popularity.desc',country:''};$('#browse-title').textContent=type==='movie'?'اكتشف الأفلام':'اكتشف المسلسلات';chips();syncFilters();$('#filters-panel').classList.add('hidden');showView('browse');loadBrowse();}
+function browseSection(section){state.section=section;state.mode='section';state.browse={media:section.includes('series')?'tv':'movie',genre:'',sort:'popularity.desc',country:section.startsWith('indian')?'IN':''};$('#browse-title').textContent=kinds[section]||'استكشف';chips();syncFilters();$('#filters-toggle').classList.remove('hidden');$('#filters-panel').classList.add('hidden');showView('browse');loadBrowse();}
+function browseMedia(type){state.mode='discover';state.section='';state.browse={media:type,genre:'',sort:'popularity.desc',country:''};$('#browse-title').textContent=type==='movie'?'اكتشف الأفلام':'اكتشف المسلسلات';chips();syncFilters();$('#filters-toggle').classList.remove('hidden');$('#filters-panel').classList.add('hidden');showView('browse');loadBrowse();}
 async function showSearch(value){const q=value.trim();if(q.length<2){navigate('home');return}state.query=q;state.mode='search';state.browse={media:'movie',genre:'',sort:'popularity.desc',country:''};$('#browse-title').textContent='نتائج البحث';chips();$('#filters-toggle').classList.add('hidden');$('#filters-panel').classList.add('hidden');showView('browse');loadBrowse();}
 function navigate(nav){if(nav==='home'){showView('home');}else if(nav==='movies'){browseMedia('movie');}else if(nav==='series'){browseMedia('tv');}else if(nav==='saved'){showView('saved');renderSaved();}}
 function renderSaved(){const grid=$('#saved-grid');grid.replaceChildren();if(!state.saved.length){grid.append(makeEl('div','empty-state','قائمتك فاضية حاليًا. افتح فيلمًا واضغط ＋ قائمتي لإضافته.'));return;}for(const it of state.saved){grid.append(card(it,mediaFor(it)));}}
