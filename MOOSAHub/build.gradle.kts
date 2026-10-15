@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 78
+version = 79
 
 
 android {
@@ -73,3 +73,5 @@ dependencies {
 // v78: Trending Indian Movies directly above Top Indian Movies, ranked by
 // current TMDB popularity among quality-screened releases from the past
 // 24 months. Existing Indian Top ranking and other sections remain separate.
+
+// v79: expand recent Indian trending coverage and improve browse pagination.
