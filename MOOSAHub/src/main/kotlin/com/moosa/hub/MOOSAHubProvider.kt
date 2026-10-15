@@ -3025,8 +3025,15 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private suspend fun inspectSubtitleContent(sub: SubtitleFile): Boolean {
         val url = sub.url
-        if (!validStreamingUrl(url)) return false
-        if (Regex("""(?i)\.(?:zip|rar|7z|gz)(?:[?#]|$)""").containsMatchIn(url)) return false
+        val source = MOOSASubtitleHealth.sourceOf(sub.lang)
+        if (!validStreamingUrl(url)) {
+            MOOSASubtitleHealth.reason(source, "invalid URL")
+            return false
+        }
+        if (Regex("""(?i)\.(?:zip|rar|7z|gz)(?:[?#]|$)""").containsMatchIn(url)) {
+            MOOSASubtitleHealth.reason(source, "compressed/unsupported")
+            return false
+        }
         val body = timed(4200L) {
             app.get(
                 url,
@@ -3037,7 +3044,10 @@ class MOOSAHubProvider : TmdbProvider() {
                     "Range" to "bytes=0-32767"
                 )
             ).text.take(32_768)
-        } ?: return false
+        } ?: run {
+            MOOSASubtitleHealth.reason(source, "download/timeout (possibly 403)")
+            return false
+        }
 
         // One broken glyph should not disqualify an otherwise readable file;
         // reject heavily damaged encodings, HTML error pages and binary data.
@@ -3045,15 +3055,24 @@ class MOOSAHubProvider : TmdbProvider() {
             body.contains("\u0000") ||
             body.contains("<html", ignoreCase = true) ||
             body.contains("<!DOCTYPE", ignoreCase = true)
-        ) return false
+        ) {
+            MOOSASubtitleHealth.reason(source, "wrong encoding/HTML/binary")
+            return false
+        }
 
-        if (!subtitleTiming.containsMatchIn(body)) return false
+        if (!subtitleTiming.containsMatchIn(body)) {
+            MOOSASubtitleHealth.reason(source, "no timed cues")
+            return false
+        }
         val hasVttHeader = body.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
             .startsWith("WEBVTT", ignoreCase = true)
         val fileFormat = if (hasVttHeader) "vtt" else "srt"
         val playableTiming = if (hasVttHeader) supportedVttTiming
             else supportedSrtTiming
-        if (!playableTiming.containsMatchIn(body)) return false
+        if (!playableTiming.containsMatchIn(body)) {
+            MOOSASubtitleHealth.reason(source, "unsupported cue timing")
+            return false
+        }
         val content = body.substringAfter("-->", body)
         val arabicCount = content.count { it in '\u0600'..'\u06FF' }
         val latinCount = content.count { it in 'A'..'Z' || it in 'a'..'z' }
@@ -3062,7 +3081,11 @@ class MOOSAHubProvider : TmdbProvider() {
             PreferredSubtitleLanguage.ENGLISH -> latinCount >= 12
             PreferredSubtitleLanguage.OTHER -> false
         }
-        if (readable) verifiedSubtitleFormats[subtitleCheckKey(sub)] = fileFormat
+        if (readable) {
+            verifiedSubtitleFormats[subtitleCheckKey(sub)] = fileFormat
+        } else {
+            MOOSASubtitleHealth.reason(source, "empty/mismatched language")
+        }
         return readable
     }
 
