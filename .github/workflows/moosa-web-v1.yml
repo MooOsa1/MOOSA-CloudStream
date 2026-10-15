@@ -72,6 +72,12 @@ jobs:
           name: moosa-web-preview
           path: /tmp/moosa-web.png
           if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: moosa-web-source
+          path: MOOSAWeb/
+          if-no-files-found: error
       - name: Validate metadata keys stay server-side
         run: |
           node --input-type=module <<'JS'
