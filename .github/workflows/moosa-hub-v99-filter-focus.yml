@@ -1,0 +1,85 @@
+name: Validate MOOSA Hub v99 modal DPAD focus and dynamic titles
+on:
+  push:
+    branches: ["fix/moosa-hub-v99-filter-focus-dynamic-title"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile MOOSA Hub, Arabic and manifest
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Verify focus trap, header title and prior runtime regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          path=Path('MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSABrowseDialog.kt')
+          source=path.read_text()
+          manifest={x['internalName']:x['version'] for x in json.loads(Path('build/plugins.json').read_text())}
+          assert manifest=={'MOOSAHub':99,'MOOSAArabic':3},manifest
+          assert 'private lateinit var categoryTitle: TextView' in source
+          assert 'categoryTitle = TextView(context).apply {' in source
+          assert 'focusableButton("×")' in source
+          assert 'contentDescription = "Close"' in source
+          assert 'LinearLayout.LayoutParams(dp(40), dp(37))' in source
+          assert 'focusableButton("CLOSE")' not in source
+          assert 'setSingleLine(true)' in source
+          assert 'ellipsize = TextUtils.TruncateAt.END' in source
+          assert 'private fun updateCategoryTitle()' in source
+          assert 'categoryTitle.text = request.name' in source
+          assert 'categoryTitle.text = listOfNotNull(country, kind, order)' in source
+          assert 'val medium = if (applied.isTv) "Series" else "Movies"' in source
+          assert 'val kind = if (genre == null) medium else "$genre $medium"' in source
+          assert 'selectedFilters = choice\n        updateCategoryTitle()' in source
+          assert 'private fun moveFilterPanelFocus(direction: Int)' in source
+          assert 'moveFilterPanelFocus(keyCode)' in source
+          assert 'filterPanelVisible && (' in source
+          assert 'filterPanelVisible) return false' in source
+          assert 'ViewGroup.FOCUS_BLOCK_DESCENDANTS' in source
+          assert 'ViewGroup.FOCUS_AFTER_DESCENDANTS' in source
+          assert 'restoreFilterFocus()' in source
+          assert 'if (isAdded && filterPanelVisible &&' in source
+          assert 'if (filterPanelVisible) {\n                restoreFilterFocus()' in source
+          # Bottom-row down edges must remain within the panel: no fallback
+          # to Android focus search or any background poster.
+          start=source.index('private fun moveFilterPanelFocus(direction: Int)')
+          end=source.index('private fun setFilterPanelVisible(',start)
+          body=source[start:end]
+          assert 'KeyEvent.KEYCODE_DPAD_DOWN -> when (current)' in body
+          for value in (
+            'typeButton -> sortButton',
+            'genreButton -> countryButton',
+            'sortButton -> resetButton',
+            'countryButton -> showResultsButton',
+            'sortButton -> typeButton',
+            'countryButton -> genreButton',
+            'resetButton -> sortButton',
+            'showResultsButton -> countryButton',
+            'else -> current',
+          ):
+            assert value in body,value
+          assert 'focusFirstVisiblePoster()' not in body
+          assert 'target.requestFocus()' in body
+          # A previous Android runtime crash came from Kotlin's synthetic
+          # Job.cancel$default, absent in CloudStream's bundled coroutines.
+          assert 'browseJob?.cancel()' not in source
+          classes=list(Path('MOOSAHub/build').rglob('MOOSABrowseDialog*.class'))
+          assert classes,'compiled dialog classes missing'
+          assert not any(b'cancel$default' in c.read_bytes() for c in classes)
+          assert 'val chipScroller = HorizontalScrollView(context)' in source
+          assert 'MOOSABrowseFilters.toRequest(request, it)' in source
+          assert 'val change = draftFilters != selectedFilters' in source
+          print('PASS: modal traps DPAD, close is ×, real filters set dynamic header and reset restores shelf')
+          PY
