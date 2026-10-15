@@ -10,6 +10,10 @@ internal object MOOSASubtitleHealth {
     private val delivered = linkedMapOf<String, Int>()
     private val rejected = linkedMapOf<String, Int>()
     private val reasons = linkedMapOf<String, MutableMap<String, Int>>()
+    private val candidates = linkedMapOf<String, Int>()
+    private val queued = linkedMapOf<String, Int>()
+    private val started = linkedMapOf<String, Int>()
+    private val omitted = linkedMapOf<String, Int>()
 
     @Synchronized
     fun begin(titleText: String) {
@@ -18,6 +22,10 @@ internal object MOOSASubtitleHealth {
         delivered.clear()
         rejected.clear()
         reasons.clear()
+        candidates.clear()
+        queued.clear()
+        started.clear()
+        omitted.clear()
         status["OpenSubtitles"] = "waiting"
         status["SubDL"] = "waiting"
         status["Wyzie"] = "waiting"
@@ -26,6 +34,31 @@ internal object MOOSASubtitleHealth {
     @Synchronized
     fun update(source: String, message: String) {
         status[source] = message.take(180)
+    }
+
+    /** Survived index parsing; no subtitle text downloaded yet. */
+    @Synchronized
+    fun candidates(source: String, count: Int) {
+        candidates[source] = (candidates[source] ?: 0) + count
+    }
+
+    /** Submitted to the limited verification queue. */
+    @Synchronized
+    fun queued(source: String, count: Int) {
+        queued[source] = (queued[source] ?: 0) + count
+    }
+
+    /** Download/validation actually began, rather than merely being queued. */
+    @Synchronized
+    fun started(source: String) {
+        started[source] = (started[source] ?: 0) + 1
+    }
+
+    /** Excluded while converting API index entries to usable URLs. */
+    @Synchronized
+    fun omitted(source: String, reason: String) {
+        omitted[source] = (omitted[source] ?: 0) + 1
+        reason(source, reason)
     }
 
     @Synchronized
@@ -58,13 +91,19 @@ internal object MOOSASubtitleHealth {
             if (source != "Native" && source !in status) continue
             val good = delivered[source] ?: 0
             val bad = rejected[source] ?: 0
-            if (source == "Native" && good == 0 && bad == 0) continue
+            val parsed = candidates[source] ?: 0
+            val waiting = queued[source] ?: 0
+            val tried = started[source] ?: 0
+            val dropped = omitted[source] ?: 0
+            if (source == "Native" && good == 0 && bad == 0 && waiting == 0) continue
             append(source).append(": ")
                 .append(status[source] ?: "native player tracks")
-                .append("\n  verified/displayed by extension: ")
-                .append(good)
-                .append(" | rejected/unreadable: ")
-                .append(bad)
+                .append("\n  usable index URLs: ").append(parsed)
+                .append(" | omitted before validation: ").append(dropped)
+                .append("\n  queued: ").append(waiting)
+                .append(" | checks started: ").append(tried)
+                .append("\n  sent to player: ").append(good)
+                .append(" | rejected/unreadable: ").append(bad)
                 .append("\n")
             val why = reasons[source].orEmpty().entries
                 .sortedByDescending { it.value }.take(3)
@@ -72,6 +111,8 @@ internal object MOOSASubtitleHealth {
             if (why.isNotBlank()) append("  causes: ").append(why).append("\n")
             append("\n")
         }
+        append("If queued exceeds checks started, the player search ended ") 
+        append("before those files could be inspected.\n")
         append("These numbers are from the addon, not proof that the video ")
         append("player rendered the captions. CloudStream embedded tracks ")
         append("are controlled by the player. No API keys or links are shown.")
