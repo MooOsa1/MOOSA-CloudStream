@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111216">
+  <meta name="description" content="MOOSA Web — اكتشف الأفلام والمسلسلات وشاهد المقاطع المصرح بها مع دعم الترجمة.">
+  <title>MOOSA Web • اكتشف وشاهد</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="التنقل">
+      <a href="#home" class="brand" aria-label="MOOSA Web"><span class="brand-mark">M</span><span class="brand-word">MOOSA<span>WEB</span></span></a>
+      <div class="nav-group">
+        <button class="nav-item is-current" data-nav="home" title="الرئيسية"><span class="nav-icon">⌂</span><span>الرئيسية</span></button>
+        <button class="nav-item" data-nav="movie" title="أفلام"><span class="nav-icon">▣</span><span>أفلام</span></button>
+        <button class="nav-item" data-nav="tv" title="مسلسلات"><span class="nav-icon">▤</span><span>مسلسلات</span></button>
+        <button class="nav-item" data-nav="saved" title="قائمتي"><span class="nav-icon">♡</span><span>قائمتي</span></button>
+      </div>
+      <div class="sidebar-bottom"><span class="online-dot"></span><span id="sidebar-state">جاري التهيئة</span></div>
+    </aside>
+    <div class="main-column">
+      <header class="topbar">
+        <button id="mobile-menu" class="icon-button mobile-menu" aria-label="القائمة">☰</button>
+        <div class="page-crumb"><span class="line"></span><span id="page-label">اكتشف عالم السينما</span></div>
+        <form id="search-form" class="search" role="search">
+          <span class="search-icon">⌕</span><input id="search-input" type="search" placeholder="ابحث عن فيلم أو مسلسل..." autocomplete="off" aria-label="البحث عن فيلم أو مسلسل">
+          <kbd>/</kbd>
+        </form>
+        <button id="watchlist-top" class="round-button" title="قائمتي" aria-label="قائمتي">♡</button>
+      </header>
+      <main id="content">
+        <div class="loading-page"><div class="skeleton hero-skel"></div><div class="skeleton-line"></div><div class="skeleton-cards"></div></div>
+      </main>
+      <footer class="footer"><div class="footer-brand">MOOSA WEB <span>v1.0</span></div><span>بيانات الأفلام من TMDB • المشاهدة للمصادر المرخّص استخدامها فقط</span><span>هذا المنتج غير معتمد من TMDB</span></footer>
+    </div>
+  </div>
+  <div id="drawer-backdrop" class="backdrop hidden"></div>
+  <section id="filter-panel" class="filter-panel" role="dialog" aria-label="تخصيص النتائج" aria-modal="true" hidden>
+    <div class="panel-top"><div><span class="eyebrow">EXPLORE</span><h2>تخصيص النتائج</h2></div><button class="icon-button" data-close-filters aria-label="إغلاق">✕</button></div>
+    <div class="filter-fields">
+      <label>نوع المحتوى<select id="filter-type"><option value="movie">أفلام</option><option value="tv">مسلسلات</option></select></label>
+      <label>التصنيف<select id="filter-genre"><option value="">كل التصنيفات</option></select></label>
+      <label>الترتيب<select id="filter-sort"><option value="popular">الأكثر شعبية</option><option value="rated">الأعلى تقييمًا</option><option value="votes">الأكثر تصويتًا</option><option value="newest">الأحدث</option></select></label>
+      <label>بلد الإنتاج<select id="filter-country"><option value="">كل الدول</option><option value="IN">الهند</option><option value="US">أمريكا</option><option value="GB">بريطانيا</option><option value="KR">كوريا الجنوبية</option><option value="JP">اليابان</option><option value="TR">تركيا</option><option value="FR">فرنسا</option><option value="ES">إسبانيا</option></select></label>
+    </div>
+    <div class="panel-actions"><button id="filter-reset" class="button subtle">إعادة ضبط</button><button id="filter-apply" class="button primary">عرض النتائج <span>←</span></button></div>
+  </section>
+  <div id="detail-backdrop" class="backdrop hidden"></div>
+  <section id="detail-dialog" role="dialog" aria-modal="true" aria-label="تفاصيل الفيلم" class="detail-modal hidden">
+    <button class="detail-close icon-button" data-close-details aria-label="إغلاق">✕</button>
+    <div id="detail-body"></div>
+  </section>
+  <section id="player-modal" class="player-modal hidden" role="dialog" aria-modal="true" aria-label="مشغل الفيديو">
+    <div class="player-toolbar"><strong id="player-title">MOOSA PLAYER</strong><button id="player-close" class="icon-button" aria-label="إغلاق المشغل">✕</button></div>
+    <div class="player-stage">
+      <video id="video" controls playsinline preload="metadata"></video>
+      <div id="player-placeholder" class="player-placeholder"><div class="play-glyph">▶</div><h2>المشغل جاهز</h2><p>اختر مصدر فيديو مُصرّحًا لك بتشغيله.</p></div>
+    </div>
+    <div class="player-settings">
+      <div class="setting-group"><label for="source-select">السيرفر / المصدر</label><select id="source-select"><option value="">اختر مصدرًا</option></select></div>
+      <div class="setting-group"><label for="custom-url">رابط فيديو خاص بك (MP4 أو HLS)</label><div class="inline-input"><input id="custom-url" type="url" dir="ltr" placeholder="https://example.com/video.mp4"><button id="play-custom" class="button primary">تشغيل</button></div></div>
+      <div class="setting-group"><label for="subtitle-file">ملف الترجمة</label><input id="subtitle-file" type="file" accept=".srt,.vtt,text/vtt,text/plain"><div class="mini-actions"><button id="subtitle-minus" class="mini-button">− 0.5 ث</button><output id="subtitle-offset">0.0 ثانية</output><button id="subtitle-plus" class="mini-button">+ 0.5 ث</button><button id="subtitle-clear" class="mini-button">حذف الترجمة</button></div></div>
+      <p id="player-message" class="player-notice" role="status">الروابط الخارجية قد تحتاج السماح بالتشغيل من المتصفح (CORS) أو DRM مرخّصًا.</p>
+    </div>
+  </section>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
