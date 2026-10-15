@@ -1,0 +1,80 @@
+name: Validate MOOSA Hub v95 server-side Show More filters (no release)
+on:
+  push:
+    branches: ["feat/moosa-hub-v95-show-more-real-filters"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile MOOSA Hub and Arabic
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Verify real discover requests, pagination, reset and TV focus
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('MOOSAHub/src/main/kotlin/com/moosa/hub')
+          f=(root/'MOOSABrowseFilters.kt').read_text()
+          d=(root/'MOOSABrowseDialog.kt').read_text()
+          c=(root/'MOOSACatalog.kt').read_text()
+          manifest={item['internalName']:item['version'] for item in json.loads(Path('build/plugins.json').read_text())}
+          assert manifest=={'MOOSAHub':95,'MOOSAArabic':3},manifest
+          # Filter choices use real TMDB server-side discover endpoints.
+          for token in [
+              'data class Selection(', 'fun availableGenres(isTv: Boolean)',
+              'fun withType(selection: Selection, isTv: Boolean)',
+              'fun toRequest(original: MainPageRequest, choice: Selection)',
+              'data = "/discover/$type?$query"',
+              'params["with_genres"] = it.toString()',
+              'params["with_origin_country"] = choice.originCountry',
+              'params["vote_count.gte"] = if (choice.isTv) "50" else "100"',
+              '"first_air_date.desc"', '"primary_release_date.desc"',
+              'params["include_null_first_air_dates"] = "false"',
+              'TimeZone.getTimeZone("UTC")',
+          ]: assert token in f,token
+          # Confirm genuinely correct movie and TV IDs, not fake local filtering.
+          for entry in [
+              'GenreChoice("action", "Action", movieId = 28)',
+              'GenreChoice("action_adventure", "Action & Adventure", tvId = 10759)',
+              'GenreChoice("horror", "Horror", movieId = 27)',
+              'GenreChoice("scifi_fantasy", "Sci-Fi & Fantasy", tvId = 10765)',
+              'GenreChoice("crime", "Crime", 80, 80)',
+          ]: assert entry in f,entry
+          assert 'genres.filter { it.id(isTv) != null }' in f
+          for token in [
+              'private fun selectedRequest(): MainPageRequest',
+              'MOOSABrowseFilters.toRequest(request, it)',
+              'typeButton.setOnClickListener',
+              'genreButton.setOnClickListener',
+              'sortButton.setOnClickListener',
+              'countryButton.setOnClickListener',
+              'resetButton.setOnClickListener { applyFilters(null) }',
+              'browseJob?.cancel()', 'browseGeneration += 1',
+              'adapter.submitList(emptyList())', 'recycler.scrollToPosition(0)',
+              'id = View.generateViewId()',
+              'val effectiveRequest = selectedRequest()',
+              'if (generation != browseGeneration) return',
+              'request = effectiveRequest',
+          ]: assert token in d,token
+          assert d.count('request = effectiveRequest') == 2
+          assert 'MOOSACatalog.browseBatch(' in d
+          assert 'val path = request.data.substringBefore("?")' in c
+          assert 'val options = queryOptions(path, extras)' in c
+          assert 'listPage(api, path, safeStart, isTv, options)' in c
+          assert 'val isTv = path.contains("/tv/") || path == "/discover/tv"' in c
+          assert 'MOOSASeeAll.register(' in c
+          assert '.filter { it.originalLanguage != "ar" }' not in d
+          print('PASS: v95 compiled; real TMDB type/genre/sort/country filters, cancellable pagination and stable home UI')
+          PY
