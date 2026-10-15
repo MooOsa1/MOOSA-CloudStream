@@ -187,9 +187,9 @@ export function createBridge({ secret = process.env.BRIDGE_SECRET || randomBytes
           // the user agent and stays pending for up to 20 seconds.
           await new Promise(resolve => {
             const timeout = setTimeout(finish, 20_000);
-            function finish() { clearTimeout(timeout); req.off('close', finish); if (s.waiting === finish) s.waiting = null; resolve(); }
+            function finish() { clearTimeout(timeout); res.off('close', finish); if (s.waiting === finish) s.waiting = null; resolve(); }
             s.waiting = finish;
-            req.on('close', finish);
+            res.on('close', finish);
           });
         }
         s.lastSeen = now();
@@ -201,9 +201,10 @@ export function createBridge({ secret = process.env.BRIDGE_SECRET || randomBytes
         const item = s.pending.get(id);
         if (!item || item.done || now() - item.created > REQUEST_WINDOW)
           return respond(res, 404, { error: 'Request expired' });
-        item.sources = sanitizeSources(data.sources);
-        item.status = item.sources.length ? 'ready' : 'no-browser-compatible-sources';
-        item.done = true;
+        item.sources = sanitizeSources([...item.sources, ...(Array.isArray(data.sources) ? data.sources : [])]);
+        item.done = data.final !== false;
+        item.status = item.sources.length ? (item.done ? 'ready' : 'searching') :
+          (item.done ? 'no-browser-compatible-sources' : 'searching');
         s.lastSeen = now();
         return respond(res, 200, { ok: true, accepted: item.sources.length });
       }
