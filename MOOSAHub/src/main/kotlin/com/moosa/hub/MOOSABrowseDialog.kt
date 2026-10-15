@@ -20,6 +20,7 @@ import android.view.ViewGroup
 import android.view.Window
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -56,6 +57,7 @@ class MOOSABrowseDialog : DialogFragment() {
     private lateinit var filterPanel: LinearLayout
     private lateinit var filtersScrim: View
     private lateinit var chipsRow: LinearLayout
+    private var lastRenderedChips: List<String> = emptyList()
     private lateinit var showResultsButton: Button
     private var draftFilters: MOOSABrowseFilters.Selection? = null
     private var filterPanelVisible = false
@@ -220,7 +222,16 @@ class MOOSABrowseDialog : DialogFragment() {
             gravity = Gravity.CENTER_VERTICAL
             isFocusable = false
         }
-        root.addView(chipsRow, LinearLayout.LayoutParams(-1, dp(31)).apply {
+        // Small screens and long country/genre labels can scroll; no
+        // cropped chips and no extra focusable elements in the DPAD path.
+        val chipScroller = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            isFocusable = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            addView(chipsRow, ViewGroup.LayoutParams(-2, -1))
+        }
+        root.addView(chipScroller, LinearLayout.LayoutParams(-1, dp(31)).apply {
             topMargin = dp(3)
         })
 
@@ -776,6 +787,12 @@ class MOOSABrowseDialog : DialogFragment() {
     private fun closeWithMotion() {
         if (closingAnimated || !::browseRoot.isInitialized) return
         closingAnimated = true
+        if (::filterPanel.isInitialized) {
+            filterPanel.animate().cancel()
+            filterPanel.visibility = View.GONE
+            filtersScrim.animate().cancel()
+            filtersScrim.visibility = View.GONE
+        }
         browseRoot.animate().cancel()
         browseRoot.animate()
             .alpha(0f).scaleX(0.985f).scaleY(0.985f)
@@ -842,7 +859,6 @@ class MOOSABrowseDialog : DialogFragment() {
         resetButton.alpha = 1f
 
         // Chips represent APPLIED filters, never uncommitted panel edits.
-        chipsRow.removeAllViews()
         val applied = selectedFilters
         val active = applied ?: MOOSABrowseFilters.initial(request)
         val labels = listOfNotNull(
@@ -856,6 +872,9 @@ class MOOSABrowseDialog : DialogFragment() {
                 it.code == active.originCountry && it.code.isNotEmpty()
             }?.name
         )
+        if (labels == lastRenderedChips) return
+        lastRenderedChips = labels
+        chipsRow.removeAllViews()
         for (label in labels) {
             val chip = TextView(requireContext()).apply {
                 text = label
