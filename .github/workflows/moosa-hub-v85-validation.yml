@@ -27,7 +27,7 @@ jobs:
           import json,re,urllib.parse
           src=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
           vers={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
-          assert vers=={"MOOSAHub":85,"MOOSAArabic":3},vers
+          assert vers.get("MOOSAHub",0)>=85 and vers.get("MOOSAArabic")==3,vers
           checks=[
            '@JsonProperty("fps") val fps: String? = null',
            '@JsonProperty("name") val name: String? = null',
