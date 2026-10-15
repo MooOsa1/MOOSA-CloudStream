@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 82
+version = 83
 
 
 android {
@@ -84,3 +84,6 @@ dependencies {
 
 // v82: progressive subtitle delivery, minimal verification I/O, and bounded
 // subtitle finalization even while streams finish resolving.
+
+// v83: preserve original subtitle release type/FPS and show each verified
+// Arabic/English version separately for manual WEB-DL/WEBRip matching.
