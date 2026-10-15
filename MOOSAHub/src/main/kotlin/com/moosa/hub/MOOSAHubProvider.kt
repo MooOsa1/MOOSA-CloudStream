@@ -258,8 +258,9 @@ class MOOSAHubProvider : TmdbProvider() {
     private val providerResolveTimeoutMs = 30000L
     private val providerLinksTimeoutMs = 22000L
     private val streamPlayLinksTimeoutMs = 60000L
-    private val subtitleTimeoutMs = 2200L
-    private val fastSubtitleTimeoutMs = 1350L
+    // Subtitle discovery is not controlled by the Arabic video fast-mode setting.
+    // Short network deadlines previously caused all tracks to silently disappear.
+    private val subtitleTimeoutMs = 5200L
     private val linkProbeTimeoutMs = 10500L
     private val linkProbeBatchSize = 10
 
@@ -2614,9 +2615,8 @@ class MOOSAHubProvider : TmdbProvider() {
         val tmdbId = request.tmdbId ?: return null
         val type = if (request.isTv || request.season != null) "tv" else "movie"
 
-        val timeout = if (MOOSASettingsStore.arabicFastMode()) 900L else 1800L
-
-        return timed(timeout) {
+        // IMDb lookup is needed for external subtitles, even with fast video mode.
+        return timed(4500L) {
             app.get(
                 "$tmdbApiUrl/$type/$tmdbId/external_ids",
                 params = mapOf("api_key" to tmdbApiKey)
@@ -2626,12 +2626,7 @@ class MOOSAHubProvider : TmdbProvider() {
         }
     }
 
-    private fun currentSubtitleTimeoutMs(): Long =
-        if (MOOSASettingsStore.arabicFastMode()) {
-            fastSubtitleTimeoutMs
-        } else {
-            subtitleTimeoutMs
-        }
+    private fun currentSubtitleTimeoutMs(): Long = subtitleTimeoutMs
 
     private fun subtitleCacheKey(
         request: HubPlaybackRequest,
@@ -2711,7 +2706,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val response = timed(currentSubtitleTimeoutMs()) {
             app.get(
-                "https://sub.wyzie.ru/search",
+                "https://sub.wyzie.io/search",
                 params = params,
                 headers = mapOf("Accept" to "application/json")
             ).parsedSafe<Array<WyzieSubtitle>>()
@@ -2749,7 +2744,7 @@ class MOOSAHubProvider : TmdbProvider() {
             request.episode?.let { put("episode_number", it.toString()) }
         }
 
-        val response = timed(2200L) {
+        val response = timed(currentSubtitleTimeoutMs()) {
             app.get(
                 "https://api.subdl.com/api/v1/subtitles",
                 params = params,
@@ -2869,7 +2864,7 @@ class MOOSAHubProvider : TmdbProvider() {
         val url = sub.url
         if (!validStreamingUrl(url)) return false
         if (Regex("""(?i)\.(?:zip|rar|7z|gz)(?:[?#]|$)""").containsMatchIn(url)) return false
-        val body = timed(2300L) {
+        val body = timed(4200L) {
             app.get(
                 url,
                 headers = mapOf(
@@ -2879,7 +2874,9 @@ class MOOSAHubProvider : TmdbProvider() {
             ).text.take(32_768)
         } ?: return false
 
-        if (body.isBlank() || body.contains('\uFFFD') ||
+        // One broken glyph should not disqualify an otherwise readable file;
+        // reject heavily damaged encodings, HTML error pages and binary data.
+        if (body.isBlank() || body.count { it == '\uFFFD' } > 4 ||
             body.contains("\u0000") ||
             body.contains("<html", ignoreCase = true) ||
             body.contains("<!DOCTYPE", ignoreCase = true)
@@ -2899,17 +2896,17 @@ class MOOSAHubProvider : TmdbProvider() {
     private suspend fun filterReadableSubtitles(
         subtitles: List<SubtitleFile>
     ): List<SubtitleFile> = coroutineScope {
-        // Bound traffic and latency: examine the highest-ranked six Arabic
-        // and three English candidate subtitles concurrently.
+        // Probe fallback tracks too: the first few CDN files may be expired.
+        // Keep a strict bounded shortlist to avoid endless search.
         val shortlist = subtitles
             .distinctBy { it.url }
             .sortedByDescending(::subtitleScore)
             .groupBy { subtitleLanguage(it.lang, it.langTag) }
             .let { byLanguage ->
-                byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(6) +
-                    byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(3)
+                byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(12) +
+                    byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(6)
             }
-        val gate = kotlinx.coroutines.sync.Semaphore(4)
+        val gate = kotlinx.coroutines.sync.Semaphore(6)
         shortlist.map { subtitle ->
             async {
                 gate.withPermit {
@@ -3091,8 +3088,12 @@ class MOOSAHubProvider : TmdbProvider() {
         val shownLinks = AtomicInteger(0)
         val callbackLock = Any()
 
+        // Validate external tracks while stream providers resolve, rather than
+        // waiting until the end and delaying playback with another fetch wave.
         val externalSubtitleJob = async {
-            timed(6500L) { fetchExternalSubtitles(request) } ?: emptyList()
+            timed(20_000L) {
+                filterReadableSubtitles(fetchExternalSubtitles(request))
+            } ?: emptyList()
         }
 
         val aliases = aliasesJob.await()
@@ -3456,9 +3457,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 externalSubtitleJob.await()
             }
 
-        val remainingSubtitles = filterReadableSubtitles(
-            nativeSubtitles + externalSubtitles
-        )
+        val remainingSubtitles =
+            filterReadableSubtitles(nativeSubtitles.toList()) + externalSubtitles
         remainingSubtitles.forEach { subtitle ->
             if (seenSubtitles.add(subtitle.url)) {
                 try {
