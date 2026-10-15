@@ -1,0 +1,28 @@
+{
+  "_about": "Copy this file to MOOSAWeb/sources.local.json and add ONLY streams you own or are authorized to distribute. This local file is not committed by default.",
+  "movie:12345": [
+    {
+      "id": "official-hls",
+      "name": "Authorized HLS stream",
+      "quality": "1080p",
+      "type": "hls",
+      "url": "https://media.example.org/authorized/movie/master.m3u8"
+    },
+    {
+      "id": "official-mp4",
+      "name": "Authorized MP4",
+      "quality": "720p",
+      "type": "mp4",
+      "url": "https://media.example.org/authorized/movie/video.mp4"
+    }
+  ],
+  "tv:123:1:1": [
+    {
+      "id": "episode1",
+      "name": "Season 1 Episode 1",
+      "quality": "1080p",
+      "type": "hls",
+      "url": "https://media.example.org/authorized/tv/s01e01/master.m3u8"
+    }
+  ]
+}
