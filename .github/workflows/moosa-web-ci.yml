@@ -21,3 +21,36 @@ jobs:
         with:
           node-version: '22'
       - run: cd MOOSAWeb && npm run check
+      - name: Verify live TMDB catalog
+        env:
+          SITE_URL: https://moosa-web.onrender.com
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+          async function request(path) {
+            const r = await fetch(process.env.SITE_URL + path, {signal: AbortSignal.timeout(25000)});
+            const data = await r.json();
+            if (!r.ok) throw new Error(path + ': HTTP ' + r.status + ' ' + (data.error || ''));
+            return data;
+          }
+          let lastError;
+          for (let attempt = 1; attempt <= 10; attempt++) {
+            try {
+              const health = await request('/healthz');
+              assert.equal(health.status, 'ok');
+              const config = await request('/api/config');
+              assert.equal(config.catalogReady, true, 'TMDB credentials are not configured');
+              const catalog = await request('/api/catalog?section=trending_movies&page=1');
+              assert.ok(Array.isArray(catalog.results) && catalog.results.length > 0, 'TMDB returned no movie results');
+              console.log('MOOSA Web live smoke test passed. Titles returned:', catalog.results.length);
+              process.exit(0);
+            } catch (error) {
+              lastError = error;
+              console.log('Smoke test attempt ' + attempt + '/10 failed: ' + error.message);
+              if (attempt < 10) await sleep(6000);
+            }
+          }
+          console.error('Live smoke test failed:', lastError?.message);
+          process.exit(1);
+          NODE
