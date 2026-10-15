@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer, tmdbRoute } from '../server.mjs';
 
 function q(path) {return tmdbRoute(new URL(path,'http://localhost'));}
@@ -42,4 +45,43 @@ test('server serves static HTML, API metadata and empty authorized source list w
     assert.equal((await fetch(base+'/..%2F..%2Fserver.mjs')).status,403);
     assert.equal((await fetch(base+'/private.txt')).status,404);
   }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test('TV seasons resolve only real TMDB episode routes and reject invalid inputs',()=>{
+  const e=q('/api/episodes?id=441&season=2');
+  assert.equal(e.endpoint,'/tv/441/season/2');
+  assert.equal(e.params.language,'ar-SA');
+  assert.ok(q('/api/episodes?id=0&season=1').invalid);
+  assert.ok(q('/api/episodes?id=441&season=-1').invalid);
+  assert.ok(q('/api/episodes?id=441&season=101').invalid);
+  assert.ok(q('/api/episodes?id=441').invalid);
+});
+test('episode stream URLs never fall back to another episode or generic show link', async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'moosa-episode-'));
+  const file=join(folder,'streams.json');
+  await writeFile(file,JSON.stringify({
+    'tv:42':[{name:'Show-wide only',url:'https://example.org/overview.mp4'}],
+    'tv:42:1:2':[{name:'Correct episode',url:'https://example.org/s01e02.m3u8'}]
+  }));
+  const previous=process.env.STREAMS_FILE;
+  process.env.STREAMS_FILE=file;
+  const {createServer:configuredServer}=await import('../server.mjs?episode-suite=1');
+  if(previous===undefined)delete process.env.STREAMS_FILE;else process.env.STREAMS_FILE=previous;
+  const server=configuredServer();
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const base='http://127.0.0.1:'+server.address().port;
+  try {
+    const correct=await(await fetch(base+'/api/streams?media=tv&id=42&season=1&episode=2')).json();
+    assert.equal(correct.sources.length,1);
+    assert.equal(correct.sources[0].name,'Correct episode');
+    const wrong=await(await fetch(base+'/api/streams?media=tv&id=42&season=1&episode=3')).json();
+    assert.equal(wrong.sources.length,0);
+    const generic=await(await fetch(base+'/api/streams?media=tv&id=42')).json();
+    assert.equal(generic.sources[0].name,'Show-wide only');
+    assert.equal((await fetch(base+'/api/streams?media=tv&id=42&season=1')).status,400);
+    assert.equal((await fetch(base+'/api/streams?media=movie&id=42&season=1&episode=2')).status,400);
+  } finally {
+    await new Promise(resolve=>server.close(resolve));
+    await rm(folder,{recursive:true,force:true});
+  }
 });
