@@ -1,0 +1,73 @@
+name: Validate MOOSA Hub v86 true subtitle source diagnostics (no release)
+on:
+  push:
+    branches: ["diagnostics/moosa-hub-v86-subtitle-evidence"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both plugins and release manifest
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Regression check for actual SubDL field, device-side observability, safe request limits
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          d=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASubtitleHealth.kt").read_text()
+          ui=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASettingsDialog.kt").read_text()
+          versions={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert versions=={"MOOSAHub":86,"MOOSAArabic":3},versions
+          assert '@JsonProperty("lang") val lang: String? = null' in p
+          assert 'val parentLang = subtitle.language?.takeIf { it.isNotBlank() }' in p
+          assert '?: subtitle.lang.orEmpty()' in p
+          assert '(MOOSASettingsStore.subdlKey()?.hashCode() ?: 0).toString()' in p
+          assert '(MOOSASettingsStore.wyzieKey()?.hashCode() ?: 0).toString()' in p
+          assert 'MOOSASubtitleHealth.begin(request.title)' in p
+          assert 'MOOSASubtitleHealth.update("SubDL", "No API key configured")' in p
+          assert 'MOOSASubtitleHealth.update("SubDL", "Index timeout or invalid response")' in p
+          assert 'MOOSASubtitleHealth.reason(source, "download/timeout (possibly 403)")' in p
+          assert 'MOOSASubtitleHealth.reason(source, "wrong encoding/HTML/binary")' in p
+          assert 'MOOSASubtitleHealth.reason(source, "no timed cues")' in p
+          assert 'MOOSASubtitleHealth.rejected(' in p
+          assert 'MOOSASubtitleHealth.accepted(' in p
+          assert 'MOOSASubtitleHealth.report()' in ui
+          assert 'Subtitle diagnostics (last playback)' in ui
+          for bad in ('api_key','Bearer','http:','https:','.srt','.vtt'):
+            # Health records must never expose keys, tokens, URLs or subtitle contents.
+            assert bad not in d, bad
+          assert 'val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)' in p
+          assert 'byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10)' in p
+          assert 'byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)' in p
+          assert 'if (readable)' in p and 'verifiedSubtitleFormats[subtitleCheckKey(sub)] = fileFormat' in p
+          assert 'filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle, subtitleProbeGate)' in p
+          assert 'withTimeoutOrNull(3200L)' in p
+          assert 'val playbackUrl = if (' in p
+          assert 'onEarlyCandidates(cached.items)' in p
+          print("PASS: v86 compiles, reports source failure separately from invalid formats without network overhead, caches keyed config, retains bounded two-language playback")
+          PY
+      - name: Confirm source comparison against The Lunchbox IMDb ID without claiming playback sync
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request
+          url="https://opensubtitles-v3.strem.io/subtitles/movie/tt2350496.json"
+          with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"}),timeout=13) as r:
+            subs=json.load(r)["subtitles"]
+          arabic=[x for x in subs if x.get("lang")=="ara"]
+          print("LIVE_LUNCHBOX",len(arabic),"arabic_index_items")
+          assert len(arabic)>=1
+          print("REPORTED_FPS",sorted(set(x.get("fpsMilli") for x in arabic)))
+          print("PASS: baseline only; the video playback's frame rate is unknown")
+          PY
