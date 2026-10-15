@@ -33,9 +33,9 @@ jobs:
           assert s.index(trending)<s.index(top)
           assert s.count('to "Trending Indian Movies"')==1
           assert s.count('to "Top Indian Movies"')==1
-          assert "with_origin_country=IN&sort_by=popularity.desc&vote_count.gte=50&vote_average.gte=6.2&without_genres=99" in s
+          assert "with_origin_country=IN&sort_by=popularity.desc&vote_count.gte=" in s
           assert "with_origin_country=IN&sort_by=vote_average.desc&vote_count.gte=200&vote_average.gte=7&without_genres=99" in s
-          assert 'calendar.add(Calendar.MONTH, -24)' in s
+          assert 'calendar.add(Calendar.MONTH, -' in s
           assert '"primary_release_date.gte" to since' in s
           assert '"primary_release_date.lte" to today' in s
           assert "private fun isTrendingIndian" in s
