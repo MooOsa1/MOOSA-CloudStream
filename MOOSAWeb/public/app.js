@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   view:'home', items:[], page:1, hasMore:false, busy:false,
   browse:{media:'movie',genre:'',sort:'popularity.desc',country:''},
-  mode:'discover', section:'', query:'', current:null, sources:[], featured:null,
+  mode:'discover', section:'', query:'', current:null, sources:[], featured:null, episode:null,
   saved:loadSaved(), requestId:0, lastFocus:null, catalogReady:false
 };
 const kinds = {
@@ -76,7 +76,11 @@ async function loadShelf(name){const row=$(`.shelf[data-section="${name}"] .post
 catch(e){row.classList.remove('skeleton-row');row.replaceChildren(makeEl('div','error-inline','التصنيف غير متاح الآن. '+(e.message.includes('TMDB')?'أضف مفتاح TMDB لعرض نتائج حقيقية.':'تأكد من الاتصال ثم جرّب مجددًا.')));}}
 function keyFor(it){return `${it.type||mediaFor(it)}:${it.id}`;}
 async function openDetails(entry){
-  state.lastFocus=document.activeElement;state.current=entry;state.sources=[];
+  state.lastFocus=document.activeElement;state.current=entry;state.sources=[];state.episode=null;
+  $('#episode-selector').classList.add('hidden');
+  $('#episode-grid').replaceChildren();
+  $('#season-picker').replaceChildren();
+  $('#watch-title').textContent=entry.type==='tv'?'▤ اختر حلقة':'▶ مشاهدة';
   const {id,type,partial}=entry;
   $('#details-name').textContent=titleFor(partial);$('#details-kind').textContent=type==='tv'?'TV SERIES':'MOVIE';$('#details-description').textContent=partial.overview||'جاري تحميل الوصف...';$('#details-meta').textContent=[yearFor(partial),ratingFor(partial)?'★ '+ratingFor(partial):''].filter(Boolean).join('  •  ');
   const poster=imgSrc(partial.backdrop_path||partial.poster_path,'w1280');$('#details-art').style.backgroundImage=poster?`url("${poster}")`:'';
@@ -90,7 +94,8 @@ async function openDetails(entry){
     api(`/api/details?media=${type}&id=${id}`),
     api(`/api/streams?media=${type}&id=${id}`)
   ]);
-  if(!state.current || keyFor(state.current)!==token)return;
+  if(!state.current || keyFor(state.current)!==token ||
+    $('#detail-panel').classList.contains('hidden'))return;
   if(fullResult.status==='fulfilled'){
     const full=fullResult.value;
     state.current.partial={...partial,...full};
@@ -100,15 +105,83 @@ async function openDetails(entry){
       ratingFor(full)?'★ '+ratingFor(full):'',
       full.runtime?full.runtime+' دقيقة':(full.number_of_seasons?full.number_of_seasons+' مواسم':'')
     ].filter(Boolean).join('  •  ');
+    if(type==='tv' && Array.isArray(full.seasons)) {
+      const seasons=full.seasons.filter(se=>Number.isInteger(se.season_number) && se.season_number>0);
+      if(seasons.length) {
+        $('#episode-selector').classList.remove('hidden');
+        $('#season-picker').replaceChildren(...seasons.map(se=>
+          new Option(se.name || 'الموسم '+se.season_number,String(se.season_number))));
+        loadEpisodes(id,seasons[0].season_number);
+      }
+    }
   }
   state.sources=streamResult.status==='fulfilled'?(streamResult.value.sources||[]):[];
   $('#source-info').textContent=state.sources.length
     ?`${state.sources.length} مصدر مصرح به متاح للتشغيل`
     :'لا توجد روابط مشاهدة مضافة لهذا العنوان؛ يمكنك تشغيل فيديو تملكه أو تجربة المشغل.';
 }
+async function loadEpisodes(id,season){
+  const episodeGrid=$('#episode-grid'),titleKey=state.current?keyFor(state.current):'';
+  episodeGrid.replaceChildren(makeEl('div','error-inline','جاري تحميل الحلقات...'));
+  try {
+    const data=await api('/api/episodes?'+new URLSearchParams({id,season}));
+    if(!state.current || keyFor(state.current)!==titleKey ||
+      $('#detail-panel').classList.contains('hidden') ||
+      $('#season-picker').value!==String(season))return;
+    episodeGrid.replaceChildren();
+    const episodes=data.episodes||[];
+    if(!episodes.length)episodeGrid.append(makeEl('div','error-inline','لا توجد حلقات مسجلة لهذا الموسم.'));
+    for(const episode of episodes){
+      const number=Number(episode.episode_number);
+      if(!Number.isInteger(number) || number<1)continue;
+      const button=makeEl('button','episode-choice');
+      button.type='button';
+      const image=imgSrc(episode.still_path,'w300');
+      if(image){const im=document.createElement('img');im.src=image;im.loading='lazy';im.alt='';button.append(im);}
+      const summary=makeEl('div','episode-copy');
+      summary.append(makeEl('strong','',number+'. '+(episode.name||'الحلقة '+number)));
+      summary.append(makeEl('span','',episode.air_date||''));
+      summary.append(makeEl('small','',String(episode.overview||'').slice(0,170)));
+      button.append(summary);
+      button.addEventListener('click',()=>playEpisode(id,season,number,episode.name||''));
+      episodeGrid.append(button);
+    }
+  } catch {
+    if(state.current && keyFor(state.current)===titleKey)
+      episodeGrid.replaceChildren(makeEl('div','error-inline','تعذر تحميل حلقات هذا الموسم.'));
+  }
+}
+async function playEpisode(id,season,number,name){
+  const current=state.current;if(!current || current.type!=='tv' || String(current.id)!==String(id))return;
+  const token=keyFor(current);
+  $('#source-info').textContent='جاري البحث عن سيرفر هذه الحلقة...';
+  let sources=[];
+  try {
+    const response=await api('/api/streams?'+new URLSearchParams({media:'tv',id,season,episode:number}));
+    sources=response.sources||[];
+  }catch{ /* The player can still accept an authorized custom/local video. */ }
+  if(!state.current || keyFor(state.current)!==token)return;
+  const title=titleFor(current.partial)+' • S'+season+'E'+number+(name?' • '+name:'');
+  state.episode={season,number};
+  closeDetails();
+  showPlayer({title,sources});
+  if(!sources.length)toast('لا يوجد سيرفر مصرّح به لهذه الحلقة؛ تقدر تستخدم رابطك أو ملفًا محليًا.');
+}
 function closeDetails(){$('#detail-panel').classList.add('hidden');if($('#player-panel').classList.contains('hidden'))overlay.classList.add('hidden');state.lastFocus?.focus?.();}
 function saveTitle(){if(!state.current)return;const item={...state.current.partial,media_type:state.current.type};const key=keyFor(state.current);const idx=state.saved.findIndex(x=>mediaFor(x)+':'+x.id===key);if(idx>=0)state.saved.splice(idx,1);else state.saved.unshift(item);saveSaved();$('#save-title').textContent=idx>=0?'＋ قائمتي':'✓ في قائمتي';toast(idx>=0?'حُذف من قائمتك':'أُضيف إلى قائمتك');}
-function showWatch(){const current=state.current;const title=current?.partial?titleFor(current.partial):'مشغل MOOSA';const sources=state.sources||[];closeDetails();showPlayer({title,sources});}
+function showWatch(){
+  const current=state.current;
+  if(current?.type==='tv'){
+    if(!$('#episode-selector').classList.contains('hidden')){
+      $('#episode-selector').scrollIntoView({behavior:'smooth',block:'nearest'});
+      $('#episode-grid .episode-choice')?.focus();
+    }else toast('انتظر تحميل المواسم، ثم اختر الحلقة التي تبي تشغلها.');
+    return;
+  }
+  const title=current?.partial?titleFor(current.partial):'مشغل MOOSA';
+  const sources=state.sources||[];
+  closeDetails();showPlayer({title,sources});
+}
 function openStandalone(){state.lastFocus=document.activeElement;state.current=null;state.sources=[];showPlayer({title:'مشغل MOOSA',sources:[]});}
 async function init(){
   $('#year').textContent=new Date().getFullYear();
@@ -124,6 +197,9 @@ async function init(){
   $('#load-more').addEventListener('click',()=>{if(!state.busy&&state.hasMore){state.page++;loadBrowse(true)}});
   $('#search-input').addEventListener('input',e=>{clearTimeout(searchTimer);const q=e.target.value;searchTimer=setTimeout(()=>q.trim().length>=2?showSearch(q):q.trim()===''&&navigate('home'),330);});
   $('#close-details').addEventListener('click',closeDetails);$('#watch-title').addEventListener('click',showWatch);$('#save-title').addEventListener('click',saveTitle);
+  $('#season-picker').addEventListener('change',e=>{
+    if(state.current?.type==='tv')loadEpisodes(state.current.id,Number(e.target.value));
+  });
   $('#help-button').addEventListener('click',()=>toast('MOOSA Web: مكتبة TMDB حقيقية ومشغل للمصادر المصرح بها. تفاصيل الإعداد داخل README.'));
   overlay.addEventListener('click',()=>{if(!$('#player-panel').classList.contains('hidden'))hidePlayer();else closeDetails();});
   document.addEventListener('keydown',e=>{
