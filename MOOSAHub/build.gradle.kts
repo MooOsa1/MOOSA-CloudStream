@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 92
+version = 93
 
 
 android {
@@ -114,3 +114,6 @@ dependencies {
 
 // v92: emit subtitle files from installed CloudStream repositories during
 // matched provider load, with bounded checks and distinct source attribution.
+
+// v93: group subtitle selector entries by language + actual subtitle source.
+// Individual subtitle URLs remain distinct selectable tracks, no A/B/C labels.
