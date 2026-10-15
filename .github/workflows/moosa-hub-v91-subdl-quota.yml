@@ -1,0 +1,62 @@
+name: Validate MOOSA Hub v91 SubDL quota-safe playback (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v91-subdl-quota-protection"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile MOOSAHub and MOOSAArabic and plugin manifest
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Guard quota-aware backoff, source fairness, and playback latency
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          h=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASubtitleHealth.kt").read_text()
+          manifest={item["internalName"]:item["version"] for item in json.loads(Path("build/plugins.json").read_text())}
+          assert manifest=={"MOOSAHub":91,"MOOSAArabic":3},manifest
+          checks=[
+              "private val subDlDownloadBlockedUntilMs = AtomicLong(0L)",
+              'subDlDownloadLimitReason = if (pauseMs > 120_000L)',
+              '"SubDL JSON: daily download quota"',
+              '"SubDL JSON: temporary rate limit"',
+              'subDlDownloadBlockedUntilMs.updateAndGet { current ->',
+              'System.currentTimeMillis() < subDlDownloadBlockedUntilMs.get()',
+              'if (source == "SubDL") 1 else 2',
+              'checkBatch(arabic.take(2) + english.take(1))',
+              'arabic.drop(2).take(1)',
+              'english.drop(1).take(1)',
+              'cached.items.groupBy { MOOSASubtitleHealth.sourceOf(it.lang) }',
+              'val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)',
+              'val subtitleExternalSlots = kotlinx.coroutines.sync.Semaphore(3)',
+              'withTimeoutOrNull(3200L)',
+              'val track = subtitle.copy(lang = label, url = playbackUrl)',
+          ]
+          for c in checks: assert c in p,c
+          # Verify even the cached-index branch sends small per-source lists.
+          assert 'onEarlyCandidates(cached.items)' not in p
+          # Under high demand, a SubDL index has 3 immediate + at most 2
+          # fallback probes, vs up to 21 per unrelated source.
+          assert 'checkBatch(arabic.take(5) + english.take(3))' in p
+          assert 'arabic.drop(5).take(9)' in p
+          assert 'english.drop(3).take(4)' in p
+          # All diagnostic output remains categorical, no keys or response bodies.
+          assert 'MOOSASubtitleHealth.reason(source, body)' not in p
+          for forbidden in ('api_key','Bearer','http://','https://'):
+              assert forbidden not in h
+          print("PASS: v91 compiled, per-source capped SubDL probes and cooldown preserving playback constraints")
+          PY
