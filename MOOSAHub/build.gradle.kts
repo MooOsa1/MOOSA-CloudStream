@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 98
+version = 99
 
 
 android {
@@ -132,3 +132,6 @@ dependencies {
 
 // v98: compact top drop-down filters with one applied-chip row, neutral
 // CloudStream theme, draft-and-apply TMDB queries and stable Android TV focus.
+
+// v99: contain TV remote focus inside modal top filter drawer, rename category
+// from applied TMDB filters and replace Close label with compact × action.
