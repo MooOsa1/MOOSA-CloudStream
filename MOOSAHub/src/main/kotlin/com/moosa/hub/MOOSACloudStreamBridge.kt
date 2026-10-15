@@ -11,8 +11,7 @@ import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
@@ -249,20 +248,25 @@ object MOOSACloudStreamBridge {
                 withTimeoutOrNull(42_000L) {
                     coroutineScope {
                         val slots = Semaphore(4)
-                        providers().map { api ->
-                            async {
+                        providers().forEach { api ->
+                            launch {
                                 slots.withPermit {
-                                    try { searchOne(api, task) } catch (_: Throwable) { JSONArray() }
+                                    val chunk = try {
+                                        searchOne(api, task)
+                                    } catch (_: Throwable) {
+                                        JSONArray()
+                                    }
+                                    // Send immediately when this provider completes, not
+                                    // after every slower provider in the batch.
+                                    if (chunk.length() > 0) {
+                                        try {
+                                            http("POST", "/api/bridge/report", token,
+                                                JSONObject().put("requestId", id)
+                                                    .put("sources", chunk)
+                                                    .put("final", false))
+                                        } catch (_: Throwable) {}
+                                    }
                                 }
-                            }
-                        }.awaitAll().forEach { chunk ->
-                            if (chunk.length() > 0) {
-                                try {
-                                    http("POST", "/api/bridge/report", token,
-                                        JSONObject().put("requestId", id)
-                                            .put("sources", chunk)
-                                            .put("final", false))
-                                } catch (_: Throwable) {}
                             }
                         }
                     }
