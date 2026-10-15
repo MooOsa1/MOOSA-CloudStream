@@ -91,7 +91,13 @@ class MOOSAHubProvider : TmdbProvider() {
     private data class StremioSubtitle(
         val id: String? = null,
         val url: String? = null,
-        val lang: String? = null
+        val lang: String? = null,
+        // Stremio v3 publishes the original release metadata. Without this
+        // CloudStream cannot distinguish a CAM subtitle from a WEB-DL one.
+        @JsonProperty("subtitleFileName") val subtitleFileName: String? = null,
+        @JsonProperty("movieReleaseName") val movieReleaseName: String? = null,
+        @JsonProperty("releaseFormat") val releaseFormat: String? = null,
+        @JsonProperty("fpsMilli") val fpsMilli: Int? = null
     )
 
     private data class WyzieSubtitle(
@@ -2566,23 +2572,57 @@ class MOOSAHubProvider : TmdbProvider() {
         if ("sdh" in text || "cc" in text || "hearing" in text) score -= 120
         if ("forced" in text) score -= 100
         if ("auto" in text || "machine" in text) score -= 180
+        if ("WEB-DL" in subtitle.lang || "WEBRip" in subtitle.lang) score += 100
+        if ("BluRay" in subtitle.lang) score += 70
+        // Poor matches for common WEB-DL/WEBRip source videos. Retain as
+        // explicit last-resort variants, never pretend they are synchronized.
+        if (" • CAM" in subtitle.lang || " • TS" in subtitle.lang) score -= 250
 
         return score
+    }
+
+    // Only short, known release tags are used in CloudStream labels. Raw
+    // release filenames often contain other language names (e.g. ENG/Hindi),
+    // which can fool CloudStream's fuzzy language detection.
+    private fun subtitleReleaseHint(raw: String): String {
+        val text = raw.lowercase()
+        return when {
+            Regex("""web[ ._-]?dl""").containsMatchIn(text) -> "WEB-DL"
+            Regex("""web[ ._-]?rip""").containsMatchIn(text) -> "WEBRip"
+            Regex("""blu[ ._-]?ray|bdrip|brrip""").containsMatchIn(text) -> "BluRay"
+            Regex("""hdtv""").containsMatchIn(text) -> "HDTV"
+            Regex("""dvd[ ._-]?rip""").containsMatchIn(text) -> "DVDRip"
+            Regex("""hd[ ._-]?rip""").containsMatchIn(text) -> "HDRip"
+            Regex("""(?:hdcam|\\bcam\\b)""").containsMatchIn(text) -> "CAM"
+            Regex("""(?:telesync|\\bhdts\\b|\\bts\\b)""").containsMatchIn(text) -> "TS"
+            else -> ""
+        }
     }
 
     private fun normalizeExternalSubtitle(
         sub: StremioSubtitle,
         source: String
     ): SubtitleFile? {
-        val url = sub.url?.takeIf { it.startsWith("http") } ?: return null
-
-        return when (subtitleLanguage(sub.lang)) {
-            PreferredSubtitleLanguage.ARABIC ->
-                SubtitleFile("Arabic • $source", url)
-            PreferredSubtitleLanguage.ENGLISH ->
-                SubtitleFile("English • $source", url)
-            PreferredSubtitleLanguage.OTHER -> null
+        val url = sub.url?.takeIf { validStreamingUrl(it) } ?: return null
+        val language = when (subtitleLanguage(sub.lang)) {
+            PreferredSubtitleLanguage.ARABIC -> "Arabic"
+            PreferredSubtitleLanguage.ENGLISH -> "English"
+            PreferredSubtitleLanguage.OTHER -> return null
         }
+        val release = listOfNotNull(
+            sub.movieReleaseName, sub.releaseFormat, sub.subtitleFileName
+        ).joinToString(" ")
+        val format = subtitleReleaseHint(release).takeIf { it.isNotBlank() }
+        val fps = sub.fpsMilli?.takeIf { it in 23000..60000 }?.let {
+            val rate = it / 1000.0
+            String.format(java.util.Locale.US, "%.2ffps", rate)
+        }
+        val hint = listOfNotNull(format, fps).joinToString(" ")
+        return SubtitleFile(
+            listOf(language, source, hint)
+                .filter { it.isNotBlank() }.joinToString(" • "),
+            url
+        )
     }
 
     private suspend fun resolveTmdbImdb(
@@ -3100,6 +3140,8 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val seenLinks = ConcurrentHashMap.newKeySet<String>()
         val seenSubtitles = ConcurrentHashMap.newKeySet<String>()
+        val arabicSubNumber = AtomicInteger(0)
+        val englishSubNumber = AtomicInteger(0)
         val nativeSubtitles =
             Collections.synchronizedList(
                 mutableListOf<SubtitleFile>()
@@ -3113,18 +3155,39 @@ class MOOSAHubProvider : TmdbProvider() {
         // even while source videos are still resolving. Keep the callback
         // serialized with video callbacks and dedupe parallel source results.
         fun emitVerifiedSubtitle(subtitle: SubtitleFile) {
-            val track = when (subtitleLanguage(subtitle.lang, subtitle.langTag)) {
-                PreferredSubtitleLanguage.ARABIC -> subtitle.copy(lang = "Arabic")
-                PreferredSubtitleLanguage.ENGLISH -> subtitle.copy(lang = "English")
-                PreferredSubtitleLanguage.OTHER -> null
-            } ?: return
-            if (seenSubtitles.add(track.url)) {
-                synchronized(callbackLock) {
-                    try {
-                        subtitleCallback(track)
-                    } catch (error: Throwable) {
-                        logError(error)
-                    }
+            val language = when (subtitleLanguage(subtitle.lang, subtitle.langTag)) {
+                PreferredSubtitleLanguage.ARABIC -> PreferredSubtitleLanguage.ARABIC
+                PreferredSubtitleLanguage.ENGLISH -> PreferredSubtitleLanguage.ENGLISH
+                PreferredSubtitleLanguage.OTHER -> return
+            }
+            // CloudStream groups every track with the exact same lang into
+            // ONE selector entry. Keep each verified version distinguishable,
+            // with a recognisable Arabic/English prefix for auto-selection.
+            synchronized(callbackLock) {
+                if (!seenSubtitles.add(subtitle.url)) return
+                val number = if (language == PreferredSubtitleLanguage.ARABIC)
+                    arabicSubNumber.incrementAndGet()
+                else englishSubNumber.incrementAndGet()
+                val prefix = if (language == PreferredSubtitleLanguage.ARABIC)
+                    "Arabic" else "English"
+                val details = subtitle.lang.substringAfter(" • ", "")
+                    .split(" • ")
+                    .filter { it.isNotBlank() }
+                    .mapNotNull { part ->
+                        when {
+                            part.startsWith("OpenSubtitles Backup") -> "OS Backup"
+                            part.startsWith("OpenSubtitles") -> "OpenSubtitles"
+                            part.startsWith("SubDL") -> "SubDL"
+                            part.startsWith("Wyzie") -> "Wyzie"
+                            else -> subtitleReleaseHint(part).takeIf(String::isNotBlank)
+                        }
+                    }.distinct().take(2)
+                val label = (listOf("$prefix #$number") + details).joinToString(" • ")
+                val track = subtitle.copy(lang = label)
+                try {
+                    subtitleCallback(track)
+                } catch (error: Throwable) {
+                    logError(error)
                 }
             }
         }
