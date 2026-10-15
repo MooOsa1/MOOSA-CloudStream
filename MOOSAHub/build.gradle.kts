@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 85
+version = 86
 
 
 android {
@@ -93,3 +93,6 @@ dependencies {
 
 // v85: validate player-compatible subtitle timestamps; signal correct WEBVTT
 // MIME for extensionless SubDL files and refuse unreadable source formats.
+
+// v86: official SubDL lang-field compatibility and on-device subtitle-source
+// diagnostics; no extra network requests or automatic ZIP downloads.
