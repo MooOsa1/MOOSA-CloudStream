@@ -3308,13 +3308,22 @@ class MOOSAHubProvider : TmdbProvider() {
         subtitle: SubtitleFile,
         source: String
     ): SubtitleFile? {
-        return when (subtitleLanguage(subtitle.lang, subtitle.langTag)) {
-            PreferredSubtitleLanguage.ARABIC ->
-                subtitle.copy(lang = "Arabic • $source")
-            PreferredSubtitleLanguage.ENGLISH ->
-                subtitle.copy(lang = "English • $source")
-            PreferredSubtitleLanguage.OTHER -> null
+        val language = when (subtitleLanguage(subtitle.lang, subtitle.langTag)) {
+            PreferredSubtitleLanguage.ARABIC -> "Arabic"
+            PreferredSubtitleLanguage.ENGLISH -> "English"
+            PreferredSubtitleLanguage.OTHER -> return null
         }
+        // Preserve which installed repository provided the track, without
+        // leaking free-form filenames that can confuse player language matching.
+        val safeSource = source.replace(" • ", " ")
+            .replace(Regex("""[\\r\\n\\t]"""), " ").trim().take(28)
+        val release = subtitleReleaseHint(subtitle.lang)
+        val fps = Regex("""(\\d{2}(?:\\.\\d{1,2})?)fps""", RegexOption.IGNORE_CASE)
+            .find(subtitle.lang)?.value
+        val label = (listOf(language, "Repo: $safeSource") +
+            listOfNotNull(release.takeIf(String::isNotBlank), fps))
+            .joinToString(" • ")
+        return subtitle.copy(lang = label)
     }
 
     private fun inferQuality(link: ExtractorLink): Int =
@@ -3470,10 +3479,15 @@ class MOOSAHubProvider : TmdbProvider() {
         val seenSubtitles = ConcurrentHashMap.newKeySet<String>()
         val arabicSubNumber = AtomicInteger(0)
         val englishSubNumber = AtomicInteger(0)
-        val nativeSubtitles =
-            Collections.synchronizedList(
-                mutableListOf<SubtitleFile>()
-            )
+        // Installed-repository subtitles were previously collected here and
+        // not inspected until all video providers finished. On a fast player
+        // search they could be cancelled without a single validation attempt.
+        val nativeProbeJobs = Collections.synchronizedList(
+            mutableListOf<kotlinx.coroutines.Job>()
+        )
+        val nativeSeenCandidates = ConcurrentHashMap.newKeySet<String>()
+        val nativeQueued = AtomicInteger(0)
+        val nativePerSource = ConcurrentHashMap<String, AtomicInteger>()
         val emittedLink = AtomicBoolean(false)
         val completedProviders = AtomicInteger(0)
         val shownLinks = AtomicInteger(0)
@@ -3507,6 +3521,8 @@ class MOOSAHubProvider : TmdbProvider() {
                             part.startsWith("OpenSubtitles") -> "OpenSubtitles"
                             part.startsWith("SubDL") -> "SubDL"
                             part.startsWith("Wyzie") -> "Wyzie"
+                            part.startsWith("Repo: ") ->
+                                part.removePrefix("Repo: ").take(28)
                             else -> {
                                 val format = subtitleReleaseHint(part)
                                 val fps = Regex("""(\d{2}(?:\.\d{1,2})?)fps""")
@@ -3546,6 +3562,46 @@ class MOOSAHubProvider : TmdbProvider() {
         val subtitleExternalSlots = kotlinx.coroutines.sync.Semaphore(3)
         val subtitleSourceGates =
             ConcurrentHashMap<String, kotlinx.coroutines.sync.Semaphore>()
+
+        fun collectInstalledRepositorySubtitle(
+            track: SubtitleFile,
+            sourceName: String
+        ) {
+            val candidate = normalizeNativeSubtitle(track, sourceName) ?: return
+            if (!validStreamingUrl(candidate.url)) return
+            // Do not blindly request subtitles from every installed provider.
+            // These callbacks belong to already-matched video targets, so
+            // there is no additional provider search or title mismatch.
+            val unique = candidate.url + "|" +
+                (candidate.headers?.hashCode() ?: 0) + "|" +
+                subtitleLanguage(candidate.lang, candidate.langTag)
+            if (!nativeSeenCandidates.add(unique)) return
+            val language = subtitleLanguage(candidate.lang, candidate.langTag)
+            val group = nativePerSource.computeIfAbsent("$sourceName|$language") {
+                AtomicInteger(0)
+            }
+            val limit = if (language == PreferredSubtitleLanguage.ARABIC) 3 else 2
+            if (group.incrementAndGet() > limit) {
+                group.decrementAndGet()
+                return
+            }
+            if (nativeQueued.incrementAndGet() > 12) {
+                nativeQueued.decrementAndGet()
+                group.decrementAndGet()
+                return
+            }
+            MOOSASubtitleHealth.update("Native", "Matched installed repositories")
+            MOOSASubtitleHealth.candidates("Native", 1)
+            // Start checking each available installed-provider subtitle while
+            // link discovery continues. Reuse the existing four-I/O gate.
+            val job = launch {
+                filterReadableSubtitles(
+                    listOf(candidate), ::emitVerifiedSubtitle,
+                    subtitleProbeGate, subtitleSourceGates
+                )
+            }
+            nativeProbeJobs.add(job)
+        }
 
         // Start validating primary tracks without pausing fallback retrieval.
         // Separate coroutines can emit tracks immediately on success, while a
@@ -3654,9 +3710,9 @@ class MOOSAHubProvider : TmdbProvider() {
                                 target.data,
                                 isCasting,
                                 { subtitle ->
-                                    normalizeNativeSubtitle(subtitle, api.name)
-                                        ?.takeIf { it.url.isNotBlank() }
-                                        ?.let(nativeSubtitles::add)
+                                    collectInstalledRepositorySubtitle(
+                                        subtitle, api.name
+                                    )
                                 },
                                 { link ->
                                     collectLink(link)
@@ -3683,9 +3739,9 @@ class MOOSAHubProvider : TmdbProvider() {
                                         freshTarget.data,
                                         isCasting,
                                         { subtitle ->
-                                            normalizeNativeSubtitle(subtitle, api.name)
-                                                ?.takeIf { it.url.isNotBlank() }
-                                                ?.let(nativeSubtitles::add)
+                                            collectInstalledRepositorySubtitle(
+                                                subtitle, api.name
+                                            )
                                         },
                                         { link ->
                                             collectLink(link)
@@ -3914,28 +3970,19 @@ class MOOSAHubProvider : TmdbProvider() {
         MOOSAProgress.serversReady(shownLinks.get())
         MOOSAProgress.subtitles()
 
-        // Native subtitles also arrive individually as soon as they verify.
-        // Verify fewer files concurrently to reduce I/O during playback.
-        val nativeSubtitleJob = async {
-            timed(10_000L) {
-                filterReadableSubtitles(
-                    nativeSubtitles.toList(), ::emitVerifiedSubtitle,
-                    subtitleProbeGate, subtitleSourceGates
-                )
-            }
-        }
         if (emittedLink.get()) {
-            // After any video link is available, stop waiting for optional
-            // subtitle hosts. Verified tracks have already been emitted.
+            // Native verification already started during provider loadLinks.
+            // Let native checks finish first within the SAME existing 3.2s
+            // grace period; don't increase server-search or player latency.
             withTimeoutOrNull(3200L) {
+                nativeProbeJobs.toList().forEach { it.join() }
                 externalSubtitleJob.await()
-                nativeSubtitleJob.await()
             }
             externalSubtitleJob.cancel()
-            nativeSubtitleJob.cancel()
+            nativeProbeJobs.toList().forEach { it.cancel() }
         } else {
             externalSubtitleJob.await()
-            nativeSubtitleJob.await()
+            nativeProbeJobs.toList().forEach { it.join() }
         }
 
         MOOSAProgress.finish(shownLinks.get())
