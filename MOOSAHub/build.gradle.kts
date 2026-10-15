@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 94
+version = 95
 
 
 android {
@@ -120,3 +120,6 @@ dependencies {
 
 // v94: query documented OpenSubtitles legacy backup for sparse Arabic results
 // without waiting on other subtitle hosts or changing the grouped UI.
+
+// v95: Show More real TMDB server-side genre/type/sort/origin filters with
+// cancellable pagination, TV remote focus controls and original-shelf reset.
