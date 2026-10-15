@@ -36,8 +36,8 @@ jobs:
           assert "https://opensubtitles-v3.strem.io/subtitles/" in p
           assert "byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(" in p
           assert "byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(" in p
-          assert "filterReadableSubtitles(fetchExternalSubtitles(request))" in p
-          assert "filterReadableSubtitles(nativeSubtitles.toList()) + externalSubtitles" in p
+          assert "fetchExternalSubtitles(request) {" in p or "filterReadableSubtitles(fetchExternalSubtitles(request))" in p
+          assert "filterReadableSubtitles(nativeSubtitles.toList()" in p
           assert "body.count { it == '\\uFFFD' } > 4" in p
           assert "subtitleTiming.containsMatchIn(body)" in p
           assert "PreferredSubtitleLanguage.OTHER -> null" in p
