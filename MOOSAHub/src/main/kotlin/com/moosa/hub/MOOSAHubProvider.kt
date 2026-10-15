@@ -132,6 +132,11 @@ class MOOSAHubProvider : TmdbProvider() {
         val items: List<SubtitleFile>
     )
 
+    private data class CachedSubtitleCheck(
+        val checkedAt: Long,
+        val readable: Boolean
+    )
+
     private data class LegacySubtitleResult(
         val result: LegacySubtitleList? = null
     )
@@ -259,9 +264,14 @@ class MOOSAHubProvider : TmdbProvider() {
     private val providerHealth = ConcurrentHashMap<String, Int>()
     private val synopsisCache = ConcurrentHashMap<String, String>()
     private val subtitleCache = ConcurrentHashMap<String, CachedSubtitleList>()
+    // Cache *verified* subtitle bodies, not just index metadata. Reopening the
+    // same film should not download every SRT again on a low-memory Fire TV.
+    private val subtitleCheckCache = ConcurrentHashMap<String, CachedSubtitleCheck>()
 
     private val cacheLifetimeMs = 20 * 60 * 1000L
     private val subtitleCacheLifetimeMs = 15 * 60 * 1000L
+    private val successfulSubtitleCheckLifetimeMs = 6 * 60 * 1000L
+    private val failedSubtitleCheckLifetimeMs = 30 * 1000L
     private val providerResolveTimeoutMs = 30000L
     private val providerLinksTimeoutMs = 22000L
     private val streamPlayLinksTimeoutMs = 60000L
@@ -2754,15 +2764,19 @@ class MOOSAHubProvider : TmdbProvider() {
         } ?: return emptyList()
 
         return response.mapNotNull { item ->
-            val url = item.url?.takeIf { it.startsWith("http") } ?: return@mapNotNull null
-            val lang = item.language.orEmpty()
-            when (subtitleLanguage(lang, lang)) {
-                PreferredSubtitleLanguage.ARABIC ->
-                    SubtitleFile(item.display ?: "Arabic • Wyzie", url)
-                PreferredSubtitleLanguage.ENGLISH ->
-                    SubtitleFile(item.display ?: "English • Wyzie", url)
-                PreferredSubtitleLanguage.OTHER -> null
+            val url = item.url?.takeIf { validStreamingUrl(it) } ?: return@mapNotNull null
+            // Wyzie display names are release titles and may not contain any
+            // language name. Trust its structured language field instead.
+            val language = when (subtitleLanguage(item.language, item.language)) {
+                PreferredSubtitleLanguage.ARABIC -> "Arabic"
+                PreferredSubtitleLanguage.ENGLISH -> "English"
+                PreferredSubtitleLanguage.OTHER -> return@mapNotNull null
             }
+            val format = subtitleReleaseHint(item.display.orEmpty())
+            SubtitleFile(
+                listOf(language, "Wyzie", format)
+                    .filter { it.isNotBlank() }.joinToString(" • "), url
+            )
         }.distinctBy { it.url }
     }
 
@@ -2877,8 +2891,10 @@ class MOOSAHubProvider : TmdbProvider() {
         // List endpoints only: never publish links until their actual text
         // has been checked. Some index APIs return empty, zipped, 404 or
         // mislabelled legacy-encoding files under valid Arabic labels.
+        // The legacy Stremio OpenSubtitles RPC returns empty for verified
+        // movie samples. Avoid querying it on *every* playback; reserve it
+        // for an empty primary index to keep working sources responsive.
         val v3 = async { fetchOpenSubtitlesV3(request, imdb) }
-        val legacy = async { fetchOpenSubtitlesLegacy(request, imdb) }
         val wyzie = async { fetchWyzieSubtitles(request, imdb) }
         val subDl = async { fetchSubDlSubtitles(request, imdb) }
         // Deliver the first working OpenSubtitles v3 tracks before awaiting
@@ -2888,7 +2904,13 @@ class MOOSAHubProvider : TmdbProvider() {
             .distinctBy { it.url }
         if (primary.isNotEmpty()) onEarlyCandidates(primary)
 
-        val all = (primary + legacy.await() + wyzie.await() + subDl.await())
+        // Optional keyed providers have already been searching in parallel.
+        // Never delay a working optional source behind the obsolete RPC.
+        val supplemental = wyzie.await() + subDl.await()
+        val backup = if (primary.isEmpty() && supplemental.isEmpty()) {
+            fetchOpenSubtitlesLegacy(request, imdb)
+        } else emptyList()
+        val all = (primary + supplemental + backup)
             .filter { it.url.startsWith("http", ignoreCase = true) }
             .filterNot {
                 val url = it.url.substringBefore("?").lowercase()
@@ -2912,6 +2934,28 @@ class MOOSAHubProvider : TmdbProvider() {
     )
 
     private suspend fun isReadableSubtitle(sub: SubtitleFile): Boolean {
+        // A cache hit avoids a network request, text decoding and an I/O burst.
+        // Different Referer/headers and different claimed languages are NOT
+        // interchangeable. Expired/failed checks are retried quickly.
+        val cacheKey = sub.url + "|" + (sub.headers?.hashCode() ?: 0) +
+            "|" + subtitleLanguage(sub.lang, sub.langTag)
+        val now = System.currentTimeMillis()
+        subtitleCheckCache[cacheKey]?.let { entry ->
+            val lifetime = if (entry.readable) {
+                successfulSubtitleCheckLifetimeMs
+            } else failedSubtitleCheckLifetimeMs
+            if (now - entry.checkedAt in 0 until lifetime) return entry.readable
+            subtitleCheckCache.remove(cacheKey, entry)
+        }
+        val result = inspectSubtitleContent(sub)
+        if (subtitleCheckCache.size >= 256) subtitleCheckCache.clear()
+        subtitleCheckCache[cacheKey] = CachedSubtitleCheck(
+            System.currentTimeMillis(), result
+        )
+        return result
+    }
+
+    private suspend fun inspectSubtitleContent(sub: SubtitleFile): Boolean {
         val url = sub.url
         if (!validStreamingUrl(url)) return false
         if (Regex("""(?i)\.(?:zip|rar|7z|gz)(?:[?#]|$)""").containsMatchIn(url)) return false

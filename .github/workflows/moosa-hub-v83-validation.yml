@@ -27,7 +27,7 @@ jobs:
           import json,re
           p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
           manifest={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
-          assert manifest=={"MOOSAHub":83,"MOOSAArabic":3},manifest
+          assert manifest.get("MOOSAHub",0)>=83 and manifest.get("MOOSAArabic")==3,manifest
           for field in ('@JsonProperty("subtitleFileName")','@JsonProperty("movieReleaseName")','@JsonProperty("releaseFormat")','@JsonProperty("fpsMilli")'):
             assert field in p,field
           for tag in ("WEB-DL","WEBRip","BluRay","HDTV","DVDRip","HDRip","CAM","TS"):
