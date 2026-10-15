@@ -1,0 +1,30 @@
+name: Probe existing public SubSource Stremio file converters (read only)
+on:
+  push:
+    branches: ["investigate/v84-subtitle-catalog-coverage"]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect public addon endpoints without installing or downloading videos
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.parse, urllib.error, json
+          bases=["https://subsource.strem.bar","https://subsource.strem.top","https://subsense.nepiraw.com"]
+          for base in bases:
+            for path in ("/manifest.json","/subtitles/movie/tt0816692.json","/subtitles/movie/tt0111161.json"):
+              u=base+path
+              try:
+                with urllib.request.urlopen(urllib.request.Request(u,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"}),timeout=9) as r:
+                  b=r.read(250000)
+                  code=r.status
+                try:val=json.loads(b)
+                except:val={}
+                subs=val.get("subtitles",[]) if isinstance(val,dict) else []
+                ar=[x for x in subs if x.get("lang","").lower() in ("ar","ara","arabic")]
+                print("ENDPOINT",urllib.parse.urlparse(base).hostname,path,"code",code,"bytes",len(b),"id",val.get("id") if isinstance(val,dict) else None,"count",len(subs),"ar",len(ar),"sampleurl",str(ar[0].get("url",""))[:130] if ar else "",flush=True)
+              except Exception as e:print("ENDPOINT",base,path,"ERROR",getattr(e,"code",type(e).__name__),flush=True)
+          PY
