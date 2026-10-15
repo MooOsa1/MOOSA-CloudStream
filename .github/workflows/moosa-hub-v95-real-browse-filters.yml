@@ -20,6 +20,34 @@ jobs:
           gradle-version: "8.12"
       - name: Compile MOOSA Hub and Arabic
         run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Smoke-test actual TMDB genre and country response data
+        run: |
+          python3 - <<'PY'
+          import re, json, urllib.parse, urllib.request
+          from pathlib import Path
+          source=Path('MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSACatalog.kt').read_text()
+          match=re.search(r'private const val TMDB_KEY = "([^"]+)"',source)
+          assert match, "TMDB key missing from installed provider"
+          key=match.group(1)
+          samples=[
+              ('movie', {'sort_by':'popularity.desc','with_genres':'28'}, 28),
+              ('tv', {'sort_by':'popularity.desc','with_genres':'80'}, 80),
+              ('movie', {'sort_by':'vote_average.desc','with_origin_country':'IN','vote_count.gte':'100'}, None)
+          ]
+          for media,params,genre in samples:
+              params.update(api_key=key,page='1',language='en-US',include_adult='false')
+              url='https://api.themoviedb.org/3/discover/'+media+'?'+urllib.parse.urlencode(params)
+              req=urllib.request.Request(url,headers={'Accept':'application/json','User-Agent':'MOOSAHub-Subtitle-CI'})
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  result=json.loads(response.read())
+              titles=result.get('results',[])
+              assert titles,'No actual TMDB titles for '+media
+              if genre is not None:
+                  assert all(genre in x.get('genre_ids',[]) for x in titles),'TMDB genre mismatch'
+              if 'with_origin_country' in params:
+                  assert all(x.get('id') for x in titles),'Origin-filtered items lack TMDB IDs'
+              print('PASS: live TMDB',media,'genre',genre or 'all','returned',len(titles),'real IDs')
+          PY
       - name: Verify real discover requests, pagination, reset and TV focus
         run: |
           python3 - <<'PY'
