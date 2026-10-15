@@ -37,7 +37,7 @@ jobs:
           assert 'val arabicSubNumber = AtomicInteger(0)' in p
           assert 'val englishSubNumber = AtomicInteger(0)' in p
           assert 'val label = (listOf("$prefix #$number") + details).joinToString(" • ")' in p
-          assert 'val track = subtitle.copy(lang = label)' in p
+          assert 'val track = subtitle.copy(lang = label, url = playbackUrl)' in p
           assert 'if (!seenSubtitles.add(subtitle.url)) return' in p
           assert 'PreferredSubtitleLanguage.OTHER -> return' in p
           assert 'subtitleCallback(track)' in p
