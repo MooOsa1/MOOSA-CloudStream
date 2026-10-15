@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 89
+version = 90
 
 
 android {
@@ -105,3 +105,6 @@ dependencies {
 
 // v89: classify SubDL responses that contain no subtitle timestamps without
 // recording raw text; reserve one of four subtitle probes for native tracks.
+
+// v90: use the documented normal-GET contract for SubDL raw files and
+// diagnose JSON response error categories (rate/auth/missing/unknown) safely.
