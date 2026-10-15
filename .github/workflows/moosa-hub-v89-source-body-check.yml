@@ -1,0 +1,57 @@
+name: Validate MOOSA Hub v89 source body classification and native fairness
+on:
+  push:
+    branches: ["diagnostics/moosa-hub-v89-subdl-response-kind"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile MOOSA Hub/Arabic and verify release manifest
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Assert safe diagnostics and preserve four-probe I/O bound
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          d=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASubtitleHealth.kt").read_text()
+          vers={i["internalName"]:i["version"] for i in json.loads(Path("build/plugins.json").read_text())}
+          assert vers == {"MOOSAHub":89,"MOOSAArabic":3}, vers
+          for phrase in (
+            "private fun subtitleNonCueCategory(body: String): String",
+            'MOOSASubtitleHealth.reason(source, subtitleNonCueCategory(body))',
+            '"JSON response, not SRT/VTT"',
+            '"rate/quota response text"',
+            '"access denied response text"',
+            '"missing file response text"',
+            '"unrecognized timestamp syntax"',
+            "val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)",
+            "val subtitleExternalSlots = kotlinx.coroutines.sync.Semaphore(3)",
+            "val subtitleSourceGates =",
+            "subtitleProbeGate, subtitleSourceGates,",
+            "subtitleExternalSlots",
+            "subtitleProbeGate, subtitleSourceGates",
+            "if (externalSlots != null) externalSlots.withPermit",
+            "filterReadableSubtitles(",
+            "MOOSASubtitleHealth.started(source)",
+            "withTimeoutOrNull(3200L)",
+          ): assert phrase in p,phrase
+          assert "subtitleNonCueCategory(body)" in p
+          assert p.count("app.get(\n                url,") == 1, "No added diagnostic HTTP requests"
+          assert 'append("sent to player")' not in d or "append(good)" in d
+          for fragment in ("api_key", "Bearer", "subtitleText", "rawBody", "http://", "https://"):
+            assert fragment not in d
+          print("PASS: v89 compiles and preserves bounded playback; diagnostics record only categorized response shapes")
+          PY
