@@ -65,7 +65,7 @@ export function createBridge({ secret = process.env.BRIDGE_SECRET || randomBytes
   function sweep() {
     for (const [code, item] of codes) if (now() > item.expires) codes.delete(code);
     for (const [id, s] of sessions) {
-      if (now() > s.expires) { sessions.delete(id); continue; }
+      if (now() > s.expires || (!s.paired && s.code && !codes.has(s.code))) { sessions.delete(id); continue; }
       for (const [key, t] of s.pending) if (now() - t.created > REQUEST_WINDOW * 2) s.pending.delete(key);
       s.queued = s.queued.filter(task => s.pending.has(task.requestId));
     }
