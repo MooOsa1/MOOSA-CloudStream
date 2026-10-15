@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 99
+version = 100
 
 
 android {
@@ -135,3 +135,6 @@ dependencies {
 
 // v99: contain TV remote focus inside modal top filter drawer, rename category
 // from applied TMDB filters and replace Close label with compact × action.
+
+// v100: reduce home scrolling work: no per-title image fetches on home,
+// bound the Show More layout observer to idle, visible home rows.
