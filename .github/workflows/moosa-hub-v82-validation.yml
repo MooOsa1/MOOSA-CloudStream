@@ -38,13 +38,13 @@ jobs:
           assert "private suspend fun filterReadableSubtitles(" in p
           assert "byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10)" in p
           assert "byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)" in p
-          assert "kotlinx.coroutines.sync.Semaphore(4)" in p
+          assert "val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)" in p
           assert 'subtitle.copy(lang = "Arabic")' in p and 'subtitle.copy(lang = "English")' in p
           assert 'PreferredSubtitleLanguage.OTHER -> null' in p
           assert 'subtitleCallback(track)' in p
           assert 'val later = fetchExternalSubtitles(request) { first ->' in p
-          assert 'filterReadableSubtitles(first, ::emitVerifiedSubtitle)' in p
-          assert 'filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle)' in p
+          assert 'first, ::emitVerifiedSubtitle, subtitleProbeGate' in p
+          assert 'filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle, subtitleProbeGate)' in p
           assert 'if (emittedLink.get()) {' in p
           assert "withTimeoutOrNull(3200L)" in p
           assert "(sub.headers ?: emptyMap())" in p
