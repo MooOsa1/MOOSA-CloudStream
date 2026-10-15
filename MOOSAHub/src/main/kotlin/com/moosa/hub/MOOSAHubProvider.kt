@@ -3494,10 +3494,10 @@ class MOOSAHubProvider : TmdbProvider() {
                 filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle)
             }
         }
-        if (fastArabic && emittedLink.get()) {
-            // Do not keep an Arabic playback dialog open only to wait for
-            // optional subtitle hosts; already verified tracks were emitted.
-            withTimeoutOrNull(1000L) {
+        if (emittedLink.get()) {
+            // After any video link is available, stop waiting for optional
+            // subtitle hosts. Verified tracks have already been emitted.
+            withTimeoutOrNull(3200L) {
                 externalSubtitleJob.await()
                 nativeSubtitleJob.await()
             }
