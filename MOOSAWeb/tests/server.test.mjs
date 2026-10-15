@@ -39,6 +39,7 @@ test('server serves static HTML, API metadata and empty authorized source list w
   const base=`http://127.0.0.1:${server.address().port}`;
   try{
     const page=await fetch(base);assert.equal(page.status,200);assert.match(await page.text(),/MOOSA Web/);
+    const health=await fetch(base+'/healthz');assert.equal(health.status,200);assert.deepEqual(await health.json(),{status:'ok'});
     const cfg=await(await fetch(base+'/api/config')).json();assert.equal(cfg.sourcePolicy,'authorized_only');
     const src=await(await fetch(base+'/api/streams?media=movie&id=1')).json();assert.deepEqual(src.sources,[]);
     assert.equal((await fetch(base+'/api/streams?media=movie&id=not-a-number')).status,400);
