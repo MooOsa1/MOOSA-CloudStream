@@ -1,0 +1,75 @@
+name: Verify MOOSA Hub v100 home scroll performance
+on:
+  push:
+    branches: ["perf/moosa-hub-v100-home-scroll"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile Hub and Arabic with plugin manifest
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Validate reduced home network requests and layout scanning
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          src=Path('MOOSAHub/src/main/kotlin/com/moosa/hub')
+          cat=(src/'MOOSACatalog.kt').read_text()
+          more=(src/'MOOSASeeAll.kt').read_text()
+          hub=(src/'MOOSABrowseDialog.kt').read_text()
+          versions={x['internalName']:x['version'] for x in json.loads(Path('build/plugins.json').read_text())}
+          assert versions=={'MOOSAHub':100,'MOOSAArabic':3},versions
+          # No per-item /images calls during home load, including its two
+          # extra Indian catalogue pages.
+          a=cat.index('suspend fun home(')
+          z=cat.index('data class BrowseBatch',a)
+          home=cat[a:z]
+          assert home.count('resolveArtwork = false')==2,home.count('resolveArtwork = false')
+          assert 'extraPages.map { it.await() }' in home
+          assert 'MOOSASeeAll.register(' in home
+          assert 'exactIndianRatingOrder(' in home
+          assert 'exactIndianPopularityOrder(' in home
+          # Browse pages still support resolving missing artwork.
+          assert 'resolveArtwork: Boolean = true' in cat
+          assert 'resolveArtwork && !indianTop' in cat
+          assert 'item.posterPath.isNullOrBlank() &&' in cat
+          assert 'item.backdropPath.isNullOrBlank()' in cat
+          assert 'val missingArtwork' in cat
+          assert 'missingArtwork.map { (index, item)' in cat
+          assert 'val enriched = response.results.mapIndexed' in cat
+          assert 'artworkFixes[index] ?: item' in cat
+          assert 'val responses = enriched.mapNotNull' in cat
+          # Never recursively inspect the WHOLE app layout on every
+          # frame during scrolling; only mounted rows while idle.
+          assert '}, 240L)' in more
+          assert 'private fun installHomeIdleListener(master: RecyclerView)' in more
+          assert 'newState == RecyclerView.SCROLL_STATE_IDLE' in more
+          assert 'master.scrollState != RecyclerView.SCROLL_STATE_IDLE' in more
+          assert 'collectHeaders(master, titles)' in more
+          assert 'collectHeaders(root, titles)' not in more
+          assert 'observedHomeLists.containsKey(master)' in more
+          assert 'installAction(title)' in more
+          assert 'button.layoutParams.width = width' in more # preserve existing focus animation
+          # Preserve v99 drop-down filters and prevent old coroutine crash.
+          assert 'private fun moveFilterPanelFocus(direction: Int)' in hub
+          assert 'ViewGroup.FOCUS_BLOCK_DESCENDANTS' in hub
+          assert 'private fun updateCategoryTitle()' in hub
+          assert 'focusableButton("×")' in hub
+          assert 'browseJob?.cancel()' not in hub
+          compiled=list(Path('MOOSAHub/build').rglob('MOOSABrowseDialog*.class'))
+          assert compiled
+          assert not any(b'cancel$default' in c.read_bytes() for c in compiled)
+          print('PASS: v100 compiles, faster home artwork, idle visible-row Show More observation, unchanged shelves and v99 filters')
+          PY
