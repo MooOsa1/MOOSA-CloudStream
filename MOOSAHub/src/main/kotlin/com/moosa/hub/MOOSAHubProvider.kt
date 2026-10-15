@@ -3058,6 +3058,34 @@ class MOOSAHubProvider : TmdbProvider() {
         return result
     }
 
+    // Classify failures by content shape, without recording/downloaded text,
+    // URLs, headers or credentials in device diagnostics.
+    private fun subtitleNonCueCategory(body: String): String {
+        val head = body.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+            .take(512).lowercase(java.util.Locale.ROOT)
+        return when {
+            head.startsWith("{") || head.startsWith("[{") ->
+                "JSON response, not SRT/VTT"
+            head.startsWith("<") ->
+                "markup response, not SRT/VTT"
+            head.contains("too many requests") || head.contains("rate limit") ||
+                head.contains("quota") || head.contains("limit exceeded") ->
+                "rate/quota response text"
+            head.contains("access denied") || head.contains("forbidden") ||
+                head.contains("unauthorized") || head.contains("blocked") ->
+                "access denied response text"
+            head.contains("not found") || head.contains("file missing") ->
+                "missing file response text"
+            head.startsWith("[script info]") || head.contains("dialogue:") ->
+                "ASS/SSA subtitle, not URL-compatible"
+            body.contains("-->") ->
+                "unrecognized timestamp syntax"
+            body.length < 256 ->
+                "short response without subtitle timestamps"
+            else -> "text without timestamps in first 32KiB"
+        }
+    }
+
     private suspend fun inspectSubtitleContent(sub: SubtitleFile): Boolean {
         val url = sub.url
         val source = MOOSASubtitleHealth.sourceOf(sub.lang)
@@ -3096,7 +3124,7 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         if (!subtitleTiming.containsMatchIn(body)) {
-            MOOSASubtitleHealth.reason(source, "no timed cues")
+            MOOSASubtitleHealth.reason(source, subtitleNonCueCategory(body))
             return false
         }
         val hasVttHeader = body.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
@@ -3128,7 +3156,8 @@ class MOOSAHubProvider : TmdbProvider() {
         subtitles: List<SubtitleFile>,
         onVerified: (SubtitleFile) -> Unit,
         gate: kotlinx.coroutines.sync.Semaphore,
-        sourceGates: ConcurrentHashMap<String, kotlinx.coroutines.sync.Semaphore>
+        sourceGates: ConcurrentHashMap<String, kotlinx.coroutines.sync.Semaphore>,
+        externalSlots: kotlinx.coroutines.sync.Semaphore? = null
     ): List<SubtitleFile> = coroutineScope {
         // A short first pass delivers good tracks faster and with fewer
         // requests. Only if it underfills a language do we inspect further
@@ -3158,7 +3187,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         kotlinx.coroutines.sync.Semaphore(2)
                     }
                     sourceGate.withPermit {
-                        gate.withPermit {
+                        suspend fun inspectOne(): SubtitleFile? = gate.withPermit {
                             MOOSASubtitleHealth.started(source)
                             if (isReadableSubtitle(subtitle)) {
                                 onVerified(subtitle)
@@ -3168,6 +3197,11 @@ class MOOSAHubProvider : TmdbProvider() {
                                 null
                             }
                         }
+                        // Three external slots + one reserved native slot;
+                        // still four max I/O probes, no added video delay.
+                        if (externalSlots != null) externalSlots.withPermit {
+                            inspectOne()
+                        } else inspectOne()
                     }
                 }
             }.awaitAll().filterNotNull()
@@ -3427,6 +3461,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // A single shared gate caps simultaneous file reads across the
         // primary index, fallback catalogs and native provider subtitles.
         val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)
+        val subtitleExternalSlots = kotlinx.coroutines.sync.Semaphore(3)
         val subtitleSourceGates =
             ConcurrentHashMap<String, kotlinx.coroutines.sync.Semaphore>()
 
@@ -3440,7 +3475,8 @@ class MOOSAHubProvider : TmdbProvider() {
                         launch {
                             filterReadableSubtitles(
                                 candidates, ::emitVerifiedSubtitle,
-                                subtitleProbeGate, subtitleSourceGates
+                                subtitleProbeGate, subtitleSourceGates,
+                                subtitleExternalSlots
                             )
                         }
                     }
