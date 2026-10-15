@@ -31,8 +31,8 @@ jobs:
           checks=[
            '@JsonProperty("fps") val fps: String? = null',
            '@JsonProperty("name") val name: String? = null',
-           'val format = file.format?.trim()?.lowercase()',
-           'if (format != null && format !in setOf("srt", "vtt"))',
+           'val format = file.format?.trim()?.trimStart(\'.\')?.lowercase()',
+           'if (format in unsupported || suffix in unsupported)',
            'private val verifiedSubtitleFormats = ConcurrentHashMap<String, String>()',
            'private val supportedSrtTiming = Regex(',
            'private val supportedVttTiming = Regex(',
