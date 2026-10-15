@@ -1,4 +1,5 @@
 import { showPlayer, hidePlayer, startDemo } from './player.js';
+import { initBridge, startBridgeSearch, openBridgeDialog, closeBridgeDialog } from './bridge-ui.js';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const state = {
@@ -78,6 +79,12 @@ function renderSaved(){const grid=$('#saved-grid');grid.replaceChildren();if(!st
 async function loadShelf(name){const row=$(`.shelf[data-section="${name}"] .poster-row`);try{const res=await api(`/api/catalog?section=${name}&page=1`);row.classList.remove('skeleton-row');renderCards(row,(res.results||[]).slice(0,16),name.includes('series')?'tv':'movie');if(name==='trending_movies' && res.results?.length){const choice=res.results.find(x=>x.backdrop_path) || res.results[0];state.featured={id:choice.id,type:'movie',partial:choice};$('#hero-title').textContent=titleFor(choice);$('#hero-desc').textContent=choice.overview||'اكتشف أحدث الإصدارات على MOOSA Web.';$('#hero-meta').textContent=[yearFor(choice),ratingFor(choice)?'★ '+ratingFor(choice):'', 'فيلم'].filter(Boolean).join('  •  ');const backdrop=imgSrc(choice.backdrop_path||choice.poster_path,'w1280');if(backdrop)$('#hero-image').style.backgroundImage=`url("${backdrop}")`;$('#hero-play').textContent='استكشف الفيلم';$('#hero-details').textContent='التفاصيل';}}
 catch(e){row.classList.remove('skeleton-row');row.replaceChildren(makeEl('div','error-inline','التصنيف غير متاح الآن. '+(e.message.includes('TMDB')?'أضف مفتاح TMDB لعرض نتائج حقيقية.':'تأكد من الاتصال ثم جرّب مجددًا.')));}}
 function keyFor(it){return `${it.type||mediaFor(it)}:${it.id}`;}
+function bridgeTask(entry, season=null, episode=null){
+  const item=entry.partial||{};
+  const task={media:entry.type,id:entry.id,title:titleFor(item),originalTitle:item.original_title||item.original_name||'',imdbId:item.imdb_id||'',year:Number(yearFor(item))||null,language:item.original_language||'en'};
+  if(entry.type==='tv'){task.season=season;task.episode=episode;}
+  return task;
+}
 async function openDetails(entry){
   state.lastFocus=document.activeElement;state.current=entry;state.sources=[];state.episode=null;
   $('#episode-selector').classList.add('hidden');
@@ -170,7 +177,8 @@ async function playEpisode(id,season,number,name){
   const title=titleFor(current.partial)+' • S'+season+'E'+number+(name?' • '+name:'');
   closeDetails();
   showPlayer({title,sources});
-  if(!sources.length)toast('لا يوجد سيرفر مصرّح به لهذه الحلقة؛ تقدر تستخدم رابطك أو ملفًا محليًا.');
+  void startBridgeSearch(bridgeTask(current,season,number));
+  if(!sources.length)toast('جاري البحث عن السيرفرات عبر CloudStream، أو استخدم رابطًا مصرحًا به.');
 }
 function closeDetails(){$('#detail-panel').classList.add('hidden');if($('#player-panel').classList.contains('hidden'))overlay.classList.add('hidden');state.lastFocus?.focus?.();}
 function saveTitle(){if(!state.current)return;const item={...state.current.partial,media_type:state.current.type};const key=keyFor(state.current);const idx=state.saved.findIndex(x=>mediaFor(x)+':'+x.id===key);if(idx>=0)state.saved.splice(idx,1);else state.saved.unshift(item);saveSaved();$('#save-title').textContent=idx>=0?'＋ قائمتي':'✓ في قائمتي';toast(idx>=0?'حُذف من قائمتك':'أُضيف إلى قائمتك');}
@@ -186,9 +194,11 @@ function showWatch(){
   const title=current?.partial?titleFor(current.partial):'مشغل MOOSA';
   const sources=state.sources||[];
   closeDetails();showPlayer({title,sources});
+  if(current)void startBridgeSearch(bridgeTask(current));
 }
 function openStandalone(){state.lastFocus=document.activeElement;state.current=null;state.sources=[];showPlayer({title:'مشغل MOOSA',sources:[]});}
 async function init(){
+  initBridge();
   $('#year').textContent=new Date().getFullYear();
   $$('[data-nav]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.nav)));
   $$('[data-section-view]').forEach(el=>el.addEventListener('click',()=>browseSection(el.dataset.sectionView)));
@@ -206,17 +216,17 @@ async function init(){
     if(state.current?.type==='tv')loadEpisodes(state.current.id,Number(e.target.value));
   });
   $('#help-button').addEventListener('click',()=>toast('MOOSA Web: مكتبة TMDB حقيقية ومشغل للمصادر المصرح بها. تفاصيل الإعداد داخل README.'));
-  overlay.addEventListener('click',()=>{if(!$('#player-panel').classList.contains('hidden'))hidePlayer();else closeDetails();});
+  overlay.addEventListener('click',()=>{if(!$('#bridge-panel').classList.contains('hidden'))closeBridgeDialog();else if(!$('#player-panel').classList.contains('hidden'))hidePlayer();else closeDetails();});
   document.addEventListener('keydown',e=>{
     if(e.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||'')){e.preventDefault();$('#search-input').focus();return;}
-    if(e.key==='Escape'){if(!$('#player-panel').classList.contains('hidden')){hidePlayer();return}if(!$('#detail-panel').classList.contains('hidden')){closeDetails();return}if(!$('#filters-panel').classList.contains('hidden')){$('#filters-panel').classList.add('hidden');$('#filters-toggle').focus();return}}
+    if(e.key==='Escape'){if(!$('#bridge-panel').classList.contains('hidden')){closeBridgeDialog();return}if(!$('#player-panel').classList.contains('hidden')){hidePlayer();return}if(!$('#detail-panel').classList.contains('hidden')){closeDetails();return}if(!$('#filters-panel').classList.contains('hidden')){$('#filters-panel').classList.add('hidden');$('#filters-toggle').focus();return}}
     if(e.key==='ArrowRight'||e.key==='ArrowLeft'||e.key==='ArrowDown'||e.key==='ArrowUp'){if(/INPUT|TEXTAREA|SELECT|VIDEO/.test(document.activeElement?.tagName||''))return;navigateTV(e);}
   });
   try{const config=await api('/api/config');state.catalogReady=config.catalogReady;$('#configuration-banner').classList.toggle('hidden',config.catalogReady);if(config.catalogReady)await Promise.allSettled(Object.keys(kinds).filter(k=>$$(`.shelf[data-section="${k}"]`).length).map(loadShelf));else $$('.shelf .poster-row').forEach(row=>{row.classList.remove('skeleton-row');row.replaceChildren(makeEl('div','error-inline','اربط بيانات TMDB لتظهر هنا عناوين حقيقية، بدون نتائج عشوائية.'))});}
   catch(e){toast('تعذر الاتصال بالخادم');}
 }
 function navigateTV(e){
-  const openModal=!$('#player-panel').classList.contains('hidden')?'#player-panel':!$('#detail-panel').classList.contains('hidden')?'#detail-panel':null;
+  const openModal=!$('#bridge-panel').classList.contains('hidden')?'#bridge-panel':!$('#player-panel').classList.contains('hidden')?'#player-panel':!$('#detail-panel').classList.contains('hidden')?'#detail-panel':null;
   const root=openModal?$(openModal):document;
   const focusable=[...root.querySelectorAll('button:not(:disabled),select,input,.poster-card')].filter(n=>{const r=n.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(n).visibility!=='hidden'});
   if(focusable.length>250)return;

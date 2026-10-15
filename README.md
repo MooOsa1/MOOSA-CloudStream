@@ -47,3 +47,12 @@ In addition to the standard Arabic samples, a separate CI smoke test now selects
 ### Limits
 
 A valid first-byte server result does not prove actual video width/height or sustained streaming performance on Fire TV in Oman. The website may change categories, hosts and CDN availability later. Tested pages and server candidates are not guarantees for every title.
+
+
+## MOOSA Hub v101 — opt-in CloudStream → MOOSA Web Bridge
+
+The extension includes an optional **Web Bridge** in MOOSA Hub → Settings. Once a user pairs their device with MOOSA Web, the website can request stream discovery from compatible, enabled CloudStream playback providers installed on that user's Android/Fire TV device. This includes third-party extension repositories where a compatible provider is installed.
+
+CloudStream remains the execution environment for those providers: **the Render Node service does not load .cs3 extensions**. Each lookup starts only after the user presses Play, is matched to the requested title and exact TV season/episode, and returns only declared HD (720p+) HTTPS candidates to the site. Provider quality metadata, connectivity, and browser playback capability can differ. Some streams require headers/CORS/DRM unavailable to the browser, and will not work automatically.
+
+To pair, open the MOOSA Web CloudStream button, copy the 14-character code, and enter it in CloudStream → MOOSA Hub → Settings → Web Bridge. Keep the Android app running. See [MOOSA Web Arabic setup instructions](MOOSAWeb/README_AR.md) for limitations, including browser compatibility and how to disconnect.

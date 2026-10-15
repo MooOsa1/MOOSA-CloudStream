@@ -2,12 +2,14 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createBridge } from './bridge.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
 const API_BASE = 'https://api.themoviedb.org/3';
 const CONFIG_PATH = process.env.STREAMS_FILE || 'data/streams.json';
 const CACHE = new Map();
+const bridge = createBridge();
 const CACHE_TTL = 5 * 60_000;
 const CACHE_MAX = 160;
 const mediaTypes = new Set(['movie', 'tv']);
@@ -112,6 +114,8 @@ async function readSources(media,id,season=null,episode=null) {
 }
 async function handle(req,res) {
   try {
+    const earlyUrl = new URL(req.url||'/', 'http://localhost');
+    if(earlyUrl.pathname.startsWith('/api/bridge/'))return bridge.handle(req,res,earlyUrl);
     if(req.method !== 'GET' && req.method !== 'HEAD')return err(res,405,'Method not allowed');
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});

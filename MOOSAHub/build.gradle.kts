@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 100
+version = 101
 
 
 android {
@@ -138,3 +138,5 @@ dependencies {
 
 // v100: reduce home scrolling work: no per-title image fetches on home,
 // bound the Show More layout observer to idle, visible home rows.
+
+// v101: opt-in HTTPS CloudStream Web Bridge supporting installed playback providers.

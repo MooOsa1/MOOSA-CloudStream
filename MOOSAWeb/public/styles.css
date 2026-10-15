@@ -24,3 +24,17 @@ footer{padding:26px 4.3%;border-top:1px solid #26282e;display:flex;flex-wrap:wra
 .episode-copy{min-width:0;display:flex;flex-direction:column;gap:4px}.episode-copy strong{font-size:13px}
 .episode-copy span{font-size:11px;color:#aeb4c2}.episode-copy small{font-size:11px;color:#a2a7b1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.5}
 @media(max-width:600px){.episode-choice img{width:80px;height:52px}.episode-heading h3{font-size:17px}}
+
+/* Paired CloudStream device controls. Opt-in; no stream data until Play. */
+.bridge-launch{font-size:12px;background:#20262a;color:#b8d3ca;border-color:#36453f;min-width:123px}
+#bridge-indicator.online{color:#88d7ad}
+.bridge-panel{position:fixed;z-index:105;top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,94vw);max-height:92dvh;overflow:auto;border:1px solid #4b5256;background:#1b1d23;box-shadow:0 24px 85px #000b;border-radius:17px;padding:31px;line-height:1.85}
+.bridge-panel .icon-close{top:16px;left:16px}
+.bridge-panel h2{margin:12px 0;font-size:27px}
+.bridge-panel p{font-size:13px;color:#c2c5cc}
+.bridge-device-status{padding:12px;background:#252c32;border:1px solid #4b555c;border-radius:9px;font-size:13px}
+.bridge-code-row{display:flex;align-items:center;gap:10px;margin-top:15px;flex-wrap:wrap}
+.bridge-code-row code{direction:ltr;letter-spacing:2px;font-size:20px;font-weight:800;padding:8px 12px;border-radius:10px;background:#111418;color:#d3f0df}
+.bridge-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:17px}
+.bridge-play-status{background:#203029;border-color:#3a5748}
+@media(max-width:650px){.bridge-launch{min-width:40px;padding:10px 8px}.bridge-launch span{font-size:0}.bridge-launch span::before{content:"◎";font-size:22px}.bridge-panel{padding:24px 18px}.bridge-code-row code{font-size:16px;letter-spacing:1px}.bridge-actions .btn{white-space:normal;flex:1}}
