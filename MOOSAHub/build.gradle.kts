@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 81
+version = 82
 
 
 android {
@@ -81,3 +81,6 @@ dependencies {
 
 // v81: explicit ar/en tracks only at playback; probe more alternate subtitle
 // files and pass native provider headers during content validation.
+
+// v82: progressive subtitle delivery, minimal verification I/O, and bounded
+// subtitle finalization even while streams finish resolving.

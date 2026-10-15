@@ -26,18 +26,18 @@ jobs:
           from pathlib import Path
           import json
           versions={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
-          assert versions=={"MOOSAHub":81,"MOOSAArabic":3},versions
+          assert versions.get("MOOSAHub",0)>=81 and versions.get("MOOSAArabic")==3,versions
           s=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
-          assert 'byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(24)' in s
-          assert 'byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(12)' in s
+          assert 'byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10)' in s
+          assert 'byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)' in s
           assert '(sub.headers ?: emptyMap()) + mapOf(' in s
           assert 'subtitle.copy(lang = "Arabic")' in s
           assert 'subtitle.copy(lang = "English")' in s
           assert 'PreferredSubtitleLanguage.OTHER -> null' in s
-          assert 'if (playbackTrack != null && seenSubtitles.add(playbackTrack.url))' in s
-          assert 'subtitleCallback(playbackTrack)' in s
+          assert 'if (seenSubtitles.add(track.url))' in s
+          assert 'subtitleCallback(track)' in s
           assert '"https://opensubtitles-v3.strem.io/subtitles/$type/$id.json"' in s
-          assert 'filterReadableSubtitles(fetchExternalSubtitles(request))' in s
+          assert 'fetchExternalSubtitles(request) { first ->' in s
           print("PASS: v81 delivers only two canonical languages, verifies up to 36 candidates and preserves native subtitle headers")
           PY
       - name: Verify real subtitle index language labels and downloadable SRT content

@@ -34,6 +34,7 @@ import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
@@ -2819,14 +2820,16 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     private suspend fun fetchExternalSubtitles(
-        request: HubPlaybackRequest
+        request: HubPlaybackRequest,
+        onEarlyCandidates: suspend (List<SubtitleFile>) -> Unit
     ): List<SubtitleFile> = coroutineScope {
         val imdb = resolveSubtitleImdb(request) ?: return@coroutineScope emptyList()
         val cacheKey = subtitleCacheKey(request, imdb)
 
         subtitleCache[cacheKey]?.let { cached ->
             if (System.currentTimeMillis() - cached.createdAt < subtitleCacheLifetimeMs) {
-                return@coroutineScope cached.items
+                onEarlyCandidates(cached.items)
+                return@coroutineScope emptyList()
             }
             subtitleCache.remove(cacheKey)
         }
@@ -2838,7 +2841,14 @@ class MOOSAHubProvider : TmdbProvider() {
         val legacy = async { fetchOpenSubtitlesLegacy(request, imdb) }
         val wyzie = async { fetchWyzieSubtitles(request, imdb) }
         val subDl = async { fetchSubDlSubtitles(request, imdb) }
-        val all = (v3.await() + legacy.await() + wyzie.await() + subDl.await())
+        // Deliver the first working OpenSubtitles v3 tracks before awaiting
+        // slower backup sources; don't block the player's subtitle menu.
+        val primary = v3.await()
+            .filter { validStreamingUrl(it.url) }
+            .distinctBy { it.url }
+        if (primary.isNotEmpty()) onEarlyCandidates(primary)
+
+        val all = (primary + legacy.await() + wyzie.await() + subDl.await())
             .filter { it.url.startsWith("http", ignoreCase = true) }
             .filterNot {
                 val url = it.url.substringBefore("?").lowercase()
@@ -2853,7 +2863,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 createdAt = System.currentTimeMillis(), items = all
             )
         }
-        all
+        val primaryUrls = primary.map { it.url }.toHashSet()
+        all.filterNot { it.url in primaryUrls }
     }
 
     private val subtitleTiming = Regex(
@@ -2896,7 +2907,9 @@ class MOOSAHubProvider : TmdbProvider() {
     }
 
     private suspend fun filterReadableSubtitles(
-        subtitles: List<SubtitleFile>
+        subtitles: List<SubtitleFile>,
+        onVerified: (SubtitleFile) -> Unit,
+        gate: kotlinx.coroutines.sync.Semaphore
     ): List<SubtitleFile> = coroutineScope {
         // Inspect more candidates when index servers list multiple versions;
         // discarded/broken links should not starve Arabic or English results.
@@ -2906,14 +2919,19 @@ class MOOSAHubProvider : TmdbProvider() {
             .sortedByDescending(::subtitleScore)
             .groupBy { subtitleLanguage(it.lang, it.langTag) }
             .let { byLanguage ->
-                byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(24) +
-                    byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(12)
+                byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10) +
+                    byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)
             }
-        val gate = kotlinx.coroutines.sync.Semaphore(6)
+        // Reading 36 subtitle files while video sources are active caused
+        // unnecessary I/O bursts on low-memory Android TV devices.
+        // Emit each verified result immediately instead of waiting for all.
         shortlist.map { subtitle ->
             async {
                 gate.withPermit {
-                    if (isReadableSubtitle(subtitle)) subtitle else null
+                    if (isReadableSubtitle(subtitle)) {
+                        onVerified(subtitle)
+                        subtitle
+                    } else null
                 }
             }
         }.awaitAll().filterNotNull().sortedByDescending(::subtitleScore)
@@ -3091,12 +3109,48 @@ class MOOSAHubProvider : TmdbProvider() {
         val shownLinks = AtomicInteger(0)
         val callbackLock = Any()
 
-        // Validate external tracks while stream providers resolve, rather than
-        // waiting until the end and delaying playback with another fetch wave.
+        // CloudStream receives verified tracks as soon as each file passes,
+        // even while source videos are still resolving. Keep the callback
+        // serialized with video callbacks and dedupe parallel source results.
+        fun emitVerifiedSubtitle(subtitle: SubtitleFile) {
+            val track = when (subtitleLanguage(subtitle.lang, subtitle.langTag)) {
+                PreferredSubtitleLanguage.ARABIC -> subtitle.copy(lang = "Arabic")
+                PreferredSubtitleLanguage.ENGLISH -> subtitle.copy(lang = "English")
+                PreferredSubtitleLanguage.OTHER -> null
+            } ?: return
+            if (seenSubtitles.add(track.url)) {
+                synchronized(callbackLock) {
+                    try {
+                        subtitleCallback(track)
+                    } catch (error: Throwable) {
+                        logError(error)
+                    }
+                }
+            }
+        }
+
+        // A single shared gate caps simultaneous file reads across the
+        // primary index, fallback catalogs and native provider subtitles.
+        val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)
+
+        // Start validating primary tracks without pausing fallback retrieval.
+        // Separate coroutines can emit tracks immediately on success, while a
+        // shared semaphore limits storage/network pressure on Android TV.
         val externalSubtitleJob = async {
             timed(20_000L) {
-                filterReadableSubtitles(fetchExternalSubtitles(request))
-            } ?: emptyList()
+                coroutineScope {
+                    val later = fetchExternalSubtitles(request) { first ->
+                        launch {
+                            filterReadableSubtitles(
+                                first, ::emitVerifiedSubtitle, subtitleProbeGate
+                            )
+                        }
+                    }
+                    filterReadableSubtitles(
+                        later, ::emitVerifiedSubtitle, subtitleProbeGate
+                    )
+                }
+            }
         }
 
         val aliases = aliasesJob.await()
@@ -3447,37 +3501,25 @@ class MOOSAHubProvider : TmdbProvider() {
         MOOSAProgress.serversReady(shownLinks.get())
         MOOSAProgress.subtitles()
 
-        val externalSubtitles =
-            if (fastArabic && emittedLink.get()) {
-                // Once an Arabic-title video is verified, don't keep the
-                // native loading dialog open for unrelated subtitle APIs.
-                val ready = withTimeoutOrNull(800L) {
-                    externalSubtitleJob.await()
-                }.orEmpty()
-                externalSubtitleJob.cancel()
-                ready
-            } else {
+        // Native subtitles also arrive individually as soon as they verify.
+        // Verify fewer files concurrently to reduce I/O during playback.
+        val nativeSubtitleJob = async {
+            timed(10_000L) {
+                filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle, subtitleProbeGate)
+            }
+        }
+        if (emittedLink.get()) {
+            // After any video link is available, stop waiting for optional
+            // subtitle hosts. Verified tracks have already been emitted.
+            withTimeoutOrNull(3200L) {
                 externalSubtitleJob.await()
+                nativeSubtitleJob.await()
             }
-
-        val remainingSubtitles =
-            filterReadableSubtitles(nativeSubtitles.toList()) + externalSubtitles
-        remainingSubtitles.sortedByDescending(::subtitleScore).forEach { subtitle ->
-            // Send exact recognised language names to CloudStream, rather
-            // than source-decorated labels that require fuzzy language parsing.
-            // Other languages are NEVER returned through this provider.
-            val playbackTrack = when (subtitleLanguage(subtitle.lang, subtitle.langTag)) {
-                PreferredSubtitleLanguage.ARABIC -> subtitle.copy(lang = "Arabic")
-                PreferredSubtitleLanguage.ENGLISH -> subtitle.copy(lang = "English")
-                PreferredSubtitleLanguage.OTHER -> null
-            }
-            if (playbackTrack != null && seenSubtitles.add(playbackTrack.url)) {
-                try {
-                    subtitleCallback(playbackTrack)
-                } catch (error: Throwable) {
-                    logError(error)
-                }
-            }
+            externalSubtitleJob.cancel()
+            nativeSubtitleJob.cancel()
+        } else {
+            externalSubtitleJob.await()
+            nativeSubtitleJob.await()
         }
 
         MOOSAProgress.finish(shownLinks.get())
