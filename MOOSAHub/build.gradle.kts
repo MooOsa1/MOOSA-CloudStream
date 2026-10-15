@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 97
+version = 98
 
 
 android {
@@ -129,3 +129,6 @@ dependencies {
 
 // v97: lightweight Android TV browse motion, deterministic DPAD focus,
 // stable grid updates and bounded source-keyed page caching.
+
+// v98: compact top drop-down filters with one applied-chip row, neutral
+// CloudStream theme, draft-and-apply TMDB queries and stable Android TV focus.
