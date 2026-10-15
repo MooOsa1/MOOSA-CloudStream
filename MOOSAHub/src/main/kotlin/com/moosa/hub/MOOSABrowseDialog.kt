@@ -507,7 +507,9 @@ class MOOSABrowseDialog : DialogFragment() {
     }
 
     override fun onDestroy() {
-        browseJob?.cancel()
+        // CloudStream may ship an older kotlinx.coroutines runtime without
+        // Job.cancel$default. Explicit cause invokes the Job interface method.
+        browseJob?.cancel(CancellationException("Show More dialog destroyed"))
         cancelPendingReturn()
         val controller = navController
         val listener = destinationListener
@@ -588,7 +590,10 @@ class MOOSABrowseDialog : DialogFragment() {
         if (choice == selectedFilters) return
         selectedFilters = choice
         browseGeneration += 1
-        browseJob?.cancel()
+        // IMPORTANT: never use Job.cancel() with an omitted default argument.
+        // CloudStream's bundled coroutines runtime lacks Job.cancel$default,
+        // which previously crashed the whole app when a filter was changed.
+        browseJob?.cancel(CancellationException("Show More filters changed"))
         loading = false
         lastPage = 0
         hasNext = true
