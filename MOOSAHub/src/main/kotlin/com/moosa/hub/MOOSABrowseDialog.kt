@@ -97,6 +97,7 @@ class MOOSABrowseDialog : DialogFragment() {
 
     private fun focusableButton(text: String): Button =
         Button(requireContext()).apply {
+            id = View.generateViewId()
             this.text = text
             setTextColor(Color.WHITE)
             textSize = 12.5f
