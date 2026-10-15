@@ -1,0 +1,75 @@
+name: Validate MOOSA Hub v97 smooth browse navigation
+on:
+  push:
+    branches: ["feat/moosa-hub-v97-browse-motion-focus"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both plugins and release metadata
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Check motion, focus routing and real request compatibility
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('MOOSAHub/src/main/kotlin/com/moosa/hub')
+          d=(root/'MOOSABrowseDialog.kt').read_text()
+          f=(root/'MOOSABrowseFilters.kt').read_text()
+          c=(root/'MOOSACatalog.kt').read_text()
+          versions={z["internalName"]:z["version"] for z in json.loads(Path('build/plugins.json').read_text())}
+          assert versions=={'MOOSAHub':97,'MOOSAArabic':3},versions
+          for x in (
+            'private fun closeWithMotion()',
+            'private fun focusFirstVisiblePoster(): Boolean',
+            'private fun restoreFilterFocus()',
+            'private fun saveSnapshot(key: String)',
+            'browseSnapshots.size > 6',
+            'it.savedAtMs < 120_000L',
+            'setDuration(140L)',
+            'setDuration(180L)',
+            'setDuration(145L)',
+            'DecelerateInterpolator()',
+            'setOnKeyListener { _, keyCode, event ->',
+            'KeyEvent.KEYCODE_DPAD_DOWN',
+            'typeButton.nextFocusRightId = genreButton.id',
+            'genreButton.nextFocusDownId = countryButton.id',
+            'resetButton.nextFocusLeftId = countryButton.id',
+            'stayOnFilterAfterReload = true',
+            'focusFilterId = genreButton.id',
+            'val effectiveRequest = selectedRequest()',
+            'request = effectiveRequest',
+            'browseJob?.cancel(CancellationException("Show More filters changed"))',
+            'browseJob?.cancel(CancellationException("Show More dialog destroyed"))',
+            'progress.visibility = View.INVISIBLE',
+            'recycler.alpha = 0.6f',
+            'saveSnapshot(effectiveRequest.data)',
+            'recycler.animate().alpha(1f)',
+            'if (generation != browseGeneration) return',
+            'resetButton.setOnClickListener',
+          ):
+            assert x in d,x
+          assert 'browseJob?.cancel()' not in d
+          assert 'val genre = MOOSABrowseFilters.genres' in d
+          assert 'data = "/discover/$type?$query"' in f
+          assert 'MOOSACatalog.browseBatch(' in d
+          assert 'MOOSASeeAll.register(' in c
+          # Compile-bytecode regression: older CloudStream runtimes do not
+          # provide coroutines.Job.cancel$default.
+          classes=list(Path('MOOSAHub/build').rglob('MOOSABrowseDialog*.class'))
+          assert classes, 'No compiled dialog classes'
+          assert not any(b'cancel$default' in x.read_bytes() for x in classes)
+          print('PASS: v97 built, bounded cached filter states, focus routing, motion and no runtime-incompatible cancel default')
+          PY
