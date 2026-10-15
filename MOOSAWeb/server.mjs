@@ -64,6 +64,14 @@ export function tmdbRoute(url) {
     if(query.length < 2) return {invalid:'اكتب حرفين على الأقل للبحث'};
     return {endpoint:'/search/multi',params:{query,page,language:'en-US',include_adult:'false'}};
   }
+  if(pathname === '/api/episodes') {
+    const id=cleanId(p.get('id'));
+    const raw=p.get('season');
+    const season=Number(raw);
+    if(!id || raw===null || !Number.isInteger(season) || season<0 || season>100)
+      return {invalid:'الموسم أو معرّف المسلسل غير صالح'};
+    return {endpoint:`/tv/${id}/season/${season}`,params:{language:'ar-SA'}};
+  }
   if(pathname === '/api/details') {
     const type = mediaType(p.get('media'));
     const id=cleanId(p.get('id'));
@@ -90,10 +98,14 @@ async function tmdbGet(route) {
   CACHE.set(cacheKey,{until:Date.now()+CACHE_TTL,data:body});
   return body;
 }
-async function readSources(media,id) {
+async function readSources(media,id,season=null,episode=null) {
   const streamFile=path.resolve(ROOT,CONFIG_PATH);
   const data=JSON.parse(await readFile(streamFile,'utf8'));
-  const arr=data[media+':'+id];
+  // An episode must match its exact season/episode key; never reuse a
+  // generic show-wide link and accidentally play another episode.
+  const key=media==='tv' && season!==null && episode!==null
+    ? `tv:${id}:${season}:${episode}` : media+':'+id;
+  const arr=data[key];
   if(!Array.isArray(arr))return [];
   return arr.filter(x=>x && typeof x.url==='string' && /^https:\/\//i.test(x.url))
     .map(x=>({name:String(x.name||'Authorized source').slice(0,80),url:x.url,subtitles:Array.isArray(x.subtitles)?x.subtitles.filter(t=>t && /^https:\/\//i.test(t.url||'')).map(t=>({label:String(t.label||'Subtitle'),language:t.language==='ar'?'ar':'en',source:String(t.source||'Custom'),url:t.url})):[]})).slice(0,12);
@@ -107,7 +119,16 @@ async function handle(req,res) {
       const media=mediaType(url.searchParams.get('media'));
       const id=cleanId(url.searchParams.get('id'));
       if(!id)return err(res,400,'Invalid ID');
-      return json(res,200,{sources:await readSources(media,id)});
+      const hasEpisode=url.searchParams.has('episode') || url.searchParams.has('season');
+      const season=Number(url.searchParams.get('season'));
+      const episode=Number(url.searchParams.get('episode'));
+      if(hasEpisode && (media!=='tv' ||
+        !url.searchParams.has('season') || !url.searchParams.has('episode') ||
+        !Number.isInteger(season) || season<0 || season>100 ||
+        !Number.isInteger(episode) || episode<1 || episode>1000))
+        return err(res,400,'Invalid episode');
+      return json(res,200,{sources:await readSources(media,id,
+        hasEpisode?season:null,hasEpisode?episode:null)});
     }
     if(url.pathname.startsWith('/api/')){
       const route=tmdbRoute(url);
