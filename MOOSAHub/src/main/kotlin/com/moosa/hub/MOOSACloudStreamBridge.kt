@@ -5,6 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.APIHolder.apis
+import com.lagradost.cloudstream3.ProviderType
 import com.lagradost.cloudstream3.LoadResponse.Companion.getImdbId
 import com.lagradost.cloudstream3.LoadResponse.Companion.getTMDbId
 import com.lagradost.cloudstream3.MovieLoadResponse
@@ -107,8 +109,15 @@ object MOOSACloudStreamBridge {
     }
 
     private fun providers(): List<MainAPI> =
-        MOOSASourceTester.sources().filter { MOOSASourceTester.isEnabled(it) }
+        apis.filter { api ->
+            api.name != "MOOSA Hub" &&
+                MOOSASourceTester.isEnabled(api) &&
+                (api.providerType == ProviderType.DirectProvider ||
+                    runCatching { api.javaClass.declaredMethods.any { it.name == "loadLinks" } }
+                        .getOrDefault(false))
+        }
             .distinctBy { (it.name + "|" + it.mainUrl).lowercase() }
+            .sortedBy { it.name.lowercase() }
             .take(80)
 
     private fun poll(ctx: Context, token: String) {
@@ -180,7 +189,10 @@ object MOOSACloudStreamBridge {
 
         for (query in titles.take(2)) {
             val matches = withTimeoutOrNull(4200L) {
-                api.search(query, 1)?.items.orEmpty()
+                val paged = runCatching { api.search(query, 1)?.items.orEmpty() }
+                    .getOrDefault(emptyList())
+                if (paged.isNotEmpty()) paged
+                else runCatching { api.search(query).orEmpty() }.getOrDefault(emptyList())
             }.orEmpty().filter { titleMatches(it.name, titles, year) }.take(3)
             for (hit in matches) {
                 val loaded = withTimeoutOrNull(6000L) { api.load(hit.url) } ?: continue
