@@ -67,7 +67,7 @@ export function createBridge({ secret = process.env.BRIDGE_SECRET || randomBytes
     for (const [id, s] of sessions) {
       if (now() > s.expires) { sessions.delete(id); continue; }
       for (const [key, t] of s.pending) if (now() - t.created > REQUEST_WINDOW * 2) s.pending.delete(key);
-      s.queued = s.queued.filter(task => s.pending.has(task.id));
+      s.queued = s.queued.filter(task => s.pending.has(task.requestId));
     }
   }
   function allowedUrl(value) {
@@ -106,7 +106,7 @@ export function createBridge({ secret = process.env.BRIDGE_SECRET || randomBytes
     const season = Number(v?.season);
     const episode = Number(v?.episode);
     if (!['movie','tv'].includes(media) || !Number.isSafeInteger(id) || id < 1 || id > 2_147_483_647) return null;
-    if (media === 'tv' && (!Number.isInteger(season) || season < 0 || season > 100 ||
+    if (media === 'tv' && (v?.season == null || v?.episode == null || !Number.isInteger(season) || season < 0 || season > 100 ||
       !Number.isInteger(episode) || episode < 1 || episode > 1000)) return null;
     const title = String(v?.title || '').trim().slice(0, 180);
     if (title.length < 2) return null;
@@ -170,7 +170,7 @@ export function createBridge({ secret = process.env.BRIDGE_SECRET || randomBytes
         const id = randomBytes(12).toString('hex');
         const record = { id, created: now(), done: false, sources: [], status: 'searching' };
         s.pending.set(id, record);
-        s.queued.push({ id, ...task });
+        s.queued.push({ ...task, requestId: id });
         notifyAgent(s);
         return respond(res, 202, { requestId: id });
       }
