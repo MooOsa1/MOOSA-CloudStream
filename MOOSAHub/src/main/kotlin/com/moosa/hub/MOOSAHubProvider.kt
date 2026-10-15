@@ -2904,10 +2904,13 @@ class MOOSAHubProvider : TmdbProvider() {
             .distinctBy { it.url }
         if (primary.isNotEmpty()) onEarlyCandidates(primary)
 
-        val backup = if (primary.isEmpty()) {
+        // Optional keyed providers have already been searching in parallel.
+        // Never delay a working optional source behind the obsolete RPC.
+        val supplemental = wyzie.await() + subDl.await()
+        val backup = if (primary.isEmpty() && supplemental.isEmpty()) {
             fetchOpenSubtitlesLegacy(request, imdb)
         } else emptyList()
-        val all = (primary + backup + wyzie.await() + subDl.await())
+        val all = (primary + supplemental + backup)
             .filter { it.url.startsWith("http", ignoreCase = true) }
             .filterNot {
                 val url = it.url.substringBefore("?").lowercase()
