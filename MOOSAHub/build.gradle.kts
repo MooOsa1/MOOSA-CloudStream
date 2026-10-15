@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 79
+version = 80
 
 
 android {
@@ -75,3 +75,6 @@ dependencies {
 // 24 months. Existing Indian Top ranking and other sections remain separate.
 
 // v79: expand recent Indian trending coverage and improve browse pagination.
+
+// v80: restore subtitle discovery, validate more real CDN alternatives in parallel
+// with video search, and keep Arabic/English subtitles even on slower links.
