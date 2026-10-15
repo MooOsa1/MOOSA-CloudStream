@@ -39,6 +39,8 @@ object MOOSASeeAll {
     private val states = ConcurrentHashMap<String, CategoryState>()
     private val observedRoots =
         WeakHashMap<ViewGroup, ViewTreeObserver.OnGlobalLayoutListener>()
+    private val observedHomeLists =
+        WeakHashMap<RecyclerView, RecyclerView.OnScrollListener>()
     private val headerRefs =
         ConcurrentHashMap<String, WeakReference<TextView>>()
     // The host adapter rewrites home_child_more_info.text on rebind.
@@ -56,7 +58,7 @@ object MOOSASeeAll {
         mainHandler.postDelayed({
             headerRefreshScheduled = false
             applyHeaders()
-        }, 90L)
+        }, 240L)
     }
 
     private fun styleAction(
@@ -315,16 +317,40 @@ object MOOSASeeAll {
 
     private fun installObserver() {
         val current = activity ?: return
-        val root = current.findViewById<ViewGroup>(android.R.id.content) ?: return
+        val root = current.findViewById<ViewGroup>(android.R.id.content)
+            ?: return
 
         synchronized(observedRoots) {
-            if (observedRoots.containsKey(root)) return
-
-            val listener = ViewTreeObserver.OnGlobalLayoutListener {
-                scheduleHeaderRefresh()
+            if (!observedRoots.containsKey(root)) {
+                // Global layouts also happen for unrelated tabs and poster
+                // animations. The callback only schedules a coalesced refresh.
+                val listener = ViewTreeObserver.OnGlobalLayoutListener {
+                    scheduleHeaderRefresh()
+                }
+                observedRoots[root] = listener
+                root.viewTreeObserver.addOnGlobalLayoutListener(listener)
             }
-            observedRoots[root] = listener
-            root.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        }
+        homeMasterRecycler(current)?.let(::installHomeIdleListener)
+    }
+
+    private fun installHomeIdleListener(master: RecyclerView) {
+        synchronized(observedHomeLists) {
+            if (observedHomeLists.containsKey(master)) return
+            val listener = object : RecyclerView.OnScrollListener() {
+                override fun onScrollStateChanged(
+                    recyclerView: RecyclerView,
+                    newState: Int
+                ) {
+                    if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                        // Install Show More on newly bound visible rows only
+                        // after the fling has settled, not mid-animation.
+                        scheduleHeaderRefresh()
+                    }
+                }
+            }
+            observedHomeLists[master] = listener
+            master.addOnScrollListener(listener)
         }
     }
 
@@ -496,9 +522,15 @@ object MOOSASeeAll {
 
     private fun applyHeaders() {
         val host = activity ?: return
-        val root = host.findViewById<ViewGroup>(android.R.id.content) ?: return
+        val master = homeMasterRecycler(host) ?: return
+        if (!master.isShown) return
+        installHomeIdleListener(master)
+        // Scanning the entire activity's view tree during every carousel
+        // animation causes noticeable main-thread jank. Only scan the
+        // currently attached home rows, and not while the list is scrolling.
+        if (master.scrollState != RecyclerView.SCROLL_STATE_IDLE) return
         val titles = mutableListOf<TextView>()
-        collectHeaders(root, titles)
+        collectHeaders(master, titles)
         titles.forEach { title ->
             // The host owns title text; we only install a sibling button.
             // Recycling does not toggle the button or revert its label.
