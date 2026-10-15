@@ -1,0 +1,48 @@
+name: Verify MOOSA Hub v96 Show More runtime compatibility
+on:
+  push:
+    branches: ["fix/moosa-hub-v96-coroutines-runtime-crash"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile plugins and manifest
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Verify API compatibility in compiled Kotlin bytecode
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          meta={x['internalName']:x['version'] for x in json.loads(Path('build/plugins.json').read_text())}
+          assert meta=={'MOOSAHub':96,'MOOSAArabic':3},meta
+          root=Path('MOOSAHub/src/main/kotlin/com/moosa/hub')
+          s=(root/'MOOSABrowseDialog.kt').read_text()
+          assert 'browseJob?.cancel()' not in s
+          assert s.count('browseJob?.cancel(CancellationException(')==2
+          assert 'browseJob?.cancel(CancellationException("Show More filters changed"))' in s
+          assert 'browseJob?.cancel(CancellationException("Show More dialog destroyed"))' in s
+          assert 'selectedFilters = choice' in s and 'browseGeneration += 1' in s
+          assert 'MOOSABrowseFilters.toRequest(request, it)' in s
+          assert 'request = effectiveRequest' in s
+          assert 'browseJob = lifecycleScope.launch { loadInitial() }' in s
+          assert 'resetButton.setOnClickListener { applyFilters(null) }' in s
+          # Verify compiled code no longer links the synthetic Job.cancel$default
+          # method which is absent in the user's CloudStream runtime.
+          compiled=list(Path('MOOSAHub/build').rglob('MOOSABrowseDialog*.class'))
+          assert compiled,'compiled dialog classes missing'
+          problematic=[str(x) for x in compiled if b'cancel$default' in x.read_bytes()]
+          assert not problematic,'Runtime-incompatible Job.cancel$default: '+repr(problematic)
+          print('PASS: v96 Android bytecode has no Job.cancel$default and source-backed Show More filters remain')
+          PY
