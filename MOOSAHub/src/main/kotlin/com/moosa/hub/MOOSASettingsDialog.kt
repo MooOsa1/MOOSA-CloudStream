@@ -401,7 +401,7 @@ class MOOSASettingsDialog : DialogFragment() {
                 "SubDL off"
             }
 
-        return "$wyzie • $subDl"
+        return "OpenSubs on • $wyzie • $subDl"
     }
 
     private fun wireFocus() {
@@ -528,6 +528,8 @@ class MOOSASettingsDialog : DialogFragment() {
         val entries = arrayOf(
             "Wyzie Key",
             "SubDL Key",
+            "Find more Arabic subtitles (on demand)",
+            "Subtitle synchronization tips",
             "Arabic subtitle priority"
         )
 
@@ -552,19 +554,46 @@ class MOOSASettingsDialog : DialogFragment() {
                     )
 
                     2 -> {
-                        AlertDialog.Builder(
-                            requireContext()
-                        )
-                            .setTitle(
-                                "Arabic subtitle priority"
-                            )
+                        AlertDialog.Builder(requireContext())
+                            .setTitle("More subtitles without slower servers")
                             .setMessage(
-                                "Arabic subtitles are requested first and emitted before English whenever available."
+                                "In the CloudStream video player, open Subtitles, " +
+                                "choose Load from Internet, and select SubSource " +
+                                "(or SubDL). Search in Arabic and select a release " +
+                                "matching the video, such as WEB-DL or BluRay. " +
+                                "SubSource delivers ZIP archives that CloudStream " +
+                                "unpacks on demand. MOOSA Hub deliberately does NOT " +
+                                "download these archives during server discovery."
                             )
-                            .setPositiveButton(
-                                "OK",
-                                null
+                            .setPositiveButton("OK", null)
+                            .show()
+                    }
+
+                    3 -> {
+                        AlertDialog.Builder(requireContext())
+                            .setTitle("Keep subtitles in sync")
+                            .setMessage(
+                                "Match the subtitle release (WEB-DL, WEBRip, BluRay) " +
+                                "to the selected video. FPS hints can help, but do " +
+                                "not guarantee sync. For a fixed offset, adjust " +
+                                "Subtitle delay in the CloudStream player. If the " +
+                                "gap grows throughout the movie, select a different " +
+                                "release instead of adding more delay."
                             )
+                            .setPositiveButton("OK", null)
+                            .show()
+                    }
+
+                    4 -> {
+                        AlertDialog.Builder(requireContext())
+                            .setTitle("Arabic subtitle priority")
+                            .setMessage(
+                                "Arabic and English subtitles are verified and sent " +
+                                "individually as they become available. Arabic is " +
+                                "prioritized in selection, but network arrival order " +
+                                "can vary. Only two languages are emitted by MOOSA Hub."
+                            )
+                            .setPositiveButton("OK", null)
                             .show()
                     }
                 }
