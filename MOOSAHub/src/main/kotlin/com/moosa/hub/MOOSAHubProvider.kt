@@ -34,6 +34,7 @@ import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
@@ -2907,7 +2908,8 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private suspend fun filterReadableSubtitles(
         subtitles: List<SubtitleFile>,
-        onVerified: (SubtitleFile) -> Unit
+        onVerified: (SubtitleFile) -> Unit,
+        gate: kotlinx.coroutines.sync.Semaphore
     ): List<SubtitleFile> = coroutineScope {
         // Inspect more candidates when index servers list multiple versions;
         // discarded/broken links should not starve Arabic or English results.
@@ -2923,7 +2925,6 @@ class MOOSAHubProvider : TmdbProvider() {
         // Reading 36 subtitle files while video sources are active caused
         // unnecessary I/O bursts on low-memory Android TV devices.
         // Emit each verified result immediately instead of waiting for all.
-        val gate = kotlinx.coroutines.sync.Semaphore(4)
         shortlist.map { subtitle ->
             async {
                 gate.withPermit {
@@ -3128,14 +3129,27 @@ class MOOSAHubProvider : TmdbProvider() {
             }
         }
 
-        // Prioritise the fast, tested v3 index and emit before slow backups.
-        // Background checks are cancelled when this bounded operation ends.
+        // A single shared gate caps simultaneous file reads across the
+        // primary index, fallback catalogs and native provider subtitles.
+        val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)
+
+        // Start validating primary tracks without pausing fallback retrieval.
+        // Separate coroutines can emit tracks immediately on success, while a
+        // shared semaphore limits storage/network pressure on Android TV.
         val externalSubtitleJob = async {
             timed(20_000L) {
-                val later = fetchExternalSubtitles(request) { first ->
-                    filterReadableSubtitles(first, ::emitVerifiedSubtitle)
+                coroutineScope {
+                    val later = fetchExternalSubtitles(request) { first ->
+                        launch {
+                            filterReadableSubtitles(
+                                first, ::emitVerifiedSubtitle, subtitleProbeGate
+                            )
+                        }
+                    }
+                    filterReadableSubtitles(
+                        later, ::emitVerifiedSubtitle, subtitleProbeGate
+                    )
                 }
-                filterReadableSubtitles(later, ::emitVerifiedSubtitle)
             }
         }
 
@@ -3491,7 +3505,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // Verify fewer files concurrently to reduce I/O during playback.
         val nativeSubtitleJob = async {
             timed(10_000L) {
-                filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle)
+                filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle, subtitleProbeGate)
             }
         }
         if (emittedLink.get()) {
