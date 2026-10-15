@@ -242,7 +242,7 @@ object MOOSACloudStreamBridge {
     }
 
     private fun resolve(task: JSONObject, token: String) {
-        val id = task.optString("id")
+        val id = task.optString("requestId")
         if (id.isBlank()) return
         try {
             runBlocking(Dispatchers.IO) {
