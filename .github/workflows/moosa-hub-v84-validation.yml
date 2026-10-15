@@ -50,7 +50,7 @@ jobs:
               "subtitleTiming.containsMatchIn(body)",
               "filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle, subtitleProbeGate)",
               "withTimeoutOrNull(3200L)",
-              "val track = subtitle.copy(lang = label)",
+              "val track = subtitle.copy(lang = label, url = playbackUrl)",
               "val language = when (subtitleLanguage(item.language, item.language))",
           ]
           for t in checks: assert t in p,t
