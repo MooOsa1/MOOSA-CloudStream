@@ -35,7 +35,7 @@ jobs:
               "private val successfulSubtitleCheckLifetimeMs = 6 * 60 * 1000L",
               "private val failedSubtitleCheckLifetimeMs = 30 * 1000L",
               "subtitleCheckCache.remove(cacheKey, entry)",
-              "if (subtitleCheckCache.size >= 256) subtitleCheckCache.clear()",
+              "if (subtitleCheckCache.size >= 256) {",
               "val result = inspectSubtitleContent(sub)",
               "private suspend fun inspectSubtitleContent(sub: SubtitleFile): Boolean",
               "val backup = if (primary.isEmpty() && supplemental.isEmpty()) {",
