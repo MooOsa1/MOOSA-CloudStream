@@ -112,6 +112,8 @@ class MOOSAHubProvider : TmdbProvider() {
     )
 
     private data class SubDlSubtitle(
+        // Official SubDL responses may provide "lang" without "language".
+        @JsonProperty("lang") val lang: String? = null,
         @JsonProperty("language") val language: String? = null,
         @JsonProperty("release_name") val releaseName: String? = null,
         @JsonProperty("fps") val fps: String? = null,
@@ -2691,7 +2693,9 @@ class MOOSAHubProvider : TmdbProvider() {
     ): String = listOf(
         imdb,
         request.season?.toString().orEmpty(),
-        request.episode?.toString().orEmpty()
+        request.episode?.toString().orEmpty(),
+        (MOOSASettingsStore.subdlKey()?.hashCode() ?: 0).toString(),
+        (MOOSASettingsStore.wyzieKey()?.hashCode() ?: 0).toString()
     ).joinToString("|")
 
     private suspend fun fetchOpenSubtitlesV3(
@@ -2711,8 +2715,16 @@ class MOOSAHubProvider : TmdbProvider() {
                 "https://opensubtitles-v3.strem.io/subtitles/$type/$id.json",
                 headers = mapOf("Accept" to "application/json")
             ).parsedSafe<StremioSubtitleResponse>()
-        } ?: return emptyList()
+        } ?: run {
+            MOOSASubtitleHealth.update("OpenSubtitles", "Index timeout or invalid response")
+            return emptyList()
+        }
 
+        MOOSASubtitleHealth.update(
+            "OpenSubtitles",
+            "Index: ${response.subtitles.count { it.lang == "ara" }} Arabic, " +
+                "${response.subtitles.count { it.lang == "eng" }} English"
+        )
         return response.subtitles
             .mapNotNull { normalizeExternalSubtitle(it, "OpenSubtitles") }
             .distinctBy { it.url }
@@ -2752,7 +2764,10 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         imdb: String
     ): List<SubtitleFile> {
-        val key = MOOSASettingsStore.wyzieKey() ?: return emptyList()
+        val key = MOOSASettingsStore.wyzieKey() ?: run {
+            MOOSASubtitleHealth.update("Wyzie", "No API key configured")
+            return emptyList()
+        }
         val params = buildMap {
             put("id", imdb)
             put("source", "all")
@@ -2767,8 +2782,12 @@ class MOOSAHubProvider : TmdbProvider() {
                 params = params,
                 headers = mapOf("Accept" to "application/json")
             ).parsedSafe<Array<WyzieSubtitle>>()
-        } ?: return emptyList()
+        } ?: run {
+            MOOSASubtitleHealth.update("Wyzie", "Index timeout or invalid response")
+            return emptyList()
+        }
 
+        MOOSASubtitleHealth.update("Wyzie", "Index: ${response.size} entries")
         return response.mapNotNull { item ->
             val url = item.url?.takeIf { validStreamingUrl(it) } ?: return@mapNotNull null
             // Wyzie display names are release titles and may not contain any
@@ -2790,7 +2809,10 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         imdb: String
     ): List<SubtitleFile> {
-        val key = MOOSASettingsStore.subdlKey() ?: return emptyList()
+        val key = MOOSASettingsStore.subdlKey() ?: run {
+            MOOSASubtitleHealth.update("SubDL", "No API key configured")
+            return emptyList()
+        }
         val isSeries = request.season != null && request.episode != null
 
         val params = buildMap {
@@ -2814,12 +2836,24 @@ class MOOSAHubProvider : TmdbProvider() {
                     "Authorization" to "Bearer $key"
                 )
             ).parsedSafe<SubDlResponse>()
-        } ?: return emptyList()
+        } ?: run {
+            MOOSASubtitleHealth.update("SubDL", "Index timeout or invalid response")
+            return emptyList()
+        }
 
-        if (!response.status) return emptyList()
+        if (!response.status) {
+            MOOSASubtitleHealth.update("SubDL", "API status=false (key/quota/server)")
+            return emptyList()
+        }
 
+        val individualFiles = response.subtitles.sumOf { it.unpackFiles.size }
+        MOOSASubtitleHealth.update(
+            "SubDL", "Index: ${response.subtitles.size} entries, " +
+                "$individualFiles individual files; ZIP archives are skipped"
+        )
         return response.subtitles.flatMap { subtitle ->
-            val parentLang = subtitle.language.orEmpty()
+            val parentLang = subtitle.language?.takeIf { it.isNotBlank() }
+                ?: subtitle.lang.orEmpty()
 
             if (subtitle.unpackFiles.isNotEmpty()) {
                 subtitle.unpackFiles.mapNotNull { file ->
