@@ -2725,9 +2725,11 @@ class MOOSAHubProvider : TmdbProvider() {
             "Index: ${response.subtitles.count { it.lang == "ara" }} Arabic, " +
                 "${response.subtitles.count { it.lang == "eng" }} English"
         )
-        return response.subtitles
+        val parsed = response.subtitles
             .mapNotNull { normalizeExternalSubtitle(it, "OpenSubtitles") }
             .distinctBy { it.url }
+        MOOSASubtitleHealth.candidates("OpenSubtitles", parsed.size)
+        return parsed
     }
 
     private suspend fun fetchOpenSubtitlesLegacy(
@@ -2788,7 +2790,7 @@ class MOOSAHubProvider : TmdbProvider() {
         }
 
         MOOSASubtitleHealth.update("Wyzie", "Index: ${response.size} entries")
-        return response.mapNotNull { item ->
+        val parsed = response.mapNotNull { item ->
             val url = item.url?.takeIf { validStreamingUrl(it) } ?: return@mapNotNull null
             // Wyzie display names are release titles and may not contain any
             // language name. Trust its structured language field instead.
@@ -2803,6 +2805,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     .filter { it.isNotBlank() }.joinToString(" • "), url
             )
         }.distinctBy { it.url }
+        MOOSASubtitleHealth.candidates("Wyzie", parsed.size)
+        return parsed
     }
 
     private suspend fun fetchSubDlSubtitles(
@@ -2851,7 +2855,7 @@ class MOOSAHubProvider : TmdbProvider() {
             "SubDL", "Index: ${response.subtitles.size} entries, " +
                 "$individualFiles individual files; ZIP archives are skipped"
         )
-        return response.subtitles.flatMap { subtitle ->
+        val parsed = response.subtitles.flatMap { subtitle ->
             val parentLang = subtitle.language?.takeIf { it.isNotBlank() }
                 ?: subtitle.lang.orEmpty()
 
@@ -2866,7 +2870,10 @@ class MOOSAHubProvider : TmdbProvider() {
                         (file.season != request.season || file.episode != request.episode)
                     ) return@mapNotNull null
 
-                    val raw = file.url ?: return@mapNotNull null
+                    val raw = file.url?.takeIf { it.isNotBlank() } ?: run {
+                        MOOSASubtitleHealth.omitted("SubDL", "file URL missing")
+                        return@mapNotNull null
+                    }
                     // Only SRT and VTT are supported through CloudStream's
                     // URL-subtitle callback. No ASS/SSA/SUB disguised as SRT.
                     // SubDL's "format" label is not always canonical.
@@ -2877,6 +2884,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     val suffix = file.name?.substringAfterLast('.', "")?.lowercase()
                     val unsupported = setOf("ass", "ssa", "idx", "sub", "sup", "ttml")
                     if (format in unsupported || suffix in unsupported) {
+                        MOOSASubtitleHealth.omitted("SubDL", "unsupported format")
                         return@mapNotNull null
                     }
                     val url = if (raw.startsWith("http")) raw
@@ -2886,7 +2894,10 @@ class MOOSAHubProvider : TmdbProvider() {
                     val label = when (subtitleLanguage(language, language)) {
                         PreferredSubtitleLanguage.ARABIC -> "Arabic • SubDL"
                         PreferredSubtitleLanguage.ENGLISH -> "English • SubDL"
-                        PreferredSubtitleLanguage.OTHER -> return@mapNotNull null
+                        PreferredSubtitleLanguage.OTHER -> {
+                            MOOSASubtitleHealth.omitted("SubDL", "unknown file language")
+                            return@mapNotNull null
+                        }
                     }
 
                     val detail = file.releaseName
@@ -2903,11 +2914,17 @@ class MOOSAHubProvider : TmdbProvider() {
                     )
                 }
             } else {
-                val raw = subtitle.url ?: return@flatMap emptyList()
+                val raw = subtitle.url?.takeIf { it.isNotBlank() } ?: run {
+                    MOOSASubtitleHealth.omitted("SubDL", "parent URL missing")
+                    return@flatMap emptyList()
+                }
                 if (
                     raw.endsWith(".zip", ignoreCase = true) ||
                     raw.endsWith(".rar", ignoreCase = true)
-                ) return@flatMap emptyList()
+                ) {
+                    MOOSASubtitleHealth.omitted("SubDL", "ZIP needs on-demand extraction")
+                    return@flatMap emptyList()
+                }
 
                 val url = if (raw.startsWith("http")) raw
                 else "https://dl.subdl.com$raw"
@@ -2915,7 +2932,10 @@ class MOOSAHubProvider : TmdbProvider() {
                 val label = when (subtitleLanguage(parentLang, parentLang)) {
                     PreferredSubtitleLanguage.ARABIC -> "Arabic • SubDL"
                     PreferredSubtitleLanguage.ENGLISH -> "English • SubDL"
-                    PreferredSubtitleLanguage.OTHER -> return@flatMap emptyList()
+                    PreferredSubtitleLanguage.OTHER -> {
+                        MOOSASubtitleHealth.omitted("SubDL", "unknown parent language")
+                        return@flatMap emptyList()
+                    }
                 }
 
                 listOf(
@@ -2926,6 +2946,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 )
             }
         }.distinctBy { it.url }
+        MOOSASubtitleHealth.candidates("SubDL", parsed.size)
+        return parsed
     }
 
     private suspend fun fetchExternalSubtitles(
@@ -2940,6 +2962,10 @@ class MOOSAHubProvider : TmdbProvider() {
                 MOOSASubtitleHealth.update("OpenSubtitles", "Reusing cached index")
                 MOOSASubtitleHealth.update("SubDL", "Reusing cached index")
                 MOOSASubtitleHealth.update("Wyzie", "Reusing cached index")
+                cached.items.groupBy { MOOSASubtitleHealth.sourceOf(it.lang) }
+                    .forEach { (source, items) ->
+                        MOOSASubtitleHealth.candidates(source, items.size)
+                    }
                 onEarlyCandidates(cached.items)
                 return@coroutineScope
             }
@@ -3101,7 +3127,8 @@ class MOOSAHubProvider : TmdbProvider() {
     private suspend fun filterReadableSubtitles(
         subtitles: List<SubtitleFile>,
         onVerified: (SubtitleFile) -> Unit,
-        gate: kotlinx.coroutines.sync.Semaphore
+        gate: kotlinx.coroutines.sync.Semaphore,
+        sourceGates: ConcurrentHashMap<String, kotlinx.coroutines.sync.Semaphore>
     ): List<SubtitleFile> = coroutineScope {
         // A short first pass delivers good tracks faster and with fewer
         // requests. Only if it underfills a language do we inspect further
@@ -3116,17 +3143,30 @@ class MOOSAHubProvider : TmdbProvider() {
         val english = byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(7)
 
         suspend fun checkBatch(candidates: List<SubtitleFile>): List<SubtitleFile> {
+            candidates.groupBy { MOOSASubtitleHealth.sourceOf(it.lang) }
+                .forEach { (source, entries) ->
+                    MOOSASubtitleHealth.queued(source, entries.size)
+                }
             return candidates.map { subtitle ->
                 async {
-                    gate.withPermit {
-                        if (isReadableSubtitle(subtitle)) {
-                            onVerified(subtitle)
-                            subtitle
-                        } else {
-                            MOOSASubtitleHealth.rejected(
-                                MOOSASubtitleHealth.sourceOf(subtitle.lang)
-                            )
-                            null
+                    val source = MOOSASubtitleHealth.sourceOf(subtitle.lang)
+                    // Previously OpenSubtitles could occupy all four global
+                    // slots, leaving SubDL's 37 indexed files with ZERO
+                    // attempts before the player search deadline.
+                    // Reserve fairness without increasing total concurrency.
+                    val sourceGate = sourceGates.computeIfAbsent(source) {
+                        kotlinx.coroutines.sync.Semaphore(2)
+                    }
+                    sourceGate.withPermit {
+                        gate.withPermit {
+                            MOOSASubtitleHealth.started(source)
+                            if (isReadableSubtitle(subtitle)) {
+                                onVerified(subtitle)
+                                subtitle
+                            } else {
+                                MOOSASubtitleHealth.rejected(source)
+                                null
+                            }
                         }
                     }
                 }
@@ -3387,6 +3427,8 @@ class MOOSAHubProvider : TmdbProvider() {
         // A single shared gate caps simultaneous file reads across the
         // primary index, fallback catalogs and native provider subtitles.
         val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)
+        val subtitleSourceGates =
+            ConcurrentHashMap<String, kotlinx.coroutines.sync.Semaphore>()
 
         // Start validating primary tracks without pausing fallback retrieval.
         // Separate coroutines can emit tracks immediately on success, while a
@@ -3397,7 +3439,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     fetchExternalSubtitles(request) { candidates ->
                         launch {
                             filterReadableSubtitles(
-                                candidates, ::emitVerifiedSubtitle, subtitleProbeGate
+                                candidates, ::emitVerifiedSubtitle,
+                                subtitleProbeGate, subtitleSourceGates
                             )
                         }
                     }
@@ -3757,7 +3800,10 @@ class MOOSAHubProvider : TmdbProvider() {
         // Verify fewer files concurrently to reduce I/O during playback.
         val nativeSubtitleJob = async {
             timed(10_000L) {
-                filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle, subtitleProbeGate)
+                filterReadableSubtitles(
+                    nativeSubtitles.toList(), ::emitVerifiedSubtitle,
+                    subtitleProbeGate, subtitleSourceGates
+                )
             }
         }
         if (emittedLink.get()) {
