@@ -3181,7 +3181,7 @@ class MOOSAHubProvider : TmdbProvider() {
                             part.startsWith("Wyzie") -> "Wyzie"
                             else -> {
                                 val format = subtitleReleaseHint(part)
-                                val fps = Regex("""(\\d{2}(?:\\.\\d{1,2})?)fps""")
+                                val fps = Regex("""(\d{2}(?:\.\d{1,2})?)fps""")
                                     .find(part)?.value
                                 listOf(format.takeIf(String::isNotBlank), fps)
                                     .filterNotNull().joinToString(" ")
