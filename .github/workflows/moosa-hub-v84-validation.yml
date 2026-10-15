@@ -1,0 +1,93 @@
+name: Validate MOOSA Hub v84 fast, low-I/O subtitles (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v84-fast-verified-subtitles"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both plugins and generate release manifest
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Verify caching, fallback isolation, two language safety and no automatic ZIP
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          settings=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASettingsDialog.kt").read_text()
+          manifest={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert manifest=={"MOOSAHub":84,"MOOSAArabic":3},manifest
+          checks=[
+              "private data class CachedSubtitleCheck(",
+              "private val subtitleCheckCache = ConcurrentHashMap<String, CachedSubtitleCheck>()",
+              "private val successfulSubtitleCheckLifetimeMs = 6 * 60 * 1000L",
+              "private val failedSubtitleCheckLifetimeMs = 30 * 1000L",
+              "subtitleCheckCache.remove(cacheKey, entry)",
+              "if (subtitleCheckCache.size >= 256) subtitleCheckCache.clear()",
+              "val result = inspectSubtitleContent(sub)",
+              "private suspend fun inspectSubtitleContent(sub: SubtitleFile): Boolean",
+              "val backup = if (primary.isEmpty() && supplemental.isEmpty()) {",
+              "fetchOpenSubtitlesLegacy(request, imdb)",
+              "val supplemental = wyzie.await() + subDl.await()",
+              "val all = (primary + supplemental + backup)",
+              "if (primary.isNotEmpty()) onEarlyCandidates(primary)",
+              "onEarlyCandidates(cached.items)",
+              "val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)",
+              "byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10)",
+              "byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)",
+              "subtitleTiming.containsMatchIn(body)",
+              "filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle, subtitleProbeGate)",
+              "withTimeoutOrNull(3200L)",
+              "val track = subtitle.copy(lang = label)",
+              "val language = when (subtitleLanguage(item.language, item.language))",
+          ]
+          for t in checks: assert t in p,t
+          assert "val legacy = async { fetchOpenSubtitlesLegacy(request, imdb) }" not in p
+          assert 'PreferredSubtitleLanguage.OTHER -> return' in p
+          assert "Arabic subtitle priority" in settings
+          assert "Load from Internet" in settings and "SubSource" in settings
+          assert "Subtitle delay" in settings
+          assert "OpenSubs on" in settings
+          assert "subsource.net" not in p, "ZIP source must remain an on-demand CloudStream feature"
+          print("PASS: v84 avoids unconditional dead legacy lookups, caches verified text, bounds I/O, and exposes native SubSource on demand")
+          PY
+      - name: Public Arabic and English subtitle files remain reachable
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,re
+          cases=[("movie","tt0816692"),("series","tt0944947:1:1")]
+          for media,ident in cases:
+              req=urllib.request.Request(f"https://opensubtitles-v3.strem.io/subtitles/{media}/{ident}.json",headers={"User-Agent":"Mozilla/5.0"})
+              with urllib.request.urlopen(req,timeout=15) as r: records=json.load(r)["subtitles"]
+              for lang in ("ara","eng"):
+                  sample=[x.get("url") for x in records if x.get("lang")==lang and x.get("url","").startswith("https://")]
+                  assert sample,f"No {lang} index records for {media}"
+                  working=False
+                  for url in sample[:4]:
+                      try:
+                          req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0","Range":"bytes=0-32767"})
+                          with urllib.request.urlopen(req,timeout=12) as r: raw=r.read(32768)
+                          text=raw.decode("utf-8",errors="replace")
+                          has_timing=bool(re.search(r"(?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3}\s*-->\s*(?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3}",text))
+                          chars=sum('\u0600'<=c<='\u06ff' for c in text) if lang=="ara" else sum('a'<=c.lower()<='z' for c in text)
+                          if has_timing and chars>=12:
+                              working=True
+                              break
+                      except Exception as e:
+                          print("CDN_RETRY",media,lang,type(e).__name__,flush=True)
+                  assert working,f"No verified {lang} track: {media}"
+                  print("SOURCE_OK",media,lang,"available",len(sample),flush=True)
+          print("PASS: source health; device-side latency/sync not claimed")
+          PY
