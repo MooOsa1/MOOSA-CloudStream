@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 96
+version = 97
 
 
 android {
@@ -126,3 +126,6 @@ dependencies {
 
 // v96: fix Android CloudStream runtime crash when changing Show More filters
 // by avoiding coroutines Job.cancel default-argument synthetic method.
+
+// v97: lightweight Android TV browse motion, deterministic DPAD focus,
+// stable grid updates and bounded source-keyed page caching.
