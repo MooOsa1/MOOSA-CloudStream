@@ -47,7 +47,7 @@ function setNav(name) {
 function setPage(content, title) {
   $("#content").innerHTML = content;
   $("#page-label").textContent = title;
-  window.scrollTo({ top: 0, behavior: "instant" });
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 function hero(item) {
   if (!item) return "";
@@ -489,7 +489,7 @@ document.addEventListener("keydown", event => {
   }).filter(x => x.primary > 8).sort((a,b) => a.score-b.score);
   if (options.length) {
     options[0].el.focus({ preventScroll:true });
-    options[0].el.scrollIntoView({ block:"nearest",inline:"nearest",behavior:"instant" });
+    options[0].el.scrollIntoView({ block:"nearest",inline:"nearest",behavior:"auto" });
     event.preventDefault();
   } else if (modal !== document) { event.preventDefault(); }
 });
