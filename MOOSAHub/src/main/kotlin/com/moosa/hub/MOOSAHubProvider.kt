@@ -3534,11 +3534,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     !subtitle.url.substringBefore('#').endsWith(".vtt", true)
                 ) subtitle.url.substringBefore('#') + "#moosa.vtt"
                 else subtitle.url
-                val track = subtitle.copy(
-                    lang = label,
-                    langTag = if (language == PreferredSubtitleLanguage.ARABIC) "ar" else "en",
-                    url = playbackUrl
-                )
+                val track = subtitle.copy(lang = label, url = playbackUrl)
                 try {
                     subtitleCallback(track)
                     MOOSASubtitleHealth.accepted(
