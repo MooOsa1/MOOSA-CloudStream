@@ -2,6 +2,8 @@ name: Validate MOOSA Hub v78 Indian trending catalogue (no release)
 on:
   push:
     branches: ["feat/moosa-hub-v78-trending-indian-movies"]
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
 jobs:
   validate:
@@ -25,7 +27,7 @@ jobs:
           from pathlib import Path
           s=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSACatalog.kt").read_text()
           v={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
-          assert v == {"MOOSAHub":78,"MOOSAArabic":3},v
+          assert v.get("MOOSAHub",0)>=78 and v.get("MOOSAArabic")==3,v
           trending='"Trending Indian Movies"'
           top='"Top Indian Movies"'
           assert s.index(trending)<s.index(top)
@@ -86,7 +88,7 @@ jobs:
               is_indian="IN" in countries
               actual_indian+=int(is_indian)
               print("ORIGIN",movie["title"],countries,movie.get("popularity"))
-          assert actual_indian>=4, "TMDB discover filter yielded too many non-Indian productions"
+          assert actual_indian==len(sample), "TMDB discover filter included a non-Indian production"
           print("TRENDING_INDIAN_SAMPLE",[(x.get("title"),round(x.get("popularity",0),2),x.get("vote_count")) for x in ranked[:12]])
           print("PASS: live TMDB Indian films meet production-country, rating, popularity and non-documentary filters")
           PY
