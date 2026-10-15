@@ -1,0 +1,21 @@
+name: MOOSA Web — Node checks
+on:
+  push:
+    paths:
+      - 'MOOSAWeb/**'
+      - '.github/workflows/moosa-web-ci.yml'
+  pull_request:
+    paths:
+      - 'MOOSAWeb/**'
+      - '.github/workflows/moosa-web-ci.yml'
+  workflow_dispatch:
+jobs:
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: cd MOOSAWeb && npm run check
