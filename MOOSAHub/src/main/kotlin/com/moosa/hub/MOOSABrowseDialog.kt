@@ -900,7 +900,9 @@ class MOOSABrowseDialog : DialogFragment() {
             resetButton, showResultsButton
         ).firstOrNull { it.id == id && it.isEnabled } ?: typeButton
         target.post {
-            if (isAdded && !waitingForResult && !closingAnimated) {
+            if (isAdded && filterPanelVisible &&
+                !waitingForResult && !closingAnimated
+            ) {
                 target.requestFocus()
             }
         }
