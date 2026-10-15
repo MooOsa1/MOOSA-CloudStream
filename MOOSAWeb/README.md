@@ -26,7 +26,7 @@ Alternatively export `TMDB_API_KEY` in your environment and run `npm start`.
 - Search, genuine server-side genre/type/country/order filters with pagination; responsive, remote/keyboard-friendly cards.
 - Actual TMDB titles, backdrops, ratings and details (not random synthetic results).
 - Favorites/watchlist persisted **only on your device** via localStorage.
-- Watch dialog with selectable authorized source, MP4/WebM, native HLS (Safari), or hls.js for HLS-capable browsers. Hls.js 1.6.15 is loaded on demand from jsDelivr; the browser needs access to that CDN when using HLS without native support.
+- Watch dialog with selectable authorized source, MP4/WebM, native HLS (Safari), or hls.js for HLS-capable browsers. Hls.js 1.7.3 is loaded on demand from jsDelivr; the browser needs access to that CDN when using HLS without native support.
 - HLS quality selector where provided by source; Arabic/English subtitle dropdown; local/remote SRT-to-VTT; offset control ±15 seconds; local video and subtitle files.
 - Optional CC0 sample video from MDN to verify the player is working without associating it with any catalog movie.
 

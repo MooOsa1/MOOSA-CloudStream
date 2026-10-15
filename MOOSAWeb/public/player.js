@@ -40,7 +40,7 @@ function loadHls(){
   if(scriptPromise)return scriptPromise;
   scriptPromise=new Promise((resolve,reject)=>{
     const script=document.createElement('script');
-    script.src='https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js';
+    script.src='https://cdn.jsdelivr.net/npm/hls.js@1.7.3/dist/hls.min.js';
     script.async=true;
     script.onload=()=>window.Hls?resolve(window.Hls):reject(new Error('HLS.js لم يبدأ'));
     script.onerror=()=>reject(new Error('تعذر تحميل مكتبة HLS.js. تحقق من الاتصال.'));

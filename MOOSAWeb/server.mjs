@@ -33,13 +33,15 @@ export function tmdbRoute(url) {
   const {pathname,searchParams:p} = url;
   const page = String(clampPage(p.get('page')));
   if(pathname === '/api/catalog') {
+    const today=new Date();
+    const threeYearsAgo=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-36,1));
     const name = p.get('section') || 'trending_movies';
     const routes = {
       trending_movies:['/trending/movie/week',{}],
       trending_series:['/trending/tv/week',{}],
       top_movies:['/movie/top_rated',{}],
       top_series:['/tv/top_rated',{}],
-      indian_trending:['/discover/movie',{with_origin_country:'IN',sort_by:'popularity.desc','vote_count.gte':'20','vote_average.gte':'6','without_genres':'99','primary_release_date.gte':new Date(Date.now() - 36*31*24*3600000).toISOString().slice(0,10),'primary_release_date.lte':new Date().toISOString().slice(0,10)}],
+      indian_trending:['/discover/movie',{with_origin_country:'IN',sort_by:'popularity.desc','vote_count.gte':'20','vote_average.gte':'6','without_genres':'99','primary_release_date.gte':threeYearsAgo.toISOString().slice(0,10),'primary_release_date.lte':today.toISOString().slice(0,10)}],
       indian_top:['/discover/movie',{with_origin_country:'IN',sort_by:'vote_average.desc','vote_count.gte':'200','vote_average.gte':'7','without_genres':'99'}]
     };
     const entry = routes[name]; if(!entry) return null;
