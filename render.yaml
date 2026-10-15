@@ -1,0 +1,16 @@
+# Optional Node deployment for MOOSA Web.
+# Import this repository as a Blueprint in Render.
+# Set your TMDB key in the Render dashboard; never commit it to Git.
+services:
+  - type: web
+    name: moosa-web
+    runtime: node
+    rootDir: MOOSAWeb
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/config
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TMDB_API_KEY
+        sync: false
