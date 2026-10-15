@@ -226,7 +226,7 @@ async function init(){
   catch(e){toast('تعذر الاتصال بالخادم');}
 }
 function navigateTV(e){
-  const openModal=!$('#player-panel').classList.contains('hidden')?'#player-panel':!$('#detail-panel').classList.contains('hidden')?'#detail-panel':null;
+  const openModal=!$('#bridge-panel').classList.contains('hidden')?'#bridge-panel':!$('#player-panel').classList.contains('hidden')?'#player-panel':!$('#detail-panel').classList.contains('hidden')?'#detail-panel':null;
   const root=openModal?$(openModal):document;
   const focusable=[...root.querySelectorAll('button:not(:disabled),select,input,.poster-card')].filter(n=>{const r=n.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(n).visibility!=='hidden'});
   if(focusable.length>250)return;
