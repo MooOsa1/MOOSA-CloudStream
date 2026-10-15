@@ -1,0 +1,58 @@
+name: Validate MOOSA Hub v93 source-grouped subtitles (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v93-source-groups"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both plugins and plugin index
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Check source grouping without losing subtitle variants
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          items=json.loads(Path("build/plugins.json").read_text())
+          versions={v["internalName"]:v["version"] for v in items}
+          assert versions=={"MOOSAHub":93,"MOOSAArabic":3},versions
+          start=p.index("fun emitVerifiedSubtitle(subtitle: SubtitleFile)")
+          end=p.index("val subtitleProbeGate =",start)
+          e=p[start:end]
+          for token in (
+              'val label = "$prefix • $origin"',
+              'if (!seenSubtitles.add(subtitle.url)) return',
+              'sourceDetails.startsWith("OpenSubtitles", ignoreCase = true)',
+              'sourceDetails.startsWith("SubDL", ignoreCase = true)',
+              'sourceDetails.startsWith("Wyzie", ignoreCase = true)',
+              'sourceDetails.startsWith("Repo: ", ignoreCase = true)',
+              '.substringBefore(" • ").trim().take(28)',
+              'langTag = if (language == PreferredSubtitleLanguage.ARABIC) "ar" else "en"',
+              'val playbackUrl = if (',
+              'subtitleCallback(track)',
+              'MOOSASubtitleHealth.accepted(',
+          ):
+              assert token in e,token
+          assert "arabicSubNumber" not in p and "englishSubNumber" not in p
+          assert '#$number' not in e
+          assert "sourceDetails.substringAfter" in e
+          assert "verifiedSubtitleFormats[subtitleCheckKey(subtitle)]" in e
+          assert "collectInstalledRepositorySubtitle(" in p
+          assert "val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)" in p
+          assert "val subtitleExternalSlots = kotlinx.coroutines.sync.Semaphore(3)" in p
+          assert "val subDlDownloadBlockedUntilMs = AtomicLong(0L)" not in p or "subDlDownloadBlockedUntilMs = AtomicLong(0L)" in p
+          print("PASS: v93 builds, groups all verified variants under one language+source row")
+          PY
