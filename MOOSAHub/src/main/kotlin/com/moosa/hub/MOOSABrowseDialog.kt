@@ -1,5 +1,6 @@
 package com.moosa.hub
 
+import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
@@ -33,7 +34,9 @@ import com.lagradost.cloudstream3.ui.search.SEARCH_ACTION_SHOW_METADATA
 import com.lagradost.cloudstream3.ui.search.SEARCH_ACTION_PLAY_FILE
 import com.lagradost.cloudstream3.ui.search.SearchAdapter
 import com.lagradost.cloudstream3.ui.search.SearchHelper.handleSearchClickCallback
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -46,6 +49,17 @@ class MOOSABrowseDialog : DialogFragment() {
     private lateinit var progress: ProgressBar
     private lateinit var status: TextView
     private lateinit var closeButton: Button
+    private lateinit var typeButton: Button
+    private lateinit var genreButton: Button
+    private lateinit var sortButton: Button
+    private lateinit var countryButton: Button
+    private lateinit var resetButton: Button
+    private var selectedFilters: MOOSABrowseFilters.Selection? = null
+    private var browseJob: Job? = null
+    private var browseGeneration = 0
+
+    private fun selectedRequest(): MainPageRequest =
+        selectedFilters?.let { MOOSABrowseFilters.toRequest(request, it) } ?: request
 
     private val items = mutableListOf<SearchResponse>()
     private var lastPage = 0
@@ -151,6 +165,86 @@ class MOOSABrowseDialog : DialogFragment() {
 
         root.addView(header)
 
+        // Focusable on Android TV with DPAD/remote. Each selection changes the
+        // server-side TMDB query, never just the visible first-page cards.
+        fun filterRow(vararg buttons: Button): LinearLayout =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                for (button in buttons) {
+                    addView(button, LinearLayout.LayoutParams(
+                        0, dp(42), 1f
+                    ).apply { marginEnd = dp(6) })
+                }
+            }
+
+        typeButton = focusableButton("")
+        genreButton = focusableButton("")
+        sortButton = focusableButton("")
+        countryButton = focusableButton("")
+        resetButton = focusableButton("RESET")
+        root.addView(filterRow(typeButton, genreButton),
+            LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(6) })
+        root.addView(filterRow(sortButton, countryButton, resetButton),
+            LinearLayout.LayoutParams(-1, dp(48)))
+
+        typeButton.setOnClickListener {
+            val current = selectedFilters ?: MOOSABrowseFilters.initial(request)
+            val labels = arrayOf("Movies", "TV Series")
+            AlertDialog.Builder(requireContext())
+                .setTitle("Type • Real TMDB results")
+                .setSingleChoiceItems(labels, if (current.isTv) 1 else 0) { dialog, which ->
+                    applyFilters(MOOSABrowseFilters.withType(current, which == 1))
+                    dialog.dismiss()
+                }
+                .setNegativeButton("CANCEL", null).show()
+        }
+
+        genreButton.setOnClickListener {
+            val current = selectedFilters ?: MOOSABrowseFilters.initial(request)
+            val genres = MOOSABrowseFilters.availableGenres(current.isTv)
+            val labels = (listOf("All genres") + genres.map { it.label }).toTypedArray()
+            val index = genres.indexOfFirst { it.key == current.genreKey } + 1
+            AlertDialog.Builder(requireContext())
+                .setTitle("Genre • Real TMDB categories")
+                .setSingleChoiceItems(labels, index) { dialog, which ->
+                    applyFilters(current.copy(
+                        genreKey = if (which == 0) null else genres[which - 1].key
+                    ))
+                    dialog.dismiss()
+                }
+                .setNegativeButton("CANCEL", null).show()
+        }
+
+        sortButton.setOnClickListener {
+            val current = selectedFilters ?: MOOSABrowseFilters.initial(request)
+            val options = MOOSABrowseFilters.sorts
+            val index = options.indexOfFirst { it.apiSort == current.sort }.coerceAtLeast(0)
+            AlertDialog.Builder(requireContext())
+                .setTitle("Sort • Server-side ranking")
+                .setSingleChoiceItems(options.map { it.name }.toTypedArray(), index) { dialog, which ->
+                    applyFilters(current.copy(sort = options[which].apiSort))
+                    dialog.dismiss()
+                }
+                .setNegativeButton("CANCEL", null).show()
+        }
+
+        countryButton.setOnClickListener {
+            val current = selectedFilters ?: MOOSABrowseFilters.initial(request)
+            val options = MOOSABrowseFilters.countries
+            val index = options.indexOfFirst { it.code == current.originCountry }.coerceAtLeast(0)
+            AlertDialog.Builder(requireContext())
+                .setTitle("Country of origin • TMDB")
+                .setSingleChoiceItems(options.map { it.name }.toTypedArray(), index) { dialog, which ->
+                    applyFilters(current.copy(originCountry = options[which].code))
+                    dialog.dismiss()
+                }
+                .setNegativeButton("CANCEL", null).show()
+        }
+
+        resetButton.setOnClickListener { applyFilters(null) }
+        updateFilterLabels()
+
         progress = ProgressBar(
             context,
             null,
@@ -253,14 +347,14 @@ class MOOSABrowseDialog : DialogFragment() {
             )
         )
 
-        closeButton.nextFocusDownId = recycler.id
+        closeButton.nextFocusDownId = typeButton.id
         closeButton.setOnClickListener {
             dismissAllowingStateLoss()
         }
 
         installNavigationReturnWatcher()
 
-        lifecycleScope.launch {
+        browseJob = lifecycleScope.launch {
             loadInitial()
         }
 
@@ -412,6 +506,7 @@ class MOOSABrowseDialog : DialogFragment() {
     }
 
     override fun onDestroy() {
+        browseJob?.cancel()
         cancelPendingReturn()
         val controller = navController
         val listener = destinationListener
@@ -472,8 +567,41 @@ class MOOSABrowseDialog : DialogFragment() {
         }
     }
 
+    private fun updateFilterLabels() {
+        val filters = selectedFilters
+        val active = filters ?: MOOSABrowseFilters.initial(request)
+        val genre = MOOSABrowseFilters.genres.firstOrNull { it.key == active.genreKey }
+        val sort = MOOSABrowseFilters.sorts.firstOrNull { it.apiSort == active.sort }
+        val country = MOOSABrowseFilters.countries.firstOrNull {
+            it.code == active.originCountry
+        }
+        typeButton.text = "TYPE: " + if (active.isTv) "SERIES" else "MOVIES"
+        genreButton.text = "GENRE: " + (genre?.label ?: "ALL")
+        sortButton.text = "SORT: " + if (filters == null) "SHELF" else (sort?.name ?: "POPULAR")
+        countryButton.text = "COUNTRY: " + (country?.name ?: "ALL")
+        resetButton.isEnabled = filters != null
+        resetButton.alpha = if (filters == null) 0.55f else 1f
+    }
+
+    private fun applyFilters(choice: MOOSABrowseFilters.Selection?) {
+        if (choice == selectedFilters) return
+        selectedFilters = choice
+        browseGeneration += 1
+        browseJob?.cancel()
+        loading = false
+        lastPage = 0
+        hasNext = true
+        items.clear()
+        adapter.submitList(emptyList())
+        recycler.scrollToPosition(0)
+        updateFilterLabels()
+        browseJob = lifecycleScope.launch { loadInitial() }
+    }
+
     private suspend fun loadInitial() {
         if (loading) return
+        val generation = browseGeneration
+        val effectiveRequest = selectedRequest()
         loading = true
 
         progress.visibility = View.VISIBLE
@@ -485,12 +613,13 @@ class MOOSABrowseDialog : DialogFragment() {
             val batch = withContext(Dispatchers.IO) {
                 MOOSACatalog.browseBatch(
                     api = api,
-                    request = request,
+                    request = effectiveRequest,
                     startPage = 1,
                     pageCount = 2
                 )
             }
 
+            if (generation != browseGeneration) return
             items.clear()
             items += batch.items
             lastPage = batch.lastPage
@@ -506,10 +635,15 @@ class MOOSABrowseDialog : DialogFragment() {
                     ?.findViewByPosition(0)
                     ?.requestFocus()
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (_: Throwable) {
-            status.text = "Could not load this category"
-            status.visibility = View.VISIBLE
+            if (generation == browseGeneration) {
+                status.text = "Could not load this category"
+                status.visibility = View.VISIBLE
+            }
         } finally {
+            if (generation != browseGeneration) return
             progress.visibility = View.GONE
             progress.isIndeterminate = false
             loading = false
@@ -526,13 +660,15 @@ class MOOSABrowseDialog : DialogFragment() {
         val lastVisible = manager.findLastVisibleItemPosition()
         if (lastVisible < adapter.itemCount - 14) return
 
-        lifecycleScope.launch {
+        browseJob = lifecycleScope.launch {
             loadMore()
         }
     }
 
     private suspend fun loadMore() {
         if (loading || !hasNext) return
+        val generation = browseGeneration
+        val effectiveRequest = selectedRequest()
         loading = true
 
         progress.visibility = View.VISIBLE
@@ -544,12 +680,13 @@ class MOOSABrowseDialog : DialogFragment() {
             val batch = withContext(Dispatchers.IO) {
                 MOOSACatalog.browseBatch(
                     api = api,
-                    request = request,
+                    request = effectiveRequest,
                     startPage = lastPage + 1,
                     pageCount = 2
                 )
             }
 
+            if (generation != browseGeneration) return
             if (batch.items.isNotEmpty()) {
                 items += batch.items
 
@@ -568,10 +705,15 @@ class MOOSABrowseDialog : DialogFragment() {
 
             status.text = ""
             status.visibility = View.GONE
+        } catch (error: CancellationException) {
+            throw error
         } catch (_: Throwable) {
-            status.text = "Could not load more titles"
-            status.visibility = View.VISIBLE
+            if (generation == browseGeneration) {
+                status.text = "Could not load more titles"
+                status.visibility = View.VISIBLE
+            }
         } finally {
+            if (generation != browseGeneration) return
             progress.visibility = View.GONE
             progress.isIndeterminate = false
             loading = false
