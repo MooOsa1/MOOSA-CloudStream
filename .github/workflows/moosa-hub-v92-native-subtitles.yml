@@ -1,0 +1,57 @@
+name: Validate MOOSA Hub v92 installed-repository captions (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v92-native-subtitles-progressive"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile MOOSAHub and MOOSAArabic
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Verify installed-repo callbacks and performance guarantees
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          manifest={v["internalName"]:v["version"] for v in json.loads(Path("build/plugins.json").read_text())}
+          assert manifest=={"MOOSAHub":92,"MOOSAArabic":3},manifest
+          assert "private fun normalizeTitle(value: String): String =" in p
+          start=p.index("private fun normalizeTitle(value:")
+          assert 'replace("&", "and")' in p[start:start+100]
+          assert ".trim().take(28)" not in p[start:start+200]
+          for part in (
+            "fun collectInstalledRepositorySubtitle(",
+            "collectInstalledRepositorySubtitle(",
+            "nativeProbeJobs.add(job)",
+            "filterReadableSubtitles(\n                    listOf(candidate), ::emitVerifiedSubtitle,",
+            "nativePerSource.computeIfAbsent",
+            "nativeQueued.incrementAndGet() > 12",
+            "val limit = if (language == PreferredSubtitleLanguage.ARABIC) 3 else 2",
+            'MOOSASubtitleHealth.update("Native", "Matched installed repositories")',
+            "part.startsWith(\"Repo: \")",
+            "subtitleProbeGate, subtitleSourceGates",
+            "withTimeoutOrNull(3200L)",
+            "val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)",
+            "val subtitleExternalSlots = kotlinx.coroutines.sync.Semaphore(3)",
+            "nativeProbeJobs.toList().forEach { it.cancel() }",
+          ): assert part in p,part
+          assert "nativeSubtitles.toList()" not in p
+          assert "nativeSubtitles::add" not in p
+          assert p.count("collectInstalledRepositorySubtitle(\n") == 2
+          assert "isReadableSubtitle(subtitle)" in p
+          assert 'val subtitleSourceGates =' in p
+          print("PASS: v92 compiled with progressive bounded native repo captions")
+          PY
