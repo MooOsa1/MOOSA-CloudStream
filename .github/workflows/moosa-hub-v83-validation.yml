@@ -1,0 +1,65 @@
+name: Validate MOOSA Hub v83 readable release-aware Arabic/English subtitles (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v83-subtitle-variants"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both add-ons and versioned manifest
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: Check subtitle metadata preservation, only two languages, and one entry per verified variant
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          manifest={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert manifest=={"MOOSAHub":83,"MOOSAArabic":3},manifest
+          for field in ('@JsonProperty("subtitleFileName")','@JsonProperty("movieReleaseName")','@JsonProperty("releaseFormat")','@JsonProperty("fpsMilli")'):
+            assert field in p,field
+          for tag in ("WEB-DL","WEBRip","BluRay","HDTV","DVDRip","HDRip","CAM","TS"):
+            assert f'"{tag}"' in p,tag
+          assert 'val fps = sub.fpsMilli?.takeIf { it in 23000..60000 }' in p
+          assert 'listOf(language, source, hint)' in p
+          assert 'val arabicSubNumber = AtomicInteger(0)' in p
+          assert 'val englishSubNumber = AtomicInteger(0)' in p
+          assert 'val label = (listOf("$prefix #$number") + details).joinToString(" • ")' in p
+          assert 'val track = subtitle.copy(lang = label)' in p
+          assert 'if (!seenSubtitles.add(subtitle.url)) return' in p
+          assert 'PreferredSubtitleLanguage.OTHER -> return' in p
+          assert 'subtitleCallback(track)' in p
+          assert 'byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10)' in p
+          assert 'byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)' in p
+          assert 'val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)' in p
+          assert 'subtitleTiming.containsMatchIn(body)' in p
+          print("PASS: v83 preserves release type/FPS, separates multiple Arabic/English variants and retains verification plus Android TV guardrails")
+          PY
+      - name: Check actual v3 metadata and source-version mismatch example
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request
+          cases=[("movie","tt0816692"),("series","tt0944947:1:1")]
+          for typ,imdb in cases:
+              with urllib.request.urlopen(urllib.request.Request(f"https://opensubtitles-v3.strem.io/subtitles/{typ}/{imdb}.json",headers={"User-Agent":"Mozilla/5.0"}),timeout=15) as r:
+                  subs=json.load(r)["subtitles"]
+              for tag in ("ara","eng"):
+                  found=[s for s in subs if s.get("lang")==tag]
+                  assert found,f"No subtitle samples available for {typ}/{tag}"
+                  assert any(s.get("movieReleaseName") or s.get("releaseFormat") or s.get("subtitleFileName") for s in found), (typ,tag)
+                  formats=sorted(set(x.get("releaseFormat","") or "unknown" for x in found))
+                  print("LIVE",typ,tag,"versions",len(found),"release_formats",formats[:10],flush=True)
+          print("PASS: real provider exposes multiple subtitle versions and release metadata; coverage of other titles is NOT assumed")
+          PY
