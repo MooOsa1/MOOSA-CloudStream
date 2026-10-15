@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 84
+version = 85
 
 
 android {
@@ -90,3 +90,6 @@ dependencies {
 
 // v84: reuse recently verified subtitle content, use the legacy RPC only
 // as last resort, and provide on-demand native SubSource guidance.
+
+// v85: validate player-compatible subtitle timestamps; signal correct WEBVTT
+// MIME for extensionless SubDL files and refuse unreadable source formats.
