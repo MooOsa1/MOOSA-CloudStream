@@ -1,0 +1,87 @@
+name: Validate MOOSA Hub v85 subtitle formats and readable SubDL (no release)
+on:
+  push:
+    branches: ["fix/moosa-hub-v85-subdl-visible-and-sync"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+      - name: Compile both extensions and check public manifest versions
+        run: gradle :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility
+      - name: "Regression: SubDL source formats, strict timestamps, player MIME, low request count"
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,re,urllib.parse
+          src=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
+          vers={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
+          assert vers=={"MOOSAHub":85,"MOOSAArabic":3},vers
+          checks=[
+           '@JsonProperty("fps") val fps: String? = null',
+           '@JsonProperty("name") val name: String? = null',
+           'val format = file.format?.trim()?.lowercase()',
+           'if (format != null && format !in setOf("srt", "vtt"))',
+           'private val verifiedSubtitleFormats = ConcurrentHashMap<String, String>()',
+           'private val supportedSrtTiming = Regex(',
+           'private val supportedVttTiming = Regex(',
+           'val hasVttHeader = body.trimStart(',
+           'if (!playableTiming.containsMatchIn(body)) return false',
+           'if (readable) verifiedSubtitleFormats[subtitleCheckKey(sub)] = fileFormat',
+           'val playbackUrl = if (',
+           'format == "vtt"',
+           '"#moosa.vtt"',
+           'val track = subtitle.copy(lang = label, url = playbackUrl)',
+           'val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)',
+           'val backup = if (primary.isEmpty() && supplemental.isEmpty())',
+           'subtitleCheckCache[cacheKey]',
+           'byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10)',
+           'byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)',
+           'subtitleCallback(track)',
+           'PreferredSubtitleLanguage.OTHER -> return',
+          ]
+          for c in checks: assert c in src,c
+          assert "fetchOpenSubtitlesV3(request, imdb)" in src
+          assert '"unpack" to "1"' not in src
+          assert 'put("unpack", "1")' in src
+          # Mirror URL-only detection of the upstream CloudStream player:
+          # original per-file SubDL URLs are extensionless and treated as SRT.
+          url="https://dl.subdl.com/subtitle/3197651/3213944"
+          assert not url.lower().endswith(".vtt")
+          patched=url+"#moosa.vtt"
+          assert patched.endswith("vtt")
+          assert urllib.parse.urlsplit(patched).path==urllib.parse.urlsplit(url).path
+          assert urllib.parse.urlsplit(patched).fragment=="moosa.vtt"
+          # Correct SRT and VTT examples are distinct and malformed short-clock
+          # (CloudStream issue 2476) must not pass the player-safe check.
+          srt=re.compile(r'(?m)^\s*(?:\d{2}:)?\d{2}:\d{2},\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2},\d{3}')
+          vtt=re.compile(r'(?m)^\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}')
+          assert srt.search('1\n00:00:01,000 --> 00:00:04,000\nTest')
+          assert vtt.search('WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nTest')
+          assert not srt.search('0:00:00.00 --> 0:00:20.00\nBad timestamp')
+          assert not srt.search('WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nTest')
+          assert not vtt.search('00:00:01,000 --> 00:00:04,000\nTest')
+          print("PASS: v85 MIME correction for extensionless VTT, supported formats only, strict player-readable cues, two-language/bounded I/O safeguards")
+          PY
+      - name: Verify real public subtitle catalog still returns Arabic and English
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request
+          for kind,id in (("movie","tt0816692"),("series","tt0944947:1:1")):
+            req=urllib.request.Request(f"https://opensubtitles-v3.strem.io/subtitles/{kind}/{id}.json",headers={"User-Agent":"Mozilla/5.0"})
+            with urllib.request.urlopen(req,timeout=15) as r:subtitles=json.load(r)["subtitles"]
+            counts={lang:sum(1 for x in subtitles if x.get("lang")==lang) for lang in ("ara","eng")}
+            assert all(counts.values()),counts
+            print("PUBLIC_INDEX",kind,counts,flush=True)
+          PY

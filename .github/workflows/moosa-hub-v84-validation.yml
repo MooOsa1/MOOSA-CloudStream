@@ -28,14 +28,14 @@ jobs:
           p=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAHubProvider.kt").read_text()
           settings=Path("MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSASettingsDialog.kt").read_text()
           manifest={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
-          assert manifest=={"MOOSAHub":84,"MOOSAArabic":3},manifest
+          assert manifest.get("MOOSAHub",0)>=84 and manifest.get("MOOSAArabic")==3,manifest
           checks=[
               "private data class CachedSubtitleCheck(",
               "private val subtitleCheckCache = ConcurrentHashMap<String, CachedSubtitleCheck>()",
               "private val successfulSubtitleCheckLifetimeMs = 6 * 60 * 1000L",
               "private val failedSubtitleCheckLifetimeMs = 30 * 1000L",
               "subtitleCheckCache.remove(cacheKey, entry)",
-              "if (subtitleCheckCache.size >= 256) subtitleCheckCache.clear()",
+              "if (subtitleCheckCache.size >= 256) {",
               "val result = inspectSubtitleContent(sub)",
               "private suspend fun inspectSubtitleContent(sub: SubtitleFile): Boolean",
               "val backup = if (primary.isEmpty() && supplemental.isEmpty()) {",
@@ -50,7 +50,7 @@ jobs:
               "subtitleTiming.containsMatchIn(body)",
               "filterReadableSubtitles(nativeSubtitles.toList(), ::emitVerifiedSubtitle, subtitleProbeGate)",
               "withTimeoutOrNull(3200L)",
-              "val track = subtitle.copy(lang = label)",
+              "val track = subtitle.copy(lang = label, url = playbackUrl)",
               "val language = when (subtitleLanguage(item.language, item.language))",
           ]
           for t in checks: assert t in p,t

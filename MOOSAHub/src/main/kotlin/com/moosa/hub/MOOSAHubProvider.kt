@@ -114,6 +114,7 @@ class MOOSAHubProvider : TmdbProvider() {
     private data class SubDlSubtitle(
         @JsonProperty("language") val language: String? = null,
         @JsonProperty("release_name") val releaseName: String? = null,
+        @JsonProperty("fps") val fps: String? = null,
         @JsonProperty("url") val url: String? = null,
         @JsonProperty("unpack_files") val unpackFiles: List<SubDlFile> = emptyList()
     )
@@ -121,6 +122,7 @@ class MOOSAHubProvider : TmdbProvider() {
     private data class SubDlFile(
         @JsonProperty("language") val language: String? = null,
         @JsonProperty("release_name") val releaseName: String? = null,
+        @JsonProperty("name") val name: String? = null,
         @JsonProperty("url") val url: String? = null,
         @JsonProperty("season") val season: Int? = null,
         @JsonProperty("episode") val episode: Int? = null,
@@ -267,6 +269,10 @@ class MOOSAHubProvider : TmdbProvider() {
     // Cache *verified* subtitle bodies, not just index metadata. Reopening the
     // same film should not download every SRT again on a low-memory Fire TV.
     private val subtitleCheckCache = ConcurrentHashMap<String, CachedSubtitleCheck>()
+    // CloudStream guesses subtitle MIME from the URL suffix, not Content-Type.
+    // Remember the actual validated text format so extensionless SubDL VTT
+    // links are not handed to ExoPlayer as SRT (which renders no captions).
+    private val verifiedSubtitleFormats = ConcurrentHashMap<String, String>()
 
     private val cacheLifetimeMs = 20 * 60 * 1000L
     private val subtitleCacheLifetimeMs = 15 * 60 * 1000L
@@ -2827,6 +2833,14 @@ class MOOSAHubProvider : TmdbProvider() {
                     ) return@mapNotNull null
 
                     val raw = file.url ?: return@mapNotNull null
+                    // Only SRT and VTT are supported through CloudStream's
+                    // URL-subtitle callback. No ASS/SSA/SUB disguised as SRT.
+                    val format = file.format?.trim()?.lowercase()
+                        ?.takeIf { it.isNotBlank() }
+                        ?: file.name?.substringAfterLast('.', "")?.lowercase()
+                    if (format != null && format !in setOf("srt", "vtt")) {
+                        return@mapNotNull null
+                    }
                     val url = if (raw.startsWith("http")) raw
                     else "https://dl.subdl.com$raw"
 
@@ -2839,11 +2853,14 @@ class MOOSAHubProvider : TmdbProvider() {
 
                     val detail = file.releaseName
                         ?: subtitle.releaseName
-                        ?: file.format
+                        ?: file.name
                         ?: "subtitle"
-
+                    val fps = subtitle.fps?.toDoubleOrNull()
+                        ?.takeIf { it in 23.0..60.0 }
+                        ?.let { String.format(java.util.Locale.US, "%.2ffps", it) }
                     SubtitleFile(
-                        lang = "${label} • ${detail}",
+                        lang = listOfNotNull(label, detail, fps)
+                            .joinToString(" • "),
                         url = url
                     )
                 }
@@ -2932,13 +2949,24 @@ class MOOSAHubProvider : TmdbProvider() {
     private val subtitleTiming = Regex(
         """(?m)(?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3}\s*-->\s*(?:\d{1,2}:)?\d{2}:\d{2}[,.]\d{1,3}"""
     )
+    // An arrow somewhere in the file is not enough: Media3 cannot display
+    // malformed clock formats or WEBVTT if told the MIME is SubRip.
+    private val supportedSrtTiming = Regex(
+        """(?m)^\s*(?:\d{2}:)?\d{2}:\d{2},\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2},\d{3}"""
+    )
+    private val supportedVttTiming = Regex(
+        """(?m)^\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s*-->\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}"""
+    )
+
+    private fun subtitleCheckKey(sub: SubtitleFile): String =
+        sub.url + "|" + (sub.headers?.hashCode() ?: 0) +
+            "|" + subtitleLanguage(sub.lang, sub.langTag)
 
     private suspend fun isReadableSubtitle(sub: SubtitleFile): Boolean {
         // A cache hit avoids a network request, text decoding and an I/O burst.
         // Different Referer/headers and different claimed languages are NOT
         // interchangeable. Expired/failed checks are retried quickly.
-        val cacheKey = sub.url + "|" + (sub.headers?.hashCode() ?: 0) +
-            "|" + subtitleLanguage(sub.lang, sub.langTag)
+        val cacheKey = subtitleCheckKey(sub)
         val now = System.currentTimeMillis()
         subtitleCheckCache[cacheKey]?.let { entry ->
             val lifetime = if (entry.readable) {
@@ -2948,7 +2976,10 @@ class MOOSAHubProvider : TmdbProvider() {
             subtitleCheckCache.remove(cacheKey, entry)
         }
         val result = inspectSubtitleContent(sub)
-        if (subtitleCheckCache.size >= 256) subtitleCheckCache.clear()
+        if (subtitleCheckCache.size >= 256) {
+            subtitleCheckCache.clear()
+            verifiedSubtitleFormats.clear()
+        }
         subtitleCheckCache[cacheKey] = CachedSubtitleCheck(
             System.currentTimeMillis(), result
         )
@@ -2980,14 +3011,22 @@ class MOOSAHubProvider : TmdbProvider() {
         ) return false
 
         if (!subtitleTiming.containsMatchIn(body)) return false
+        val hasVttHeader = body.trimStart('\uFEFF', ' ', '\t', '\r', '\n')
+            .startsWith("WEBVTT", ignoreCase = true)
+        val fileFormat = if (hasVttHeader) "vtt" else "srt"
+        val playableTiming = if (hasVttHeader) supportedVttTiming
+            else supportedSrtTiming
+        if (!playableTiming.containsMatchIn(body)) return false
         val content = body.substringAfter("-->", body)
         val arabicCount = content.count { it in '\u0600'..'\u06FF' }
         val latinCount = content.count { it in 'A'..'Z' || it in 'a'..'z' }
-        return when (subtitleLanguage(sub.lang, sub.langTag)) {
+        val readable = when (subtitleLanguage(sub.lang, sub.langTag)) {
             PreferredSubtitleLanguage.ARABIC -> arabicCount >= 8
             PreferredSubtitleLanguage.ENGLISH -> latinCount >= 12
             PreferredSubtitleLanguage.OTHER -> false
         }
+        if (readable) verifiedSubtitleFormats[subtitleCheckKey(sub)] = fileFormat
+        return readable
     }
 
     private suspend fun filterReadableSubtitles(
@@ -3234,7 +3273,17 @@ class MOOSAHubProvider : TmdbProvider() {
                         }
                     }.distinct().take(2)
                 val label = (listOf("$prefix #$number") + details).joinToString(" • ")
-                val track = subtitle.copy(lang = label)
+                val format = verifiedSubtitleFormats[subtitleCheckKey(subtitle)]
+                // The official CloudStream player infers MIME exclusively
+                // using subtitleFile.url.endsWith("vtt"). HTTP URL fragments
+                // are not transmitted to the server, so this safely advertises
+                // validated extensionless VTT without another network call.
+                val playbackUrl = if (
+                    format == "vtt" &&
+                    !subtitle.url.substringBefore('#').endsWith(".vtt", true)
+                ) subtitle.url.substringBefore('#') + "#moosa.vtt"
+                else subtitle.url
+                val track = subtitle.copy(lang = label, url = playbackUrl)
                 try {
                     subtitleCallback(track)
                 } catch (error: Throwable) {
