@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 95
+version = 96
 
 
 android {
@@ -123,3 +123,6 @@ dependencies {
 
 // v95: Show More real TMDB server-side genre/type/sort/origin filters with
 // cancellable pagination, TV remote focus controls and original-shelf reset.
+
+// v96: fix Android CloudStream runtime crash when changing Show More filters
+// by avoiding coroutines Job.cancel default-argument synthetic method.
