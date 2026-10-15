@@ -770,9 +770,13 @@ class MOOSABrowseDialog : DialogFragment() {
         // The default Android focus search can otherwise descend through the
         // overlay into a poster when the remote presses DOWN on the last row.
         val focused = dialog?.currentFocus
-        val current = when (focused) {
-            typeButton, genreButton, sortButton, countryButton,
-            resetButton, showResultsButton -> focused
+        val current: View = when (focused) {
+            typeButton -> typeButton
+            genreButton -> genreButton
+            sortButton -> sortButton
+            countryButton -> countryButton
+            resetButton -> resetButton
+            showResultsButton -> showResultsButton
             else -> typeButton
         }
         val target: View = when (direction) {
