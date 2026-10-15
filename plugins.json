@@ -22,10 +22,10 @@
     },
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-195ff81c7fab800ceec48d0613739c37afce68eb5adff3eacf31614aad3a8950",
+        "fileHash": "sha256-34503cf3e9594db9a03891060875a98899ef5a145d908e14fe6acf13c51bcca4",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 281100,
+        "fileSize": 282307,
         "status": 1,
         "language": "en",
         "authors": [
@@ -35,7 +35,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 84,
+        "version": 85,
         "internalName": "MOOSAHub",
         "description": "Global movies and series with Arabic subtitles; Arabic originals in separate MOOSA Arabic plugin",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAHub.cs3",
