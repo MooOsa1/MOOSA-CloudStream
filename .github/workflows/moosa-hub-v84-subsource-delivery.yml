@@ -1,0 +1,41 @@
+name: Inspect SubSource subtitle file delivery (read only)
+on:
+  push:
+    branches: ["investigate/v84-subtitle-catalog-coverage"]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test SubSource metadata and archive format without downloading films
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,json
+          for movie in ("interstellar-2014","the-shawshank-redemption-1994"):
+            url=f"https://api.subsource.net/v1/subtitles/{movie}/arabic"
+            print("MOVIE",movie,flush=True)
+            try:
+              with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"}),timeout=13) as r:
+                obj=json.load(r)
+              print("META",type(obj).__name__,list(obj)[:12] if isinstance(obj,dict) else [],flush=True)
+              tracks=obj.get("subtitles",[]) if isinstance(obj,dict) else []
+              print("SUB_COUNT",len(tracks),"top3",[{k:row.get(k) for k in ("language","releaseInfo","releaseType","link","download")} for row in tracks[:3]],flush=True)
+              first=next((s for s in tracks if s.get("link")),None)
+              if first:
+                link=first["link"]
+                detail=f"https://api.subsource.net/v1/subtitle/{link}"
+                with urllib.request.urlopen(urllib.request.Request(detail,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"}),timeout=13) as r:
+                  obj2=json.load(r)
+                print("FILE_META",list(obj2),str(obj2)[:450],flush=True)
+                token=((obj2.get("subtitle") or {}).get("downloadToken"))
+                if token:
+                  dl=f"https://api.subsource.net/v1/subtitle/download/{token}"
+                  request=urllib.request.Request(dl,headers={"User-Agent":"Mozilla/5.0","Range":"bytes=0-63"})
+                  with urllib.request.urlopen(request,timeout=13) as r:
+                    b=r.read(64)
+                    print("FILE_MAGIC",r.status,r.headers.get("Content-Type"),b[:22].hex(),flush=True)
+            except Exception as e:
+              print("ERROR",type(e).__name__,getattr(e,"code",""),str(e)[:160],flush=True)
+          PY
