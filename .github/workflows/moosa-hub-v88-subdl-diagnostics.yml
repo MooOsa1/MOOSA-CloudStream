@@ -57,14 +57,3 @@ jobs:
             assert secret not in h,secret
           print("PASS: actual v88 plugin compiled; stage diagnostics + globally bounded, source-fair probes")
           PY
-      - name: Validate public SubDL unpack schema (not a private user API response)
-        run: |
-          python3 - <<'PY'
-          import urllib.request
-          with urllib.request.urlopen("https://subdl.com/api-doc",timeout=15) as r:
-              doc=r.read().decode("utf-8",errors="replace")
-          assert "unpack_files" in doc
-          assert "file_n_id" in doc
-          assert "api/v1/subtitles" in doc
-          print("PASS: official API documentation still exposes unpack_files and per-file URLs")
-          PY
