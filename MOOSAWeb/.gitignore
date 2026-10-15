@@ -1,0 +1,8 @@
+# Local-only server configuration: never commit source URLs or secrets.
+.env
+.env.*
+!.env.example
+sources.local.json
+node_modules/
+coverage/
+.DS_Store
