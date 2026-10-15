@@ -3015,9 +3015,12 @@ class MOOSAHubProvider : TmdbProvider() {
                         PreferredSubtitleLanguage.ARABIC
                 } < 2
             ) {
-                fetchOpenSubtitlesLegacy(request, imdb).also {
-                    if (it.isNotEmpty()) onEarlyCandidates(it)
-                }
+                // Legacy and v3 can return the same subtitle URL. Remove
+                // duplicates BEFORE validation, not only at cache merge time.
+                val primaryUrls = primaryIndex.map { it.url }.toSet()
+                fetchOpenSubtitlesLegacy(request, imdb)
+                    .filterNot { it.url in primaryUrls }
+                    .also { if (it.isNotEmpty()) onEarlyCandidates(it) }
             } else emptyList()
         }
         val primary = v3.await()
