@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 88
+version = 89
 
 
 android {
@@ -102,3 +102,6 @@ dependencies {
 
 // v88: provide fair source-specific subtitle probe slots within global four,
 // count SubDL index-to-candidate exclusions and separate queued/started checks.
+
+// v89: classify SubDL responses that contain no subtitle timestamps without
+// recording raw text; reserve one of four subtitle probes for native tracks.
