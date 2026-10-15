@@ -3103,35 +3103,49 @@ class MOOSAHubProvider : TmdbProvider() {
         onVerified: (SubtitleFile) -> Unit,
         gate: kotlinx.coroutines.sync.Semaphore
     ): List<SubtitleFile> = coroutineScope {
-        // Inspect more candidates when index servers list multiple versions;
-        // discarded/broken links should not starve Arabic or English results.
-        // Keep a bounded list so verification does not block playback forever.
-        val shortlist = subtitles
+        // A short first pass delivers good tracks faster and with fewer
+        // requests. Only if it underfills a language do we inspect further
+        // variants from the same index. This prevents the first few broken
+        // links from hiding a working Arabic release later in the results.
+        // The shared four-request semaphore still covers ALL providers.
+        val byLanguage = subtitles
             .distinctBy { it.url }
             .sortedByDescending(::subtitleScore)
             .groupBy { subtitleLanguage(it.lang, it.langTag) }
-            .let { byLanguage ->
-                byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10) +
-                    byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)
-            }
-        // Reading 36 subtitle files while video sources are active caused
-        // unnecessary I/O bursts on low-memory Android TV devices.
-        // Emit each verified result immediately instead of waiting for all.
-        shortlist.map { subtitle ->
-            async {
-                gate.withPermit {
-                    if (isReadableSubtitle(subtitle)) {
-                        onVerified(subtitle)
-                        subtitle
-                    } else {
-                        MOOSASubtitleHealth.rejected(
-                            MOOSASubtitleHealth.sourceOf(subtitle.lang)
-                        )
-                        null
+        val arabic = byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(14)
+        val english = byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(7)
+
+        suspend fun checkBatch(candidates: List<SubtitleFile>): List<SubtitleFile> {
+            return candidates.map { subtitle ->
+                async {
+                    gate.withPermit {
+                        if (isReadableSubtitle(subtitle)) {
+                            onVerified(subtitle)
+                            subtitle
+                        } else {
+                            MOOSASubtitleHealth.rejected(
+                                MOOSASubtitleHealth.sourceOf(subtitle.lang)
+                            )
+                            null
+                        }
                     }
                 }
-            }
-        }.awaitAll().filterNotNull().sortedByDescending(::subtitleScore)
+            }.awaitAll().filterNotNull()
+        }
+
+        val initial = checkBatch(arabic.take(5) + english.take(3))
+        val arabicCount = initial.count {
+            subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ARABIC
+        }
+        val englishCount = initial.count {
+            subtitleLanguage(it.lang, it.langTag) == PreferredSubtitleLanguage.ENGLISH
+        }
+        // Do not probe additional files when each language is already
+        // represented. A sparse or broken first pass earns a limited retry.
+        val retry = (if (arabicCount < 2) arabic.drop(5).take(9) else emptyList()) +
+            (if (englishCount < 1) english.drop(3).take(4) else emptyList())
+        val additional = if (retry.isNotEmpty()) checkBatch(retry) else emptyList()
+        (initial + additional).sortedByDescending(::subtitleScore)
     }
 
     private fun normalizeNativeSubtitle(
