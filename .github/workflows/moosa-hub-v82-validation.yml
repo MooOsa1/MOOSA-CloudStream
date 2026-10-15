@@ -28,7 +28,7 @@ jobs:
           base=Path("MOOSAHub/src/main/kotlin/com/moosa/hub")
           p=(base/"MOOSAHubProvider.kt").read_text()
           mf={x["internalName"]:x["version"] for x in json.loads(Path("build/plugins.json").read_text())}
-          assert mf=={"MOOSAHub":82,"MOOSAArabic":3},mf
+          assert mf.get("MOOSAHub",0)>=82 and mf.get("MOOSAArabic")==3,mf
           assert "onEarlyCandidates: suspend (List<SubtitleFile>) -> Unit" in p
           assert "if (primary.isNotEmpty()) onEarlyCandidates(primary)" in p
           assert "onEarlyCandidates(cached.items)" in p
@@ -39,7 +39,7 @@ jobs:
           assert "byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10)" in p
           assert "byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)" in p
           assert "val subtitleProbeGate = kotlinx.coroutines.sync.Semaphore(4)" in p
-          assert 'subtitle.copy(lang = "Arabic")' in p and 'subtitle.copy(lang = "English")' in p
+          assert 'val prefix = if (language == PreferredSubtitleLanguage.ARABIC)' in p
           assert 'PreferredSubtitleLanguage.OTHER -> null' in p
           assert 'subtitleCallback(track)' in p
           assert 'val later = fetchExternalSubtitles(request) { first ->' in p

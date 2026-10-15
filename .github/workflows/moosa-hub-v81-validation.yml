@@ -31,10 +31,10 @@ jobs:
           assert 'byLanguage[PreferredSubtitleLanguage.ARABIC].orEmpty().take(10)' in s
           assert 'byLanguage[PreferredSubtitleLanguage.ENGLISH].orEmpty().take(5)' in s
           assert '(sub.headers ?: emptyMap()) + mapOf(' in s
-          assert 'subtitle.copy(lang = "Arabic")' in s
-          assert 'subtitle.copy(lang = "English")' in s
+          assert 'PreferredSubtitleLanguage.ARABIC -> PreferredSubtitleLanguage.ARABIC' in s
+          assert 'PreferredSubtitleLanguage.ENGLISH -> PreferredSubtitleLanguage.ENGLISH' in s
           assert 'PreferredSubtitleLanguage.OTHER -> null' in s
-          assert 'if (seenSubtitles.add(track.url))' in s
+          assert 'if (!seenSubtitles.add(subtitle.url)) return' in s
           assert 'subtitleCallback(track)' in s
           assert '"https://opensubtitles-v3.strem.io/subtitles/$type/$id.json"' in s
           assert 'fetchExternalSubtitles(request) { first ->' in s
