@@ -163,14 +163,18 @@ for(const film of FILMS){
    if(!url){diag.result='no_public_segment';continue;}
    const plain=await load(url,{Range:'bytes=0-2047',Origin:ORIGIN},true);
    const header=await load(url,{Range:'bytes=0-2047',Origin:ORIGIN,Referer:REFERER},true);
+   const normal=await load(url,{Origin:ORIGIN},true);
+   const normalRef=await load(url,{Origin:ORIGIN,Referer:REFERER},true);
    diag.noReferer={status:plain.status,video:!!plain.isVideo,cors:plain.cors==='*'||plain.cors===ORIGIN};
    diag.originalReferer={status:header.status,video:!!header.isVideo,cors:header.cors==='*'||header.cors===ORIGIN};
-   diag.result=header.isVideo?'real_segment_received':'no_video_received';
+   diag.noRange={status:normal.status,video:!!normal.isVideo,cors:normal.cors==='*'||normal.cors===ORIGIN};
+   diag.noRangeOriginalReferer={status:normalRef.status,video:!!normalRef.isVideo,cors:normalRef.cors==='*'||normalRef.cors===ORIGIN};
+   diag.result=header.isVideo||normal.isVideo||normalRef.isVideo?'real_segment_received':'no_video_received';
   }
  }
  result.streamChecks=findings;
  result.realVideoSegments=findings.flatMap(f=>f.variants||[])
-  .filter(v=>v.originalReferer?.video).length;
+  .filter(v=>v.originalReferer?.video||v.noRange?.video||v.noRangeOriginalReferer?.video).length;
  result.result=result.realVideoSegments>0?'real_video_segment_confirmed':'no_playable_segments';
  console.log('SOURCE_DIAG '+JSON.stringify(result));
 }
