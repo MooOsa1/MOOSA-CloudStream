@@ -118,6 +118,26 @@ Wrong movies, trailers, preview clips, missing license and SD mislabeled
 concurrently per add-on response, preventing unnecessary site delay.
 No new external provider has been enabled on the public Render website.
 
+## Optional Stremio HTTP subtitle protocol compatibility
+
+Upstream CineStream and StreamPlay both call Stremio subtitle endpoints by
+exact IMDb movie or season/episode identity:
+
+- Movies: /subtitles/movie/tt<imdb>.json
+- TV: /subtitles/series/tt<imdb>:<season>:<episode>.json
+
+MOOSA Web now recognizes subtitle resources on operator-configured HTTPS
+Stremio addons in WEB_SOURCE_ADDONS. It fetches Arabic/English SRT/VTT
+links only, rejects authorization/cookies/Referer-dependent links and unsafe
+URLs, and merges tracks into already approved sources for that movie/episode.
+Subtitle-only addons can supply tracks without fabricating any video sources.
+A failing subtitle addon cannot erase video sources; subtitle HTTP work has
+a bounded 2.8-second deadline per addon. Neither this feature nor the
+Stremio source transport executes original CineStream/StreamPlay Android code.
+
+The operator must separately configure and review authorized add-on manifests.
+No external subtitle addon is enabled by default.
+
 ## Deployment boundary
 
 Use \`CLOUDSTREAM_RUNTIME_URL\` and \`CLOUDSTREAM_RUNTIME_TOKEN\` in **Render environment variables** only after a tested secure Android execution service exists. Do **not** publish a token in the GitHub repository or browser code. Never point them to an unrelated third-party endpoint.
