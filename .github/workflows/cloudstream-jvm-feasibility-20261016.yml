@@ -1,8 +1,5 @@
 name: CloudStream without Android - JVM feasibility
 on:
-  push:
-    branches: [experiment/cloudstream-jvm-engine-20261016]
-    paths: [".github/workflows/cloudstream-jvm-feasibility-20261016.yml","MOOSAJVM/**"]
   workflow_dispatch:
 permissions:
   contents: read
