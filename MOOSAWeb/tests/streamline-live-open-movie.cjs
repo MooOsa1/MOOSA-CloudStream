@@ -96,9 +96,17 @@ async function main(){
         }catch(e){browserHead={error:e.name};}
       }
     }
+    const directPlayable=summaries.length>0 &&
+      summaries.some(x=>!x.needsReferer&&!x.needsCookie) &&
+      browserHead?.status===200 &&
+      /^video\//i.test(browserHead?.contentType||'') &&
+      ['*','https://moosa-web.onrender.com'].includes(browserHead?.cors);
     console.log('STREAMLINE_LIVE_OPEN_MOVIE_RESULT '+JSON.stringify({
       title:meta.title+' (CC-BY)',outcome,candidateCount:summaries.length,
-      sources:summaries,requests:network.slice(visitedAt),browserHead
+      sources:summaries,requests:network.slice(visitedAt),browserHead,
+      publicSiteReady:directPlayable,
+      publicSiteNote:directPlayable?'requires_player_verification':
+        'Not suitable for browser; no usable CORS-enabled source proven'
     }));
   }
 }
