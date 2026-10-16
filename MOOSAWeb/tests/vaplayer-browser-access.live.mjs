@@ -60,9 +60,9 @@ async function load(url,headers={},binary=false){
    return {status:r.status,cors,isVideo:Boolean(isVideo),cost:Date.now()-at};
   }
   const size=Number(r.headers.get('content-length')||0);
-  if(size>MAX_HLS)return {status:r.status,tooLarge:true,cors};
+  if(size>MAX_HLS)return {status:r.status,tooLarge:true,cors,declaredBytes:size,mime:r.headers.get('content-type')||''};
   const body=(await r.text()).slice(0,MAX_HLS+1);
-  return {status:r.status,cors,body:body.length>MAX_HLS?'':body,cost:Date.now()-at};
+  return {status:r.status,cors,body:body.length>MAX_HLS?'':body,tooLarge:body.length>MAX_HLS,readBytes:body.length,mime:r.headers.get('content-type')||'',cost:Date.now()-at};
  }catch(e){return {status:'error',reason:e?.name||'network'};}
 }
 function playlistUri(text,marker){
@@ -147,6 +147,10 @@ for(const film of FILMS){
    const playlist=variant.direct?{...master,body:normalized}:
     await load(media,{Origin:ORIGIN});
    diag.status=playlist.status;
+   diag.mime=String(playlist.mime||'').split(';')[0];
+   diag.tooLarge=!!playlist.tooLarge;
+   diag.declaredBytes=playlist.declaredBytes||null;
+   diag.readBytes=playlist.readBytes||null;
    diag.cors=playlist.cors==='*'||playlist.cors===ORIGIN;
    const body=String(playlist.body||'').replace(/^\uFEFF/,'').trimStart();
    diag.kind=body.startsWith('#EXTM3U')?'hls':
