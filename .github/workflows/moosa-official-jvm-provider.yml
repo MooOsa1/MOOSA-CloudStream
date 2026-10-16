@@ -1,0 +1,90 @@
+name: Official CloudStream JVM + original CineStream provider compatibility
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/JvmOriginalProviderSmoke.java'
+      - '.github/workflows/moosa-official-jvm-provider.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: official-cs-jvm-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  official-jvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Fetch official JVM-capable CloudStream library and CineStream DEX
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/recloudstream/cloudstream.git /tmp/cloudstream-official
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import Request,urlopen
+          url='https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CineStream.cs3'
+          with urlopen(Request(url,headers={'User-Agent':'MOOSA-JVM-official-compat'}),timeout=30) as r:
+            content=r.read(8_000_001)
+          if len(content)>8_000_000:raise RuntimeError('CineStream too large')
+          Path('/tmp/CineStream.cs3').write_bytes(content)
+          print('Original CineStream cs3:',len(content),'bytes')
+          PY
+      - name: Build official CloudStream Kotlin/JVM library target without Android application
+        run: |
+          set -euo pipefail
+          cd /tmp/cloudstream-official
+          chmod +x gradlew
+          ./gradlew :library:jvmJar --no-daemon --max-workers=2 --console=plain
+          find library/build/libs -maxdepth 1 -name '*.jar' -printf '%f %s bytes\n'
+          LIBJAR=$(find library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
+          test -n "$LIBJAR"
+          jar tf "$LIBJAR" | grep -F 'com/lagradost/cloudstream3/MainAPI.class'
+          echo OFFICIAL_CLOUDSTREAM_JVM_MAIN_API_BUILT
+      - name: Get runtime dependency jars and convert original CineStream method bodies
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/moosa-jvm /tmp/moosa-jvm/deps
+          cd /tmp/moosa-jvm
+          python3 - <<'PY'
+          from urllib.request import Request,urlopen
+          with urlopen(Request('https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip',headers={'User-Agent':'MOOSA-JVM-Compat'}),timeout=45) as f:
+            data=f.read(25_000_001)
+          if len(data)>25_000_000:raise RuntimeError('dex2jar too large')
+          open('dex2jar.zip','wb').write(data)
+          PY
+          unzip -q /tmp/CineStream.cs3 classes.dex -d .
+          unzip -q dex2jar.zip -d converter
+          chmod +x converter/dex-tools-v2.4/d2j-dex2jar.sh
+          converter/dex-tools-v2.4/d2j-dex2jar.sh --force --output original-cinestream.jar classes.dex
+          cat > /tmp/cloudstream-official/moosa-export.init.gradle <<'GRADLE'
+          gradle.projectsEvaluated {
+            project(':library').tasks.register('copyMoosaRuntime') {
+              doLast {
+                def target = new File('/tmp/moosa-jvm/deps')
+                target.mkdirs()
+                project(':library').configurations.getByName('jvmRuntimeClasspath').files.each { artifact ->
+                  if (artifact.isFile() && artifact.name.endsWith('.jar'))
+                    project(':library').copy { from artifact; into target }
+                }
+              }
+            }
+          }
+          GRADLE
+          cd /tmp/cloudstream-official
+          ./gradlew --init-script moosa-export.init.gradle :library:copyMoosaRuntime --no-daemon --max-workers=2 --console=plain
+          echo 'JVM dependencies copied:'
+          find /tmp/moosa-jvm/deps -name '*.jar' | wc -l
+      - name: Link and execute original CineStream provider metadata on official JVM API
+        run: |
+          set -euo pipefail
+          javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderSmoke.java
+          LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
+          java -cp /tmp/moosa-jvm JvmOriginalProviderSmoke "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps
+          echo 'Compatibility report only: no media fetched or player success claimed'
