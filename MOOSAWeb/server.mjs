@@ -6,7 +6,7 @@ import { createBridge } from './bridge.mjs';
 import { resolveWebSources } from './providers.mjs';
 import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
 import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
-import { matchVerifiedJsMedia } from './js-engine-demo.mjs';
+import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
 import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -126,6 +126,20 @@ async function handle(req,res) {
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
     if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
+    if(url.pathname==='/api/web-native/status'){
+      if(url.search)return err(res,400,'No arbitrary provider parameters');
+      return json(res,200,{
+        engine:'node_js',runtime:'server_native',pairingRequired:false,
+        catalogIntegrated:true,
+        activeReviewedProviders:[{
+          id:'commons-authorized',protocol:'nuvio_getStreams',
+          media:'licensed_movies_only',approvedFilmIds:supportedJsFilmIds()
+        }],
+        cloudstreamCs3Supported:false,
+        cineStreamAndStreamPlayOriginals:false,
+        note:'Native JS integration in /api/resolve supports only independently licensed, verified Commons sources. Original CloudStream Kotlin extensions are not running on this host.'
+      });
+    }
     if(url.pathname==='/api/js-engine/demo'){
       // A single ID from the server-owned open-film allowlist. Never accept
       // provider code, custom titles, CDN URLs or rights assertions.
