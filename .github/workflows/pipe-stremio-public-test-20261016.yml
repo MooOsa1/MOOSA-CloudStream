@@ -1,0 +1,51 @@
+name: Real Pipe Stremio addon public HTTP compatibility probe
+on:
+  push:
+    branches: [diagnostics/pipe-http-provider-live-evaluation-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pipe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check live Pipe no-account manifest and CC-movie responses
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://pipe.boringways.workers.dev';
+          async function get(path){
+            try{
+              const response=await fetch(host+path,{
+                headers:{Accept:'application/json'},
+                signal:AbortSignal.timeout(16000),redirect:'error'
+              });
+              const body=await response.text();
+              let obj;try{obj=JSON.parse(body)}catch{}
+              return {status:response.status,type:response.headers.get('content-type'),
+                cors:response.headers.get('access-control-allow-origin'),
+                html:body.slice(0,220).includes('<html'),length:body.length,json:obj};
+            }catch(e){return {error:String(e.message).slice(0,120)}}
+          }
+          for(const p of ['/manifest.json','/','/stream/movie/tt1727587.json']){
+            const r=await get(p);
+            const list=Array.isArray(r.json?.streams)?r.json.streams:[];
+            console.log('PIPE_PUBLIC_HTTP '+JSON.stringify({
+              path:p,status:r.status,error:r.error,
+              type:r.type,cors:r.cors,html:r.html,
+              len:r.length,manifestId:r.json?.id,manifestName:r.json?.name,
+              resourceNames:r.json?.resources?.map(x=>x.name||x),
+              streamCount:list.length,
+              directCount:list.filter(s=>typeof s.url==='string'&&s.url.startsWith('https://')).length,
+              torrentCount:list.filter(s=>s.infoHash).length,
+              linkProviders:[...new Set(list.filter(s=>s.url).map(s=>{
+                try{return new URL(s.url).hostname}catch{return'broken'}
+              }))].slice(0,12),
+              streamKeys:list.slice(0,3).map(s=>Object.keys(s).slice(0,12))
+            }));
+          }
+          NODE
