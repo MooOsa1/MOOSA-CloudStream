@@ -10,6 +10,8 @@ import {spawn} from 'node:child_process';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {adaptNuvioStreams} from './nuvio-js-adapter.mjs';
+import approved from './js-approved-films.cjs';
+const {approvedMedia}=approved;
 
 const ROOT=path.dirname(fileURLToPath(import.meta.url));
 const WORKER=path.join(ROOT,'js-plugin-worker.cjs');
@@ -33,8 +35,9 @@ export async function runLicensedJsProbe(meta,{
     return fail('provider_not_approved',0);
   if(!licensedMedia || !Array.isArray(permittedHosts)||!permittedHosts.length)
     return fail('rights_not_approved',0);
-  if(!meta||meta.media!=='movie'||meta.title!=='Big Buck Bunny'||
-    meta.originalTitle!=='Big Buck Bunny'||!Number.isSafeInteger(meta.id)||meta.id<1)
+  const fixtureAllowed=meta?.media==='movie' && meta.title==='Big Buck Bunny' &&
+    meta.originalTitle==='Big Buck Bunny' && Number.isSafeInteger(meta.id) && meta.id>0;
+  if(provider==='licensed-fixture'?!fixtureAllowed:!approvedMedia(meta))
     return fail('sample_not_approved',0);
   const body=JSON.stringify({provider,meta});
   if(body.length>INPUT_MAX)return fail('request_too_large',0);
