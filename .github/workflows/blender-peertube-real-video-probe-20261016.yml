@@ -1,0 +1,53 @@
+name: Read-only Blender PeerTube authorized video source probe
+on:
+  push:
+    branches: [diagnostics/blender-peertube-licensed-video-sources-20261016]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Probe official Blender Video API for real direct CC streams
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://video.blender.org';
+          async function get(path){
+            try{
+              const r=await fetch(host+path,{signal:AbortSignal.timeout(13000),
+                headers:{Accept:'application/json'},redirect:'error'});
+              const txt=await r.text();
+              return {http:r.status,data:txt.length<1e6?JSON.parse(txt):null};
+            }catch(e){return {error:String(e).slice(0,160)};}
+          }
+          for(const title of ['Sprite Fright','Spring','Caminandes','Agent 327','Glass Half']){
+            const q=await get('/api/v1/search/videos?search='+encodeURIComponent(title)+'&count=6');
+            const videos=Array.isArray(q.data?.data)?q.data.data:[];
+            console.log('BLENDER_SEARCH '+JSON.stringify({title,http:q.http,error:q.error,
+              found:videos.map(x=>({uuid:x.uuid,name:x.name,license:x.licence?.label,
+                channel:x.channel?.name,duration:x.duration,privacy:x.privacy?.label
+              }))}));
+            const exact=videos.find(x=>x.name.toLowerCase()===title.toLowerCase() ||
+              x.name.toLowerCase().startsWith(title.toLowerCase()+' -'));
+            if(!exact)continue;
+            const d=await get('/api/v1/videos/'+exact.uuid);
+            const o=d.data||{};
+            console.log('BLENDER_DETAIL '+JSON.stringify({title,http:d.http,uuid:o.uuid,name:o.name,
+              descriptionHead:String(o.description||'').slice(0,360),
+              licence:o.licence,channel:o.channel?.name,account:o.account?.name,
+              year:o.originallyPublishedAt,privacy:o.privacy,files:(o.files||[]).map(x=>({
+                res:x.resolution,magnet:Boolean(x.magnetUri),fileUrlHost:(()=>{try{return new URL(x.fileUrl).hostname}catch{return null}})(),
+                fileUrlPath:(()=>{try{return new URL(x.fileUrl).pathname.slice(-110)}catch{return null}})(),size:x.size
+              })),playlists:(o.streamingPlaylists||[]).map(x=>({
+                playlistHost:(()=>{try{return new URL(x.playlistUrl).hostname}catch{return null}})(),
+                path:(()=>{try{return new URL(x.playlistUrl).pathname.slice(-100)}catch{return null}})(),
+                numFiles:x.files?.length
+              }))
+            }));
+          }
+          NODE
