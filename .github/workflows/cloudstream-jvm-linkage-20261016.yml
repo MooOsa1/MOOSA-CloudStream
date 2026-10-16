@@ -129,3 +129,22 @@ jobs:
           javac -cp "MOOSAJVM:$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/CloudStreamApp.java MOOSAJVM/shims/com/lagradost/cloudstream3/utils/DataStore.java
           javac -cp "MOOSAJVM:$runtime" MOOSAJVM/HlsSourceProbe.java MOOSAJVM/ProviderLinksProbe.java
           timeout 85 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLinksProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+      - name: Convert SHA256 verified original StreamPlay cs3 to JVM and test provider constructor
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds
+          curl -fLsS --retry 2 "$root/plugins.json" -o /tmp/streamplay-plugins.json
+          digest="$(jq -r --arg n StreamPlay --arg u "$root/StreamPlay.cs3" '[.[]|select(.internalName==$n and .url==$u)]|sort_by(.version)|last|.fileHash // empty' /tmp/streamplay-plugins.json)"
+          [[ "$digest" =~ ^sha256-[a-f0-9]{64}$ ]]
+          curl -fLsS --retry 2 "$root/StreamPlay.cs3" -o /tmp/StreamPlay.cs3
+          echo "$(echo "$digest"|sed s/^sha256-//)  /tmp/StreamPlay.cs3"|sha256sum --check
+          unzip -p /tmp/StreamPlay.cs3 classes.dex > /tmp/StreamPlay.dex
+          converter="$(find /tmp/dex-tools -name d2j-dex2jar.sh -print -quit)"
+          sed -i 's/-Xmx2048m/-Xmx4096m/g' "$converter"
+          "$converter" --force --output /tmp/converted/StreamPlay.jar /tmp/StreamPlay.dex
+          test -s /tmp/converted/StreamPlay.jar
+          echo "JVM_STREAMPLAY_CLASS_COUNT=$(jar tf /tmp/converted/StreamPlay.jar|grep -c '\.class$')"
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/StreamPlayClassProbe.java
+          timeout 30 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayClassProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/StreamPlay.jar
