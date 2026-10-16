@@ -86,7 +86,7 @@ jobs:
         run: |
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           official=/tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar
-          timeout 45 jdeps --ignore-missing-deps -q -verbose:class -filter:none -cp "$runtime:$official:MOOSAJVM" /tmp/converted/CineStream.jar > /tmp/cinestream-jdeps.txt || true
+          timeout 45 jdeps -q -verbose:class -filter:none -cp "$runtime:$official:MOOSAJVM" /tmp/converted/CineStream.jar > /tmp/cinestream-jdeps.txt || true
           python3 - <<'PY'
           import re,collections
           missing=set()
