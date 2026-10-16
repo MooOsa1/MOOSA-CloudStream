@@ -56,6 +56,11 @@ jobs:
               /^https:\/\/creativecommons\.org\//.test(s.licenseUrl||''));
             assert.ok(valid.length>0,'No independently licensed film URLs found in catalog');
             assert.ok(valid.every(s=>new URL(s.url).hostname==='upload.wikimedia.org'));
+            const worker=await get('/api/js-engine/demo?id=sintel');
+            console.log('PRODUCTION_NATIVE_WORKER '+JSON.stringify({
+              state:worker.json.state,count:worker.json.count,
+              urls:(worker.json.sources||[]).map(x=>x.url)
+            }));
             console.log('PRODUCTION_NATIVE_CATALOG '+JSON.stringify({
               tmdbId:movie.id,title:movie.title,year:movie.release_date,
               total:sources.length,licensed:valid.length,
