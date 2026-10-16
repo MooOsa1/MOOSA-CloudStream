@@ -6,7 +6,7 @@ import { createBridge } from './bridge.mjs';
 import { resolveWebSources } from './providers.mjs';
 import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
 import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
-import { createJsEngineDemo } from './js-engine-demo.mjs';
+import { createJsEngineDemo, matchVerifiedJsMedia } from './js-engine-demo.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -143,11 +143,29 @@ async function handle(req,res) {
       if(!/^[a-z0-9-]{1,50}$/.test(requested))return err(res,400,'Invalid film');
       const film=await getCuratedFilm(requested);
       if(!film)return err(res,404,'Unknown open-licensed film');
+      let sources=film.sources;
+      let sourceEngine='commons_metadata';
+      if(requested==='big-buck-bunny' && film.available){
+        // Existing open-licensed sources remain the fallback. A slow or
+        // unavailable external JS worker must not stall the phone's player.
+        let timer;
+        try{
+          const verified=await Promise.race([
+            jsDemo.load(),
+            new Promise(resolve=>{timer=setTimeout(()=>resolve(null),1800);})
+          ]);
+          const approved=matchVerifiedJsMedia(film,verified);
+          if(approved?.length){
+            sources=approved;
+            sourceEngine='reviewed_js_worker_preflight';
+          }
+        }finally{clearTimeout(timer);}
+      }
       return json(res,200,{
-        ...film,
+        ...film,sources,sourceEngine,
         copyright:film.license||'No verified source available',
         note:'Independent open-license sample, not a source for the selected commercial movie.',
-        count:film.sources.length
+        count:sources.length
       });
     }
     if(url.pathname==='/api/cloudstream/repositories') {
