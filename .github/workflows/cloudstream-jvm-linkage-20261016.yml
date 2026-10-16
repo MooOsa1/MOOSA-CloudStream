@@ -171,42 +171,28 @@ jobs:
           sed -i 's/-Xmx2048m/-Xmx4096m/g' "$converter"
           "$converter" --force --output /tmp/converted/StreamPlay.jar /tmp/StreamPlay.dex
           test -s /tmp/converted/StreamPlay.jar
-          echo "JVM_STREAMPLAY_CLASS_COUNT=$(jar tf /tmp/converted/StreamPlay.jar|grep -c '\.class
+          echo "JVM_STREAMPLAY_CLASS_COUNT=$(jar tf /tmp/converted/StreamPlay.jar | grep -c '\.class$')"
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
-          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/StreamPlayClassProbe.java
-          timeout 30 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayClassProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/StreamPlay.jar
-      - name: Test original StreamPlay Lite loadLinks on licensed Sintel without logging any upstream links
-        shell: bash
-        run: |
-          set -euo pipefail
-          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
-          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/StreamPlayLiteProbe.java
-          set +e
-          timeout 55 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayLiteProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/StreamPlay.jar > /tmp/streamplay-lite-private.log 2>&1
-          status=$?
-          set -e
-          echo "JVM_STREAMPLAY_LITE_PROCESS_EXIT=$status"
-          grep -E '^JVM_STREAMPLAY_LITE stage=' /tmp/streamplay-lite-private.log || true
-
-)"
-          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac MOOSAJVM/PluginProviderDiscovery.java
           timeout 30 java -Xmx768m -cp "MOOSAJVM:$runtime" PluginProviderDiscovery \
             /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
             /tmp/converted/StreamPlay.jar StreamPlay | tee /tmp/streamplay-discovery.log
           grep -F 'name=com.phisher98.StreamPlay' /tmp/streamplay-discovery.log
-          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           javac -cp "MOOSAJVM:$runtime" MOOSAJVM/StreamPlayClassProbe.java
-          timeout 30 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayClassProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/StreamPlay.jar
-      - name: Test original StreamPlay Lite loadLinks on licensed Sintel without logging any upstream links
+          timeout 30 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayClassProbe \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/StreamPlay.jar
+      - name: Test original StreamPlay loadLinks on licensed Sintel with no streaming
         shell: bash
         run: |
           set -euo pipefail
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           javac -cp "MOOSAJVM:$runtime" MOOSAJVM/StreamPlayLiteProbe.java
           set +e
-          timeout 55 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayLiteProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/StreamPlay.jar > /tmp/streamplay-lite-private.log 2>&1
+          timeout 55 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayLiteProbe \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/StreamPlay.jar > /tmp/streamplay-lite-private.log 2>&1
           status=$?
           set -e
-          echo "JVM_STREAMPLAY_LITE_PROCESS_EXIT=$status"
+          echo "JVM_STREAMPLAY_PROBE_PROCESS_EXIT=$status"
           grep -E '^JVM_STREAMPLAY_LITE stage=' /tmp/streamplay-lite-private.log || true
-
