@@ -48,10 +48,16 @@ export function selectArchiveVerifiedFile(request,parsed,doc){
   const yearSuffix=Number.isInteger(year)&&year>=1888&&year<=2100 &&
     archiveTitle===title+' '+year;
   if(!exact&&!yearSuffix)return null;
-  if(doc.metadata.year!==undefined && doc.metadata.year!==null){
-    const archiveYear=Number(String(doc.metadata.year).slice(0,4));
-    if(Number.isInteger(year) && year>0 &&
-      (!Number.isInteger(archiveYear)||archiveYear!==year))return null;
+  // A requested release year must be corroborated by the actual Archive
+  // item's year field OR a matching year suffix in the item's title. Do not
+  // trust the Stremio lookup's IMDb association alone.
+  const yearKnown=Number.isInteger(year) && year>=1888 && year<=2100;
+  if(yearKnown){
+    const raw=doc.metadata.year;
+    if(raw!==undefined&&raw!==null&&String(raw).trim()){
+      const archiveYear=Number(String(raw).slice(0,4));
+      if(!Number.isInteger(archiveYear)||archiveYear!==year)return null;
+    }else if(!yearSuffix)return null;
   }
   if(!licenseAllowed(doc.metadata.licenseurl||doc.metadata.license_url))return null;
   const file=doc.files.find(f=>f?.name===parsed.filename);
