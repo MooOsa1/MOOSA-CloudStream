@@ -129,6 +129,23 @@ jobs:
           javac -cp "MOOSAJVM:$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/CloudStreamApp.java MOOSAJVM/shims/com/lagradost/cloudstream3/utils/DataStore.java
           javac -cp "MOOSAJVM:$runtime" MOOSAJVM/HlsSourceProbe.java MOOSAJVM/ProviderLinksProbe.java
           timeout 85 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLinksProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+      - name: Exercise two additional native CineStream providers without Android (licensed test ID)
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          for provider in p_vidzee p_videasy; do
+            echo "JVM_NATIVE_PROVIDER_CHECK provider=$provider"
+            set +e
+            MOOSA_JVM_SINGLE_PROVIDER="$provider" timeout 55 java -Xmx512m \
+              -cp "MOOSAJVM:$runtime" ProviderLinksProbe \
+              /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+              /tmp/converted/CineStream.jar > /tmp/native-provider-private.log 2>&1
+            status=$?
+            set -e
+            echo "JVM_NATIVE_PROVIDER_EXIT provider=$provider code=$status"
+            grep -E '^JVM_REAL_LINKS |^JVM_SOURCE_CLASSIFICATION ' /tmp/native-provider-private.log || true
+          done
       - name: Convert SHA256 verified original StreamPlay cs3 to JVM and test provider constructor
         shell: bash
         run: |
