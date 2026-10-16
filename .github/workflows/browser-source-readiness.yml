@@ -1,0 +1,29 @@
+name: JS browser source readiness live smoke
+on:
+  push:
+    branches: [feature/browser-source-readiness-gate]
+    paths:
+      - 'MOOSAWeb/browser-source-readiness.mjs'
+      - 'MOOSAWeb/js-provider-validation.mjs'
+      - 'MOOSAWeb/tests/browser-source-readiness.*'
+      - 'MOOSAWeb/tests/js-provider-validation.test.mjs'
+      - '.github/workflows/browser-source-readiness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate HTTP, MIME, CORS, Referer and fail-closed protections
+        run: node --test tests/browser-source-readiness.test.mjs tests/js-provider-validation.test.mjs
+      - name: Real licensed video readiness from independent Node JS worker
+        run: node tests/browser-source-readiness.live.mjs
