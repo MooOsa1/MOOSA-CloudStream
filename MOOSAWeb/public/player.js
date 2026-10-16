@@ -117,6 +117,9 @@ async function playLink(url, label='Video'){
   }catch(e){if(currentPlayback===playbackToken)notice(e.message||'تعذر تشغيل الفيديو');}
 }
 export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
+  // A newly opened title supersedes every prior source/subtitle lookup,
+  // including standalone licensed films that do not call the catalog search.
+  document.dispatchEvent(new Event('moosa-player-opened'));
   previousFocus=document.activeElement;
   externalSubtitles=[];
   activeSources=chooseBrowserSources(sources,navigator.userAgent);
