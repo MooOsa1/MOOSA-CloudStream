@@ -91,3 +91,20 @@ test('unresponsive origin produces bounded timeout / network_error and no accept
   assert.deepEqual(r.ready,[]);
   assert.equal(r.rejected[0].reason,'timeout');
 });
+
+test('slow CDN cannot receive more than three simultaneous metadata requests',async()=>{
+  let inFlight=0,maxFlight=0;
+  const samples=Array.from({length:8},(_,i)=>({
+    ...good,url:'https://upload.wikimedia.org/demo'+i+'.webm'
+  }));
+  const r=await checkApprovedSources(samples,{
+    fetchImpl:async()=>{
+      inFlight++;maxFlight=Math.max(maxFlight,inFlight);
+      await new Promise(resolve=>setTimeout(resolve,12));
+      inFlight--;
+      return response(200);
+    }
+  });
+  assert.equal(r.ready.length,8);
+  assert.equal(maxFlight,3);
+});
