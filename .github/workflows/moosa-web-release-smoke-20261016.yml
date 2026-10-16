@@ -69,7 +69,7 @@ jobs:
             sourcePage:s.sourcePage,license:s.licenseUrl
           }))));
           for(const media of tears.body.sources.slice(0,2)){
-            const title=decodeURIComponent(new URL(media.sourcePage).pathname.replace(/^\\/wiki\\//,'')).replace(/_/g,' ');
+            const title=decodeURIComponent(new URL(media.sourcePage).pathname).slice('/wiki/'.length).replaceAll('_',' ');
             const api=new URL('https://commons.wikimedia.org/w/api.php');
             for(const [k,v] of Object.entries({
               action:'query',format:'json',formatversion:'2',
