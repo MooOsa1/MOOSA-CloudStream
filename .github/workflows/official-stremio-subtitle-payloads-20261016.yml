@@ -1,0 +1,50 @@
+name: Check actual OpenSubtitles CDN text fetch and browser CORS
+on:
+  push:
+    branches: [diagnostics/real-stremio-subtitles-opensubtitles-20261016]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate public SRT contents and direct CORS (without publishing subtitle text)
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const base='https://opensubtitles-v3.strem.io/subtitles/movie/';
+          const tested=['tt1727587','tt2285752','tt0807840','tt1254207'];
+          for(const imdb of tested) {
+            try{
+              const manifest=await fetch(base+imdb+'.json',{signal:AbortSignal.timeout(14000)});
+              const all=(await manifest.json()).subtitles||[];
+              const pick=[];
+              for(const lang of ['ara','eng']){
+                const item=all.find(s=>s.lang===lang);
+                if(item)pick.push(item);
+              }
+              for(const item of pick){
+                const resp=await fetch(item.url,{
+                  signal:AbortSignal.timeout(14000),
+                  headers:{Origin:'https://moosa-web.onrender.com',Accept:'text/plain, text/vtt'}
+                });
+                const body=await resp.text();
+                const head=body.slice(0,350);
+                const srt=/\d\d:\d\d:\d\d[,\.]\d\d\d\s*-->\s*\d\d:\d\d:\d\d/.test(body);
+                const vtt=body.startsWith('WEBVTT');
+                console.log('OPENSUBTITLES_REAL_TEXT '+JSON.stringify({
+                  imdb,lang:item.lang,id:item.id,code:resp.status,
+                  finalHost:new URL(resp.url).hostname,finalPath:new URL(resp.url).pathname.slice(0,100),
+                  cors:resp.headers.get('access-control-allow-origin'),
+                  contentType:resp.headers.get('content-type'),length:body.length,
+                  hasSrtTimings:srt,isVtt:vtt,hasArabic:/[\u0600-\u06FF]/.test(body),
+                  looksLikeHtml:/^\s*</.test(head)
+                }));
+              }
+            }catch(e){console.log('OPENSUBTITLES_REAL_TEXT_FAIL '+JSON.stringify({imdb,error:String(e).slice(0,140)}))}
+          }
+          NODE
