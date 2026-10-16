@@ -97,12 +97,24 @@ function validCors(response,origin){
   return c==='*'||c===origin;
 }
 async function checkSegment(segmentUrl,fetchImpl,timeoutMs,origin){
-  const response=await fetchImpl(segmentUrl,{
+  const fetchChunk=range=>fetchImpl(segmentUrl,{
     method:'GET',redirect:'error',signal:AbortSignal.timeout(timeoutMs),
-    headers:{Range:'bytes=0-2047',Origin:origin}
+    headers:range
+      ?{Range:'bytes=0-2047',Origin:origin}
+      :{Origin:origin}
   });
-  if(![200,206].includes(response.status)||!validCors(response,origin))
-    return {ok:false,reason:'segment_http_or_cors'};
+  let response=await fetchChunk(true);
+  // Some compliant servers reject the optional Range header. Retry one
+  // ordinary GET (not a forged Referer, credential or Cloudflare bypass).
+  // Never buffer an entire segment: read one chunk then cancel immediately.
+  if([400,403,405,416].includes(response.status)){
+    await response.body?.cancel().catch(()=>{});
+    response=await fetchChunk(false);
+  }
+  if(![200,206].includes(response.status))
+    return {ok:false,reason:'segment_http_'+response.status};
+  if(!validCors(response,origin))
+    return {ok:false,reason:'segment_cors_missing'};
   const reader=response.body?.getReader();
   if(!reader)return {ok:false,reason:'segment_no_body'};
   let part;

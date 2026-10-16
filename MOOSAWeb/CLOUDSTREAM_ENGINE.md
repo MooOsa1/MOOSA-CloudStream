@@ -264,3 +264,12 @@ blocked until independently verified and explicitly approved. This does not
 make copyrighted or inaccessible streams playable.
 
 Reference: https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/38960872508
+
+## Range fallback and precise segment failures
+
+Browser HLS segment probes now retry a single ordinary GET if the source
+returns 400, 403, 405 or 416 to the optional byte-range request. Both
+attempts are bounded and canceled after the first video chunk, with no
+proxy, forged Referer, cookies or bypass. Distinct failure reasons report
+segment_http_<status> versus segment_cors_missing; direct playback is
+never announced unless video magic bytes and browser CORS both pass.

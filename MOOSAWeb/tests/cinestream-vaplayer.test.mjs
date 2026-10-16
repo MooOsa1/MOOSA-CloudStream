@@ -68,7 +68,7 @@ test('Real-life VaPlayer symptom: valid master + variant but first segment 403 i
   const {fetchImpl}=fake(403);
   assert.deepEqual(await probeHlsFirstSegment(master,{
     fetchImpl,allowedHosts:['cdn.example']
-  }),{ok:false,reason:'segment_http_or_cors'});
+  }),{ok:false,reason:'segment_http_403'});
   assert.deepEqual(await fromCineStreamVaPlayer(movie,{
     enabled:true,mediaHosts:['cdn.example'],fetchImpl
   }),[]);
@@ -253,6 +253,48 @@ test('Extensionless HLS segment is rejected if it switches to an unapproved CDN 
   });
   assert.deepEqual(result,{ok:false,reason:'unapproved_segment_host_or_url'});
   assert.deepEqual(calls,[hls]);
+});
+test('An HLS segment server refusing byte ranges can still play using ordinary GET',async()=>{
+  const url='https://cdn.example/video/direct.m3u8';
+  const checks=[];
+  const playlist='#EXTM3U\n#EXTINF:9.9,\nchunk?token=abc';
+  const video=new Uint8Array([0x47,...new Array(2047).fill(0)]);
+  const fetchImpl=async (uri,options)=>{
+    if(uri===url)return response(playlist);
+    checks.push(options.headers);
+    if(options.headers.Range)return response('Range refused',416,'text/plain');
+    return response(video,200,'video/mp2t');
+  };
+  assert.deepEqual(await probeHlsFirstSegment(url,{
+    fetchImpl,allowedHosts:['cdn.example']
+  }),{ok:true,quality:720,width:1280,playableUrl:url});
+  assert.equal(checks.length,2);
+  assert.equal(checks[0].Range,'bytes=0-2047');
+  assert.equal(checks[1].Range,undefined);
+});
+test('Server returning HTTP 403 even without Range is rejected, not mislabeled CORS',async()=>{
+  const url='https://cdn.example/video/forbidden.m3u8';
+  const calls=[];
+  const fetchImpl=async (uri,options)=>{
+    if(uri===url)return response('#EXTM3U\n#EXTINF:9.9,\nchunk.ts');
+    calls.push(options.headers);
+    return response('Forbidden',403,'text/plain');
+  };
+  assert.deepEqual(await probeHlsFirstSegment(url,{
+    fetchImpl,allowedHosts:['cdn.example']
+  }),{ok:false,reason:'segment_http_403'});
+  assert.equal(calls.length,2);
+});
+test('200 video segment without CORS is distinctly rejected',async()=>{
+  const url='https://cdn.example/video/no-cors.m3u8';
+  const video=new Uint8Array([0x47,...new Array(2000).fill(0)]);
+  const fetchImpl=async uri=>{
+    if(uri===url)return response('#EXTM3U\n#EXTINF:9.9,\nchunk.ts');
+    return new Response(video,{status:200,headers:{'Content-Type':'video/mp2t'}});
+  };
+  assert.deepEqual(await probeHlsFirstSegment(url,{
+    fetchImpl,allowedHosts:['cdn.example']
+  }),{ok:false,reason:'segment_cors_missing'});
 });
 test('No arbitrary unapproved media hosts or dangerous HTTP URLs can be probed',async()=>{
   const {fetchImpl,calls}=fake();
