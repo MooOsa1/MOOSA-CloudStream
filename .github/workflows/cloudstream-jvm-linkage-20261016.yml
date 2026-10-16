@@ -81,6 +81,35 @@ jobs:
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           javac -cp "$runtime" MOOSAJVM/ProviderLoadProbe.java
           timeout 34 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLoadProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+      - name: Classify actual unimplemented JVM and Android classes in converted CineStream DEX
+        shell: bash
+        run: |
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          official=/tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar
+          timeout 45 jdeps --ignore-missing-deps -q -verbose:class -filter:none \
+            -cp "$runtime:$official:MOOSAJVM" /tmp/converted/CineStream.jar > /tmp/cinestream-jdeps.txt || true
+          python3 - <<'PY'
+          import re,collections
+          missing=set()
+          for row in open('/tmp/cinestream-jdeps.txt',errors='replace'):
+            m=re.search(r'\s+->\s+(\S+)\s+not found\s*
+        shell: bash
+        run: |
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/network/CloudflareKiller.java
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/ProviderLinksProbe.java
+          timeout 85 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLinksProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+,row)
+            if m:missing.add(m.group(1))
+          counts=collections.Counter(
+            'android' if x.startswith('android.') else
+            'androidx' if x.startswith('androidx.') else
+            'cloudstream_application' if x.startswith('com.lagradost.cloudstream3.') else
+            'other' for x in missing
+          )
+          print('CINESTREAM_JVM_UNRESOLVED total='+str(len(missing))+' groups='+repr(dict(counts)))
+          print('CINESTREAM_JVM_UNRESOLVED_SAMPLES '+', '.join(sorted(missing)[:45]))
+          PY
       - name: Invoke original CineStreamProvider.loadLinks against licensed Sintel with no video downloads
         shell: bash
         run: |
