@@ -6,6 +6,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import kotlin.Unit;
 import kotlin.coroutines.Continuation;
 import kotlin.coroutines.CoroutineContext;
@@ -69,12 +75,38 @@ public final class ProviderLinksProbe {
                 }
             }catch(Throwable e){System.out.println("JVM_REAL_LINKS stage=payload status=error reason="+clean(e));return;}
             AtomicInteger total=new AtomicInteger(), hd=new AtomicInteger(), captions=new AtomicInteger();
+            Map<String,AtomicInteger> sourceGroups=new ConcurrentHashMap<>();
+            AtomicInteger needsReferer=new AtomicInteger(), linksWithHeaders=new AtomicInteger();
+            AtomicInteger declaredHls=new AtomicInteger(), declaredMp4=new AtomicInteger(), https=new AtomicInteger();
             Function1<Object,Unit> onSub=subtitle->{captions.incrementAndGet();return Unit.INSTANCE;};
             Function1<Object,Unit> onVideo=link->{
                 total.incrementAndGet();
                 try{
                     Object q=link.getClass().getMethod("getQuality").invoke(link);
                     if(q instanceof Number && ((Number)q).intValue()>=720)hd.incrementAndGet();
+                }catch(Throwable ignored){}
+                try{
+                    Object ref=link.getClass().getMethod("getReferer").invoke(link);
+                    if(ref instanceof String text && !text.isBlank())needsReferer.incrementAndGet();
+                }catch(Throwable ignored){}
+                try{
+                    Object headers=link.getClass().getMethod("getHeaders").invoke(link);
+                    if(headers instanceof Map<?,?> map && !map.isEmpty())linksWithHeaders.incrementAndGet();
+                }catch(Throwable ignored){}
+                try{
+                    Object val=link.getClass().getMethod("getUrl").invoke(link);
+                    URI u=new URI(String.valueOf(val));
+                    if(!"https".equalsIgnoreCase(u.getScheme())||u.getHost()==null)return Unit.INSTANCE;
+                    https.incrementAndGet();
+                    String ext=String.valueOf(u.getPath()).toLowerCase();
+                    String kind=ext.endsWith(".m3u8")?"hls":
+                        ext.endsWith(".mp4")?"mp4":
+                        ext.endsWith(".webm")?"webm":"other";
+                    if(kind.equals("hls"))declaredHls.incrementAndGet();
+                    if(kind.equals("mp4"))declaredMp4.incrementAndGet();
+                    String host=u.getHost().toLowerCase();
+                    if(host.length()>100)host="unclassified";
+                    sourceGroups.computeIfAbsent(host+"("+kind+")",k->new AtomicInteger()).incrementAndGet();
                 }catch(Throwable ignored){}
                 return Unit.INSTANCE;
             };
@@ -86,6 +118,12 @@ public final class ProviderLinksProbe {
                 System.out.println("JVM_REAL_LINKS stage=loadLinks status=returned result="+String.valueOf(returned)+
                     " sources="+total.get()+" hd720plus="+hd.get()+" subtitles="+captions.get()+
                     " durationMs="+(System.nanoTime()-begin)/1_000_000);
+                System.out.println("JVM_SOURCE_CLASSIFICATION https="+https.get()+
+                    " hls="+declaredHls.get()+" mp4="+declaredMp4.get()+
+                    " needsReferer="+needsReferer.get()+" extraHeaders="+linksWithHeaders.get()+
+                    " hosts="+new TreeMap<>(sourceGroups).entrySet().stream()
+                        .limit(20).map(e->e.getKey()+":"+e.getValue().get())
+                        .reduce((a,b)->a+";"+b).orElse("none"));
             }catch(Throwable e){
                 System.out.println("JVM_REAL_LINKS stage=loadLinks status=error reason="+clean(e)+
                     " sources="+total.get()+" hd720plus="+hd.get()+" subtitles="+captions.get());
