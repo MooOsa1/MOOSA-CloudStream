@@ -101,6 +101,7 @@
       <div class="player-field"><label for="subtitle-offset">توقيت الترجمة <output id="offset-value">0.0s</output></label><input type="range" id="subtitle-offset" min="-15" max="15" value="0" step="0.5" /></div>
     </div>
     <div class="input-row"><input id="custom-stream" type="url" inputmode="url" placeholder="https://example.com/your-video.m3u8 أو .mp4" aria-label="رابط فيديو مصرح به"/><button id="play-custom" class="btn btn-outline">تشغيل الرابط</button><label class="btn btn-ghost file-picker">فتح ملف فيديو<input id="local-video" type="file" accept="video/*" hidden /></label><label class="btn btn-ghost file-picker">إضافة SRT/VTT<input id="local-subtitle" type="file" accept=".srt,.vtt,text/vtt,text/plain" hidden /></label></div>
+    <div id="source-attribution" class="source-attribution hidden" aria-live="polite"><span id="source-attribution-text"></span><a id="source-attribution-link" href="#" target="_blank" rel="noopener noreferrer">المصدر والترخيص ↗</a></div>
     <div id="player-message" class="player-message" role="status">جرب المشغل باستخدام الفيديو التجريبي الحر.</div>
     <div class="player-bottom"><button class="btn btn-ghost" id="play-demo">▶ تشغيل فيديو تجريبي (CC0)</button><span>التشغيل يتطلب دعم المتصفح وصلاحيات CORS من خادم الفيديو</span></div>
   </section>
