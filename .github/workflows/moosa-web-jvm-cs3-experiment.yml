@@ -54,11 +54,42 @@ jobs:
           chmod +x "$CONVERTER"
           echo "DEX conversion using $CONVERTER"
           "$CONVERTER" --force --output CineStream.jar cinesrc/classes.dex
-          "$CONVERTER" --force --output StreamPlay.jar streamsrc/classes.dex
+          echo 'Try converting complete StreamPlay code with 4 GB heap, max 75 seconds'
+          set +e
+          timeout 75s java -Xmx4g -cp "dex2jar/dex-tools-v2.4/lib/*" \
+            com.googlecode.dex2jar.tools.Dex2jarCmd --force --output StreamPlay.jar streamsrc/classes.dex \
+            > streamplay-conversion.log 2>&1
+          FULL_RESULT=$?
+          set -e
+          if [ "$FULL_RESULT" -ne 0 ]; then
+            echo "StreamPlay full method conversion failed: exit $FULL_RESULT"
+            tail -15 streamplay-conversion.log
+            echo 'Falling back to class signatures WITHOUT method bodies: not runtime-ready'
+            rm -f StreamPlay.jar
+            java -Xmx2g -cp "dex2jar/dex-tools-v2.4/lib/*" \
+              com.googlecode.dex2jar.tools.Dex2jarCmd --no-code --force --output StreamPlay.jar streamsrc/classes.dex
+            echo 'STREAMPLAY_METHOD_CODE_NOT_CONVERTED'
+          else
+            echo 'STREAMPLAY_COMPLETE_BYTECODE_CONVERTED'
+          fi
           echo 'Actual JVM bytecode artifacts produced:'
           ls -lh CineStream.jar StreamPlay.jar
-          jar tf CineStream.jar | grep -E '^com/megix/CineStream.class$'
-          jar tf StreamPlay.jar | grep -E '^com/phisher98/StreamPlayPlugin.class$'
+          jar tf CineStream.jar | grep -E '^com/megix/CineStream.class
+      - name: Try actual JVM linking of plugin entry points without running plugin code
+        run: |
+          javac -d /tmp/cs3-jvm MOOSAWeb/tools/JvmCs3ClassProbe.java
+          java -cp /tmp/cs3-jvm JvmCs3ClassProbe CineStream /tmp/cs3-jvm/CineStream.jar com.megix.CineStream
+          java -cp /tmp/cs3-jvm JvmCs3ClassProbe StreamPlay /tmp/cs3-jvm/StreamPlay.jar com.phisher98.StreamPlayPlugin
+          echo 'Class loading only: no Android, HTTP, source resolution or video playback attempted'
+
+          jar tf StreamPlay.jar | grep -E '^com/phisher98/StreamPlayPlugin.class
+      - name: Try actual JVM linking of plugin entry points without running plugin code
+        run: |
+          javac -d /tmp/cs3-jvm MOOSAWeb/tools/JvmCs3ClassProbe.java
+          java -cp /tmp/cs3-jvm JvmCs3ClassProbe CineStream /tmp/cs3-jvm/CineStream.jar com.megix.CineStream
+          java -cp /tmp/cs3-jvm JvmCs3ClassProbe StreamPlay /tmp/cs3-jvm/StreamPlay.jar com.phisher98.StreamPlayPlugin
+          echo 'Class loading only: no Android, HTTP, source resolution or video playback attempted'
+
       - name: Try actual JVM linking of plugin entry points without running plugin code
         run: |
           javac -d /tmp/cs3-jvm MOOSAWeb/tools/JvmCs3ClassProbe.java
