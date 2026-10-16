@@ -1,3 +1,4 @@
+import {nextPlaybackSource} from './playback-fallback.js';
 const $ = s => document.querySelector(s);
 const video = $('#video');
 let hls = null;
@@ -10,6 +11,9 @@ let cueBaseline = new Map();
 let playbackToken = 0;
 let subtitleToken = 0;
 let customSubtitle = null;
+let selectedSourceUrl = null;
+let attemptedSourceUrls = new Set();
+let fallbackAttempts = 0;
 const DEMO = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
 const HTTPS = /^https:\/\/[^\s]+$/i;
 const extensions = /\.(m3u8|mp4|webm|mov)(?:[?#]|$)/i;
@@ -84,7 +88,11 @@ async function playLink(url, label='Video'){
       hls=new Hls({enableWorker:true,capLevelToPlayerSize:true,backBufferLength:40});
       hls.loadSource(url);hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED,()=>updateQuality());
-      hls.on(Hls.Events.ERROR,(_event,data)=>{if(data.fatal && currentPlayback===playbackToken){notice(`تعذر تشغيل HLS (${data.type}). قد يكون الرابط محميًا أو لا يسمح بالوصول من المتصفح.`);}});
+      hls.on(Hls.Events.ERROR,(_event,data)=>{
+        if(data.fatal && currentPlayback===playbackToken && !tryFallbackSource()){
+          notice(`تعذر تشغيل HLS (${data.type}). قد يكون الرابط محميًا أو لا يسمح بالوصول من المتصفح.`);
+        }
+      });
     }else{
       video.src=url;
     }
@@ -110,6 +118,9 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   previousFocus=document.activeElement;
   activeSources=sources;
   currentMediaTitle=title;
+  selectedSourceUrl=null;
+  attemptedSourceUrls.clear();
+  fallbackAttempts=0;
   resetVideo();
   $('#player-title').textContent=title;
   const options=$('#player-source');
@@ -124,6 +135,7 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
 }
 export function hidePlayer(){
   document.dispatchEvent(new Event('moosa-player-closed'));
+  selectedSourceUrl=null;attemptedSourceUrls.clear();fallbackAttempts=0;
   resetVideo();$('#player-panel').classList.add('hidden');
   if($('#detail-panel').classList.contains('hidden'))$('#overlay').classList.add('hidden');
   previousFocus?.focus?.();
@@ -169,6 +181,7 @@ export function markNoAutomaticSources(){
 }
 
 export function startDemo(){
+  selectedSourceUrl=null;
   $('#player-source').value='';
   currentMediaTitle='فيديو تجريبي حر — MDN Flower (CC0)';
   $('#player-title').textContent='فيديو تجريبي حر — MDN Flower (CC0)';
@@ -207,10 +220,16 @@ function adjustCues(value){
   const offset=Number(value)||0;$('#offset-value').textContent=`${offset>0?'+':''}${offset.toFixed(1)}s`;
   for(const [cue,base] of cueBaseline){try{cue.startTime=Math.max(0,base.start+offset);cue.endTime=Math.max(cue.startTime+0.1,base.end+offset);}catch{}}
 }
-function sourceSelected(value){
-  if(value===''){resetVideo();notice('اختر مصدرًا للتشغيل أو افتح فيديو من جهازك.');return;}
+function sourceSelected(value,{fallback=false}={}){
+  if(!fallback){attemptedSourceUrls.clear();fallbackAttempts=0;}
+  if(value===''){
+    selectedSourceUrl=null;resetVideo();
+    notice('اختر مصدرًا للتشغيل أو افتح فيديو من جهازك.');return;
+  }
   const src=activeSources[Number(value)];
   if(!src)return;
+  selectedSourceUrl=src.url;
+  attemptedSourceUrls.add(src.url);
   $('#player-title').textContent=currentMediaTitle||src.name||'مشغل MOOSA';
   // playLink resets the track menu synchronously; repopulate immediately,
   // instead of waiting for a remote video to load or fail.
@@ -218,6 +237,22 @@ function sourceSelected(value){
   setAttribution(src);
   const list=$('#player-subtitles');
   for(const t of src.subtitles||[]){const option=new Option(`${t.language==='ar'?'Arabic':'English'} • ${t.source} • ${t.label}`,t.url);option.dataset.label=t.label;option.dataset.language=t.language;list.add(option);}
+}
+function tryFallbackSource(){
+  // Only retry already returned sources for this exact movie/episode.
+  // Never switch from a user-supplied URL, local video or CC demo to an
+  // unrelated catalog source. Retry at most 3 alternatives without cycling.
+  if(!selectedSourceUrl || fallbackAttempts>=3 ||
+      $('#player-panel').classList.contains('hidden'))return false;
+  const next=nextPlaybackSource(activeSources,attemptedSourceUrls,
+    mime=>video.canPlayType(mime),4);
+  if(!next)return false;
+  fallbackAttempts++;
+  const picker=$('#player-source');
+  picker.value=String(next.index);
+  sourceSelected(String(next.index),{fallback:true});
+  notice('تعذر تشغيل المصدر السابق؛ جاري تجربة بديل '+fallbackAttempts+' من 3…');
+  return true;
 }
 async function subtitleSelected(url){
   const request=++subtitleToken;
@@ -246,12 +281,20 @@ $('#player-subtitles').addEventListener('change',e=>subtitleSelected(e.target.va
 $('#subtitle-offset').addEventListener('input',e=>adjustCues(e.target.value));
 $('#close-player').addEventListener('click',hidePlayer);
 $('#play-demo').addEventListener('click',startDemo);
-$('#play-custom').addEventListener('click',()=>{const url=$('#custom-stream').value.trim();if(!extensions.test(url))notice('ملاحظة: يفضل رابط MP4 أو HLS بصيغة m3u8 قابل للتشغيل بالمتصفح.');playLink(url,'رابط الفيديو الخاص بك');});
+$('#play-custom').addEventListener('click',()=>{
+  selectedSourceUrl=null;
+  const url=$('#custom-stream').value.trim();
+  if(!extensions.test(url))notice('ملاحظة: يفضل رابط MP4 أو HLS بصيغة m3u8 قابل للتشغيل بالمتصفح.');
+  playLink(url,'رابط الفيديو الخاص بك');
+});
 $('#custom-stream').addEventListener('keydown',e=>{if(e.key==='Enter')$('#play-custom').click();});
-$('#local-video').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;resetVideo();mediaUrl=URL.createObjectURL(file);video.src=mediaUrl;showVideo();$('#player-title').textContent=file.name;video.play().catch(()=>{});notice('تشغيل ملف محلي من جهازك');e.target.value='';});
+$('#local-video').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;selectedSourceUrl=null;resetVideo();mediaUrl=URL.createObjectURL(file);video.src=mediaUrl;showVideo();$('#player-title').textContent=file.name;video.play().catch(()=>{});notice('تشغيل ملف محلي من جهازك');e.target.value='';});
 $('#local-subtitle').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>3*1024*1024)throw new Error('ملف الترجمة كبير جدًا');const ticket=subtitleToken;const raw=await file.text();if(ticket===subtitleToken)loadSubtitle(raw,file.name,/\bar\b|arabic/i.test(file.name)?'ar':'en')}catch(error){notice(error.message)}e.target.value='';});
 video.addEventListener('error',()=>{
   if(!video.error)return;
+  // Do not let a stale error from an old URL switch the current movie source.
+  const reported=video.currentSrc||video.src;
+  if(selectedSourceUrl && reported===selectedSourceUrl && tryFallbackSource())return;
   const isHls=/\.m3u8(?:[?#]|$)/i.test(video.currentSrc||video.src);
   notice(isHls
     ? 'تعذر تشغيل HLS. قد يكون الرابط محميًا، أو يحتاج Referer أو ترويسات لا يسمح المتصفح بإرسالها.'
