@@ -63,6 +63,34 @@ jobs:
               sources:result.body.count,qualities:result.body.sources.map(s=>s.quality)});
           }
           console.log('PRODUCTION_FOUR_FILM_JS_READINESS '+JSON.stringify(readiness));
+          const tears=await read('/api/free-film?id=tears-of-steel');
+          console.log('TEARS_ORIGINAL_SOURCES '+JSON.stringify(tears.body.sources.map(s=>({
+            quality:s.quality,host:new URL(s.url).hostname,
+            sourcePage:s.sourcePage,license:s.licenseUrl
+          }))));
+          for(const media of tears.body.sources.slice(0,2)){
+            const title=decodeURIComponent(new URL(media.sourcePage).pathname.replace(/^\\/wiki\\//,'')).replace(/_/g,' ');
+            const api=new URL('https://commons.wikimedia.org/w/api.php');
+            for(const [k,v] of Object.entries({
+              action:'query',format:'json',formatversion:'2',
+              titles:title,prop:'videoinfo',viprop:'url|derivatives'
+            }))api.searchParams.set(k,v);
+            const res=await fetch(api,{
+              headers:{'User-Agent':'MOOSAWeb/0.1 (https://github.com/MooOsa1/MOOSA-CloudStream; licensed media diagnostic)'},
+              signal:AbortSignal.timeout(8000)
+            });
+            assert.equal(res.status,200);
+            const data=await res.json();
+            const pages=data.query?.pages||[];
+            const derivatives=pages[0]?.videoinfo?.[0]?.derivatives||[];
+            console.log('TEARS_LICENSED_DERIVATIVES '+JSON.stringify({
+              title,variants:derivatives.filter(x=>x.height>=720).map(x=>({
+                format:x.type,quality:x.height,key:x.transcodekey,
+                cdn:x.src?new URL(x.src).hostname:null
+              }))
+            }));
+          }
+
           console.log('PRODUCTION_MOOSA_WEB_SMOKE '+JSON.stringify({
             health:health.body.status,sintelApiStatus:demo.status,
             sintelJsState:demo.body.state,
