@@ -38,3 +38,13 @@ footer{padding:26px 4.3%;border-top:1px solid #26282e;display:flex;flex-wrap:wra
 .bridge-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:17px}
 .bridge-play-status{background:#203029;border-color:#3a5748}
 @media(max-width:650px){.bridge-launch{min-width:40px;padding:10px 8px}.bridge-launch span{font-size:0}.bridge-launch span::before{content:"◎";font-size:22px}.bridge-panel{padding:24px 18px}.bridge-code-row code{font-size:16px;letter-spacing:1px}.bridge-actions .btn{white-space:normal;flex:1}}
+
+/* Mobile player source controls: native iOS picker stays disabled when empty. */
+.player-field select:disabled{opacity:.58;cursor:not-allowed;pointer-events:none}
+@media(max-width:650px){
+  .player-field:first-child,.player-field:last-child{grid-column:1/-1}
+  .player-settings select{font-size:16px;min-height:46px}
+  .player-field{min-width:0}
+  .player-panel{padding-bottom:max(20px,env(safe-area-inset-bottom))}
+  .server-play-status{line-height:1.8}
+}

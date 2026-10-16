@@ -1,4 +1,5 @@
-import { appendPlayerSources } from './player.js';
+import { appendPlayerSources, markNoAutomaticSources } from './player.js';
+import { describeSourceResolution } from './source-diagnostics.js';
 let generation=0;
 let currentAbort=null;
 const $=query=>document.querySelector(query);
@@ -35,12 +36,18 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
     const sources=Array.isArray(result.sources)?result.sources:[];
     if(sources.length){
       appendPlayerSources(sources);
-      message('تم العثور على '+sources.length+' مصدر HD أو أعلى. التشغيل يعتمد على توافق المتصفح.');
-    }else message('ما حصلنا رابط مشاهدة متوافقًا ومصرحًا به لهذا العنوان. تقدر تستخدم رابطك الخاص أو ملفًا محليًا.');
+      message(describeSourceResolution(result));
+    } else {
+      markNoAutomaticSources();
+      message(describeSourceResolution(result));
+    }
   }catch(error){
-    if(job===generation)message(error.name==='TimeoutError'?
-      'انتهت مهلة البحث؛ حاول مرة ثانية لاحقًا.':
-      'تعذر جلب السيرفرات: '+error.message);
+    if(job===generation) {
+      markNoAutomaticSources();
+      message(error.name==='TimeoutError'?
+        'انتهت مهلة البحث؛ ما حصلنا روابط مؤكدة. جرّب مرة ثانية لاحقًا.':
+        'تعذر البحث عن السيرفرات: '+error.message);
+    }
   }finally {
     if(job===generation)currentAbort=null;
   }

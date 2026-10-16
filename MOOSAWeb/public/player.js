@@ -97,9 +97,12 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   activeSources=sources;
   resetVideo();
   $('#player-title').textContent=title;
-  const options=$('#player-source');options.replaceChildren(new Option('اختر مصدرًا مصرّحًا به',''));
+  const options=$('#player-source');
+  options.replaceChildren(new Option(sources.length?'اختر مصدرًا مصرّحًا به':'لا توجد سيرفرات متاحة',''));
+  options.disabled=!sources.length;
   for(let i=0;i<sources.length;i++)options.add(new Option(sources[i].name||`مصدر ${i+1}`,String(i)));
   $('#player-subtitle').textContent=sources.length?`${sources.length} مصادر مصرّح بها`:'لا يوجد مصدر تلقائي مضاف لهذا العنوان';
+  $('#automatic-source-status').textContent='يبدأ البحث تلقائيًا عند اختيار فيلم أو حلقة.';
   $('#overlay').classList.remove('hidden');$('#player-panel').classList.remove('hidden');
   notice('اختر مصدرًا مصرحًا به أو استخدم فيديو الاختبار الحر. ملفات HLS تتطلب CORS من السيرفر.');
   $('#close-player').focus();
@@ -123,6 +126,7 @@ export function appendPlayerSources(items) {
     added++;
   }
   if (!added) return;
+  picker.disabled=false;
   activeSources.sort((a,b) => (Number(b.quality)||0)-(Number(a.quality)||0));
   picker.replaceChildren(new Option('اختر السيرفر',''));
   for (let i=0;i<activeSources.length;i++) {
@@ -137,6 +141,16 @@ export function appendPlayerSources(items) {
     sourceSelected('0');
   }
   $('#player-subtitle').textContent=activeSources.length + ' مصدر متاح • الجودة حسب السيرفر';
+}
+
+export function markNoAutomaticSources(){
+  // Prevent iOS Safari from opening a native picker containing only an
+  // empty placeholder. No playable URL exists until actual sources arrive.
+  if(activeSources.length||$('#player-panel').classList.contains('hidden'))return;
+  const picker=$('#player-source');
+  picker.replaceChildren(new Option('لا توجد سيرفرات متاحة',''));
+  picker.disabled=true;
+  $('#player-subtitle').textContent='لا توجد سيرفرات مشاهدة لهذا العنوان حاليًا';
 }
 
 export function startDemo(){
