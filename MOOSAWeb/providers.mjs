@@ -122,7 +122,15 @@ export async function fromWebAddons(meta, {fetchImpl=fetch,addons=configuredAddo
     if(!secureHttpUrl(manifestUrl))return [];
     const manifest=await getJson(manifestUrl,fetchImpl,3200);
     const compatible=Array.isArray(manifest.types)&&manifest.types.includes(type)&&
-      Array.isArray(manifest.resources)&&manifest.resources.some(r=>r==='stream'||r?.name==='stream');
+      Array.isArray(manifest.resources)&&manifest.resources.some(r=>{
+        if(r==='stream')return true;
+        if(r?.name!=='stream')return false;
+        // CineStream custom HTTPS addons may expose only movie OR series
+        // streams through an object resource. Never query a disallowed type.
+        return (!Array.isArray(r.types)||r.types.includes(type)) &&
+          (!Array.isArray(r.idPrefixes)||r.idPrefixes.some(p=>
+            typeof p==='string'&&meta.imdbId.startsWith(p)));
+      });
     if(!compatible || (Array.isArray(manifest.idPrefixes) &&
        manifest.idPrefixes.length && !manifest.idPrefixes.some(p=>meta.imdbId.startsWith(p))))return [];
     const path=manifestUrl.slice(0,-'manifest.json'.length);
@@ -134,6 +142,20 @@ export async function fromWebAddons(meta, {fetchImpl=fetch,addons=configuredAddo
       // magnet URIs or YouTube embeds as browser-playable video files.
       const link=secureHttpUrl(stream?.url);
       if(!link || !EXT_VIDEO.test(link.split('?')[0]))continue;
+      // Native CloudStream supports request headers in its extractor links,
+      // but Safari's HTML5 video element cannot attach Referer, Cookie or
+      // Authorization headers to arbitrary media requests. Fail closed.
+      const protectedHeaders=[
+        stream?.headers,
+        stream?.behaviorHints?.headers,
+        stream?.behaviorHints?.proxyHeaders?.request
+      ];
+      if(protectedHeaders.some(h=>h && typeof h==='object' &&
+        Object.entries(h).some(([key,val])=>
+          /^(?:referer|origin|cookie|authorization|proxy-authorization|x-api-key)$/i.test(key) &&
+          typeof val==='string'&&val.trim())))continue;
+      if(stream?.drm || stream?.referer || stream?.cookie ||
+         stream?.behaviorHints?.notWebReady===true)continue;
       const label=String(stream.name||'')+' '+String(stream.title||'');
       const quality=declaredQuality(label) || Number(stream?.behaviorHints?.videoHeight) || 0;
       const source=cleanStream({
