@@ -11,6 +11,7 @@
  */
 import { queryRemoteEngine } from './cloudstream-engine.mjs';
 import { validateExternalArchiveStream } from './archive-stream-verifier.mjs';
+import { collectStremioAddonSubtitles } from './web-stremio-subtitles.mjs';
 import { fromCommons } from './commons-provider.mjs';
 import { augmentCatalogCommonsWithNativeJs, nativeJsFilmForCatalog, nativeJsEngine } from './native-js-catalog-runtime.mjs';
 
@@ -243,8 +244,15 @@ export async function resolveWebSources(meta,opts={}) {
   const nativePending=nativeFilm?Promise.resolve().then(()=>
     (opts.jsLoad||((slug)=>nativeJsEngine.load(slug)))(nativeFilm.slug)
   ).catch(()=>null):null;
+  const subtitleAddons=opts.addons??configuredAddons();
   const pending=Promise.allSettled([
-    fromWebAddons(meta,opts),fromArchive(meta,opts),fromCommons(meta,opts),queryRemoteEngine(meta,opts)
+    fromWebAddons(meta,opts),fromArchive(meta,opts),fromCommons(meta,opts),queryRemoteEngine(meta,opts),
+    collectStremioAddonSubtitles(meta,{
+      fetchImpl:opts.fetchImpl||fetch,addons:subtitleAddons,
+      // Subs are an optional extra and cannot hold the movie source lookup
+      // hostage if a third-party HTTP addon is down.
+      deadlineMs:2800
+    })
   ]).then(async res=>{
     const commons=res[2]?.status==='fulfilled'?res[2].value:[];
     const enhanced=await augmentCatalogCommonsWithNativeJs(meta,commons,{
@@ -252,7 +260,18 @@ export async function resolveWebSources(meta,opts={}) {
     });
     const byProvider=res.flatMap((r,i)=>
       i===2?enhanced.sources:(r.status==='fulfilled'?r.value:[]));
-    const sources=uniqueSort(byProvider);
+    const subtitleResults=res[4]?.status==='fulfilled'?res[4].value:[];
+    // Subtitles are keyed by the exact IMDb movie or season/episode used for
+    // this lookup, not a fuzzy movie title. Only attach them to an existing
+    // permitted stream for that exact selection; never create fake sources.
+    const sources=uniqueSort(byProvider).map(source=>{
+      if(!subtitleResults.length)return source;
+      const known=new Set(source.subtitles.map(s=>s.url));
+      const additional=subtitleResults.filter(s=>!known.has(s.url));
+      return {...source,subtitles:subtitleList([
+        ...source.subtitles,...additional
+      ])};
+    });
     if(state.size>250)state.delete(state.keys().next().value);
     state.set(key,{sources,expiry:Date.now()+(sources.length?300_000:90_000)});
     return sources;
