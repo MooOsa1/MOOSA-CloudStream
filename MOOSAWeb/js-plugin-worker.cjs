@@ -8,6 +8,7 @@
  */
 'use strict';
 const path=require('node:path');
+const {approvedMedia}=require('./js-approved-films.cjs');
 
 const modules=Object.freeze({
   'licensed-fixture':path.resolve(__dirname,'tests/fixtures/js-licensed-provider.cjs'),
@@ -30,9 +31,9 @@ process.stdin.on('end',async()=>{
       throw new Error('unknown_provider');
     }
     const meta=data.meta;
-    if(!meta || meta.media!=='movie'||meta.title!=='Big Buck Bunny'||
-      meta.originalTitle!=='Big Buck Bunny' ||
-      typeof meta.id!=='number' || !Number.isSafeInteger(meta.id)){
+    const fixtureAllowed=meta?.media==='movie' && meta.title==='Big Buck Bunny' &&
+      meta.originalTitle==='Big Buck Bunny' && Number.isSafeInteger(meta.id) && meta.id>0;
+    if(data.provider==='licensed-fixture'?!fixtureAllowed:!approvedMedia(meta)){
       throw new Error('unapproved_sample');
     }
     const loaded=require(modules[data.provider]);
