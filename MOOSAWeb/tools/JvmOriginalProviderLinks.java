@@ -87,6 +87,7 @@ public final class JvmOriginalProviderLinks {
             Object unit=Class.forName("kotlin.Unit",true,loader).getField("INSTANCE").get(null);
             AtomicInteger links=new AtomicInteger(0),subs=new AtomicInteger(0),hdLinks=new AtomicInteger(0);
             Set<String> videoHosts=ConcurrentHashMap.newKeySet();
+            Set<String> candidateUrls=ConcurrentHashMap.newKeySet();
             Object linkCallback=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{fn1},(proxy,method,a)->{
                 if("invoke".equals(method.getName())&&a!=null&&a.length==1&&a[0]!=null){
                     links.incrementAndGet();
@@ -95,7 +96,11 @@ public final class JvmOriginalProviderLinks {
                         Object raw=link.getClass().getMethod("getUrl").invoke(link);
                         URI uri=URI.create(String.valueOf(raw));
                         String host=uri.getHost();
-                        if(host!=null&&uri.getScheme().equalsIgnoreCase("https"))videoHosts.add(host.toLowerCase());
+                        if(host!=null&&uri.getScheme().equalsIgnoreCase("https")){
+                            videoHosts.add(host.toLowerCase());
+                            if(uri.getPort()==-1 && uri.getUserInfo()==null && candidateUrls.size()<12)
+                                candidateUrls.add(uri.toString());
+                        }
                     }catch(Throwable ignored){}
                     try{
                         Object q=link.getClass().getMethod("getQuality").invoke(link);
@@ -125,7 +130,26 @@ public final class JvmOriginalProviderLinks {
             // Do not equate callback URLs with media playback. We deliberately do
             // not print, store or proxy the signed candidate URLs here.
             if(links.get()==0){System.out.println("ORIGINAL_LINKS_NO_CANDIDATES");System.exit(15);return;}
+            // Keep URL tokens strictly within this one ephemeral CI runner.
+            // Never print, publish as an artifact, or deploy these raw links.
+            Path candidateFile=Path.of("/tmp/moosa-jvm/cinestream-candidates.b64");
+            List<String> encoded=new ArrayList<>();
+            for(String url:candidateUrls){
+                if(encoded.size()>=12)break;
+                encoded.add(java.util.Base64.getEncoder().encodeToString(
+                    url.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            }
+            Files.write(candidateFile,encoded,java.nio.charset.StandardCharsets.UTF_8);
+            try{
+                Files.setPosixFilePermissions(candidateFile,
+                    java.util.Set.of(java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                                     java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
+            }catch(UnsupportedOperationException ignored){}
             System.out.println("ORIGINAL_LINKS_CANDIDATES_NOT_BROWSER_VERIFIED");
+            System.out.println("ORIGINAL_LINKS_PRIVATE_PROBE_INPUT_COUNT: "+encoded.size());
+            // HTTP client/coroutines create non-daemon threads. End this
+            // isolated JVM only after truthful callback results are recorded.
+            System.exit(0);
         }
     }
 }
