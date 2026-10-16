@@ -7,6 +7,7 @@ on:
       - 'MOOSAWeb/tools/JvmOriginalProviderLoad.java'
       - 'MOOSAWeb/tools/JvmOriginalProviderLinks.java'
       - 'MOOSAWeb/tests/original-provider-media-proof.mjs'
+      - 'MOOSAWeb/tests/original-cinestream-browser.e2e.mjs'
       - 'MOOSAWeb/real-hls-segment-probe.mjs'
       - 'MOOSAWeb/tests/cinestream-vaplayer.test.mjs'
       - 'MOOSAWeb/headless-jvm-shims/**'
@@ -28,6 +29,14 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare real Chrome browser and HLS playback library before extracting URLs
+        run: |
+          cd MOOSAWeb
+          npm install --no-save --no-package-lock playwright@1.56.1 hls.js@1.6.15
+          npx playwright install --with-deps chrome
       - name: Fetch official JVM-capable CloudStream library and CineStream DEX
         run: |
           set -euo pipefail
@@ -105,3 +114,16 @@ jobs:
           set -euo pipefail
           node --version
           node MOOSAWeb/tests/original-provider-media-proof.mjs
+      - name: Decode actual original CineStream HLS in real Chrome
+        run: |
+          set -euo pipefail
+          cd MOOSAWeb
+          node tests/original-cinestream-browser.e2e.mjs
+      - name: Upload only decoded video-frame evidence (never URLs)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-cinestream-sintel-browser-frame
+          path: MOOSAWeb/browser-artifacts/original-cinestream-sintel-frame.png
+          if-no-files-found: ignore
+          retention-days: 3

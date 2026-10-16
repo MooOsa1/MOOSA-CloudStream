@@ -6,7 +6,7 @@
  * Reject private DNS, non-HTTPS, redirects, credentials, no-CORS and DRM.
  * A successful first segment is NOT proof of full video decoding in Safari.
  */
-import {readFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
 import {probeHlsFirstSegment} from '../real-hls-segment-probe.mjs';
@@ -133,6 +133,13 @@ async function diagnoseCrossHost(root){
   const verified=await probeHlsFirstSegment(root,{
     allowedHosts:safeHosts,timeoutMs
   });
+  if(verified.ok && verified.playableUrl){
+    // Signed URL never enters workflow logs or artifacts. Only the next test
+    // in this same isolated runner receives the exact segment-verified HLS.
+    await writeFile('/tmp/moosa-jvm/verified-cinestream-hls.b64',
+      Buffer.from(verified.playableUrl,'utf8').toString('base64'),
+      {mode:0o600});
+  }
   return {
     status:verified.ok?'first_real_video_segment':'cross_host_still_unplayable',
     segmentHost:host,
