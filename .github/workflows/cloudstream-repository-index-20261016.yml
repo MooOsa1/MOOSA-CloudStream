@@ -4,6 +4,7 @@ on:
     branches: [experiment/cloudstream-jvm-engine-20261016]
     paths:
       - 'MOOSAJVM/cloudstream-repository.mjs'
+      - 'MOOSAJVM/stage-cloudstream-plugin.mjs'
       - 'MOOSAJVM/tests/repository.test.mjs'
       - '.github/workflows/cloudstream-repository-index-20261016.yml'
   workflow_dispatch:
@@ -55,3 +56,18 @@ jobs:
             }));
           }
           NODE
+      - name: Stage original CineStream and StreamPlay without hardcoded Java provider classes
+        shell: bash
+        run: |
+          node MOOSAJVM/stage-cloudstream-plugin.mjs \
+            https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/plugins.json \
+            SaurabhKaperwan/CSX CineStream | tee /tmp/moosa-staged-cinestream.log
+          node MOOSAJVM/stage-cloudstream-plugin.mjs \
+            https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/repo.json \
+            phisher98/cloudstream-extensions-phisher StreamPlay | tee /tmp/moosa-staged-streamplay.log
+          for name in cinestream streamplay; do
+            file="$(sed -n 's/.*"stagedFile":"\([^"]*\)".*/\1/p' "/tmp/moosa-staged-$name.log")"
+            test -n "$file"
+            unzip -Z1 "$file" | grep -qx classes.dex
+            echo "MOOSA_CS3_STAGING_VERIFIED plugin=$name dexPresent=true"
+          done
