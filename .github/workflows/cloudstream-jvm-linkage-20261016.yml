@@ -87,6 +87,16 @@ jobs:
           timeout 45 node MOOSAJVM/headless-bridge-ci.mjs "$runtime" \
             /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
             /tmp/converted/CineStream.jar
+      - name: End-to-end local HTTP integration Node to original CineStream JVM metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "$runtime" MOOSAJVM/GenericProviderProbe.java
+          node MOOSAJVM/test-headless-http.mjs \
+            "$runtime" \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/CineStream.jar
       - name: Observe real linking blockers on unmodified original CineStream provider
         shell: bash
         run: |
