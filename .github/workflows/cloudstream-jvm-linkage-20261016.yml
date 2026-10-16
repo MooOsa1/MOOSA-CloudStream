@@ -77,6 +77,16 @@ jobs:
             /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
             /tmp/converted/CineStream.jar CineStream | tee /tmp/cinestream-discovery.log
           grep -F 'name=com.megix.CineStreamProvider' /tmp/cinestream-discovery.log
+      - name: Prove loopback HTTP bridge from MOOSA-style Node request to exact original CineStream JVM metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          node --check MOOSAJVM/headless-http.mjs
+          node --check MOOSAJVM/headless-bridge-ci.mjs
+          timeout 45 node MOOSAJVM/headless-bridge-ci.mjs "$runtime" \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/CineStream.jar
       - name: Observe real linking blockers on unmodified original CineStream provider
         shell: bash
         run: |
