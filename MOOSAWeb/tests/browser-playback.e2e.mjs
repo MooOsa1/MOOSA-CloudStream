@@ -56,7 +56,7 @@ async function untilPlaying(label,timeout=24000){
 
 try {
   browser=await chromium.launch({
-    headless:true,args:['--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']
+    headless:true,channel:'chrome',args:['--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']
   });
   page=await browser.newPage({viewport:{width:1365,height:768}});
   page.on('pageerror',e=>jsErrors.push(e.message));
