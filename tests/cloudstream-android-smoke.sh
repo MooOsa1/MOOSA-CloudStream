@@ -34,11 +34,14 @@ curl --fail --location --retry 3 --connect-timeout 20 --max-time 90 -o "$RUNNER_
 echo "$(printf '%s' "$FILE_HASH" | sed 's/^sha256-//')  $RUNNER_TEMP/CineStream.cs3" | sha256sum -c -
 
 echo "[3/6] Install original CloudStream app"
-aapt dump badging "$RUNNER_TEMP/cloudstream.apk" > "$REPORT_DIR/apk-metadata.txt"
-PACKAGE="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$REPORT_DIR/apk-metadata.txt" | head -1)"
-if [[ -z "$PACKAGE" ]]; then echo "Unable to determine official APK package"; exit 1; fi
-echo "Package: $PACKAGE"
+sha256sum "$RUNNER_TEMP/cloudstream.apk" > "$REPORT_DIR/apk-sha256.txt"
 adb install -r -g "$RUNNER_TEMP/cloudstream.apk"
+# CI runner SDKs are not guaranteed to expose aapt in PATH. Read the
+# installed package ID from Android's own package manager instead.
+adb shell pm list packages -3 > "$REPORT_DIR/installed-packages.txt"
+PACKAGE="$(sed -n 's/^package:\(com\.lagradost\.cloudstream3[^[:space:]]*\)$/\1/p' "$REPORT_DIR/installed-packages.txt" | tr -d '\r' | head -1)"
+if [[ -z "$PACKAGE" ]]; then echo "Official CloudStream package not found after install"; exit 1; fi
+echo "Package: $PACKAGE"
 adb shell appops set "$PACKAGE" MANAGE_EXTERNAL_STORAGE allow || true
 
 echo "[4/6] Put hash-verified .cs3 in CloudStream's official local plugins directory"
