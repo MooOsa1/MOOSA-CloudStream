@@ -7,11 +7,11 @@
  * execute uploaded JS, remote URLs, user-provided paths or arbitrary .cs3.
  */
 'use strict';
-const {readFileSync} = require('node:fs');
 const path=require('node:path');
 
 const modules=Object.freeze({
-  'licensed-fixture':path.resolve(__dirname,'tests/fixtures/js-licensed-provider.cjs')
+  'licensed-fixture':path.resolve(__dirname,'tests/fixtures/js-licensed-provider.cjs'),
+  'commons-authorized':path.resolve(__dirname,'js-plugins/commons-authorized.cjs')
 });
 const maxInput=4096;
 let request='';
@@ -26,7 +26,7 @@ process.stdin.on('data',chunk=>{
 process.stdin.on('end',async()=>{
   try {
     const data=JSON.parse(request);
-    if(data?.provider!=='licensed-fixture' || !modules[data.provider]){
+    if(!['licensed-fixture','commons-authorized'].includes(data?.provider) || !modules[data.provider]){
       throw new Error('unknown_provider');
     }
     const meta=data.meta;
