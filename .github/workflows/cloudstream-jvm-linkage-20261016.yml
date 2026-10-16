@@ -87,6 +87,7 @@ jobs:
           test -s MOOSAJVM/GenericProviderProbe.class
           node --check MOOSAJVM/headless-http.mjs
           node --check MOOSAJVM/headless-bridge-ci.mjs
+          javac -cp "$runtime" MOOSAJVM/GenericProviderProbe.java
           timeout 45 node MOOSAJVM/headless-bridge-ci.mjs "$runtime" \
             /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
             /tmp/converted/CineStream.jar
