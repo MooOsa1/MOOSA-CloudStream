@@ -63,6 +63,7 @@ public final class GenericProviderProbe {
             "[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+") ||
             (!action.equals("inspect")&&!action.equals("load-licensed-sintel")))
             throw new IllegalArgumentException("invalid_provider_or_action");
+        int exitCode=0;
         try(URLClassLoader loader=new URLClassLoader(new URL[]{
             Path.of(args[0]).toUri().toURL(),Path.of(args[1]).toUri().toURL()
         },ClassLoader.getSystemClassLoader())){
@@ -100,17 +101,17 @@ public final class GenericProviderProbe {
                         System.out.println(marker+" phase=load result="+(exact?"exact":"mismatch")+
                             " title="+safe(name)+" kind="+safe(result.getClass().getSimpleName())+
                             " expectedImdb="+SINTEL_IMDB);
-                        if(!exact)System.exitCode=1;
+                        if(!exact)exitCode=1;
                     }
                 }
             }catch(Throwable err){
                 System.out.println("MOOSA_GENERIC_PROVIDER phase="+safe(action)+
                     " result=blocked reason="+failure(err));
-                System.exit(2);
+                exitCode=2;
             }
         }finally {
             // NiceHTTP / coroutine dispatcher threads may outlive single-shot load.
-            System.exit(0);
+            System.exit(exitCode);
         }
     }
 }
