@@ -1,0 +1,44 @@
+name: Check live iPhone Elephants sources
+on:
+  push:
+    branches: [diagnostics/ios-elephants-live-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test production catalog metadata flags
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://moosa-web.onrender.com';
+          async function get(path){
+            const response=await fetch(root+path,{headers:{Accept:'application/json'},
+              signal:AbortSignal.timeout(23000)});
+            assert.equal(response.status,200,'HTTP '+response.status+' '+path);
+            return await response.json();
+          }
+          const health=await get('/healthz');
+          assert.equal(health.status,'ok');
+          const r=await get('/api/search?q=Elephants%20Dream');
+          const film=r.results.find(item=>item.media_type==='movie' &&
+            String(item.original_title||item.title).toLowerCase()==='elephants dream');
+          assert.ok(film,'Elephants Dream must appear in ordinary catalog search');
+          const resolved=await get('/api/resolve?media=movie&id='+film.id);
+          const variants=resolved.sources.filter(s=>s.sourcePage?.includes('Elephants_Dream'));
+          console.log('LIVE_ELEPHANTS_SOURCES '+JSON.stringify({
+            tmdbId:film.id,total:resolved.sources.length,commons:variants.map(s=>({
+              name:s.name,quality:s.quality,codecOptimized:s.codecOptimized===true,
+              license:s.licenseUrl,sourcePage:s.sourcePage
+            }))
+          }));
+          assert.ok(variants.some(s=>s.codecOptimized===true),
+            'Missing optimized codec metadata after normal catalog integration');
+          NODE
