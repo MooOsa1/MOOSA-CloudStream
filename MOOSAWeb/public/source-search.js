@@ -1,4 +1,4 @@
-import { appendPlayerSources, markNoAutomaticSources } from './player.js';
+import { appendPlayerSources, markNoAutomaticSources, showPlayer } from './player.js';
 import { describeSourceResolution } from './source-diagnostics.js';
 let generation=0;
 let currentAbort=null;
@@ -52,6 +52,35 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
     if(job===generation)currentAbort=null;
   }
 }
+async function openLicensedFullFilm(){
+  const button=$('#open-free-film');
+  if(!button||button.disabled)return;
+  button.disabled=true;
+  message('جاري البحث عن النسخة المرخّصة من فيلم Big Buck Bunny...');
+  try{
+    const response=await fetch('/api/free-film',{
+      headers:{Accept:'application/json'},
+      signal:AbortSignal.timeout(12000)
+    });
+    if(!response.ok)throw new Error('تعذر الاتصال بمكتبة الأفلام المجانية');
+    const result=await response.json();
+    const sources=Array.isArray(result.sources)?result.sources:[];
+    if(!sources.length) {
+      message('نسخة الفيلم المفتوح الترخيص غير متاحة حاليًا من Wikimedia Commons. حاول لاحقًا.');
+      return;
+    }
+    cancelAutomaticSourceSearch();
+    // Do not confuse this separate CC BY test title with the selected film.
+    showPlayer({title:'Big Buck Bunny — فيلم مجاني مستقل',sources:[]});
+    appendPlayerSources(sources);
+    message('تم العثور على '+sources.length+' نسخة من Big Buck Bunny برخصة CC BY 3.0. التشغيل يعتمد على دعم المتصفح لصيغة الفيديو.');
+  }catch(error){
+    message(error.name==='TimeoutError'?
+      'تأخر مصدر الفيلم المفتوح. حاول لاحقًا.':
+      'تعذر تحميل الفيلم المفتوح: '+error.message);
+  }finally{button.disabled=false;}
+}
 export function initAutomaticSources(){
   document.addEventListener('moosa-player-closed',cancelAutomaticSourceSearch);
+  $('#open-free-film')?.addEventListener('click',openLicensedFullFilm);
 }
