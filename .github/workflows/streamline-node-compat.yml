@@ -1,0 +1,35 @@
+name: Streamline original JS Node compatibility (mocked)
+on:
+  push:
+    branches: [experiment/nuvio-js-node-compat]
+    paths:
+      - 'MOOSAWeb/nuvio-js-adapter.mjs'
+      - 'MOOSAWeb/tests/nuvio-js-adapter.test.mjs'
+      - 'MOOSAWeb/tests/streamline-upstream.smoke.cjs'
+      - '.github/workflows/streamline-node-compat.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: moosa
+          persist-credentials: false
+      - name: Checkout pinned original Streamline JS bundle in disposable test runner only
+        uses: actions/checkout@v4
+        with:
+          repository: itsmeadarsh2008/Streamline
+          ref: 5160850f93b519755dc0878abd3c43482e3e1449
+          path: third-party/streamline
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test MOOSA's own safe Nuvio result adapter
+        run: node --test moosa/MOOSAWeb/tests/nuvio-js-adapter.test.mjs
+      - name: Test actual original Streamline Vidlink getStreams with mocked endpoints
+        run: node moosa/MOOSAWeb/tests/streamline-upstream.smoke.cjs
