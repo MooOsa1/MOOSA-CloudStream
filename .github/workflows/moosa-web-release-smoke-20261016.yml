@@ -1,0 +1,64 @@
+name: Check deployed MOOSA Web API after release
+on:
+  push:
+    branches: [diagnostics/moosa-web-release-smoke-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  production-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify actual Render public routes, not only GitHub code
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://moosa-web.onrender.com';
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          async function read(path){
+            let error;
+            for(let i=0;i<4;i++){
+              try {
+                const res=await fetch(root+path,{headers:{Accept:'application/json'},
+                  signal:AbortSignal.timeout(20000)});
+                const body=await res.json();
+                return {status:res.status,body};
+              } catch(e){error=e;await sleep(3000);}
+            }
+            throw error;
+          }
+          const health=await read('/healthz');
+          assert.equal(health.status,200);
+          assert.equal(health.body.status,'ok');
+          const demo=await read('/api/js-engine/demo?id=sintel');
+          assert.equal(demo.status,200,'Old deployment rejects approved multi-film JS parameter');
+          assert.equal(demo.body.filmId,'sintel');
+          assert.equal(demo.body.originalCloudStreamPlugins,false);
+          const unsupported=await read('/api/js-engine/demo?id=unapproved-title');
+          assert.equal(unsupported.status,400);
+          const film=await read('/api/free-film?id=elephants-dream');
+          assert.equal(film.status,200);
+          assert.equal(film.body.title,'Elephants Dream');
+          assert.ok(Array.isArray(film.body.sources));
+          const kinds=film.body.sources.map(s=>({
+            quality:s.quality,optimized:s.codecOptimized===true,
+            rights:/^https:\/\/creativecommons\.org\//.test(s.licenseUrl||''),
+            hostname:new URL(s.url).hostname
+          }));
+          assert.ok(kinds.every(x=>x.rights && x.hostname==='upload.wikimedia.org'));
+          if(film.body.available)assert.ok(kinds.some(x=>x.optimized && x.quality===1080),
+            'The official Commons 1080p transcode should remain selectable');
+          console.log('PRODUCTION_MOOSA_WEB_SMOKE '+JSON.stringify({
+            health:health.body.status,sintelApiStatus:demo.status,
+            sintelJsState:demo.body.state,
+            unsupportedParam:unsupported.status,
+            elephantsAvailable:film.body.available,
+            elephantsVersions:kinds,
+            originalPlugins:false
+          }));
+          NODE
