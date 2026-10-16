@@ -6,6 +6,7 @@ on:
       - 'MOOSAWeb/tools/JvmOriginalProviderSmoke.java'
       - 'MOOSAWeb/tools/JvmOriginalProviderLoad.java'
       - 'MOOSAWeb/tools/JvmOriginalProviderLinks.java'
+      - 'MOOSAWeb/headless-jvm-shims/**'
       - '.github/workflows/moosa-official-jvm-provider.yml'
   workflow_dispatch:
 permissions:
@@ -87,6 +88,13 @@ jobs:
       - name: Execute original CineStream loadLinks callbacks for verified licensed Sintel
         run: |
           set -euo pipefail
+          # Original CineStream references a CloudflareKiller class that is
+          # defined only in the Android app, not official common/JVM library.
+          # Compile an intentionally powerless pass-through shim: no bypass.
+          mkdir -p /tmp/moosa-jvm/shim-classes
+          javac -cp '/tmp/moosa-jvm/deps/*' -d /tmp/moosa-jvm/shim-classes \
+            MOOSAWeb/headless-jvm-shims/com/lagradost/cloudstream3/network/CloudflareKiller.java
+          jar cf /tmp/moosa-jvm/deps/moosa-jvm-shims.jar -C /tmp/moosa-jvm/shim-classes .
           javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderLinks.java
           LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
           timeout 62s java -Xmx1500m -cp /tmp/moosa-jvm JvmOriginalProviderLinks "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps
