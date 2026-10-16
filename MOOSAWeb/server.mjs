@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBridge } from './bridge.mjs';
-import { resolveWebSources } from './providers.mjs';
+import { resolveWebSources, configuredAddons } from './providers.mjs';
 import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
 import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
 import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
@@ -146,6 +146,13 @@ async function handle(req,res) {
       return json(res,200,{
         engine:'node_js',runtime:'server_native',pairingRequired:false,
         catalogIntegrated:true,
+        httpStremioSubtitles:{
+          supported:true,protocol:'stremio_subtitles_http',
+          media:['movie','series'],languages:['ar','en'],
+          configuredAddonCount:configuredAddons().length,
+          active:configuredAddons().length>0,
+          note:'Only operator-approved HTTPS addon manifests are queried. Active indicates configured addons, not proven available subtitle tracks.'
+        },
         activeReviewedProviders:[{
           id:'commons-authorized',protocol:'nuvio_getStreams',
           media:'licensed_movies_only',approvedFilmIds:supportedJsFilmIds()
