@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBridge } from './bridge.mjs';
 import { resolveWebSources } from './providers.mjs';
+import { fromCommons } from './commons-provider.mjs';
 import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -122,6 +123,19 @@ async function handle(req,res) {
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
     if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
+    if(url.pathname==='/api/free-film'){
+      // One fixed CC BY demo title; cannot search arbitrary video IDs here.
+      // This is never labeled as a source for another movie in the catalog.
+      const sources=await fromCommons({
+        media:'movie',title:'Big Buck Bunny',originalTitle:'Big Buck Bunny',
+        year:2008
+      });
+      return json(res,200,{
+        title:'Big Buck Bunny',creator:'Blender Foundation',copyright:'CC BY 3.0',
+        note:'Separate open-licensed demonstration film; not a source for the selected catalog movie.',
+        sources,count:sources.length
+      });
+    }
     if(url.pathname==='/api/cloudstream/repositories') {
       const results=await inspectRepositories();
       return json(res,200,{
