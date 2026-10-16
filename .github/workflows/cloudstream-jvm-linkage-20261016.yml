@@ -49,12 +49,13 @@ jobs:
           chmod +x "$converter"
           echo 'DEX2JAR_MEMORY_SETTINGS:'
           grep -nE 'Xmx|JAVA_OPTS|java ' "$converter" | head -n 12 || true
-          root=https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds
-          curl -fLsS --retry 2 "$root/plugins.json" -o /tmp/index.json
-          digest="$(jq -r --arg n CineStream --arg u "$root/CineStream.cs3" '[.[]|select(.internalName==$n and .url==$u)]|sort_by(.version)|last|.fileHash // empty' /tmp/index.json)"
-          [[ "$digest" =~ ^sha256-[a-f0-9]{64}$ ]]
-          curl -fLsS --retry 2 "$root/CineStream.cs3" -o /tmp/CineStream.cs3
-          echo "$(echo "$digest"|sed s/^sha256-//)  /tmp/CineStream.cs3"|sha256sum --check
+          node MOOSAJVM/stage-cloudstream-plugin.mjs \
+            https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/plugins.json \
+            SaurabhKaperwan/CSX CineStream > /tmp/moosa-cinestream-stage.log
+          staged="$(sed -n 's/.*"stagedFile":"\([^"]*\)".*/\1/p' /tmp/moosa-cinestream-stage.log)"
+          test -s "$staged"
+          cp "$staged" /tmp/CineStream.cs3
+          echo "GENERIC_REPOSITORY_PIPELINE=CineStream_SHA256_VERIFIED"
           unzip -p /tmp/CineStream.cs3 classes.dex >/tmp/CineStream.dex
           "$converter" --force --output /tmp/converted/CineStream.jar /tmp/CineStream.dex
           test -s /tmp/converted/CineStream.jar
@@ -160,12 +161,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          root=https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds
-          curl -fLsS --retry 2 "$root/plugins.json" -o /tmp/streamplay-plugins.json
-          digest="$(jq -r --arg n StreamPlay --arg u "$root/StreamPlay.cs3" '[.[]|select(.internalName==$n and .url==$u)]|sort_by(.version)|last|.fileHash // empty' /tmp/streamplay-plugins.json)"
-          [[ "$digest" =~ ^sha256-[a-f0-9]{64}$ ]]
-          curl -fLsS --retry 2 "$root/StreamPlay.cs3" -o /tmp/StreamPlay.cs3
-          echo "$(echo "$digest"|sed s/^sha256-//)  /tmp/StreamPlay.cs3"|sha256sum --check
+          node MOOSAJVM/stage-cloudstream-plugin.mjs \
+            https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/repo.json \
+            phisher98/cloudstream-extensions-phisher StreamPlay > /tmp/moosa-streamplay-stage.log
+          staged="$(sed -n 's/.*"stagedFile":"\([^"]*\)".*/\1/p' /tmp/moosa-streamplay-stage.log)"
+          test -s "$staged"
+          cp "$staged" /tmp/StreamPlay.cs3
+          echo "GENERIC_REPOSITORY_PIPELINE=StreamPlay_SHA256_VERIFIED"
           unzip -p /tmp/StreamPlay.cs3 classes.dex > /tmp/StreamPlay.dex
           converter="$(find /tmp/dex-tools -name d2j-dex2jar.sh -print -quit)"
           sed -i 's/-Xmx2048m/-Xmx4096m/g' "$converter"
