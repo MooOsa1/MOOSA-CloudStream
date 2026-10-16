@@ -2,7 +2,7 @@ name: MOOSA Web Browser Playback E2E
 
 on:
   push:
-    branches: [test/browser-video-playback-e2e]
+    branches: [main]
     paths:
       - 'MOOSAWeb/tests/browser-playback.e2e.mjs'
       - '.github/workflows/moosa-browser-playback.yml'

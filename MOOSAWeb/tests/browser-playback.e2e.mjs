@@ -71,8 +71,11 @@ try {
       body:await readFile(path.resolve('node_modules/hls.js/dist/hls.min.js'))}));
   await page.route(/^https:\/\/video\.moosa-e2e\.invalid\/.*/,async route=>{
     const pathname=new URL(route.request().url()).pathname;
-    if(pathname==='/playlist.m3u8')
+    if(pathname==='/playlist.m3u8'){
+      // Valid but delayed playlist must not trigger false playback errors.
+      await new Promise(resolve=>setTimeout(resolve,500));
       return serveMedia(route,'playlist.m3u8','application/vnd.apple.mpegurl');
+    }
     if(/^\/clip-\d+\.ts$/.test(pathname))
       return serveMedia(route,pathname.slice(1),'video/mp2t');
     return route.fulfill({status:403,
@@ -88,7 +91,13 @@ try {
 
   await page.locator('#custom-stream').fill('https://video.moosa-e2e.invalid/playlist.m3u8');
   await page.locator('#play-custom').click();
+  await page.waitForTimeout(200);
+  assert.ok(!/تعذر تشغيل HLS/.test(
+    await page.locator('#player-message').textContent()),
+    'Valid delayed manifest must not show a premature HLS failure');
   await untilPlaying('HLS M3U8 + MPEG-TS');
+  assert.match(await page.locator('#player-message').textContent(),/يُشغّل الآن/,
+    'Indicator reflects video actually playing');
   await page.screenshot({path:path.join(artifacts,'hls-playing.png')});
 
   await page.locator('#custom-stream').fill('https://video.moosa-e2e.invalid/broken.m3u8');

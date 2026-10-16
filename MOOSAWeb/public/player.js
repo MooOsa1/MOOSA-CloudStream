@@ -88,14 +88,33 @@ async function playLink(url, label='Video'){
       const Hls=await loadHls();
       if(currentPlayback!==playbackToken)return;
       if(!Hls.isSupported())throw new Error('هذا المتصفح لا يدعم تشغيل HLS');
-      hls=new Hls({enableWorker:true,capLevelToPlayerSize:true,backBufferLength:40});
-      hls.loadSource(url);hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED,()=>updateQuality());
-      hls.on(Hls.Events.ERROR,(_event,data)=>{
+      const active=new Hls({enableWorker:true,capLevelToPlayerSize:true,backBufferLength:40});
+      hls=active;
+      // Attach MediaSource before requesting the manifest and playing.
+      // Calling video.play before attachment can produce NotSupportedError
+      // during perfectly valid slow HLS startup.
+      active.on(Hls.Events.MEDIA_ATTACHED,()=>{
+        if(currentPlayback===playbackToken)active.loadSource(url);
+      });
+      active.on(Hls.Events.MANIFEST_PARSED,()=>{
+        if(currentPlayback!==playbackToken)return;
+        updateQuality();
+        void video.play().catch(error=>{
+          if(currentPlayback!==playbackToken || video.error)return;
+          if(error?.name==='NotAllowedError')
+            notice('الفيديو جاهز. اضغط ▶ لتبدأ.');
+          // Real fatal HLS errors remain under Hls.Events.ERROR handling.
+        });
+      });
+      active.on(Hls.Events.ERROR,(_event,data)=>{
         if(data.fatal && currentPlayback===playbackToken && !tryFallbackSource()){
           notice(`تعذر تشغيل HLS (${data.type}). قد يكون الرابط محميًا أو لا يسمح بالوصول من المتصفح.`);
         }
       });
+      active.attachMedia(video);
+      if(currentPlayback!==playbackToken)return;
+      showVideo();
+      return;
     }else{
       video.src=url;
     }
@@ -344,6 +363,10 @@ $('#play-custom').addEventListener('click',()=>{
 $('#custom-stream').addEventListener('keydown',e=>{if(e.key==='Enter')$('#play-custom').click();});
 $('#local-video').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;selectedSourceUrl=null;resetVideo();mediaUrl=URL.createObjectURL(file);video.src=mediaUrl;showVideo();$('#player-title').textContent=file.name;video.play().catch(()=>{});notice('تشغيل ملف محلي من جهازك');e.target.value='';});
 $('#local-subtitle').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>3*1024*1024)throw new Error('ملف الترجمة كبير جدًا');const ticket=subtitleToken;const raw=await file.text();if(ticket===subtitleToken)loadSubtitle(raw,file.name,/\bar\b|arabic/i.test(file.name)?'ar':'en')}catch(error){notice(error.message)}e.target.value='';});
+video.addEventListener('playing',()=>{
+  if(!$('#player-panel').classList.contains('hidden'))
+    notice('يُشغّل الآن: '+(currentMediaTitle||'الفيديو'));
+});
 video.addEventListener('error',()=>{
   if(!video.error)return;
   // Do not let a stale error from an old URL switch the current movie source.
