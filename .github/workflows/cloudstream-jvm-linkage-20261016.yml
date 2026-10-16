@@ -75,3 +75,9 @@ jobs:
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           javac -cp "$runtime" MOOSAJVM/ProviderSearchProbe.java
           timeout 44 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderSearchProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+      - name: Invoke original CineStreamProvider.load for licensed Sintel catalog metadata
+        shell: bash
+        run: |
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "$runtime" MOOSAJVM/ProviderLoadProbe.java
+          timeout 34 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLoadProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
