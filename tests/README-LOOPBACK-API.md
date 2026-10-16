@@ -15,6 +15,8 @@ The CI workflow builds the probe **only when `MOOSA_ENABLE_PROBE=1`**. The norma
 
 ## Evidence and limitations
 
+[Successful proof run: 38867153410](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/38867153410). The GitHub Actions runner connected to Android via ADB TCP forwarding, called the test endpoint and received JSON summarizing the two original extensions. CineStream searched but found 0 exact licensed-sample matches. StreamPlay found 2 exact matches, loaded one movie payload, and reported 9 candidate sources, of which 3 were declared 720p+ and 7 required Referer. No source URLs were returned from the API.
+
 [Android CI workflow](https://github.com/MooOsa1/MOOSA-CloudStream/actions/workflows/cloudstream-full-probe.yml)
 
 A passing test proves the HTTP transport and at least one genuine provider search call, not valid playback. Provider results are intentionally limited to counts and declared quality, HLS, Referer, and extra-header metadata. The actual video URLs still need authorization, CDN availability, and browser playback validation.
