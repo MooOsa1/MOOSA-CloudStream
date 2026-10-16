@@ -65,13 +65,14 @@ jobs:
           converter/dex-tools-v2.4/d2j-dex2jar.sh --force --output original-cinestream.jar classes.dex
           cat > /tmp/cloudstream-official/moosa-export.init.gradle <<'GRADLE'
           gradle.projectsEvaluated {
-            project(':library').tasks.register('copyMoosaRuntime') {
+            def lib = gradle.rootProject.project(':library')
+            lib.tasks.register('copyMoosaRuntime') {
               doLast {
                 def target = new File('/tmp/moosa-jvm/deps')
                 target.mkdirs()
-                project(':library').configurations.getByName('jvmRuntimeClasspath').files.each { artifact ->
+                lib.configurations.getByName('jvmRuntimeClasspath').files.each { artifact ->
                   if (artifact.isFile() && artifact.name.endsWith('.jar'))
-                    project(':library').copy { from artifact; into target }
+                    lib.copy { from artifact; into target }
                 }
               }
             }
