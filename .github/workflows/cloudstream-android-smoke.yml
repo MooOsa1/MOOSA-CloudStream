@@ -5,6 +5,7 @@ on:
       - experiment/android-cs3-execution-smoke
     paths:
       - tests/cloudstream-android-smoke.sh
+      - tests/cloudstream-streamplay-smoke.sh
       - .github/workflows/cloudstream-android-smoke.yml
   workflow_dispatch:
 
@@ -15,6 +16,10 @@ jobs:
   real-cs3:
     runs-on: ubuntu-latest
     timeout-minutes: 26
+    strategy:
+      fail-fast: false
+      matrix:
+        extension: [CineStream, StreamPlay]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,12 +41,12 @@ jobs:
           disk-size: 4096M
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -camera-back none -camera-front none
-          script: bash tests/cloudstream-android-smoke.sh
+          script: bash tests/cloudstream-${{ matrix.extension == 'CineStream' && 'android' || 'streamplay' }}-smoke.sh
       - name: Upload emulator evidence (even if not proven)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cinestream-original-cs3-smoke
+          name: ${{ matrix.extension }}-original-cs3-smoke
           path: smoke-artifacts/
           if-no-files-found: warn
           retention-days: 5
