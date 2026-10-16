@@ -1,0 +1,66 @@
+name: Live ordinary-catalog native JS runtime probe
+on:
+  push:
+    branches: [diagnostics/native-js-production-catalog-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check live site and exact licensed catalog movie
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://moosa-web.onrender.com';
+          async function get(path){
+            const res=await fetch(root+path,{
+              headers:{Accept:'application/json'},signal:AbortSignal.timeout(18000)
+            });
+            const json=await res.json();
+            return {status:res.status,json};
+          }
+          const [health,config,native]=await Promise.all([
+            get('/healthz'),get('/api/config'),get('/api/web-native/status')
+          ]);
+          assert.equal(health.status,200);
+          assert.equal(native.status,200,'New native endpoint not yet deployed');
+          assert.equal(native.json.catalogIntegrated,true);
+          assert.equal(native.json.pairingRequired,false);
+          assert.equal(native.json.cloudstreamCs3Supported,false);
+          console.log('PRODUCTION_NATIVE_STATUS '+JSON.stringify({
+            status:native.status,engine:native.json.engine,
+            catalogReady:config.json.catalogReady,
+            reviewedProviders:native.json.activeReviewedProviders.map(p=>p.id)
+          }));
+          if(!config.json.catalogReady){
+            console.log('CATALOG_REAL_CHECK_BLOCKED: TMDB not configured');
+          }else{
+            const listing=await get('/api/search?q=Sintel');
+            assert.equal(listing.status,200);
+            const movie=(listing.json.results||[]).find(x=>x.media_type==='movie' &&
+              String(x.original_title||x.title).toLowerCase()==='sintel' &&
+              String(x.release_date||'').startsWith('2010'));
+            if(!movie)throw Error('Sintel 2010 unavailable in site TMDB search');
+            const path='/api/resolve?media=movie&id='+movie.id;
+            const resolved=await get(path);
+            assert.equal(resolved.status,200);
+            const sources=resolved.json.sources||[];
+            const valid=sources.filter(s=>s.sourcePage?.includes('commons.wikimedia.org') &&
+              /^https:\/\/creativecommons\.org\//.test(s.licenseUrl||''));
+            assert.ok(valid.length>0,'No independently licensed film URLs found in catalog');
+            assert.ok(valid.every(s=>new URL(s.url).hostname==='upload.wikimedia.org'));
+            console.log('PRODUCTION_NATIVE_CATALOG '+JSON.stringify({
+              tmdbId:movie.id,title:movie.title,year:movie.release_date,
+              total:sources.length,licensed:valid.length,
+              nativeJs:valid.filter(x=>x.runtime==='web_native_js').length,
+              qualities:valid.map(x=>x.quality)
+            }));
+          }
+          NODE
