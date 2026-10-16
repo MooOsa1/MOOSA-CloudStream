@@ -28,7 +28,17 @@ jobs:
           gradle-version: '8.12'
       - name: Build private test extension only; do not publish
         run: |
-          MOOSA_ENABLE_PROBE=1 gradle :MOOSAProbe:make --no-daemon --stacktrace
+          for attempt in 1 2 3; do
+            if MOOSA_ENABLE_PROBE=1 gradle :MOOSAProbe:make --no-daemon --stacktrace; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "CloudStream Gradle plugin resolution failed after retries (external JitPack may be unavailable)"
+              exit 1
+            fi
+            echo "Gradle dependency resolution failed; retrying after 20 seconds (attempt $attempt/3)"
+            sleep 20
+          done
           ls -la MOOSAProbe/build/
       - name: Accelerate ephemeral Android emulator
         run: |
