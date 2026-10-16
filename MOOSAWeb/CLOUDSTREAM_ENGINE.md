@@ -62,6 +62,40 @@ Deploy a separately permissioned execution service (not the site's Render free N
 }
 \`\`\`
 
+## Actual HTTP Stremio protocol interoperability
+
+CineStream's upstream Kotlin implementation has a configurable
+HTTPS Stremio add-on interface
+(Settings.AddonType.HTTPS / invokeStreamioStreamsGlobal):
+GET /stream/movie/{imdbId}.json
+GET /stream/series/{imdbId}:{season}:{episode}.json
+
+Our **server-native** MOOSA Web exports the movie half of that HTTP
+interface, independently of any Android plugin:
+
+- Add-on root: https://moosa-web.onrender.com/api/stremio
+- Manifest: https://moosa-web.onrender.com/api/stremio/manifest.json
+- An approved stream example:
+  https://moosa-web.onrender.com/api/stremio/stream/movie/tt1727587.json
+- The exported content is currently just four separately verified
+  Creative Commons films (Big Buck Bunny, Sintel, Tears of Steel and
+  Elephants Dream). Fixed, independently matched IMDb identities
+  prevent wrong-title and TV episode responses.
+- This endpoint returns a **real Stremio manifest/stream JSON** and
+  actual metadata-licensed Wikimedia media URLs. It can be consumed by
+  clients supporting standard Stremio HTTP add-ons; it does not download
+  or execute original Android .cs3 packages.
+- No open HTTP proxy, torrent or DRM/header circumvention is provided.
+- Series, unknown titles and arbitrary user-supplied streams are unsupported
+  and cannot generate source URLs.
+
+Because CineStream's upstream uses this transport, it provides a
+first concrete protocol-level compatibility path in both ecosystems.
+To connect a different authorized Stremio HTTP addon **into** MOOSA
+Web, the existing operator-only WEB_SOURCE_ADDONS configuration is the
+corresponding inbound adapter. The endpoints are asymmetric: providing
+Stremio JSON is not running CineStream's Kotlin sources.
+
 ## Deployment boundary
 
 Use \`CLOUDSTREAM_RUNTIME_URL\` and \`CLOUDSTREAM_RUNTIME_TOKEN\` in **Render environment variables** only after a tested secure Android execution service exists. Do **not** publish a token in the GitHub repository or browser code. Never point them to an unrelated third-party endpoint.

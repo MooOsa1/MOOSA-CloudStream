@@ -1,0 +1,31 @@
+name: MOOSA Web CineStream HTTP Stremio interop live
+on:
+  pull_request:
+    paths:
+      - 'MOOSAWeb/cloudstream-stremio-interop.mjs'
+      - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/tests/stremio-live.integration.mjs'
+      - '.github/workflows/stremio-http-interop-live.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/cloudstream-stremio-interop.mjs'
+      - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/tests/stremio-live.integration.mjs'
+      - '.github/workflows/stremio-http-interop-live.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tests/stremio-live.integration.mjs
