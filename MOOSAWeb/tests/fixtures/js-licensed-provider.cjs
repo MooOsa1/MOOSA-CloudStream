@@ -7,6 +7,7 @@
 module.exports.getStreams=async function getStreams(tmdbId,mediaType,season,episode){
   if(mediaType!=='movie'||!Number.isInteger(tmdbId) ||
     season!==null||episode!==null)return [];
+  if(tmdbId===999) await new Promise(resolve=>setTimeout(resolve,1200));
   return [
     {
       name:'LicensedFixture',
