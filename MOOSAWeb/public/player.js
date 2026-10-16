@@ -234,6 +234,8 @@ export function markNoAutomaticSources(){
 }
 
 export function startDemo(){
+  document.dispatchEvent(new Event('moosa-player-opened'));
+  externalSubtitles=[];
   selectedSourceUrl=null;
   $('#player-source').value='';
   currentMediaTitle='فيديو تجريبي حر — MDN Flower (CC0)';
