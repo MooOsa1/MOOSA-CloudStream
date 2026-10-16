@@ -6,6 +6,7 @@ let hls = null;
 let mediaUrl = null;
 let subtitleUrl = null;
 let activeSources = [];
+let externalSubtitles = [];
 let currentMediaTitle='';
 let previousFocus = null;
 let cueBaseline = new Map();
@@ -117,6 +118,7 @@ async function playLink(url, label='Video'){
 }
 export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   previousFocus=document.activeElement;
+  externalSubtitles=[];
   activeSources=chooseBrowserSources(sources,navigator.userAgent);
   currentMediaTitle=title;
   selectedSourceUrl=null;
@@ -137,9 +139,49 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
 export function hidePlayer(){
   document.dispatchEvent(new Event('moosa-player-closed'));
   selectedSourceUrl=null;attemptedSourceUrls.clear();fallbackAttempts=0;
+  externalSubtitles=[];
   resetVideo();$('#player-panel').classList.add('hidden');
   if($('#detail-panel').classList.contains('hidden'))$('#overlay').classList.add('hidden');
   previousFocus?.focus?.();
+}
+function attachExternalSubtitles(source){
+  if(!externalSubtitles.length)return source;
+  const tracks=Array.isArray(source.subtitles)?source.subtitles:[];
+  const seen=new Set(tracks.map(t=>t.url));
+  return {...source,subtitles:[...tracks,...externalSubtitles.filter(t=>
+    !seen.has(t.url)&&seen.add(t.url))]};
+}
+function addSubtitleOption(optionList,track){
+  if([...optionList.options].some(option=>option.value===track.url))return;
+  const option=new Option((track.language==='ar'?'Arabic':'English')+
+    ' • '+(track.source||'Stremio')+' • '+(track.label||track.language),track.url);
+  option.dataset.label=track.label||track.language;
+  option.dataset.language=track.language;
+  optionList.add(option);
+}
+export function appendExternalSubtitles(items){
+  if($('#player-panel').classList.contains('hidden')||!Array.isArray(items))return;
+  const seen=new Set(externalSubtitles.map(x=>x.url));
+  for(const item of items.slice(0,24)){
+    if(!item||!['ar','en'].includes(item.language) ||
+       typeof item.url!=='string'||!/^https:\/\//i.test(item.url) ||
+       !/\.(?:vtt|srt)(?:[?#]|$)/i.test(item.url) ||
+       seen.has(item.url))continue;
+    seen.add(item.url);
+    externalSubtitles.push({
+      url:item.url,language:item.language,
+      source:String(item.source||'Stremio').slice(0,45),
+      label:String(item.label||item.language).slice(0,64)
+    });
+  }
+  // A subtitle fetch may finish before any sources arrive or after video
+  // started playing. In both cases preserve playback instead of replaying.
+  activeSources=activeSources.map(attachExternalSubtitles);
+  if(!selectedSourceUrl)return;
+  const current=activeSources.find(x=>x.url===selectedSourceUrl);
+  if(!current)return;
+  const picker=$('#player-subtitles');
+  for(const track of current.subtitles||[])addSubtitleOption(picker,track);
 }
 export function appendPlayerSources(items) {
   if ($('#player-panel').classList.contains('hidden') || !Array.isArray(items)) return;
@@ -150,7 +192,7 @@ export function appendPlayerSources(items) {
   for (const item of items) {
     if (!item?.url || seen.has(item.url)) continue;
     seen.add(item.url);
-    activeSources.push(item);
+    activeSources.push(attachExternalSubtitles(item));
     added++;
   }
   if (!added) return;
@@ -244,7 +286,7 @@ function sourceSelected(value,{fallback=false}={}){
   void playLink(src.url,src.name);
   setAttribution(src);
   const list=$('#player-subtitles');
-  for(const t of src.subtitles||[]){const option=new Option(`${t.language==='ar'?'Arabic':'English'} • ${t.source} • ${t.label}`,t.url);option.dataset.label=t.label;option.dataset.language=t.language;list.add(option);}
+  for(const t of src.subtitles||[])addSubtitleOption(list,t);
 }
 function tryFallbackSource(){
   // Only retry already returned sources for this exact movie/episode.
