@@ -15,6 +15,7 @@ const CACHE = new Map();
 const bridge = createBridge();
 const CACHE_TTL = 5 * 60_000;
 const CACHE_MAX = 160;
+let licensedDemoCache={until:0,promise:null};
 const mediaTypes = new Set(['movie', 'tv']);
 const sortValues = new Set(['popularity.desc','vote_average.desc','vote_count.desc','date.desc']);
 const countries = new Set(['', 'IN', 'US', 'GB', 'KR', 'JP', 'TR', 'ES', 'FR', 'EG', 'SA']);
@@ -126,10 +127,18 @@ async function handle(req,res) {
     if(url.pathname==='/api/free-film'){
       // One fixed CC BY demo title; cannot search arbitrary video IDs here.
       // This is never labeled as a source for another movie in the catalog.
-      const sources=await fromCommons({
-        media:'movie',title:'Big Buck Bunny',originalTitle:'Big Buck Bunny',
-        year:2008
-      });
+      const now=Date.now();
+      if(!licensedDemoCache.promise || licensedDemoCache.until<=now){
+        licensedDemoCache={
+          until:now+90_000,
+          promise:fromCommons({
+            media:'movie',title:'Big Buck Bunny',originalTitle:'Big Buck Bunny',
+            year:2008
+          })
+        };
+      }
+      const sources=await licensedDemoCache.promise;
+      if(sources.length)licensedDemoCache.until=Math.max(licensedDemoCache.until,Date.now()+300_000);
       return json(res,200,{
         title:'Big Buck Bunny',creator:'Blender Foundation',copyright:'CC BY 3.0',
         note:'Separate open-licensed demonstration film; not a source for the selected catalog movie.',
