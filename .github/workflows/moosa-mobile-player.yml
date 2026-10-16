@@ -1,0 +1,42 @@
+name: MOOSA Web Mobile Player UI
+
+on:
+  push:
+    branches: [fix/mobile-player-empty-sources-diagnostics]
+    paths:
+      - 'MOOSAWeb/public/**'
+      - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/tests/mobile-player.e2e.mjs'
+      - '.github/workflows/moosa-mobile-player.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mobile:
+    name: iPhone-size UI smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install temporary Playwright test runner
+        run: npm install --no-save --no-package-lock playwright@1.56.1
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Test player on mobile viewport
+        run: node tests/mobile-player.e2e.mjs
+      - name: Save screenshot on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: moosa-ios-source-picker-test
+          path: MOOSAWeb/browser-artifacts/
+          if-no-files-found: ignore
+          retention-days: 4
