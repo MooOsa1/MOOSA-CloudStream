@@ -126,7 +126,7 @@ test('Unreachable or corrupt optional subtitles never remove playable movie sour
   assert.equal(results[0].url,'https://video.example/film.mp4');
   assert.deepEqual(results[0].subtitles,[]);
 });
-test('Ordinary catalog merges Arabic + English Stremio subtitles into selected movie source',async()=>{
+test('Optional subtitle HTTP response is independent from fast original movie sources',async()=>{
   const fetchImpl=fakeFetch(u=>{
     if(u.pathname.endsWith('/manifest.json'))return{
       name:'Licensed Sources and Subs',types:['movie'],
@@ -141,13 +141,18 @@ test('Ordinary catalog merges Arabic + English Stremio subtitles into selected m
     if(u.pathname.endsWith('/subtitles/movie/tt1234567.json'))
       return {subtitles};
   });
-  const sources=await resolveWebSources({...movie,id:980007},{
-    addons:[licensedAddon],fetchImpl,engine:null
-  });
+  const [sources,subTracks]=await Promise.all([
+    resolveWebSources({...movie,id:980007},{
+      addons:[licensedAddon],fetchImpl,engine:null
+    }),
+    collectStremioAddonSubtitles(movie,{addons:[licensedAddon],fetchImpl})
+  ]);
   assert.equal(sources.length,1);
   assert.equal(sources[0].quality,1080);
-  assert.deepEqual(sources[0].subtitles.map(x=>x.language),['en','ar']);
-  assert.equal(new Set(sources[0].subtitles.map(x=>x.url)).size,2);
+  assert.deepEqual(sources[0].subtitles.map(x=>x.language),['en'],
+    'Optional subtitles do not block or alter fast /api/resolve');
+  assert.deepEqual(subTracks.map(x=>x.language),['ar','en']);
+  assert.equal(subTracks.length,2);
 });
 test('Exact TV episode subtitles do not cross to adjacent season or episode',async()=>{
   const paths=[];
@@ -168,14 +173,12 @@ test('Exact TV episode subtitles do not cross to adjacent season or episode',asy
     };
   });
   const [a,b]=await Promise.all([tv,{...tv,episode:5}].map(meta=>
-    resolveWebSources({...meta,id:meta.episode===4?980008:980009},{
-      addons:[licensedAddon],fetchImpl,engine:null
-    })
+    collectStremioAddonSubtitles(meta,{addons:[licensedAddon],fetchImpl})
   ));
-  assert.equal(a[0].subtitles[0].url,'https://sub.example/show.s02e4.vtt');
-  assert.equal(b[0].subtitles[0].url,'https://sub.example/show.s02e5.vtt');
-  assert.ok(!a[0].subtitles.some(s=>s.url.includes('e5.')));
-  assert.ok(!b[0].subtitles.some(s=>s.url.includes('e4.')));
+  assert.equal(a[0].url,'https://sub.example/show.s02e4.vtt');
+  assert.equal(b[0].url,'https://sub.example/show.s02e5.vtt');
+  assert.ok(!a.some(s=>s.url.includes('e5.')));
+  assert.ok(!b.some(s=>s.url.includes('e4.')));
 });
 
 test('public runtime reports Stremio subtitles are supported but not necessarily active',async()=>{
@@ -193,4 +196,24 @@ test('public runtime reports Stremio subtitles are supported but not necessarily
     assert.equal(json.cloudstreamCs3Supported,false);
     assert.equal(json.cineStreamAndStreamPlayOriginals,false);
   }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test('Subtitle API is strict, never calls TMDB without operator-configured addons',async()=>{
+  const app=createServer();
+  await new Promise(resolve=>app.listen(0,'127.0.0.1',resolve));
+  const base='http://127.0.0.1:'+app.address().port;
+  try{
+    for(const suffix of [
+      '?media=movie&id=12&provider=https://evil.example',
+      '?media=tv&id=12&season=1',
+      '?media=tv&id=12&season=1&episode=0',
+      '?media=movie&id=12&season=1',
+      '?media=movie&id=12&id=13'
+    ]){
+      assert.equal((await fetch(base+'/api/stremio-subtitles'+suffix)).status,400,suffix);
+    }
+    const response=await fetch(base+'/api/stremio-subtitles?media=movie&id=45745');
+    assert.equal(response.status,200);
+    assert.deepEqual(await response.json(),{subtitles:[],active:false,count:0});
+  }finally{await new Promise(resolve=>app.close(resolve));}
 });
