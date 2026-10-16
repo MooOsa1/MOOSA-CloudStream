@@ -1,0 +1,34 @@
+name: MOOSA Web live official subtitle CORS and player test
+on:
+  pull_request:
+    paths:
+      - 'MOOSAWeb/web-stremio-subtitles.mjs'
+      - 'MOOSAWeb/public/subtitle-file-url.js'
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/tests/real-opensubtitles-browser.mjs'
+      - '.github/workflows/live-official-subtitles-browser.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/web-stremio-subtitles.mjs'
+      - 'MOOSAWeb/public/subtitle-file-url.js'
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/tests/real-opensubtitles-browser.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chromium-mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --no-package-lock playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/real-opensubtitles-browser.mjs
