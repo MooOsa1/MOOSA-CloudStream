@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBridge } from './bridge.mjs';
 import { resolveWebSources } from './providers.mjs';
+import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -121,6 +122,17 @@ async function handle(req,res) {
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
     if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true});
+    if(url.pathname==='/api/cloudstream/repositories') {
+      const results=await inspectRepositories();
+      return json(res,200,{
+        engine:configuredEngine()?'configured':'not_configured',
+        supportsOriginalPlugins:!!configuredEngine(),
+        caveat:configuredEngine()?
+          'Configured remote runtime has not been verified. Provider availability depends on external compatible execution and browser playback.':
+          'Repository indexes only. Android .cs3 plugins are not executed by the Node server.',
+        repositories:results
+      });
+    }
     if(url.pathname==='/api/resolve'){
       const media=url.searchParams.get('media');
       const id=cleanId(url.searchParams.get('id'));
