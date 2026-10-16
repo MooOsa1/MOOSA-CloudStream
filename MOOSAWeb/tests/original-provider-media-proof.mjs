@@ -150,7 +150,7 @@ async function diagnoseCrossHost(root){
 
 const content=await readFile(filename,'utf8');
 const candidates=[...new Set(content.trim().split(/\r?\n/).filter(Boolean)
-  .slice(0,12).map(s=>Buffer.from(s,'base64').toString('utf8')))];
+  .slice(0,24).map(s=>Buffer.from(s,'base64').toString('utf8')))];
 const rows=[];
 for(const url of candidates){
   const row={scheme:'https',kind:'unknown',ok:false};

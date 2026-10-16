@@ -117,6 +117,11 @@ jobs:
       - name: Decode actual original CineStream HLS in real Chrome
         run: |
           set -euo pipefail
+          if [ ! -s /tmp/moosa-jvm/verified-cinestream-hls.b64 ]; then
+            echo 'CHROME_DECODE_NOT_RUN: no real source passed first-segment verification in this run'
+            echo 'This is NOT a browser playback success'
+            exit 2
+          fi
           cd MOOSAWeb
           node tests/original-cinestream-browser.e2e.mjs
       - name: Upload only decoded video-frame evidence (never URLs)

@@ -98,7 +98,7 @@ public final class JvmOriginalProviderLinks {
                         String host=uri.getHost();
                         if(host!=null&&uri.getScheme().equalsIgnoreCase("https")){
                             videoHosts.add(host.toLowerCase());
-                            if(uri.getPort()==-1 && uri.getUserInfo()==null && candidateUrls.size()<12)
+                            if(uri.getPort()==-1 && uri.getUserInfo()==null && candidateUrls.size()<24)
                                 candidateUrls.add(uri.toString());
                         }
                     }catch(Throwable ignored){}
@@ -134,8 +134,11 @@ public final class JvmOriginalProviderLinks {
             // Never print, publish as an artifact, or deploy these raw links.
             Path candidateFile=Path.of("/tmp/moosa-jvm/cinestream-candidates.b64");
             List<String> encoded=new ArrayList<>();
-            for(String url:candidateUrls){
-                if(encoded.size()>=12)break;
+            // Deterministic reporting across concurrent invoker callbacks.
+            // Previous 12-link cap could arbitrarily omit the only working
+            // cross-CDN candidate among the original 13 links.
+            for(String url:new TreeSet<>(candidateUrls)){
+                if(encoded.size()>=24)break;
                 encoded.add(java.util.Base64.getEncoder().encodeToString(
                     url.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
             }
