@@ -52,3 +52,6 @@ footer{padding:26px 4.3%;border-top:1px solid #26282e;display:flex;flex-wrap:wra
 .source-attribution{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 12px;font-size:12px;line-height:1.8;color:#bfc3cb;border:1px solid #47504a;background:#202b27;border-radius:8px}
 .source-attribution a{color:#b8e4d0;text-decoration:underline;text-underline-offset:3px}
 .source-attribution a:hover{color:#ebfff3}
+
+.open-video-tests{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+@media(max-width:650px){.open-video-tests .btn{white-space:normal;text-align:center}}
