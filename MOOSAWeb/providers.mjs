@@ -61,6 +61,7 @@ function cleanStream(value,provider){
   if(!url || !Number.isInteger(quality) || quality<MIN_QUALITY ||
       quality>4320 || EXCLUDED_NAME.test(name)) return null;
   const extra={};
+  if(value.preferred===true)extra.preferred=true;
   // Preserve plain-text attribution for Creative Commons sources.
   if(typeof value.licenseUrl==='string' && /^https:\/\/creativecommons\.org\//.test(value.licenseUrl)) {
     extra.licenseUrl=value.licenseUrl;
@@ -75,7 +76,7 @@ function uniqueSort(values) {
   return values.map(x=>cleanStream(x,x.name)).filter(x=>{
     if(!x||seen.has(x.url))return false;
     seen.add(x.url);return true;
-  }).sort((a,b)=>b.quality-a.quality).slice(0,MAX_SOURCES);
+  }).sort((a,b)=>Number(b.preferred===true)-Number(a.preferred===true)||b.quality-a.quality).slice(0,MAX_SOURCES);
 }
 async function getJson(url,fetchImpl,timeout=4000) {
   const response=await fetchImpl(url,{headers:{Accept:'application/json'},redirect:'error',
