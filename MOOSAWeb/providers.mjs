@@ -11,6 +11,7 @@
  */
 import { queryRemoteEngine } from './cloudstream-engine.mjs';
 import { validateExternalArchiveStream } from './archive-stream-verifier.mjs';
+import {fromCineStreamVaPlayer} from './cinestream-vaplayer.mjs';
 import { fromCommons } from './commons-provider.mjs';
 import { augmentCatalogCommonsWithNativeJs, nativeJsFilmForCatalog, nativeJsEngine } from './native-js-catalog-runtime.mjs';
 
@@ -244,7 +245,12 @@ export async function resolveWebSources(meta,opts={}) {
     (opts.jsLoad||((slug)=>nativeJsEngine.load(slug)))(nativeFilm.slug)
   ).catch(()=>null):null;
   const pending=Promise.allSettled([
-    fromWebAddons(meta,opts),fromArchive(meta,opts),fromCommons(meta,opts),queryRemoteEngine(meta,opts)
+    fromWebAddons(meta,opts),fromArchive(meta,opts),fromCommons(meta,opts),queryRemoteEngine(meta,opts),
+    fromCineStreamVaPlayer(meta,{
+      fetchImpl:opts.fetchImpl||fetch,
+      ...(Object.hasOwn(opts,'cineStreamEnabled')?{enabled:opts.cineStreamEnabled}:{}),
+      ...(Array.isArray(opts.cineStreamHosts)?{mediaHosts:opts.cineStreamHosts}:{})
+    })
   ]).then(async res=>{
     const commons=res[2]?.status==='fulfilled'?res[2].value:[];
     const enhanced=await augmentCatalogCommonsWithNativeJs(meta,commons,{
