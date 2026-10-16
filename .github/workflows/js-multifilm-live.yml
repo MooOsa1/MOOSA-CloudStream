@@ -8,6 +8,8 @@ on:
       - 'MOOSAWeb/js-plugin-worker.cjs'
       - 'MOOSAWeb/js-plugins/commons-authorized.cjs'
       - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/tests/commons-provider.test.mjs'
       - 'MOOSAWeb/tests/js-multifilm.live.mjs'
       - '.github/workflows/js-multifilm-live.yml'
   push:
@@ -19,6 +21,8 @@ on:
       - 'MOOSAWeb/js-plugin-worker.cjs'
       - 'MOOSAWeb/js-plugins/commons-authorized.cjs'
       - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/tests/commons-provider.test.mjs'
       - 'MOOSAWeb/tests/js-multifilm.live.mjs'
       - '.github/workflows/js-multifilm-live.yml'
   workflow_dispatch:
