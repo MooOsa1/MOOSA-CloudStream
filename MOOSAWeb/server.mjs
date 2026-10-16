@@ -121,7 +121,7 @@ async function handle(req,res) {
     if(req.method !== 'GET' && req.method !== 'HEAD')return err(res,405,'Method not allowed');
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
-    if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true});
+    if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
     if(url.pathname==='/api/cloudstream/repositories') {
       const results=await inspectRepositories();
       return json(res,200,{
@@ -155,7 +155,7 @@ async function handle(req,res) {
           ...(media==='tv'?{season,episode}:{})
         };
         const sources=await resolveWebSources(meta);
-        return json(res,200,{sources,providerMode:'server',count:sources.length});
+        return json(res,200,{sources,providerMode:'server',count:sources.length,cloudstreamEngineConfigured:!!configuredEngine()});
       } catch(e) {
         return err(res,e.status||502,e.message==='TMDB_NOT_CONFIGURED'?
           'Configure TMDB for automatic source matching':'Source lookup temporarily unavailable');
