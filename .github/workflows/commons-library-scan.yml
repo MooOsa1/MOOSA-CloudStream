@@ -1,0 +1,24 @@
+name: Free film catalog coverage probe
+on:
+  push:
+    branches: [feature/free-film-library]
+    paths:
+      - 'MOOSAWeb/tests/commons-library-discovery.smoke.mjs'
+      - '.github/workflows/commons-library-scan.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Probe rights-verified sources without downloading video
+        run: node tests/commons-library-discovery.smoke.mjs
