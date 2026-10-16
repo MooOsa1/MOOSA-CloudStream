@@ -77,5 +77,6 @@ jobs:
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           javac -d MOOSAJVM MOOSAJVM/shims/android/content/SharedPreferences.java
           javac -cp MOOSAJVM -d MOOSAJVM MOOSAJVM/shims/android/content/Context.java
+          javac -cp "$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/network/CloudflareKiller.java
           javac -cp "$runtime:MOOSAJVM" MOOSAJVM/StreamPlayInstanceProbe.java
           timeout 25 java -Xmx640m -cp "MOOSAJVM:$runtime" StreamPlayInstanceProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/StreamPlay.jvm.jar
