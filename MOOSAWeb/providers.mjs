@@ -72,7 +72,7 @@ function cleanStream(value,provider){
     // JS approval is attached only after exact URL intersection with the
     // separate file-level rights source returned by Commons.
     if(value.preflight?.verified===true &&
-       /^video\\/(?:webm|mp4)$/i.test(String(value.preflight.mime||''))){
+       /^video\/(?:webm|mp4)$/i.test(String(value.preflight.mime||''))){
       extra.preflight={verified:true,mime:value.preflight.mime};
       extra.runtime='web_native_js';
     }
