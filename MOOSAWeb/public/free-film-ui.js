@@ -42,7 +42,10 @@ function makeFreeCard(film){
   const body=document.createElement('div');body.className='free-film-details';
   const genre=document.createElement('span');genre.textContent=film.genre;
   const quality=document.createElement('span');
-  quality.textContent='▶ '+(film.qualities?.length?film.qualities.join('p / ')+'p':'مشاهدة مباشرة');
+  const size=Number(film.smallestSizeBytes);
+  const sizeLabel=Number.isFinite(size)&&size>0?
+    (size>=1_000_000_000?(size/1_000_000_000).toFixed(1)+' GB':Math.round(size/1_000_000)+' MB'):'';
+  quality.textContent='▶ '+(film.qualities?.length?film.qualities.join('p / ')+'p':'مشاهدة مباشرة')+(sizeLabel?' • من '+sizeLabel:'');
   body.append(genre,quality);
   button.append(art,body);
   button.setAttribute('aria-label','شاهد '+film.title+' مجانًا');
