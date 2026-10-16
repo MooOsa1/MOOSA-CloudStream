@@ -125,5 +125,6 @@ jobs:
           javac -cp "$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/network/CloudflareKiller.java
           javac -d MOOSAJVM MOOSAJVM/shims/android/content/SharedPreferences.java
           javac -cp MOOSAJVM -d MOOSAJVM MOOSAJVM/shims/android/content/Context.java
+          javac -cp "MOOSAJVM:$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/CloudStreamApp.java MOOSAJVM/shims/com/lagradost/cloudstream3/utils/DataStore.java
           javac -cp "MOOSAJVM:$runtime" MOOSAJVM/ProviderLinksProbe.java
           timeout 85 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLinksProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
