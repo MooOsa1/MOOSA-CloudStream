@@ -107,6 +107,24 @@ jobs:
           )
           print('CINESTREAM_JVM_UNRESOLVED total='+str(len(missing))+' groups='+repr(dict(counts)))
           print('CINESTREAM_JVM_UNRESOLVED_SAMPLES '+', '.join(sorted(missing)[:45]))
+          core=collections.defaultdict(set)
+          with open('/tmp/cinestream-jdeps.txt',errors='replace') as source:
+            for row in source:
+              m=re.search(r'^\\s*(com\\.megix[^\\s]+)\\s+->\\s+(\\S+)\\s+not found\\s*
+          PY
+      - name: Invoke original CineStreamProvider.loadLinks against licensed Sintel with no video downloads
+        shell: bash
+        run: |
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/network/CloudflareKiller.java
+          javac -d MOOSAJVM MOOSAJVM/shims/android/content/SharedPreferences.java
+          javac -cp MOOSAJVM -d MOOSAJVM MOOSAJVM/shims/android/content/Context.java
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/ProviderLinksProbe.java
+          timeout 85 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLinksProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+,row)
+              if m:core[m.group(1)].add(m.group(2))
+          for cls,deps in sorted(core.items(), key=lambda x:-len(x[1]))[:17]:
+            print('CINESTREAM_MISSING_OWNER '+cls+' count='+str(len(deps))+' dependencies='+','.join(sorted(deps)[:13]))
           PY
       - name: Invoke original CineStreamProvider.loadLinks against licensed Sintel with no video downloads
         shell: bash
