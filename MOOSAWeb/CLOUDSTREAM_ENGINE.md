@@ -234,3 +234,21 @@ that workflow is path-scoped to Android plugin and Gradle inputs. The
 independent MOOSA Web CI workflow cancels superseded runs on the same ref,
 reducing duplicated free runner work. Explicit manual plugin builds remain
 available; Android sources and existing plugin packages are untouched.
+
+## CineStream VaPlayer October 16 — confirmed final segment failure
+
+On GitHub Actions, two independently identified feature films (Night of the
+Living Dead IMDb tt0063350, His Girl Friday IMDb tt0032599) each returned
+three VaPlayer HLS candidates. All six masters and HD media playlists were
+HTTP 200 with matching IMDb metadata and browser CORS. The actual 720p
+playlists were 171567 and 164775 bytes respectively: the old 160000-byte
+limit wrongly rejected them. The bounded video probe now supports up to
+512000 bytes using a streaming reader and cancels oversized responses.
+
+**Playback remains unavailable from VaPlayer:** every first media segment
+returned HTTP 403 using ordinary GET and byte-range GET, with and without
+CineStream's original Referer header. Thus no playable video source was
+promoted, the provider stays OFF, and this issue must not be described as
+solved or bypassed. HTTP 200 on a playlist is NOT a playback success.
+
+Evidence: https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/38954027202

@@ -182,6 +182,46 @@ test('A wide, low-height variant is not mislabeled as 720p HD',async()=>{
   assert.deepEqual(result,{ok:false,reason:'no_hd_variant'});
   assert.equal(requests,1);
 });
+test('Actual-sized 172KB HD media playlist is accepted and first video segment verified',async()=>{
+  const hugeRows=Array.from({length:2600},(_,i)=>
+    '#EXT-X-DATERANGE:ID="sample-'+i+'",CLASS="metadata",DURATION=9.99').join('\n');
+  const mediaPlaylist='#EXTM3U\n'+hugeRows+
+    '\n#EXTINF:9.9,\nsegment.ts\n#EXT-X-ENDLIST';
+  assert.ok(Buffer.byteLength(mediaPlaylist)>160_000,
+    'Regression must exceed original 160KB reader limit');
+  assert.ok(Buffer.byteLength(mediaPlaylist)<512_000);
+  const calls=[];
+  const hls='https://cdn.example/video/large.m3u8';
+  const fetchImpl=async url=>{
+    calls.push(url);
+    if(url===hls)return response(mediaPlaylist);
+    if(url==='https://cdn.example/video/segment.ts')
+      return response(new Uint8Array([0x47,...new Array(2047).fill(0)]),206,'video/mp2t');
+    throw Error('Unexpected request');
+  };
+  const result=await probeHlsFirstSegment(hls,{
+    fetchImpl,allowedHosts:['cdn.example']
+  });
+  assert.deepEqual(result,{
+    ok:true,quality:720,width:1280,playableUrl:hls
+  });
+  assert.equal(calls.length,2);
+});
+test('Playlist larger than the bounded 512KB cap is rejected before any video request',async()=>{
+  const hls='https://cdn.example/video/oversize.m3u8';
+  const tooBig='#EXTM3U\n'+'#EXT-X-COMMENT:'.repeat(44000)+
+    '\n#EXTINF:10,\nsegment.ts';
+  const calls=[];
+  const fetchImpl=async url=>{
+    calls.push(url);
+    return response(tooBig);
+  };
+  const result=await probeHlsFirstSegment(hls,{
+    fetchImpl,allowedHosts:['cdn.example']
+  });
+  assert.deepEqual(result,{ok:false,reason:'invalid_master'});
+  assert.deepEqual(calls,[hls]);
+});
 test('No arbitrary unapproved media hosts or dangerous HTTP URLs can be probed',async()=>{
   const {fetchImpl,calls}=fake();
   const rejected=await probeHlsFirstSegment('http://cdn.example/video/master.m3u8',{

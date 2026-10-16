@@ -6,7 +6,7 @@
  * returned third-party URLs from becoming an SSRF primitive on Render.
  * Never retries with forged Referer, cookies, credentials or DRM keys.
  */
-const MAX_PLAYLIST_BYTES=160_000;
+const MAX_PLAYLIST_BYTES=512_000;
 const SAFE_SEGMENT_EXT=/\.(?:ts|m4s|mp4|m4v|aac)$/i;
 
 function safeMediaUrl(raw,hosts){
@@ -68,8 +68,27 @@ async function fetchText(url,fetchImpl,timeoutMs,origin){
   if(!response.ok || !validCors(response,origin) ||
      Number(response.headers.get('content-length')||0)>MAX_PLAYLIST_BYTES)
     return null;
-  const txt=await response.text();
-  if(txt.length>MAX_PLAYLIST_BYTES||!txt.startsWith('#EXTM3U'))return null;
+  // Some real 720p full-film HLS VOD playlists are ~165-172 KB.
+  // Read at most MAX_PLAYLIST_BYTES, then cancel the response body. This
+  // prevents a remote HTTP 200 stream with no Content-Length from exhausting
+  // Render memory while still accepting those legitimate media playlists.
+  const reader=response.body?.getReader();
+  if(!reader)return null;
+  const decoder=new TextDecoder();
+  let bytes=0,txt='';
+  try{
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      bytes+=value.byteLength;
+      if(bytes>MAX_PLAYLIST_BYTES)return null;
+      txt+=decoder.decode(value,{stream:true});
+    }
+    txt+=decoder.decode();
+  }finally{
+    await reader.cancel().catch(()=>{});
+  }
+  if(!txt.startsWith('#EXTM3U'))return null;
   if(/#EXT-X-KEY:(?![^\n]*METHOD=NONE)/i.test(txt) ||
      /#EXT-X-SESSION-KEY:/i.test(txt))return null;
   return txt;
