@@ -86,7 +86,9 @@ jobs:
         run: |
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           official=/tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar
-          timeout 45 jdeps -q -verbose:class -filter:none -cp "$runtime:$official:MOOSAJVM" /tmp/converted/CineStream.jar > /tmp/cinestream-jdeps.txt || true
+          timeout 45 jdeps --missing-deps -q -cp "$runtime:$official:MOOSAJVM" /tmp/converted/CineStream.jar > /tmp/cinestream-jdeps.txt || true
+          echo "JDEPS_DIAGNOSTIC_LINES=$(wc -l < /tmp/cinestream-jdeps.txt)"
+          sed -n '1,12p' /tmp/cinestream-jdeps.txt
           python3 - <<'PY'
           import re,collections
           missing=set()
@@ -107,5 +109,6 @@ jobs:
         run: |
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           javac -cp "$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/network/CloudflareKiller.java
+          javac -d MOOSAJVM MOOSAJVM/shims/android/content/SharedPreferences.java
           javac -cp "MOOSAJVM:$runtime" MOOSAJVM/ProviderLinksProbe.java
           timeout 85 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLinksProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
