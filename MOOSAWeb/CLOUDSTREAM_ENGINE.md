@@ -96,6 +96,28 @@ Web, the existing operator-only WEB_SOURCE_ADDONS configuration is the
 corresponding inbound adapter. The endpoints are asymmetric: providing
 Stremio JSON is not running CineStream's Kotlin sources.
 
+## External Archive.org Stremio addon verification (October 16, 2026)
+
+Independent live probes found that the community Archive.org addon at
+dev.nebulawp.org/stremio/archive.org-addon does return HTTPS video URLs,
+but some IMDb lookups are **incorrect**. Examples:
+Big Buck Bunny -> unrelated CNN Bugs Bunny video,
+Elephants Dream -> different video, The Cabinet of Dr. Caligari -> Way Down
+East rehearsal, Night of the Living Dead -> movie trailer. One accurate
+Tears of Steel video was only 360p. See live diagnostic GitHub Action
+run 38897938836.
+
+Do not turn this addon on as a general source provider. The MOOSA Web
+operator-only Stremio input adapter now independently verifies every
+Archive.org direct file returned by any externally configured Stremio
+addon against Archive item metadata: exact original movie title and
+compatible release year, original file filename and size, >=720p
+height, and explicitly declared acceptable Creative Commons license.
+Wrong movies, trailers, preview clips, missing license and SD mislabeled
+4K sources are rejected. Up to three independent metadata requests run
+concurrently per add-on response, preventing unnecessary site delay.
+No new external provider has been enabled on the public Render website.
+
 ## Deployment boundary
 
 Use \`CLOUDSTREAM_RUNTIME_URL\` and \`CLOUDSTREAM_RUNTIME_TOKEN\` in **Render environment variables** only after a tested secure Android execution service exists. Do **not** publish a token in the GitHub repository or browser code. Never point them to an unrelated third-party endpoint.

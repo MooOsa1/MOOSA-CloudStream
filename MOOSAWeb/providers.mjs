@@ -10,6 +10,7 @@
  * These adapters intentionally never load arbitrary Android plugin code.
  */
 import { queryRemoteEngine } from './cloudstream-engine.mjs';
+import { validateExternalArchiveStream } from './archive-stream-verifier.mjs';
 import { fromCommons } from './commons-provider.mjs';
 import { augmentCatalogCommonsWithNativeJs, nativeJsFilmForCatalog, nativeJsEngine } from './native-js-catalog-runtime.mjs';
 
@@ -137,6 +138,7 @@ export async function fromWebAddons(meta, {fetchImpl=fetch,addons=configuredAddo
     const url=path+'stream/'+type+'/'+encodeURIComponent(queryId)+'.json';
     const data=await getJson(url,fetchImpl,5200);
     const output=[];
+    const pendingArchive=[];
     for(const stream of Array.isArray(data.streams)?data.streams.slice(0,50):[]){
       // HTTP video only. Never treat torrent hashes, external purchase links,
       // magnet URIs or YouTube embeds as browser-playable video files.
@@ -162,9 +164,23 @@ export async function fromWebAddons(meta, {fetchImpl=fetch,addons=configuredAddo
         url:link,name:(String(manifest.name||'Source')+' • '+String(stream.name||'').slice(0,70)),
         quality,subtitles:stream.subtitles
       },manifest.name);
-      if(source)output.push(source);
+      if(!source)continue;
+      if(new URL(source.url).hostname==='archive.org'){
+        // The untrusted Archive Stremio addon was observed returning wrong
+        // movies, unrelated videos and trailers for exact IMDb requests.
+        // A separate Archive metadata lookup must prove the film identity,
+        // original video filename, CC rights and actual >=720p resolution.
+        // Cap to 3 concurrent item lookups; no paid proxy or scraping.
+        if(pendingArchive.length>=3 || meta.media!=='movie')continue;
+        pendingArchive.push(validateExternalArchiveStream(source.url,meta,{fetchImpl})
+          .then(verified=>verified?{
+            ...source,quality:verified.quality,
+            name:'Archive verified • '+verified.quality+'p'
+          }:null));
+      }else output.push(source);
     }
-    return output;
+    const checked=await Promise.all(pendingArchive);
+    return [...output,...checked.filter(Boolean)];
   }));
   return uniqueSort(all.flatMap(x=>x.status==='fulfilled'?x.value:[]));
 }

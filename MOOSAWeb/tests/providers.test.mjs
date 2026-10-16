@@ -133,3 +133,38 @@ test('Stremio addon must not promise playback when stream requires protected nat
   });
   assert.deepEqual(sources.map(x=>x.url),['https://licensed.example/clear.mp4']);
 });
+
+test('Reject externally indexed Archive videos for the wrong movie, even with matching IMDb',async()=>{
+  const fetchImpl=mockFetch(u=>{
+    if(u.pathname==='/manifest.json')return {
+      name:'Archive External',types:['movie'],resources:['stream'],idPrefixes:['tt']
+    };
+    if(u.pathname==='/stream/movie/tt0000099.json')return {streams:[
+      {name:'1080p',url:'https://archive.org/download/wrong/bunny-misidentified_1080p.mp4'},
+      {name:'1080p',url:'https://archive.org/download/real/full_1080p.mp4'},
+      {name:'2160p',url:'https://archive.org/download/sd/full_2160p.mp4'}
+    ]};
+    if(u.pathname==='/metadata/wrong')return {
+      metadata:{title:'Other Film',year:'1942',
+        licenseurl:'https://creativecommons.org/licenses/by/3.0/'},
+      files:[{name:'bunny-misidentified_1080p.mp4',height:'1080',size:'1900000'}]
+    };
+    if(u.pathname==='/metadata/real')return {
+      metadata:{title:'Test Example',year:'1942',
+        licenseurl:'https://creativecommons.org/licenses/by/3.0/'},
+      files:[{name:'full_1080p.mp4',height:'1080',size:'1900000'}]
+    };
+    if(u.pathname==='/metadata/sd')return {
+      metadata:{title:'Test Example',year:'1942',
+        licenseurl:'https://creativecommons.org/licenses/by/3.0/'},
+      files:[{name:'full_2160p.mp4',height:'360',size:'1900000'}]
+    };
+  });
+  const list=await fromWebAddons(sample,{
+    fetchImpl,addons:['https://external.example/manifest.json']
+  });
+  assert.equal(list.length,1);
+  assert.equal(list[0].url,'https://archive.org/download/real/full_1080p.mp4');
+  assert.equal(list[0].quality,1080);
+  assert.equal(list[0].name,'Archive verified • 1080p');
+});
