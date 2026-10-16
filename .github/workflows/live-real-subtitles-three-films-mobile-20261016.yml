@@ -48,6 +48,8 @@ jobs:
               title,tmdbId:movie.id,imdbId:details.imdb_id,
               results
             }));
+            assert.ok(results.some(x=>x.ar>0),title+' no real Arabic subtitles on production');
+            assert.ok(results.some(x=>x.en>0),title+' no real English subtitles on production');
           }
           let browser;
           try{
