@@ -70,6 +70,56 @@ public final class JvmOriginalProviderSmoke {
         System.out.println("ORIGINAL_CINESTREAM_SEARCH_REAL_METADATA_SUCCESS");
     }
 
+
+    /**
+     * Bypass CineStream's inaccurate broad search by supplying the authoritative
+     * exact IMDb identifier from TMDB. Execute the ORIGINAL Kotlin load() method,
+     * not a JavaScript reimplementation. No video source fetching here.
+     */
+    private static void tryOriginalExactLoad(Class<?> provider, Object instance, ClassLoader loader) throws Exception {
+        Class<?> cont=Class.forName("kotlin.coroutines.Continuation",false,loader);
+        Object ctx=Class.forName("kotlin.coroutines.EmptyCoroutineContext",true,loader)
+            .getField("INSTANCE").get(null);
+        Class<?> sentinels=Class.forName("kotlin.coroutines.intrinsics.CoroutineSingletons",true,loader);
+        Object suspended=Enum.valueOf((Class)sentinels.asSubclass(Enum.class),"COROUTINE_SUSPENDED");
+        CountDownLatch latch=new CountDownLatch(1);
+        final Object[] async=new Object[1];
+        Object continuation=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{cont},(proxy,method,args)->{
+            if(method.getName().equals("getContext"))return ctx;
+            if(method.getName().equals("resumeWith")){
+                async[0]=args[0]; latch.countDown(); return null;
+            }
+            if(method.getName().equals("toString"))return "Exact IMDb provider load continuation";
+            return null;
+        });
+        Method m=provider.getMethod("load",String.class,cont);
+        // The string is the real original CineStreamProvider.PassData format.
+        final String exactInput="{\"id\":\"tt1727587\",\"type\":\"movie\"}";
+        System.out.println("ORIGINAL_CINESTREAM_EXACT_IMDB_LOAD_INVOKED: tt1727587");
+        Object direct=m.invoke(instance,exactInput,continuation);
+        Object result;
+        if(direct==suspended){
+            if(!latch.await(25,TimeUnit.SECONDS))
+                throw new TimeoutException("Original CineStream load() exceeded 25 seconds");
+            result=async[0];
+        }else result=direct;
+        Class.forName("kotlin.ResultKt",true,loader)
+            .getMethod("throwOnFailure",Object.class).invoke(null,result);
+        if(result==null)throw new IllegalStateException("Original load() returned null");
+        final String name=String.valueOf(result.getClass().getMethod("getName").invoke(result));
+        final String data=String.valueOf(result.getClass().getMethod("getDataUrl").invoke(result));
+        final boolean exactId=data.contains("\"id\":\"tt1727587\"");
+        final boolean exactName=name.equalsIgnoreCase("Sintel");
+        System.out.println("ORIGINAL_CINESTREAM_LOAD_NAME: "+shortText(name,100));
+        System.out.println("ORIGINAL_CINESTREAM_LOAD_EXACT_ID: "+exactId);
+        System.out.println("ORIGINAL_CINESTREAM_LOAD_EXACT_TITLE: "+exactName);
+        System.out.println("ORIGINAL_CINESTREAM_LOAD_HAS_LINK_METADATA: "+
+            (data.contains("\"imdbId\"")||data.contains("\"id\"")));
+        if(!exactId||!exactName)
+            throw new IllegalStateException("Original CineStream metadata failed exact IMDb/title match");
+        System.out.println("ORIGINAL_CINESTREAM_EXACT_IMDB_LOAD_SUCCESS");
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length != 3) throw new IllegalArgumentException("lib jar, provider jar, dep dir");
         List<URL> urls = new ArrayList<>();
@@ -112,6 +162,7 @@ public final class JvmOriginalProviderSmoke {
                 // The corresponding GitHub job has no credentials or secrets.
                 try {
                     tryOriginalSearch(providerClass,instance,loader);
+                    tryOriginalExactLoad(providerClass,instance,loader);
                 }catch(Throwable failure){
                     Throwable root=failure;
                     while(root instanceof InvocationTargetException && root.getCause()!=null)
