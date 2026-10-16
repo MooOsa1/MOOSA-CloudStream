@@ -22,7 +22,7 @@ public final class ClassProbe {
         try (URLClassLoader loader = new URLClassLoader(new URL[] {
             Path.of(args[0]).toUri().toURL(),
             Path.of(args[1]).toUri().toURL()
-        }, ClassLoader.getPlatformClassLoader())) {
+        }, ClassLoader.getSystemClassLoader())) {
             for (int i = 0; i < classes.length; i++) {
                 String name = classes[i];
                 try {
