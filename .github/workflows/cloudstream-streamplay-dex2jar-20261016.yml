@@ -1,0 +1,53 @@
+name: StreamPlay DEX-to-JVM large-heap conversion
+on:
+  push:
+    branches: [experiment/cloudstream-jvm-engine-20261016]
+    paths: ['.github/workflows/cloudstream-streamplay-dex2jar-20261016.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  conversion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch exact StreamPlay original binary and verify checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds
+          curl -fLsS --retry 2 "$root/plugins.json" -o /tmp/sp-index.json
+          digest="$(jq -r --arg n StreamPlay --arg u "$root/StreamPlay.cs3" '[.[]|select(.internalName==$n and .url==$u)]|sort_by(.version)|last|.fileHash // empty' /tmp/sp-index.json)"
+          [[ "$digest" =~ ^sha256-[a-f0-9]{64}$ ]]
+          curl -fLsS --retry 2 "$root/StreamPlay.cs3" -o /tmp/StreamPlay.cs3
+          echo "$(echo "$digest"|sed s/^sha256-//)  /tmp/StreamPlay.cs3" | sha256sum --check
+          unzip -p /tmp/StreamPlay.cs3 classes.dex > /tmp/StreamPlay.dex
+          test -s /tmp/StreamPlay.dex
+          echo "STREAMPLAY_VERIFIED_DEX_SIZE=$(stat -c %s /tmp/StreamPlay.dex)"
+      - name: Increase ACTUAL dex2jar Java VM heap to 4GB (not ignored JAVA_OPTS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fLsS --retry 2 https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip -o /tmp/dex-tools.zip
+          unzip -q /tmp/dex-tools.zip -d /tmp/dex-tools
+          converter="$(find /tmp/dex-tools -name d2j-dex2jar.sh -print -quit)"
+          sed -i 's/-Xmx2048m/-Xmx4096m/g' "$converter"
+          grep -F -- '-Xmx4096m' "$converter"
+          chmod +x "$converter"
+          set +e
+          timeout 155 "$converter" --force --output /tmp/StreamPlay.jvm.jar /tmp/StreamPlay.dex > /tmp/conversion.log 2>&1
+          result=$?
+          set -e
+          echo "STREAMPLAY_CONVERTER_EXIT=$result"
+          if [ "$result" = 0 ] && [ -s /tmp/StreamPlay.jvm.jar ]; then
+            echo "STREAMPLAY_CONVERTED_CLASSES=$(jar tf /tmp/StreamPlay.jvm.jar | grep -c '\.class$')"
+            javap -classpath /tmp/StreamPlay.jvm.jar -public com.phisher98.StreamPlayPlugin | head -n 15 || true
+          else
+            echo 'STREAMPLAY_CONVERSION_BLOCKER_BEGIN'
+            grep -E 'OutOfMemoryError|Exception|[Ff]ailed|[Ee]rror|timed' /tmp/conversion.log | tail -n 14 || tail -n 14 /tmp/conversion.log
+            echo 'STREAMPLAY_CONVERSION_BLOCKER_END'
+          fi
