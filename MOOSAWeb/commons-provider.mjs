@@ -75,22 +75,46 @@ export async function fromCommons(meta,{fetchImpl=fetch}={}){
   if(meta?.media!=='movie'||!meta.title || meta.title.length>100||
     !/^[a-zA-Z0-9 ,.'-]{3,100}$/.test(meta.originalTitle||meta.title))return [];
   const title=String(meta.originalTitle||meta.title);
-  const u=new URL(API);
-  Object.entries({
-    action:'query',generator:'search',gsrsearch:'filetype:video "'+title+'"',
-    gsrnamespace:'6',gsrlimit:'12',prop:'imageinfo',
-    iiprop:'url|size|mime|extmetadata',format:'json',formatversion:'2'
-  }).forEach(([k,v])=>u.searchParams.set(k,v));
-  try {
-    const response=await fetchImpl(u.href,{
-      method:'GET',redirect:'error',headers:{
-        Accept:'application/json',
-        'User-Agent':'MOOSAWeb/0.1 (https://github.com/MooOsa1/MOOSA-CloudStream; CC video source discovery)'
-      },signal:AbortSignal.timeout(5000)
-    });
-    if(!response.ok||Number(response.headers.get('content-length')||0)>800_000)return [];
-    const json=await response.text();
-    if(json.length>800_000)return [];
-    return selectCommonsMovies(meta,JSON.parse(json));
-  }catch{return [];}
+  const base={
+    action:'query',prop:'imageinfo',iiprop:'url|size|mime|extmetadata',
+    format:'json',formatversion:'2'
+  };
+  const search=new URL(API);
+  Object.entries({...base,generator:'search',gsrsearch:'filetype:video "'+title+'"',
+    gsrnamespace:'6',gsrlimit:'12'}).forEach(([k,v])=>search.searchParams.set(k,v));
+  // Commons sometimes ranks huge 4K uploads first and omits the playable
+  // 720p version from search results. Read only these exact possible filenames
+  // and still verify every returned file's license, quality and full title.
+  const exact=new URL(API);
+  Object.entries({...base,titles:[
+    'File:'+title+' alt.webm',
+    'File:'+title+'.webm',
+    'File:'+title+'.mp4'
+  ].join('|')}).forEach(([k,v])=>exact.searchParams.set(k,v));
+  async function query(u){
+    try {
+      const response=await fetchImpl(u.href,{
+        method:'GET',redirect:'error',headers:{
+          Accept:'application/json',
+          'User-Agent':'MOOSAWeb/0.1 (https://github.com/MooOsa1/MOOSA-CloudStream; CC video source discovery)'
+        },signal:AbortSignal.timeout(5000)
+      });
+      if(!response.ok||Number(response.headers.get('content-length')||0)>800_000)return [];
+      const json=await response.text();
+      if(json.length>800_000)return [];
+      return selectCommonsMovies(meta,JSON.parse(json));
+    }catch{return [];}
+  }
+  const [searched,variants]=await Promise.all([query(search),query(exact)]);
+  const seen=new Set();
+  return [...variants,...searched].filter(source=>{
+    if(seen.has(source.url))return false;
+    seen.add(source.url);
+    return true;
+  }).sort((a,b)=>{
+    // Prefer small full-HD/HD files for normal browser/mobile streaming;
+    // still include 4K as a selectable alternative.
+    const light=q=>q<=1080?1:0;
+    return light(b.quality)-light(a.quality)||b.quality-a.quality;
+  }).slice(0,4);
 }
