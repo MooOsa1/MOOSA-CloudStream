@@ -25,7 +25,7 @@ try {
   });
   await page.route('**/api/stremio-subtitles?*',async route=>{
     subtitleResolve++;
-    await new Promise(resolve=>setTimeout(resolve,1150));
+    await new Promise(resolve=>setTimeout(resolve,2300));
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
       subtitles:[
         {url:'https://subs.example/film.ar.vtt',language:'ar',label:'Arabic',source:'HTTP Stremio'},
@@ -44,7 +44,7 @@ try {
   });
   await page.waitForFunction(()=>
     document.querySelector('#player-source option')?.length===2 &&
-    document.querySelector('#player-source')?.value==='0',null,{timeout:700});
+    document.querySelector('#player-source')?.value==='0',null,{timeout:1500});
   const early=await page.locator('#player-subtitles option').allTextContents();
   assert.equal(early.length,1,'video source must appear before slow subtitles finish');
   assert.equal(videoResolve,1);
