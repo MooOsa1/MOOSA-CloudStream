@@ -1,0 +1,75 @@
+name: CineStream VaPlayer HLS segment viability on CC test films
+on:
+  push:
+    branches: [diagnostics/cinestream-streamplay-direct-http-provider-20261016]
+permissions:
+  contents: read
+jobs:
+  deep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate HLS variant codecs resolution + readable segments
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          for(const [imdb,title] of [['tt1727587','Sintel'],['tt2285752','Tears of Steel']]){
+            const r=await fetch('https://streamdata.vaplayer.ru/api.php?imdb='+imdb+'&type=movie',{
+              headers:{Referer:'https://nextgencloudfabric.com/'},
+              signal:AbortSignal.timeout(14000)
+            });
+            const d=await r.json();
+            for(const [i,url] of (d.data?.stream_urls||[]).entries()){
+              const result={imdb,title,source:i};
+              try{
+                const response=await fetch(url,{signal:AbortSignal.timeout(10000),
+                  headers:{Origin:'https://moosa-web.onrender.com'},redirect:'error'});
+                result.masterStatus=response.status;
+                if(!response.ok){console.log('CINESTREAM_HLS_SEGMENT_CHECK '+JSON.stringify(result));continue;}
+                const playlist=await response.text();
+                result.playlistBytes=playlist.length;
+                result.master=playlist.includes('#EXT-X-STREAM-INF');
+                result.media=playlist.includes('#EXTINF');
+                result.encrypted=playlist.includes('#EXT-X-KEY');
+                result.resolutions=[...playlist.matchAll(/RESOLUTION=(\d+x\d+)/ig)].map(x=>x[1]);
+                result.codecs=[...playlist.matchAll(/CODECS="([^"]+)"/ig)].map(x=>x[1]);
+                let first=playlist.split(/\r?\n/).find(line=>line.length>0&&!line.startsWith('#'));
+                if(first){
+                  let mediaUrl=new URL(first.trim(),url).href;
+                  if(result.master){
+                    const sub=await fetch(mediaUrl,{signal:AbortSignal.timeout(10000),redirect:'error'});
+                    result.childPlaylistStatus=sub.status;
+                    if(sub.ok){
+                      const text=await sub.text();
+                      result.childExtinf=text.includes('#EXTINF');
+                      first=text.split(/\r?\n/).find(line=>line.length>0&&!line.startsWith('#'));
+                      mediaUrl=first?new URL(first.trim(),mediaUrl).href:null;
+                    }else mediaUrl=null;
+                  }
+                  if(mediaUrl){
+                    const seg=await fetch(mediaUrl,{signal:AbortSignal.timeout(12500),
+                      headers:{Range:'bytes=0-2047',Origin:'https://moosa-web.onrender.com'},
+                      redirect:'error'});
+                    result.segmentStatus=seg.status;
+                    result.segmentType=seg.headers.get('content-type');
+                    result.segmentCors=seg.headers.get('access-control-allow-origin');
+                    const reader=seg.body?.getReader();
+                    if(reader){
+                      const chunk=await reader.read();
+                      result.segmentBytes=chunk.value?.length||0;
+                      const bytes=chunk.value||new Uint8Array();
+                      result.segmentMp4=new TextDecoder().decode(bytes.slice(0,48)).includes('ftyp') ||
+                        new TextDecoder().decode(bytes.slice(0,48)).includes('styp');
+                      result.segmentTs=bytes[0]===0x47;
+                      await reader.cancel().catch(()=>{});
+                    }
+                  }
+                }
+              }catch(e){result.error=String(e.message).slice(0,150)}
+              console.log('CINESTREAM_HLS_SEGMENT_CHECK '+JSON.stringify(result));
+            }
+          }
+          NODE
