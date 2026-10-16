@@ -1,0 +1,25 @@
+name: MOOSA Free Commons Provider Live Smoke
+on:
+  push:
+    branches: [feature/free-commons-stream-provider]
+    paths:
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/tests/commons-live.smoke.mjs'
+      - '.github/workflows/commons-live-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  commons:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Probe real Wikimedia API for licensed Big Buck Bunny video and HEAD
+        run: node tests/commons-live.smoke.mjs

@@ -10,6 +10,7 @@
  * These adapters intentionally never load arbitrary Android plugin code.
  */
 import { queryRemoteEngine } from './cloudstream-engine.mjs';
+import { fromCommons } from './commons-provider.mjs';
 
 const MAX_SOURCES = 30;
 const MIN_QUALITY = 720;
@@ -59,14 +60,23 @@ function cleanStream(value,provider){
   const quality=Number(value.quality);
   if(!url || !Number.isInteger(quality) || quality<MIN_QUALITY ||
       quality>4320 || EXCLUDED_NAME.test(name)) return null;
-  return {url,name,quality,subtitles:subtitleList(value.subtitles)};
+  const extra={};
+  if(value.preferred===true)extra.preferred=true;
+  // Preserve plain-text attribution for Creative Commons sources.
+  if(typeof value.licenseUrl==='string' && /^https:\/\/creativecommons\.org\//.test(value.licenseUrl)) {
+    extra.licenseUrl=value.licenseUrl;
+    if(typeof value.sourcePage==='string'&&/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/i.test(value.sourcePage))
+      extra.sourcePage=value.sourcePage;
+    if(typeof value.attribution==='string')extra.attribution=value.attribution.slice(0,135);
+  }
+  return {url,name,quality,subtitles:subtitleList(value.subtitles),...extra};
 }
 function uniqueSort(values) {
   const seen=new Set();
   return values.map(x=>cleanStream(x,x.name)).filter(x=>{
     if(!x||seen.has(x.url))return false;
     seen.add(x.url);return true;
-  }).sort((a,b)=>b.quality-a.quality).slice(0,MAX_SOURCES);
+  }).sort((a,b)=>Number(b.preferred===true)-Number(a.preferred===true)||b.quality-a.quality).slice(0,MAX_SOURCES);
 }
 async function getJson(url,fetchImpl,timeout=4000) {
   const response=await fetchImpl(url,{headers:{Accept:'application/json'},redirect:'error',
@@ -172,7 +182,7 @@ export async function resolveWebSources(meta,opts={}) {
   // hammering metadata services when clicking Play simultaneously.
   if(cached?.pending)return cached.pending;
   const pending=Promise.allSettled([
-    fromWebAddons(meta,opts),fromArchive(meta,opts),queryRemoteEngine(meta,opts)
+    fromWebAddons(meta,opts),fromArchive(meta,opts),fromCommons(meta,opts),queryRemoteEngine(meta,opts)
   ]).then(res=>{
     const sources=uniqueSort(res.flatMap(r=>r.status==='fulfilled'?r.value:[]));
     if(state.size>250)state.delete(state.keys().next().value);

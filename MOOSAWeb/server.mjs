@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBridge } from './bridge.mjs';
 import { resolveWebSources } from './providers.mjs';
+import { fromCommons } from './commons-provider.mjs';
 import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -14,6 +15,7 @@ const CACHE = new Map();
 const bridge = createBridge();
 const CACHE_TTL = 5 * 60_000;
 const CACHE_MAX = 160;
+let licensedDemoCache={until:0,promise:null};
 const mediaTypes = new Set(['movie', 'tv']);
 const sortValues = new Set(['popularity.desc','vote_average.desc','vote_count.desc','date.desc']);
 const countries = new Set(['', 'IN', 'US', 'GB', 'KR', 'JP', 'TR', 'ES', 'FR', 'EG', 'SA']);
@@ -122,6 +124,27 @@ async function handle(req,res) {
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
     if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
+    if(url.pathname==='/api/free-film'){
+      // One fixed CC BY demo title; cannot search arbitrary video IDs here.
+      // This is never labeled as a source for another movie in the catalog.
+      const now=Date.now();
+      if(!licensedDemoCache.promise || licensedDemoCache.until<=now){
+        licensedDemoCache={
+          until:now+90_000,
+          promise:fromCommons({
+            media:'movie',title:'Big Buck Bunny',originalTitle:'Big Buck Bunny',
+            year:2008
+          })
+        };
+      }
+      const sources=await licensedDemoCache.promise;
+      if(sources.length)licensedDemoCache.until=Math.max(licensedDemoCache.until,Date.now()+300_000);
+      return json(res,200,{
+        title:'Big Buck Bunny',creator:'Blender Foundation',copyright:'CC BY 3.0',
+        note:'Separate open-licensed demonstration film; not a source for the selected catalog movie.',
+        sources,count:sources.length
+      });
+    }
     if(url.pathname==='/api/cloudstream/repositories') {
       const results=await inspectRepositories();
       return json(res,200,{
