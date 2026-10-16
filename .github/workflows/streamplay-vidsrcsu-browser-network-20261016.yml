@@ -1,0 +1,54 @@
+name: Observe StreamPlay VidSrcSU live browser network API
+on:
+  push:
+    branches: [diagnostics/cinestream-streamplay-direct-http-provider-20261016]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --no-package-lock playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - name: Observe current StreamPlay React frontend network calls for CC Sintel only
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {chromium} from 'playwright';
+          let browser;
+          try{
+            browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844}});
+            const seen=new Map();
+            page.on('response',r=>{
+              try{
+                const u=new URL(r.url());
+                const ext=/\.(?:m3u8|mp4|webm|ts)$/i.test(u.pathname);
+                if(r.request().resourceType()==='fetch'||
+                  r.request().resourceType()==='xhr'||ext){
+                  const id=u.hostname+u.pathname;
+                  seen.set(id,{host:u.hostname,path:u.pathname.slice(0,110),
+                    status:r.status(),resource:r.request().resourceType(),
+                    ext,contentType:r.headers()['content-type']?.slice(0,75)});
+                }
+              }catch{}
+            });
+            let title='',bodyHead='';
+            try{
+              await page.goto('https://vidsrc.su/embed/movie/45745',{
+                waitUntil:'domcontentloaded',timeout:22000
+              });
+              await page.waitForTimeout(8000);
+              title=await page.title();
+              bodyHead=(await page.locator('body').innerText({timeout:4000})).slice(0,220);
+            }catch(e){title='navigation issue: '+e.message.slice(0,100)}
+            console.log('STREAMPLAY_VIDSRC_LIVE_BROWSER '+JSON.stringify({
+              title,bodyHead,network:[...seen.values()].slice(0,45),
+              mediaRequests:[...seen.values()].filter(x=>x.ext).length
+            }));
+          }finally{await browser?.close()}
+          NODE
