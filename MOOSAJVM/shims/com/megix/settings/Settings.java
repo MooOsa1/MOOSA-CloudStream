@@ -17,7 +17,14 @@ public final class Settings {
     private Settings() {}
 
     // Only the one named original provider is enabled. No torrents or bypasses.
+    private static final java.util.Set<String> TESTED_KEYS=java.util.Set.of(
+        "p_vaplayer","p_vidzee","p_vidcore","p_vidfastpro","p_videasy",
+        "p_cinejoy","p_primesrc"
+    );
     public List<String> getActiveProviderOrder() {
+        String choice=System.getenv("MOOSA_JVM_SINGLE_PROVIDER");
+        // Never accept arbitrary provider keys from external input. CI only.
+        if(choice!=null&&TESTED_KEYS.contains(choice))return List.of(choice);
         return List.of("p_vaplayer");
     }
     public int getConcurrency() { return 1; }
