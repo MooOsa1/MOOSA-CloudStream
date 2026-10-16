@@ -76,7 +76,19 @@ async function playLink(url, label='Video'){
     }
     if(currentPlayback!==playbackToken)return;
     showVideo();
-    await video.play().catch(()=>{if(currentPlayback===playbackToken)notice('الفيديو جاهز. اضغط ▶ لتبدأ.');});
+    await video.play().catch(error=>{
+      if(currentPlayback!==playbackToken)return;
+      // Autoplay being blocked is not the same as a broken video file.
+      // In particular, never overwrite a native HLS decoding error with
+      // the misleading "ready, press play" message.
+      if(error?.name==='NotAllowedError' && !video.error){
+        notice('الفيديو جاهز. اضغط ▶ لتبدأ.');
+      } else {
+        notice(isHls
+          ? 'تعذر تشغيل HLS. الرابط معطّل أو تنقصه صلاحيات المتصفح أو الترويسات المطلوبة.'
+          : 'تعذر تشغيل الفيديو. تحقق من الرابط أو صيغة الفيديو أو الصلاحيات.');
+      }
+    });
     if(currentPlayback===playbackToken && !video.paused)notice(`يُشغّل الآن: ${label}`);
   }catch(e){if(currentPlayback===playbackToken)notice(e.message||'تعذر تشغيل الفيديو');}
 }
@@ -207,4 +219,10 @@ $('#play-custom').addEventListener('click',()=>{const url=$('#custom-stream').va
 $('#custom-stream').addEventListener('keydown',e=>{if(e.key==='Enter')$('#play-custom').click();});
 $('#local-video').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;resetVideo();mediaUrl=URL.createObjectURL(file);video.src=mediaUrl;showVideo();$('#player-title').textContent=file.name;video.play().catch(()=>{});notice('تشغيل ملف محلي من جهازك');e.target.value='';});
 $('#local-subtitle').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>3*1024*1024)throw new Error('ملف الترجمة كبير جدًا');const ticket=subtitleToken;const raw=await file.text();if(ticket===subtitleToken)loadSubtitle(raw,file.name,/\bar\b|arabic/i.test(file.name)?'ar':'en')}catch(error){notice(error.message)}e.target.value='';});
-video.addEventListener('error',()=>{if(video.error)notice('تعذر تشغيل الملف في المتصفح. جرّب رابطًا مباشرًا آخر أو تحقق من صيغة الفيديو وصلاحيات CORS.');});
+video.addEventListener('error',()=>{
+  if(!video.error)return;
+  const isHls=/\.m3u8(?:[?#]|$)/i.test(video.currentSrc||video.src);
+  notice(isHls
+    ? 'تعذر تشغيل HLS. قد يكون الرابط محميًا، أو يحتاج Referer أو ترويسات لا يسمح المتصفح بإرسالها.'
+    : 'تعذر تشغيل الملف في المتصفح. جرّب رابطًا مباشرًا آخر أو تحقق من الصيغة والصلاحيات.');
+});
