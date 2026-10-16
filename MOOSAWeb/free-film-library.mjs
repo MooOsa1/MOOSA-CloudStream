@@ -31,6 +31,7 @@ export async function getCuratedFilm(id,{fetchImpl=fetch,now=Date.now}={}){
       ...film,available:sources.length>0,
       sources:sources.slice(0,4),
       qualities:sources.map(x=>x.quality),
+      smallestSizeBytes:sources.length?Math.min(...sources.map(x=>x.sizeBytes||Number.MAX_SAFE_INTEGER)):null,
       license:sources.length?new Set(sources.map(x=>x.licenseUrl)).size===1?
         sources[0].licenseUrl:'Creative Commons':null
     })).catch(()=>({...film,available:false,sources:[],qualities:[],license:null}));
