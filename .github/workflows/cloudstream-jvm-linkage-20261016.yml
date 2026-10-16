@@ -67,3 +67,5 @@ jobs:
           javac MOOSAJVM/ClassProbe.java
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           java -cp "MOOSAJVM:$runtime" ClassProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar com.megix.CineStreamProvider com.megix.CineStream
+          javac MOOSAJVM/ProviderInstanceProbe.java
+          timeout 25 java -Xmx512m -cp "MOOSAJVM:$runtime" ProviderInstanceProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
