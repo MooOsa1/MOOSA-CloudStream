@@ -1,0 +1,69 @@
+name: Inspect CineStream actual HTTP source provider responses
+on:
+  push:
+    branches: [diagnostics/cinestream-streamplay-direct-http-provider-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Direct upstream CineStream source protocol probes on only CC licensed film IDs
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const list=[
+            {name:'CineStream VaPlayer Sintel',
+             url:'https://streamdata.vaplayer.ru/api.php?imdb=tt1727587&type=movie',
+             headers:{Referer:'https://nextgencloudfabric.com/'}},
+            {name:'CineStream VaPlayer Tears of Steel',
+             url:'https://streamdata.vaplayer.ru/api.php?imdb=tt2285752&type=movie',
+             headers:{Referer:'https://nextgencloudfabric.com/'}},
+            {name:'CineStream VaPlayer Elephants Dream',
+             url:'https://streamdata.vaplayer.ru/api.php?imdb=tt0807840&type=movie',
+             headers:{Referer:'https://nextgencloudfabric.com/'}},
+            {name:'CineStream PrimeSrc Sintel',
+             url:'https://primesrc.me/api/v1/s?imdb=tt1727587&type=movie',
+             headers:{Referer:'https://primesrc.me/'}},
+            {name:'CineStream Vidrock Sintel',
+             url:'https://vidrock.ru/api/movie/45745/',
+             headers:{Origin:'https://vidrock.ru',Referer:'https://vidrock.ru/'}}
+          ];
+          await Promise.all(list.map(async item=>{
+            const result={name:item.name};
+            try{
+              const response=await fetch(item.url,{
+                headers:{...item.headers,'Accept':'application/json'},
+                signal:AbortSignal.timeout(12500),redirect:'error'
+              });
+              result.status=response.status;
+              result.contentType=response.headers.get('content-type');
+              result.cors=response.headers.get('access-control-allow-origin');
+              const body=await response.text();
+              result.bodyLength=body.length;
+              try{
+                const json=JSON.parse(body);
+                result.keys=Object.keys(json).slice(0,12);
+                if(typeof json.data==='object')
+                  result.dataKeys=Object.keys(json.data||{}).slice(0,14);
+                const urls=json.data?.stream_urls||json.streams||[];
+                if(Array.isArray(urls)){
+                  result.streamCount=urls.length;
+                  result.directVideoCount=urls.filter(x=>{
+                    try{return /\.(?:mp4|webm|m3u8)(?:\?|$)/i.test(new URL(typeof x==='string'?x:x.url).pathname);}catch{return false;}
+                  }).length;
+                }
+                if(Array.isArray(json.servers))result.serverCount=json.servers.length;
+              }catch{
+                result.json=false;result.isHTML=/^<!doctype|<html/i.test(body.slice(0,250));
+              }
+            }catch(e){result.error=String(e.message).slice(0,160);}
+            // Do not output third-party stream URLs, access tokens or copyrighted content.
+            console.log('CINESTREAM_REAL_HTTP_PROBE '+JSON.stringify(result));
+          }));
+          NODE
