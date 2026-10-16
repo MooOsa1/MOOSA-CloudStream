@@ -68,3 +68,14 @@ test('Use independent metadata URL under fixed Archive host, never arbitrary add
     fetchImpl:()=>{throw Error('should never fetch');}
   }),null);
 });
+
+test('Reject unverifiable production year unless a correct year suffix appears in archive title',()=>{
+  const noYear={...base,metadata:{...base.metadata,year:undefined}};
+  assert.equal(selectArchiveVerifiedFile(meta,parsed,noYear),null);
+  assert.equal(selectArchiveVerifiedFile(meta,parsed,{
+    ...noYear,metadata:{...noYear.metadata,title:'Big Buck Bunny (2008)'}
+  }).quality,1080);
+  assert.equal(selectArchiveVerifiedFile(meta,parsed,{
+    ...noYear,metadata:{...noYear.metadata,title:'Big Buck Bunny (2007)'}
+  }),null);
+});
