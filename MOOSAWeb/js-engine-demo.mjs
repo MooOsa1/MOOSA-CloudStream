@@ -1,40 +1,33 @@
 /**
- * Live, fixed-sample JS engine proof on the existing MOOSA Node server.
- *
- * It runs the locally reviewed Commons Nuvio-style getStreams() module in an
- * independent bounded Node subprocess, then verifies real media HTTP HEAD,
- * MIME and CORS before returning any stream.
- *
- * Only a verified Blender CC-BY film. No caller-supplied URL, plugin path,
- * title, CDN host, permissions or credentials. No Android, phone pairing,
- * proxying or imported Streamline/Vidlink code.
- *
- * This is NOT proof that a returned URL can decode on every browser.
+ * Fixed, rights-reviewed JS worker media preflight on the free Render Node host.
+ * Only four hand-reviewed, independently licensed Commons titles are allowed.
+ * This proves a Node JS provider path, not Android CloudStream .cs3 support.
  */
+import approved from './js-approved-films.cjs';
 import {resolveBrowserReadyJsSources} from './js-provider-validation.mjs';
-
+const {films,bySlug}=approved;
 export const DEMO_META=Object.freeze({
-  media:'movie',id:10378,
-  title:'Big Buck Bunny',originalTitle:'Big Buck Bunny'
+  media:'movie',id:10378,title:'Big Buck Bunny',originalTitle:'Big Buck Bunny'
 });
 const HOSTS=Object.freeze(['upload.wikimedia.org']);
-const GOOD_TTL=5*60_000;
-const FAIL_TTL=45_000;
+const GOOD_TTL=5*60_000,FAIL_TTL=45_000;
+export function supportedJsFilmIds(){return films.map(f=>f.slug);}
 
-export function createJsEngineDemo({
-  run=resolveBrowserReadyJsSources,
-  now=Date.now
-}={}){
-  let cached=null,expires=0,pending=null;
-
-  async function load(){
-    const time=now();
-    if(cached&&expires>time)return cached;
-    if(pending)return pending;
-    const attempt=(async()=>{
+export function createJsEngineDemo({run=resolveBrowserReadyJsSources,now=Date.now}={}){
+  const cache=new Map(), pending=new Map();
+  async function load(slug='big-buck-bunny'){
+    const film=bySlug(slug);
+    if(!film)return null;
+    const hit=cache.get(slug);
+    if(hit&&hit.expires>now())return hit.data;
+    if(pending.has(slug))return pending.get(slug);
+    const work=(async()=>{
       let data;
-      try{
-        const result=await run({...DEMO_META},{
+      try {
+        const meta=film.slug==='big-buck-bunny'?DEMO_META:{
+          media:'movie',id:film.id,title:film.title,originalTitle:film.title,year:film.year
+        };
+        const result=await run(meta,{
           provider:'commons-authorized',licensedMedia:true,
           permittedHosts:[...HOSTS],timeoutMs:3500
         });
@@ -48,13 +41,14 @@ export function createJsEngineDemo({
             quality:s.quality,url:s.url,
             subtitles:[],preferred:s.quality<=1080,
             preflight:{verified:true,mime:s.preflight.mime},
-            licenseUrl:'https://creativecommons.org/licenses/by/3.0/',
-            attribution:'Blender Foundation'
+            ...(film.slug==='big-buck-bunny'?{
+              licenseUrl:'https://creativecommons.org/licenses/by/3.0/',
+              attribution:'Blender Foundation'
+            }:{})
           }));
         data={
-          engine:'reviewed_js_worker',
-          sample:'Big Buck Bunny',
-          authorizedContent:true,
+          engine:'reviewed_js_worker',filmId:film.slug,
+          sample:film.title,authorizedContent:true,
           originalCloudStreamPlugins:false,
           state:sources.length?'browser_preflight_passed':'no_browser_approved_sources',
           sources,count:sources.length,
@@ -62,46 +56,39 @@ export function createJsEngineDemo({
         };
       }catch{
         data={
-          engine:'reviewed_js_worker',
-          sample:'Big Buck Bunny',
-          authorizedContent:true,
+          engine:'reviewed_js_worker',filmId:film.slug,
+          sample:film.title,authorizedContent:true,
           originalCloudStreamPlugins:false,
-          state:'temporarily_unavailable',
-          sources:[],count:0,
-          caveat:'This fixed licensed JS sample has no verified stream at this moment.'
+          state:'temporarily_unavailable',sources:[],count:0,
+          caveat:'This licensed JS sample has no verified stream at this moment.'
         };
       }
-      cached=data;
-      expires=now()+(data.count?GOOD_TTL:FAIL_TTL);
+      cache.set(slug,{data,expires:now()+(data.count?GOOD_TTL:FAIL_TTL)});
       return data;
     })();
-    pending=attempt;
-    try{return await attempt;}finally{if(pending===attempt)pending=null;}
+    pending.set(slug,work);
+    try{return await work;}finally{if(pending.get(slug)===work)pending.delete(slug);}
   }
   return {load};
 }
 
-
 /**
- * Upgrade ONLY the exact independently licensed Big Buck Bunny Commons URLs
- * that passed our separate JS engine browser HEAD gate.
- *
- * Other curated films retain the existing source path and are never mislabeled
- * as having passed a JavaScript provider browser preflight.
+ * Match only an independently metadata-licensed source URL for this EXACT film.
+ * Do not drop alternate licensed sources: Safari may reject a preflight-passing
+ * codec and needs a fallback. Original license/attribution always wins.
  */
 export function matchVerifiedJsMedia(film,verified){
-  if(film?.id!=='big-buck-bunny'||!Array.isArray(film.sources)||
-    verified?.state!=='browser_preflight_passed'||
+  if(!bySlug(film?.id)||!Array.isArray(film.sources)||
+    verified?.filmId!==film.id||
+    verified.state!=='browser_preflight_passed'||
     !Array.isArray(verified.sources))return null;
-  const approved=new Map(verified.sources.filter(s=>
+  const approvedUrls=new Map(verified.sources.filter(s=>
     s?.preflight?.verified===true && typeof s.url==='string')
     .map(s=>[s.url,s]));
-  const sources=film.sources.filter(s=>approved.has(s.url))
-    .map(s=>({
-      ...s,preflight:{
-        verified:true,
-        mime:approved.get(s.url).preflight.mime
-      }
-    }));
-  return sources.length?sources:null;
+  const matching=film.sources.filter(s=>approvedUrls.has(s.url));
+  if(!matching.length)return null;
+  return film.sources.map(s=>approvedUrls.has(s.url)?{
+    ...s,
+    preflight:{verified:true,mime:approvedUrls.get(s.url).preflight.mime}
+  }:s);
 }

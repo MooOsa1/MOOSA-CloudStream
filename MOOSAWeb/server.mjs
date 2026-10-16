@@ -126,10 +126,15 @@ async function handle(req,res) {
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
     if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
     if(url.pathname==='/api/js-engine/demo'){
-      // Fixed licensed test title only. Do not accept caller-supplied
-      // providers, URLs, CDN lists, code paths or permissions.
-      if(url.search)return err(res,400,'No custom engine parameters allowed');
-      return json(res,200,await jsDemo.load());
+      // A single ID from the server-owned open-film allowlist. Never accept
+      // provider code, custom titles, CDN URLs or rights assertions.
+      const keys=[...url.searchParams.keys()];
+      if(keys.some(k=>k!=='id')||keys.length>1)
+        return err(res,400,'Only one approved film ID is allowed');
+      const filmId=url.searchParams.get('id')||'big-buck-bunny';
+      const result=await jsDemo.load(filmId);
+      if(!result)return err(res,400,'Film not approved for JS engine');
+      return json(res,200,result);
     }
     if(url.pathname==='/api/free-library'){
       const films=await listCuratedFilms();
@@ -145,13 +150,13 @@ async function handle(req,res) {
       if(!film)return err(res,404,'Unknown open-licensed film');
       let sources=film.sources;
       let sourceEngine='commons_metadata';
-      if(requested==='big-buck-bunny' && film.available){
+      if(film.available){
         // Existing open-licensed sources remain the fallback. A slow or
         // unavailable external JS worker must not stall the phone's player.
         let timer;
         try{
           const verified=await Promise.race([
-            jsDemo.load(),
+            jsDemo.load(requested),
             new Promise(resolve=>{timer=setTimeout(()=>resolve(null),1800);})
           ]);
           const approved=matchVerifiedJsMedia(film,verified);

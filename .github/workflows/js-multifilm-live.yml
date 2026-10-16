@@ -1,0 +1,40 @@
+name: Four-film JS worker live readiness (open license)
+on:
+  pull_request:
+    paths:
+      - 'MOOSAWeb/js-engine-demo.mjs'
+      - 'MOOSAWeb/js-approved-films.cjs'
+      - 'MOOSAWeb/js-plugin-sidecar.mjs'
+      - 'MOOSAWeb/js-plugin-worker.cjs'
+      - 'MOOSAWeb/js-plugins/commons-authorized.cjs'
+      - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/tests/commons-provider.test.mjs'
+      - 'MOOSAWeb/tests/js-multifilm.live.mjs'
+      - '.github/workflows/js-multifilm-live.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/js-engine-demo.mjs'
+      - 'MOOSAWeb/js-approved-films.cjs'
+      - 'MOOSAWeb/js-plugin-sidecar.mjs'
+      - 'MOOSAWeb/js-plugin-worker.cjs'
+      - 'MOOSAWeb/js-plugins/commons-authorized.cjs'
+      - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/tests/commons-provider.test.mjs'
+      - 'MOOSAWeb/tests/js-multifilm.live.mjs'
+      - '.github/workflows/js-multifilm-live.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: cd MOOSAWeb && node tests/js-multifilm.live.mjs

@@ -71,6 +71,38 @@ export function selectCommonsMovies(meta,data){
     }];
   }).sort((a,b)=>b.quality-a.quality).slice(0,3);
 }
+/**
+ * Resolve official 4:2:0 VP9 transcoding for the licensed Elephants Dream
+ * master, whose original VP9 4:4:4 is not decoded by Safari.
+ * Trust only direct derivative URLs supplied by Commons for the exact
+ * independently licensed original page. No synthesized or proxied links.
+ */
+export function selectElephantsSafariDerivative(original,data){
+  if(!original || !/\/wiki\/File:Elephants_Dream_\(2006\)\.webm$/i.test(original.sourcePage||''))
+    return [];
+  const page=Object.values(data?.query?.pages||{}).find(p=>
+    p.title==='File:Elephants Dream (2006).webm');
+  const video=page?.videoinfo?.[0];
+  if(!video||commonsSourceUrl(video.url)!==original.url)return [];
+  const variants=Array.isArray(video.derivatives)?video.derivatives:[];
+  return variants.filter(d=>{
+    const key=String(d.transcodekey||'');
+    return /^(?:720|1080)p\.vp9\.webm$/i.test(key) &&
+      /^video\/webm(?:;|$)/i.test(String(d.type||'')) &&
+      Number(d.height)>=720 && Number(d.height)<=1080;
+  }).flatMap(d=>{
+    let url;
+    try{url=commonsSourceUrl(new URL(d.src,'https://commons.wikimedia.org').href);}
+    catch{return [];}
+    if(!url||url===original.url)return [];
+    return [{
+      ...original,url,quality:Number(d.height),sizeBytes:null,
+      name:'Wikimedia Commons • Safari-compatible VP9',
+      preferred:true,codecOptimized:true
+    }];
+  }).sort((a,b)=>b.quality-a.quality).slice(0,2);
+}
+
 export async function fromCommons(meta,{fetchImpl=fetch}={}){
   if(meta?.media!=='movie'||!meta.title || meta.title.length>100||
     !/^[a-zA-Z0-9 ,.'-]{3,100}$/.test(meta.originalTitle||meta.title))return [];
@@ -107,13 +139,40 @@ export async function fromCommons(meta,{fetchImpl=fetch}={}){
   }
   const [searched,variants]=await Promise.all([query(search),query(exact)]);
   const seen=new Set();
-  return [...variants,...searched].filter(source=>{
+  const originals=[...variants,...searched].filter(source=>{
     if(seen.has(source.url))return false;
     seen.add(source.url);
     return true;
-  }).sort((a,b)=>{
-    // Prefer small full-HD/HD files for normal browser/mobile streaming;
-    // still include 4K as a selectable alternative.
+  });
+  let compatible=[];
+  if(title==='Elephants Dream'){
+    // Only this known 4:4:4 original needs a dedicated Safari transcode.
+    // Derivatives are official Commons API results, not guessed URLs.
+    const master=originals.find(x=>/\/wiki\/File:Elephants_Dream_\(2006\)\.webm$/i.test(x.sourcePage));
+    if(master){
+      const api=new URL(API);
+      Object.entries({
+        action:'query',prop:'videoinfo',viprop:'url|derivatives',
+        titles:'File:Elephants Dream (2006).webm',
+        format:'json',formatversion:'2'
+      }).forEach(([k,v])=>api.searchParams.set(k,v));
+      try{
+        const result=await fetchImpl(api.href,{
+          method:'GET',redirect:'error',
+          headers:{Accept:'application/json',
+            'User-Agent':'MOOSAWeb/0.1 (https://github.com/MooOsa1/MOOSA-CloudStream; CC video variants)'},
+          signal:AbortSignal.timeout(3500)
+        });
+        if(result.ok && Number(result.headers.get('content-length')||0)<350_000){
+          const raw=await result.text();
+          if(raw.length<350_000)compatible=selectElephantsSafariDerivative(master,JSON.parse(raw));
+        }
+      }catch{} // The original independently licensed source still works as fallback.
+    }
+  }
+  return [...compatible,...originals].sort((a,b)=>{
+    if(Boolean(a.codecOptimized)!==Boolean(b.codecOptimized))
+      return Number(Boolean(b.codecOptimized))-Number(Boolean(a.codecOptimized));
     const light=q=>q<=1080?1:0;
     return light(b.quality)-light(a.quality)||b.quality-a.quality;
   }).slice(0,4);

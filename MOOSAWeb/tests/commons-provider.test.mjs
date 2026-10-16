@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fromCommons,selectCommonsMovies} from '../commons-provider.mjs';
+import {fromCommons,selectCommonsMovies,selectElephantsSafariDerivative} from '../commons-provider.mjs';
 import {resolveWebSources} from '../providers.mjs';
 
 const movie={media:'movie',id:11787,title:'Big Buck Bunny',
@@ -79,4 +79,37 @@ test('Commons gracefully returns [] on upstream outages and rejects title inject
     fetchImpl:async()=>{hit=true;throw Error('should not fetch');}
   });
   assert.deepEqual(invalid,[]);assert.equal(hit,false);
+});
+
+test('Only exact separately licensed Elephants Dream original can expose real Commons VP9 derivative',()=>{
+  const source={
+    url:'https://upload.wikimedia.org/wikipedia/commons/f/f1/Elephants_Dream.webm',
+    sourcePage:'https://commons.wikimedia.org/wiki/File:Elephants_Dream_(2006).webm',
+    quality:1080,sizeBytes:801000000,licenseUrl:'https://creativecommons.org/licenses/by/2.5/',
+    attribution:'Orange Open Movie Team',preferred:true
+  };
+  const data={query:{pages:[{
+    title:'File:Elephants Dream (2006).webm',
+    videoinfo:[{
+      url:source.url,
+      derivatives:[
+        {src:'https://upload.wikimedia.org/wikipedia/commons/transcoded/f/f1/Elephants_Dream.webm/Elephants_Dream.webm.1080p.vp9.webm',
+          type:'video/webm; codecs="vp9, opus"',height:1080,transcodekey:'1080p.vp9.webm'},
+        {src:'https://upload.wikimedia.org/wikipedia/commons/transcoded/f/f1/Elephants_Dream.webm/Elephants_Dream.webm.480p.vp9.webm',
+          type:'video/webm',height:480,transcodekey:'480p.vp9.webm'},
+        {src:'https://evil.example/a.webm',
+          type:'video/webm',height:1080,transcodekey:'1080p.vp9.webm'}
+      ]
+    }]
+  }]}};
+  const results=selectElephantsSafariDerivative(source,data);
+  assert.equal(results.length,1);
+  assert.equal(results[0].quality,1080);
+  assert.equal(results[0].codecOptimized,true);
+  assert.equal(results[0].licenseUrl,source.licenseUrl);
+  assert.equal(results[0].attribution,source.attribution);
+  assert.equal(results[0].sourcePage,source.sourcePage);
+  assert.equal(results[0].sizeBytes,null,'Never claim transcode size is original file size');
+  assert.deepEqual(selectElephantsSafariDerivative({...source,url:'https://evil.example/file.webm'},data),[]);
+  assert.deepEqual(selectElephantsSafariDerivative({...source,sourcePage:'https://evil.example/media'},data),[]);
 });

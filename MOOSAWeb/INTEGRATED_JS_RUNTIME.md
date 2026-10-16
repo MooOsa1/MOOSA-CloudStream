@@ -1,22 +1,22 @@
-# MOOSA Web: integrated Node JS engine (fixed rights-cleared film)
+# MOOSA Web: integrated Node JS engine (four allowlisted rights-cleared films)
 
 The browser's existing player continues to work on the current **free Render Node** instance. The project now also has an actual server route that talks to a locally reviewed JavaScript provider process. This is an incremental platform milestone, **not CloudStream Android .cs3 runtime compatibility** and not a new catalog of commercial stream sources.
 
 ## New live route
 
-`GET /api/js-engine/demo` (GET/HEAD only; any custom query parameters rejected).
+`GET /api/js-engine/demo` defaults to Big Buck Bunny. `GET /api/js-engine/demo?id=sintel` (or `tears-of-steel`, `elephants-dream`, `big-buck-bunny`) selects only one of the four server-pinned, pre-reviewed licensed films. GET/HEAD only. All other query parameters, unknown film IDs, remote code, URL, header or rights requests are rejected.
 
-- Internally requests the **fixed** film Big Buck Bunny (CC BY 3.0), no public input for plugin ID, title, URL, arbitrary code, rights flag or approved network host.
+- A fixed film-ID mapping selects Big Buck Bunny (CC BY 3.0), Sintel, Tears of Steel, or Elephants Dream. The server controls exact title and year and never trusts browser-supplied provider IDs, titles, URL hosts, scripts or rights flags.
 - Spawns locally reviewed `commons-authorized.cjs` through `js-plugin-sidecar.mjs`; no Streamline/Vidlink original code deployed.
 - The plugin returns Commons movie file candidates (title and license verified). The server tests original `upload.wikimedia.org` links with the strict `browser-source-readiness.mjs` HEAD/CORS/MIME/quality gate.
 - Returns matching `sources`, counts, `state`, `engine:reviewed_js_worker`, and explicit `originalCloudStreamPlugins:false`. It is intentionally **not** a general open proxy or arbitrary remote-code executor.
-- In-memory in-flight deduplication and 5-minute success / 45-second failure cache minimize abuse of Commons and Render free compute.
+- Independent per-film in-memory in-flight deduplication and 5-minute success / 45-second failure caches minimize abuse of Commons and Render free compute.
 
 ## Existing player integration
 
-`GET /api/free-film?id=big-buck-bunny` now tries the independent JS check with a **maximum 1.8-second wait** after fetching the existing metadata-licensed sources. It only promotes source URLs that match those metadata-validated originals **exactly**. If unavailable or slow, the proven previous Commons sources are retained. The response includes `sourceEngine:reviewed_js_worker_preflight` or `sourceEngine:commons_metadata` so diagnostic evidence is not overstated. This does not change which film is playing or make an unverified source playable.
+`GET /api/free-film?id=<approved-film-slug>` now tries the independent JS check for any of the four vetted films with a **maximum 1.8-second wait** after fetching the existing metadata-licensed sources. It only promotes source URLs that match those metadata-validated originals **exactly**. If unavailable or slow, the proven previous Commons sources are retained. Verified JS sources never remove alternative metadata-licensed sources: passing HEAD/CORS checks cannot guarantee Safari codec playback. The response includes `sourceEngine:reviewed_js_worker_preflight` or `sourceEngine:commons_metadata` so diagnostic evidence is not overstated. This does not change which film is playing or make an unverified source playable.
 
-The rest of the free movie shelf and mainstream catalog are untouched. No new provider is turned on for modern films. This conservative compatibility upgrade prevents breaking the user’s existing working Big Buck Bunny playback.
+The mainstream catalog is untouched. No new provider is turned on for modern films. This conservative compatibility upgrade prevents breaking the user’s existing working Big Buck Bunny playback.
 
 ## Real evidence
 
@@ -27,3 +27,7 @@ A `GET /api/js-engine/demo` response plus media HEAD **does not prove video can 
 ## Next high-value work
 
 To enable any **original** Streamline/CloudStream source for mainstream TMDB titles, we still require lawful access permission, exact title/episode match, original plugin license compliance, isolation appropriate to third-party code, a link that passes HEAD/CORS and genuine HTML5/Safari playback (not just URL extraction). On this free Render instance original Android `.cs3` files **do not run**, and no always-on Android plugin host has been verified.
+
+## Four-film expansion
+
+The approved JavaScript worker now resolves each fixed open film by an internal movie identity. User-chosen IDs cannot add unreviewed content. Every returned JS source must additionally match the separately licensed Commons metadata URL for that **same title**; no source may leak into a different film. Explicit originals remain untouched. An original CloudStream provider remains out of scope until its rights, runtime, browser and codec requirements are met.
