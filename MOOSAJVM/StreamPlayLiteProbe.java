@@ -30,9 +30,16 @@ public final class StreamPlayLiteProbe {
             Class<?> klass;
             Object provider;
             try{
-                klass=Class.forName("com.phisher98.StreamPlayLite",true,loader);
+                // Recent published .cs3 does not expose StreamPlayLite even though
+                // it exists in a source branch. Fall back to the verified original
+                // StreamPlay class, not an invented provider.
+                try{
+                    klass=Class.forName("com.phisher98.StreamPlayLite",true,loader);
+                }catch(ClassNotFoundException missingLite){
+                    klass=Class.forName("com.phisher98.StreamPlay",true,loader);
+                }
                 provider=klass.getDeclaredConstructor().newInstance();
-                System.out.println("JVM_STREAMPLAY_LITE stage=instantiate status=success");
+                System.out.println("JVM_STREAMPLAY_LITE stage=instantiate status=success provider="+klass.getName());
             }catch(Throwable error){
                 Throwable e=error instanceof InvocationTargetException ite?ite.getTargetException():error;
                 System.out.println("JVM_STREAMPLAY_LITE stage=instantiate status=error type="+
