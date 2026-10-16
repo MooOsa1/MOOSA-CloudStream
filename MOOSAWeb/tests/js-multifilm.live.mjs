@@ -61,7 +61,16 @@ try{
   // Confirm the Commons API actually offers a lower-bandwidth 4:2:0
   // transcode of the troublesome Elephants Dream full film.
   const elephant=await getCuratedFilm('elephants-dream');
-  for(const media of elephant.sources.slice(0,2)){
+  console.log('ELEPHANTS_SAFARI_FALLBACK '+JSON.stringify({
+    sources:elephant.sources.map(s=>({
+      quality:s.quality,codecOptimized:s.codecOptimized===true,
+      license:s.licenseUrl,
+      hostname:new URL(s.url).hostname
+    }))
+  }));
+  assert.ok(elephant.sources.some(s=>s.codecOptimized===true && s.quality>=720),
+    'Commons should provide an official 4:2:0 transcode for Safari');
+  for(const media of elephant.sources.filter(s=>!s.codecOptimized).slice(0,2)){
     const raw=decodeURIComponent(new URL(media.sourcePage).pathname.replace(/^\/wiki\//,''));
     const api=new URL('https://commons.wikimedia.org/w/api.php');
     for(const [k,v] of Object.entries({
