@@ -33,7 +33,6 @@
             <input id="search-input" type="search" placeholder="ابحث عن فيلم أو مسلسل..." autocomplete="off" aria-label="بحث" />
             <kbd>/</kbd>
           </div>
-          <button id="open-bridge" class="btn btn-slim bridge-launch" title="ربط CloudStream"><span id="bridge-indicator">○ CloudStream</span></button>
           <button id="open-demo" class="btn btn-slim demo-button" title="تجربة المشغل">تجربة المشغل <span>↗</span></button>
         </div>
       </header>
@@ -86,21 +85,6 @@
     </div>
   </div>
   <div id="overlay" class="overlay hidden"></div>
-  <section id="bridge-panel" class="bridge-panel hidden" role="dialog" aria-modal="true" aria-label="ربط جهاز CloudStream">
-    <button class="icon-close" id="close-bridge" aria-label="إغلاق">×</button>
-    <div class="eyebrow">MOOSA CLOUDSTREAM BRIDGE</div>
-    <h2>ربط إضافات CloudStream</h2>
-    <p>يمكن للموقع البحث في إضافات CloudStream المثبتة على جهاز أندرويد أو Fire TV. يلزم أن يكون التطبيق مفتوحًا، والإقران اختياري.</p>
-    <div id="bridge-device-status" class="bridge-device-status">جاري التحقق من حالة الاتصال...</div>
-    <div class="bridge-code-row"><code id="bridge-code">──────────────</code><button id="bridge-copy" class="btn btn-outline">نسخ الرمز</button></div>
-    <p class="muted">افتح CloudStream → MOOSA Hub → Settings → Web Bridge، والصق الرمز، ثم اضغط Connect. ينتهي صلاحية الرمز بعد 10 دقائق.</p>
-    <div class="bridge-actions">
-      <button class="btn btn-outline" id="bridge-new-code">رمز جديد / تغيير الجهاز</button>
-      <button class="btn btn-primary" id="bridge-refresh">تحديث حالة الاتصال</button>
-    </div>
-    <div class="source-info" id="bridge-providers">لن يتم تشغيل أي إضافة خارج تطبيق CloudStream نفسه.</div>
-    <p class="muted">قد لا تعمل بعض الروابط في المتصفح بسبب CORS أو التحقق من الجلسة أو DRM. لا يتم نقل ملفات الإضافات أو بيانات تسجيل الدخول إلى الموقع.</p>
-  </section>
   <section id="detail-panel" class="detail-panel hidden" role="dialog" aria-modal="true" aria-label="تفاصيل الفيلم">
     <button class="icon-close" id="close-details" aria-label="إغلاق">×</button>
     <div class="details-art" id="details-art"></div>
@@ -116,7 +100,7 @@
       <div class="player-field"><label for="subtitle-offset">توقيت الترجمة <output id="offset-value">0.0s</output></label><input type="range" id="subtitle-offset" min="-15" max="15" value="0" step="0.5" /></div>
     </div>
     <div class="input-row"><input id="custom-stream" type="url" inputmode="url" placeholder="https://example.com/your-video.m3u8 أو .mp4" aria-label="رابط فيديو مصرح به"/><button id="play-custom" class="btn btn-outline">تشغيل الرابط</button><label class="btn btn-ghost file-picker">فتح ملف فيديو<input id="local-video" type="file" accept="video/*" hidden /></label><label class="btn btn-ghost file-picker">إضافة SRT/VTT<input id="local-subtitle" type="file" accept=".srt,.vtt,text/vtt,text/plain" hidden /></label></div>
-    <div id="bridge-play-status" class="player-message bridge-play-status" role="status">للبحث عبر إضافات CloudStream، اربط جهازك من أعلى الموقع.</div>
+    <div id="automatic-source-status" class="player-message server-play-status" role="status">يبدأ البحث تلقائيًا عن السيرفرات عند اختيار الفيلم أو الحلقة.</div>
     <div id="player-message" class="player-message" role="status">جرب المشغل باستخدام الفيديو التجريبي الحر.</div>
     <div class="player-bottom"><button class="btn btn-ghost" id="play-demo">▶ تشغيل فيديو تجريبي (CC0)</button><span>التشغيل يتطلب دعم المتصفح وصلاحيات CORS من خادم الفيديو</span></div>
   </section>
