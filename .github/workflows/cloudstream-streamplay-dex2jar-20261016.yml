@@ -9,8 +9,9 @@ permissions:
 jobs:
   conversion:
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 13
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -51,3 +52,30 @@ jobs:
             grep -E 'OutOfMemoryError|Exception|[Ff]ailed|[Ee]rror|timed' /tmp/conversion.log | tail -n 14 || tail -n 14 /tmp/conversion.log
             echo 'STREAMPLAY_CONVERSION_BLOCKER_END'
           fi
+      - name: Build official CloudStream JVM API and runtime for real original StreamPlay class linking
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/recloudstream/cloudstream.git /tmp/cloudstream-upstream
+          cd /tmp/cloudstream-upstream
+          cat >> library/build.gradle.kts <<'GRADLE'
+
+          tasks.register("moosaJvmClasspath") {
+              doLast {
+                  val path = configurations.getByName("jvmRuntimeClasspath")
+                      .files.joinToString(":") { it.absolutePath }
+                  file("build/moosa-jvm-runtime-classpath.txt").writeText(path)
+              }
+          }
+          GRADLE
+          chmod +x gradlew
+          ./gradlew :library:jvmJar :library:moosaJvmClasspath --no-daemon --no-configuration-cache --console plain
+          test -s library/build/libs/library-jvm-1.0.1.jar
+      - name: Link and instantiate original converted StreamPlay directly on JVM
+        shell: bash
+        run: |
+          test -s /tmp/StreamPlay.jvm.jar
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -d MOOSAJVM MOOSAJVM/shims/android/content/SharedPreferences.java
+          javac -cp MOOSAJVM -d MOOSAJVM MOOSAJVM/shims/android/content/Context.java
+          javac -cp "$runtime:MOOSAJVM" MOOSAJVM/StreamPlayInstanceProbe.java
+          timeout 25 java -Xmx640m -cp "MOOSAJVM:$runtime" StreamPlayInstanceProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/StreamPlay.jvm.jar
