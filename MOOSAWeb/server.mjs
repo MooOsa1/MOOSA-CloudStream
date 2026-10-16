@@ -6,6 +6,7 @@ import { createBridge } from './bridge.mjs';
 import { resolveWebSources } from './providers.mjs';
 import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
 import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
+import { createJsEngineDemo, matchVerifiedJsMedia } from './js-engine-demo.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -13,6 +14,7 @@ const API_BASE = 'https://api.themoviedb.org/3';
 const CONFIG_PATH = process.env.STREAMS_FILE || 'data/streams.json';
 const CACHE = new Map();
 const bridge = createBridge();
+const jsDemo = createJsEngineDemo();
 const CACHE_TTL = 5 * 60_000;
 const CACHE_MAX = 160;
 const mediaTypes = new Set(['movie', 'tv']);
@@ -123,6 +125,12 @@ async function handle(req,res) {
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
     if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
+    if(url.pathname==='/api/js-engine/demo'){
+      // Fixed licensed test title only. Do not accept caller-supplied
+      // providers, URLs, CDN lists, code paths or permissions.
+      if(url.search)return err(res,400,'No custom engine parameters allowed');
+      return json(res,200,await jsDemo.load());
+    }
     if(url.pathname==='/api/free-library'){
       const films=await listCuratedFilms();
       return json(res,200,{
@@ -135,11 +143,29 @@ async function handle(req,res) {
       if(!/^[a-z0-9-]{1,50}$/.test(requested))return err(res,400,'Invalid film');
       const film=await getCuratedFilm(requested);
       if(!film)return err(res,404,'Unknown open-licensed film');
+      let sources=film.sources;
+      let sourceEngine='commons_metadata';
+      if(requested==='big-buck-bunny' && film.available){
+        // Existing open-licensed sources remain the fallback. A slow or
+        // unavailable external JS worker must not stall the phone's player.
+        let timer;
+        try{
+          const verified=await Promise.race([
+            jsDemo.load(),
+            new Promise(resolve=>{timer=setTimeout(()=>resolve(null),1800);})
+          ]);
+          const approved=matchVerifiedJsMedia(film,verified);
+          if(approved?.length){
+            sources=approved;
+            sourceEngine='reviewed_js_worker_preflight';
+          }
+        }finally{clearTimeout(timer);}
+      }
       return json(res,200,{
-        ...film,
+        ...film,sources,sourceEngine,
         copyright:film.license||'No verified source available',
         note:'Independent open-license sample, not a source for the selected commercial movie.',
-        count:film.sources.length
+        count:sources.length
       });
     }
     if(url.pathname==='/api/cloudstream/repositories') {

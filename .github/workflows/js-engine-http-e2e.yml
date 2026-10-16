@@ -1,0 +1,26 @@
+name: Node JS engine HTTP end-to-end (licensed)
+on:
+  push:
+    branches: [feature/verified-js-runtime-api]
+    paths:
+      - 'MOOSAWeb/js-engine-demo.mjs'
+      - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/tests/js-engine-http.live.mjs'
+      - '.github/workflows/js-engine-http-e2e.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  end-to-end:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify site HTTP -> separate JS engine -> browser source preflight
+        run: node tests/js-engine-http.live.mjs
