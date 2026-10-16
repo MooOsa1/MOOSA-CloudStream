@@ -101,6 +101,14 @@ try {
 } catch(error) {
   if(page){
     await page.screenshot({path:path.join(artifacts,'failed.png'),fullPage:true}).catch(()=>{});
+    console.error('Browser codec support and video state:',await page.locator('#video').evaluate(v=>({
+      src:v.currentSrc,paused:v.paused,time:v.currentTime,duration:v.duration,
+      width:v.videoWidth,height:v.videoHeight,readyState:v.readyState,networkState:v.networkState,
+      error:v.error?{code:v.error.code,message:v.error.message}:null,
+      h264:v.canPlayType('video/mp4; codecs="avc1.42E01E"'),
+      aac:v.canPlayType('audio/mp4; codecs="mp4a.40.2"'),
+      hls:v.canPlayType('application/vnd.apple.mpegurl')
+    })).catch(()=>null));
     console.error('Player message:',await page.locator('#player-message').textContent().catch(()=>null));
     console.error('Network errors:',JSON.stringify(failures.slice(-10)));
     console.error('JS errors:',JSON.stringify(jsErrors.slice(-10)));
