@@ -1,0 +1,58 @@
+name: MOOSA original CloudStream repository manifest compatibility
+on:
+  push:
+    branches: [experiment/cloudstream-jvm-engine-20261016]
+    paths:
+      - 'MOOSAJVM/repository-index.mjs'
+      - 'MOOSAJVM/repository-index.test.mjs'
+      - '.github/workflows/cloudstream-cs3-repository-index-20261016.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  repo-index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check parser, allowlists, SHA256 and archive limits without executing plugins
+        run: node --test MOOSAJVM/repository-index.test.mjs
+      - name: Check public repository manifest compatibility (metadata only)
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {parseCloudStreamRepo,parseCloudStreamPlugins} from './MOOSAJVM/repository-index.mjs';
+          for(const item of [
+            {name:'CineStream',
+             url:'https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/plugins.json',
+             plugin:'CineStream'},
+            {name:'StreamPlay',
+             url:'https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/plugins.json',
+             plugin:'StreamPlay'}
+          ]){
+            const response=await fetch(item.url,{
+              signal:AbortSignal.timeout(12000),redirect:'error'
+            });
+            if(!response.ok)throw new Error('manifest_unavailable_'+item.name);
+            const parsed=parseCloudStreamPlugins(await response.text());
+            const matching=parsed.plugins.find(p=>p.internalName===item.plugin);
+            console.log('CS3_REAL_REPOSITORY_INDEX '+JSON.stringify({
+              name:item.name,http:response.status,validEntries:parsed.plugins.length,
+              rejectedEntries:parsed.rejected.length,hasRealPlugin:!!matching,
+              hasHash:!!matching?.sha256,version:matching?.version||null
+            }));
+            if(!matching)throw new Error('target_extension_missing_'+item.name);
+          }
+          const repoResponse=await fetch(
+            'https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/repo.json',{
+              signal:AbortSignal.timeout(12000),redirect:'error'
+            });
+          if(!repoResponse.ok)throw new Error('repo_json_unavailable');
+          const repo=parseCloudStreamRepo(await repoResponse.text());
+          console.log('CS3_REAL_REPO_DESCRIPTOR '+JSON.stringify({
+            name:repo.name,lists:repo.pluginLists.length,manifestVersion:repo.manifestVersion
+          }));
+          NODE
