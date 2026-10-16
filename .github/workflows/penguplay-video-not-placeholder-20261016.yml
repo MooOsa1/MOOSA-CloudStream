@@ -1,0 +1,58 @@
+name: Verify PenguPlay direct URL is real media not configure placeholder
+on:
+  push:
+    branches: [diagnostics/penguplay-source-evaluation-20261016]
+permissions:
+  contents: read
+jobs:
+  media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect no-account PenguPlay response identity and real MP4 bytes
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const ids=[
+            ['tt1727587','Sintel'],
+            ['tt2285752','Tears of Steel'],
+            ['tt0807840','Elephants Dream']
+          ];
+          const links=[];
+          for(const [id,title] of ids){
+            const r=await fetch('https://pengu.uk/stream/movie/'+id+'.json',{
+              signal:AbortSignal.timeout(15000)
+            });
+            const body=await r.json();
+            const s=body.streams?.[0]||{};
+            const u=typeof s.url==='string'?new URL(s.url):null;
+            links.push(s.url||'');
+            const result={id,title,streamName:String(s.name||'').slice(0,110),
+              streamTitle:String(s.title||s.description||'').slice(0,140),
+              hasVideoUrl:!!u,videoHost:u?.hostname,videoPath:u?.pathname?.slice(0,150),
+              urlHasQuery:!!u?.search,behaviorHints:s.behaviorHints,
+              fields:Object.keys(s).slice(0,15)};
+            if(u&&u.hostname==='pengu.uk'){
+              try{
+                const v=await fetch(u.href,{
+                  headers:{Range:'bytes=0-2047',Origin:'https://moosa-web.onrender.com'},
+                  signal:AbortSignal.timeout(12000),redirect:'error'
+                });
+                const rd=v.body?.getReader();
+                const chunk=(await rd?.read())?.value||new Uint8Array();
+                await rd?.cancel().catch(()=>{});
+                result.media={status:v.status,type:v.headers.get('content-type'),
+                  cors:v.headers.get('access-control-allow-origin'),
+                  bytes:chunk.length,validMP4:new TextDecoder().decode(chunk.slice(0,80)).includes('ftyp'),
+                  validTS:chunk[0]===0x47,looksHTML:/<html|<!doctype/i.test(new TextDecoder().decode(chunk.slice(0,150)))};
+              }catch(e){result.mediaError=String(e.message).slice(0,125)}
+            }
+            console.log('PENGUPLAY_STREAM_IDENTITY '+JSON.stringify(result));
+          }
+          console.log('PENGUPLAY_SAME_VIDEO_URL '+JSON.stringify({
+            allEqual:links.every(u=>u===links[0]),uniqueLinks:new Set(links).size
+          }));
+          NODE
