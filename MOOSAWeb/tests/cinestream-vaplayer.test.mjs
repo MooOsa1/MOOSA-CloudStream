@@ -222,6 +222,38 @@ test('Playlist larger than the bounded 512KB cap is rejected before any video re
   assert.deepEqual(result,{ok:false,reason:'invalid_master'});
   assert.deepEqual(calls,[hls]);
 });
+test('Extensionless signed-path HLS segment passes only when real video bytes and CORS match',async()=>{
+  const playlist='#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:8,\nsegment?id=abcd\n#EXT-X-ENDLIST';
+  const hls='https://cdn.example/video/extensionless.m3u8';
+  const ts=new Uint8Array([0x47,...new Array(2047).fill(0)]);
+  const seen=[];
+  const fetchImpl=async url=>{
+    seen.push(url);
+    if(url===hls)return response(playlist);
+    if(url==='https://cdn.example/video/segment?id=abcd')
+      return response(ts,206,'video/mp2t');
+    throw Error('Unexpected request');
+  };
+  assert.deepEqual(await probeHlsFirstSegment(hls,{
+    fetchImpl,allowedHosts:['cdn.example']
+  }),{ok:true,quality:720,width:1280,playableUrl:hls});
+  assert.equal(seen.length,2);
+});
+test('Extensionless HLS segment is rejected if it switches to an unapproved CDN host',async()=>{
+  const hls='https://cdn.example/video/master.m3u8';
+  const content='#EXTM3U\n#EXTINF:9.9,\nhttps://other.example/media?id=1';
+  const calls=[];
+  const fetchImpl=async url=>{
+    calls.push(url);
+    if(url===hls)return response(content);
+    throw Error('An unapproved host was fetched');
+  };
+  const result=await probeHlsFirstSegment(hls,{
+    fetchImpl,allowedHosts:['cdn.example']
+  });
+  assert.deepEqual(result,{ok:false,reason:'unapproved_segment_host_or_url'});
+  assert.deepEqual(calls,[hls]);
+});
 test('No arbitrary unapproved media hosts or dangerous HTTP URLs can be probed',async()=>{
   const {fetchImpl,calls}=fake();
   const rejected=await probeHlsFirstSegment('http://cdn.example/video/master.m3u8',{

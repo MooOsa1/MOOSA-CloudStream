@@ -7,7 +7,6 @@
  * Never retries with forged Referer, cookies, credentials or DRM keys.
  */
 const MAX_PLAYLIST_BYTES=512_000;
-const SAFE_SEGMENT_EXT=/\.(?:ts|m4s|mp4|m4v|aac)$/i;
 
 function safeMediaUrl(raw,hosts){
   if(typeof raw!=='string'||raw.length>3000)return null;
@@ -155,8 +154,10 @@ export async function probeHlsFirstSegment(rawUrl,{
           return {ok:false,reason:'invalid_segment_url'};
         }
         const allowed=safeMediaUrl(full,hosts);
-        if(!allowed||!SAFE_SEGMENT_EXT.test(allowed.pathname))
-          return {ok:false,reason:'untrusted_segment'};
+        if(!allowed)return {ok:false,reason:'unapproved_segment_host_or_url'};
+        // Real HLS segments may use extensionless signed URLs. Require the
+        // exact approved HTTPS hostname, valid browser CORS, and actual video
+        // magic bytes instead of trusting the filename extension.
         const verified=await checkSegment(allowed.href,fetchImpl,timeoutMs,origin);
         return verified.ok
           ?{ok:true,quality:variant.height,width:variant.width,playableUrl:variant.url}

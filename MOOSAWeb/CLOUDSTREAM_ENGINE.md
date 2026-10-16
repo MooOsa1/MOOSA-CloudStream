@@ -252,3 +252,15 @@ promoted, the provider stays OFF, and this issue must not be described as
 solved or bypassed. HTTP 200 on a playlist is NOT a playback success.
 
 Evidence: https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/38954027202
+
+## Browser HLS: extensionless media segments (October 16, 2026)
+
+Original CineStream JVM extraction emitted 13 links for Sintel; twelve tested HLS
+candidates were rejected by the strict filename-extension check without even
+fetching the segment. MOOSA Web now permits extensionless media paths on the
+same explicit approved HTTPS host, but still requires real media magic bytes,
+HTTP 200/206 and correct browser CORS. Cross-host HLS segment URLs remain
+blocked until independently verified and explicitly approved. This does not
+make copyrighted or inaccessible streams playable.
+
+Reference: https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/38960872508
