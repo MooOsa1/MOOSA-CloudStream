@@ -40,6 +40,21 @@ try{
   const replay=await fetch(base+'/api/js-engine/demo');
   const again=await replay.json();
   assert.deepEqual(again,data,'Second request reuses stable cache');
+  // Keep the user-facing existing free-film route working. Whenever the
+  // JS verification completed quickly, it may promote an exactly matched
+  // Commons file; otherwise metadata-verified sources remain available.
+  const filmResponse=await fetch(base+'/api/free-film?id=big-buck-bunny',{
+    signal:AbortSignal.timeout(14000)
+  });
+  assert.equal(filmResponse.status,200);
+  const film=await filmResponse.json();
+  assert.equal(film.title,'Big Buck Bunny');
+  assert.ok(film.count>=1);
+  assert.ok(['commons_metadata','reviewed_js_worker_preflight'].includes(film.sourceEngine));
+  assert.ok(film.sources.every(s=>new URL(s.url).hostname==='upload.wikimedia.org'));
+  console.log('FREE_FILM_JS_ENGINE_FALLBACK_OK '+JSON.stringify({
+    count:film.count,sourceEngine:film.sourceEngine
+  }));
   const bad=await fetch(base+'/api/js-engine/demo?url=https://attacker.example/movie.mp4');
   assert.equal(bad.status,400,'Public request cannot select arbitrary media URLs');
   console.log('NODE_HTTP_JS_ENGINE_LIVE_SUCCESS: real site HTTP -> JS worker -> verified CDN source (no Android)');
