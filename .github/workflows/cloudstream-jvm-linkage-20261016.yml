@@ -86,9 +86,13 @@ jobs:
         run: |
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           official=/tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar
-          timeout 45 jdeps --missing-deps -q -cp "$runtime:$official:MOOSAJVM" /tmp/converted/CineStream.jar > /tmp/cinestream-jdeps.txt || true
+          timeout 90 jdeps --missing-deps --multi-release 21 -q -cp "$runtime:$official:MOOSAJVM" /tmp/converted/CineStream.jar > /tmp/cinestream-jdeps.txt 2>&1
+          if grep -q '^Error:' /tmp/cinestream-jdeps.txt; then
+            cat /tmp/cinestream-jdeps.txt
+            exit 1
+          fi
           echo "JDEPS_DIAGNOSTIC_LINES=$(wc -l < /tmp/cinestream-jdeps.txt)"
-          sed -n '1,12p' /tmp/cinestream-jdeps.txt
+          sed -n '1,15p' /tmp/cinestream-jdeps.txt
           python3 - <<'PY'
           import re,collections
           missing=set()
