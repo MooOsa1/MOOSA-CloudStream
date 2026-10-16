@@ -91,3 +91,45 @@ test('Server resolver returns empty results rather than fabricating sources',asy
     imdbId:'tt2001222'}, {fetchImpl:f,addons:[]});
   assert.deepEqual(empty,[]);
 });
+
+test('CineStream-style Stremio object resources respect supported type and IMDb prefix',async()=>{
+  const calls=[];
+  const f=mockFetch(u=>{
+    calls.push(u.pathname);
+    if(u.pathname==='/manifest.json')return {
+      name:'Licensed CineStream HTTPS adapter',types:['movie','series'],
+      resources:[{name:'stream',types:['movie'],idPrefixes:['tt']}],idPrefixes:['tt']
+    };
+    if(u.pathname.includes('/stream/movie/'))return {streams:[{
+      name:'1080p',url:'https://licensed.example/video.mp4'
+    }]};
+  });
+  const options={fetchImpl:f,addons:['https://licensed.example/manifest.json']};
+  const film=await fromWebAddons(sample,options);
+  assert.equal(film.length,1);
+  const show=await fromWebAddons({...sample,media:'tv',season:2,episode:4},options);
+  assert.deepEqual(show,[]);
+  assert.equal(calls.filter(x=>x.includes('stream/series')).length,0,
+    'Never ask a movie-only Stremio resource for a TV episode');
+});
+test('Stremio addon must not promise playback when stream requires protected native HTTP headers',async()=>{
+  const f=mockFetch(u=>{
+    if(u.pathname==='/manifest.json')return {
+      name:'Licensed Protected Source',types:['movie'],resources:['stream']
+    };
+    if(u.pathname.includes('/stream/'))return {streams:[
+      {name:'2160p',url:'https://licensed.example/secret.m3u8',
+        behaviorHints:{proxyHeaders:{request:{Referer:'https://restricted.example/'}}}},
+      {name:'1080p',url:'https://licensed.example/cookie.mp4',
+        headers:{Authorization:'Bearer private'}},
+      {name:'1080p',url:'https://licensed.example/headers.mp4',
+        behaviorHints:{headers:{Origin:'https://restricted.example'}}},
+      {name:'720p',url:'https://licensed.example/clear.mp4'},
+      {name:'2160p',url:'https://licensed.example/drm.mp4',drm:{}}
+    ]};
+  });
+  const sources=await fromWebAddons(sample,{
+    fetchImpl:f,addons:['https://licensed.example/manifest.json']
+  });
+  assert.deepEqual(sources.map(x=>x.url),['https://licensed.example/clear.mp4']);
+});
