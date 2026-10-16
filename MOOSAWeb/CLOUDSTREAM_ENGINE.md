@@ -129,11 +129,15 @@ exact IMDb movie or season/episode identity:
 MOOSA Web now recognizes subtitle resources on operator-configured HTTPS
 Stremio addons in WEB_SOURCE_ADDONS. It fetches Arabic/English SRT/VTT
 links only, rejects authorization/cookies/Referer-dependent links and unsafe
-URLs, and merges tracks into already approved sources for that movie/episode.
-Subtitle-only addons can supply tracks without fabricating any video sources.
-A failing subtitle addon cannot erase video sources; subtitle HTTP work has
-a bounded 2.8-second deadline per addon. Neither this feature nor the
-Stremio source transport executes original CineStream/StreamPlay Android code.
+URLs, and uses a *separate parallel /api/stremio-subtitles request* for the
+original IMDb film or exact TV season/episode. The web player adds the
+tracks to the selected title without resetting video playback, and cancels
+old subtitle requests when the player closes or a different title opens.
+Subtitle-only addons can supply tracks without fabricating video sources.
+A failing subtitle addon cannot erase or delay the main /api/resolve video
+response. Subtitle HTTP work has a bounded 2.8-second deadline per addon.
+Neither this feature nor Stremio source transport executes original
+CineStream/StreamPlay Android code.
 
 The operator must separately configure and review authorized add-on manifests.
 No external subtitle addon is enabled by default.
