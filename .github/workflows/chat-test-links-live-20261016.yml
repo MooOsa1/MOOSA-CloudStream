@@ -1,0 +1,43 @@
+name: Check live ChatGPT test URLs
+on:
+  push:
+    branches: [diagnostics/verify-chat-test-links-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate both user-facing links with UTM tracking
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://moosa-web.onrender.com';
+          async function check(path,expected){
+            const response=await fetch(root+path,{
+              signal:AbortSignal.timeout(18000),headers:{Accept:'application/json'}
+            });
+            const json=await response.json();
+            assert.equal(response.status,expected,JSON.stringify({path,body:json}));
+            return json;
+          }
+          const status=await check('/api/web-native/status?utm_source=chatgpt.com',200);
+          assert.equal(status.engine,'node_js');
+          assert.equal(status.httpStremioSubtitles.supported,true);
+          const s=await check('/api/stremio-subtitles?media=movie&id=45745&utm_source=chatgpt.com',200);
+          assert.equal(s.active,false);
+          assert.deepEqual(s.subtitles,[]);
+          await check('/api/web-native/status?utm_source=chatgpt.com&provider=https://evil.example',400);
+          await check('/api/stremio-subtitles?media=movie&id=45745&utm_source=chatgpt.com&provider=https://evil.example',400);
+          await check('/api/stremio-subtitles?media=movie%26id=45745&utm_source=chatgpt.com',400);
+          console.log('CHAT_TEST_LINKS_PRODUCTION_PASS '+JSON.stringify({
+            status:'ok',subtitleHttp:200,active:s.active,tracks:s.subtitles.length,
+            unknownParamsRejected:true
+          }));
+          NODE
