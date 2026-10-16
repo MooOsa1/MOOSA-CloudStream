@@ -81,6 +81,25 @@ test('passes only fixed, exact-name, exact-ID metadata; never claims video playb
   }finally{await Promise.all([good.cleanup(),mismatched.cleanup()])}
 });
 
+test('never accepts prefix-spoofed JVM worker class, movie title, or IMDb',async()=>{
+  const cases=[
+    [GOOD[0].replace('CineStreamProvider','CineStreamProviderEvil'),GOOD[1]],
+    [GOOD[0],GOOD[1].replace('title=Sintel ','title=Sintel2 ')],
+    [GOOD[0],GOOD[1].replace('tt1727587','tt1727587123')],
+    [GOOD[0],GOOD[1],GOOD[1]]
+  ];
+  for(const lines of cases){
+    const mock=await launcher(lines);
+    try{
+      await withBridge(mock.filename,async origin=>{
+        const response=await post(origin,LICENSED);
+        assert.equal(response.status,503);
+        assert.deepEqual(await response.json(),{error:'metadata_probe_failed'});
+      });
+    }finally{await mock.cleanup()}
+  }
+});
+
 test('rejects missing Java engine, extra output and timeout without leaking details',async()=>{
   const noisy=await launcher([...GOOD,...Array(200).fill('MOOSA_EXTRA_OUTPUT '.repeat(15))]);
   const stalled=await launcher(GOOD,{wait:2});
