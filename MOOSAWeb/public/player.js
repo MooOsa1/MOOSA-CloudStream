@@ -1,5 +1,6 @@
 import {nextPlaybackSource} from './playback-fallback.js';
 import {chooseBrowserSources} from './source-compatibility.js';
+import {safeSubtitleFileUrl} from './subtitle-file-url.js';
 const $ = s => document.querySelector(s);
 const video = $('#video');
 let hls = null;
@@ -167,9 +168,7 @@ export function appendExternalSubtitles(items){
   const seen=new Set(externalSubtitles.map(x=>x.url));
   for(const item of items.slice(0,24)){
     if(!item||!['ar','en'].includes(item.language) ||
-       typeof item.url!=='string'||!/^https:\/\//i.test(item.url) ||
-       !/\.(?:vtt|srt)(?:[?#]|$)/i.test(item.url) ||
-       seen.has(item.url))continue;
+       !safeSubtitleFileUrl(item.url) || seen.has(item.url))continue;
     seen.add(item.url);
     externalSubtitles.push({
       url:item.url,language:item.language,

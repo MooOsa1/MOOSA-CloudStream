@@ -9,7 +9,7 @@ import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs'
 import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
 import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream-stremio-interop.mjs';
-import {collectStremioAddonSubtitles} from './web-stremio-subtitles.mjs';
+import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -162,8 +162,10 @@ async function handle(req,res) {
           supported:true,protocol:'stremio_subtitles_http',
           media:['movie','series'],languages:['ar','en'],
           configuredAddonCount:configuredAddons().length,
-          active:configuredAddons().length>0,
-          note:'Only operator-approved HTTPS addon manifests are queried. Active indicates configured addons, not proven available subtitle tracks.'
+          includedOfficialAddon:'OpenSubtitles v3',
+          officialManifest:'https://opensubtitles-v3.strem.io/manifest.json',
+          active:true,
+          note:'Official Stremio subtitle addon is enabled without a key. Individual subtitles may be unavailable, mistimed or inaccessible; active is not proof of correct subtitles for each title.'
         },
         activeReviewedProviders:[{
           id:'commons-authorized',protocol:'nuvio_getStreams',
@@ -257,8 +259,7 @@ async function handle(req,res) {
            !Number.isInteger(episode) || episode<1 || episode>1000)) ||
          (media==='movie' && episodeRequested))
         return err(res,400,'Invalid movie or episode');
-      const addons=configuredAddons();
-      if(!addons.length)return json(res,200,{subtitles:[],active:false,count:0});
+      const addons=officialSubtitleAddons(configuredAddons());
       try {
         const details=await tmdbGet({endpoint:'/'+media+'/'+id,
           params:{language:'en-US',append_to_response:'external_ids'}});

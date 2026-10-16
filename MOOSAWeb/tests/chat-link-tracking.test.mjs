@@ -42,16 +42,16 @@ test('ChatGPT link trackers do not break public runtime status without making pr
 
 test('Tracking appended by chat links never breaks the exact-movie subtitle request',async()=>{
   await runApiChecks(async base=>{
+    // Invalid movie IDs are rejected *after* parsing. Harmless URL
+    // tracking must not be mistaken for forbidden provider parameters.
     for(const query of [
-      '?media=movie&id=45745',
-      '?media=movie&id=45745&utm_source=chatgpt.com',
-      '?media=movie&id=45745&utm_medium=referral&utm_campaign=share',
+      '?media=movie&id=0',
+      '?media=movie&id=0&utm_source=chatgpt.com',
+      '?media=movie&id=0&utm_medium=referral&utm_campaign=share'
     ]){
       const response=await fetch(base+'/api/stremio-subtitles'+query);
-      assert.equal(response.status,200,query);
-      assert.deepEqual(await response.json(),{
-        subtitles:[],active:false,count:0
-      });
+      assert.equal(response.status,400,query);
+      assert.equal((await response.json()).error,'Invalid movie or episode');
     }
     for(const query of [
       '?media=movie&id=45745&utm_source=chatgpt.com&provider=https://evil.example',

@@ -192,13 +192,14 @@ test('public runtime reports Stremio subtitles are supported but not necessarily
     assert.equal(json.httpStremioSubtitles.supported,true);
     assert.equal(json.httpStremioSubtitles.protocol,'stremio_subtitles_http');
     assert.deepEqual(json.httpStremioSubtitles.languages,['ar','en']);
-    assert.equal(json.httpStremioSubtitles.active,json.httpStremioSubtitles.configuredAddonCount>0);
+    assert.equal(json.httpStremioSubtitles.active,true);
+    assert.equal(json.httpStremioSubtitles.includedOfficialAddon,'OpenSubtitles v3');
     assert.equal(json.cloudstreamCs3Supported,false);
     assert.equal(json.cineStreamAndStreamPlayOriginals,false);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
 
-test('Subtitle API is strict, never calls TMDB without operator-configured addons',async()=>{
+test('Subtitle API is strict and rejects arbitrary providers and wrong episodes',async()=>{
   const app=createServer();
   await new Promise(resolve=>app.listen(0,'127.0.0.1',resolve));
   const base='http://127.0.0.1:'+app.address().port;
@@ -212,8 +213,7 @@ test('Subtitle API is strict, never calls TMDB without operator-configured addon
     ]){
       assert.equal((await fetch(base+'/api/stremio-subtitles'+suffix)).status,400,suffix);
     }
-    const response=await fetch(base+'/api/stremio-subtitles?media=movie&id=45745');
-    assert.equal(response.status,200);
-    assert.deepEqual(await response.json(),{subtitles:[],active:false,count:0});
+    // Real subtitle availability is verified in separate live API probes.
+    // Unit tests avoid depending on TMDB credentials or external endpoints.
   }finally{await new Promise(resolve=>app.close(resolve));}
 });
