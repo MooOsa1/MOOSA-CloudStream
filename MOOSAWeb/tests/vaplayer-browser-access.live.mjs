@@ -110,42 +110,63 @@ for(const film of FILMS){
    result.result='no_exact_identity_or_stream';
    console.log('SOURCE_DIAG '+JSON.stringify(result));continue;
  }
- let source=await publicUrl(parsed.data.stream_urls[0]);
- if(!source){result.result='unsafe_source_url';console.log('SOURCE_DIAG '+JSON.stringify(result));continue;}
- const master=await load(source,{Origin:ORIGIN});
- result.masterStatus=master.status;
- result.masterCors=master.cors==='*'||master.cors===ORIGIN;
- if(!master.body?.startsWith('#EXTM3U')){
-   result.result='master_unavailable';
-   console.log('SOURCE_DIAG '+JSON.stringify(result));continue;
+ const findings=[];
+ for(const raw of parsed.data.stream_urls.slice(0,3)){
+  const attempt={};
+  findings.push(attempt);
+  let source=await publicUrl(raw);
+  if(!source){attempt.result='unsafe_source_url';continue;}
+  const master=await load(source,{Origin:ORIGIN});
+  attempt.masterStatus=master.status;
+  attempt.masterCors=master.cors==='*'||master.cors===ORIGIN;
+  const normalized=String(master.body||'').replace(/^\uFEFF/,'').trimStart();
+  attempt.masterKind=normalized.startsWith('#EXTM3U')?'hls':
+    normalized.startsWith('<')?'html':normalized.startsWith('{')?'json':
+    normalized?'other':'empty';
+  if(attempt.masterKind!=='hls'){attempt.result='master_not_hls';continue;}
+  if(/#EXT-X-(?:SESSION-)?KEY:/.test(normalized)){
+   attempt.result='encrypted_hls_skipped';continue;
+  }
+  const variants=normalized.split(/\r?\n/).flatMap((line,i,lines)=>{
+   if(!line.startsWith('#EXT-X-STREAM-INF:'))return [];
+   const resolution=line.match(/RESOLUTION=(\d+)x(\d+)/);
+   const uri=lines.slice(i+1).find(x=>x.trim()&&!x.startsWith('#'))?.trim();
+   if(!uri||!resolution||Number(resolution[2])<720)return [];
+   return [{uri,height:+resolution[2]}];
+  }).sort((a,b)=>b.height-a.height);
+  const choices=variants.length?
+   [variants.find(x=>x.height<=1080)||variants.at(-1),variants.at(-1)]
+    .filter((item,i,arr)=>item&&arr.indexOf(item)===i):
+   [{uri:source,height:720,direct:true}];
+  attempt.variants=[];
+  for(const variant of choices){
+   const diag={height:variant.height};
+   attempt.variants.push(diag);
+   const media=variant.direct?source:await publicUrl(variant.uri,source);
+   if(!media){diag.result='unsafe_variant';continue;}
+   const playlist=variant.direct?{...master,body:normalized}:
+    await load(media,{Origin:ORIGIN});
+   diag.status=playlist.status;
+   diag.cors=playlist.cors==='*'||playlist.cors===ORIGIN;
+   const body=String(playlist.body||'').replace(/^\uFEFF/,'').trimStart();
+   diag.kind=body.startsWith('#EXTM3U')?'hls':
+    body.startsWith('<')?'html':body.startsWith('{')?'json':
+    body?'other':'empty';
+   if(diag.kind!=='hls'){diag.result='not_hls';continue;}
+   if(/#EXT-X-(?:SESSION-)?KEY:/.test(body)){diag.result='encrypted_hls_skipped';continue;}
+   const segment=playlistUri(body,'#EXTINF:');
+   const url=segment?await publicUrl(segment,media):null;
+   if(!url){diag.result='no_public_segment';continue;}
+   const plain=await load(url,{Range:'bytes=0-2047',Origin:ORIGIN},true);
+   const header=await load(url,{Range:'bytes=0-2047',Origin:ORIGIN,Referer:REFERER},true);
+   diag.noReferer={status:plain.status,video:!!plain.isVideo,cors:plain.cors==='*'||plain.cors===ORIGIN};
+   diag.originalReferer={status:header.status,video:!!header.isVideo,cors:header.cors==='*'||header.cors===ORIGIN};
+   diag.result=header.isVideo?'real_segment_received':'no_video_received';
+  }
  }
- if(master.body.includes('#EXT-X-KEY:')||master.body.includes('#EXT-X-SESSION-KEY:')){
-   result.result='encrypted_hls_not_tested';
-   console.log('SOURCE_DIAG '+JSON.stringify(result));continue;
- }
- let media=source;
- const v=selectedVariant(master.body);
- if(v){
-   media=await publicUrl(v.url,source);
-   if(!media){result.result='unsafe_variant';console.log('SOURCE_DIAG '+JSON.stringify(result));continue;}
-   const playlist=await load(media,{Origin:ORIGIN});
-   result.variantStatus=playlist.status;
-   result.variantCors=playlist.cors==='*'||playlist.cors===ORIGIN;
-   if(!playlist.body?.startsWith('#EXTM3U')){
-     result.result='variant_unavailable';
-     console.log('SOURCE_DIAG '+JSON.stringify(result));continue;
-   }
-   result.measuredHeight=v.height;
-   source=playlist.body;
- }else source=master.body;
- const seg=playlistUri(source,'#EXTINF:');
- const safe=seg?await publicUrl(seg,media):null;
- if(!safe){result.result='no_safe_media_segment';console.log('SOURCE_DIAG '+JSON.stringify(result));continue;}
- const noHeaders=await load(safe,{Range:'bytes=0-2047',Origin:ORIGIN},true);
- const providerHeaders=await load(safe,{Range:'bytes=0-2047',Origin:ORIGIN,Referer:REFERER},true);
- result.segmentWithoutReferer={status:noHeaders.status,video:!!noHeaders.isVideo,cors:noHeaders.cors==='*'||noHeaders.cors===ORIGIN};
- result.segmentWithOriginalReferer={status:providerHeaders.status,video:!!providerHeaders.isVideo,cors:providerHeaders.cors==='*'||providerHeaders.cors===ORIGIN};
- result.result=providerHeaders.isVideo&&providerHeaders.status<300?
-  'segment_accessible_with_original_referer':'segment_not_usable_with_original_referer';
+ result.streamChecks=findings;
+ result.realVideoSegments=findings.flatMap(f=>f.variants||[])
+  .filter(v=>v.originalReferer?.video).length;
+ result.result=result.realVideoSegments>0?'real_video_segment_confirmed':'no_playable_segments';
  console.log('SOURCE_DIAG '+JSON.stringify(result));
 }
