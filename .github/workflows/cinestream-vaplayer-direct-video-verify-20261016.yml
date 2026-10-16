@@ -1,0 +1,63 @@
+name: CineStream VaPlayer direct stream identity and media viability
+on:
+  push:
+    branches: [diagnostics/cinestream-streamplay-direct-http-provider-20261016]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect actual upstream film identity + each media playlist/status on CC films
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const tests=[
+            {imdb:'tt1727587',name:'Sintel'},
+            {imdb:'tt2285752',name:'Tears of Steel'},
+            {imdb:'tt0807840',name:'Elephants Dream'}
+          ];
+          for(const item of tests){
+            const r=await fetch('https://streamdata.vaplayer.ru/api.php?imdb='+item.imdb+'&type=movie',{
+              headers:{Referer:'https://nextgencloudfabric.com/',Accept:'application/json'},
+              signal:AbortSignal.timeout(11000),redirect:'error'});
+            const data=await r.json();
+            const urls=Array.isArray(data.data?.stream_urls)?data.data.stream_urls:[];
+            const out=[];
+            for(const [idx,url] of urls.entries()){
+              try{
+                const u=new URL(url);
+                const resp=await fetch(url,{headers:{
+                  'Range':'bytes=0-8191','Origin':'https://moosa-web.onrender.com'
+                },signal:AbortSignal.timeout(12500),redirect:'error'});
+                let bytes='';
+                if(resp.ok){
+                  const reader=resp.body?.getReader();
+                  if(reader){
+                    const part=await reader.read();
+                    bytes=new TextDecoder().decode(part.value?.slice(0,650)||new Uint8Array());
+                    await reader.cancel().catch(()=>{});
+                  }
+                }
+                out.push({index:idx,host:u.hostname,ext:u.pathname.match(/\.(?:m3u8|mp4|webm)$/i)?.[0]||'',
+                  http:resp.status,type:resp.headers.get('content-type'),
+                  cors:resp.headers.get('access-control-allow-origin'),
+                  range:resp.headers.get('content-range')?.slice(0,70)||null,
+                  hlsHeader:bytes.startsWith('#EXTM3U'),
+                  mp4Header:bytes.includes('ftyp'),looksHTML:/<html|<!doctype/i.test(bytes),
+                  firstLine:bytes.startsWith('#EXTM3U')?bytes.split('\n')[1]?.slice(0,80):null});
+              }catch(e){out.push({index:idx,error:String(e.message).slice(0,105)})}
+            }
+            console.log('CINESTREAM_VAPLAYER_DIRECT_VERIFY '+JSON.stringify({
+              requestImdb:item.imdb,expectedName:item.name,status:r.status,
+              actualTitle:String(data.data?.title||'').slice(0,130),
+              actualImdb:data.data?.imdb_id,
+              actualFileName:String(data.data?.file_name||'').slice(0,115),
+              statusCode:data.status_code,streams:out
+            }));
+          }
+          NODE
