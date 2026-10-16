@@ -14,7 +14,7 @@ const FILMS=[
  {id:'tt0032599',title:'His Girl Friday',year:1940}
 ];
 const TIMEOUT=7000;
-const MAX_HLS=120_000;
+const MAX_HLS=2_000_000;
 function safeIp(ip){
  if(!isIP(ip))return false;
  if(ip.includes(':')){
