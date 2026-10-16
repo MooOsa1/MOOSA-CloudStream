@@ -147,7 +147,10 @@ export async function probeHlsFirstSegment(rawUrl,{
     const isMaster=playlist.includes('#EXT-X-STREAM-INF:');
     const variants=isMaster
       ?rankedMasterVariants(playlist,root.href,hosts,minWidth)
-      :[{url:root.href,width:1280,height:720}];
+      // A standalone media playlist carries no reliable dimensions. Do NOT
+      // invent 720p merely because its first TS packet is playable. A real
+      // CineStream candidate advertised as 720 decoded to 852x480 in Chrome.
+      :[{url:root.href,width:0,height:0}];
     if(!variants.length)return {ok:false,reason:'no_hd_variant'};
     // Return the exact media playlist that was verified, never the master.
     // A master may cause Safari to select a broken high-resolution rendition.

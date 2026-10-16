@@ -182,7 +182,7 @@ test('A wide, low-height variant is not mislabeled as 720p HD',async()=>{
   assert.deepEqual(result,{ok:false,reason:'no_hd_variant'});
   assert.equal(requests,1);
 });
-test('Actual-sized 172KB HD media playlist is accepted and first video segment verified',async()=>{
+test('Actual-sized 172KB media playlist is playable but resolution is NOT falsely claimed HD',async()=>{
   const hugeRows=Array.from({length:2600},(_,i)=>
     '#EXT-X-DATERANGE:ID="sample-'+i+'",CLASS="metadata",DURATION=9.99').join('\n');
   const mediaPlaylist='#EXTM3U\n'+hugeRows+
@@ -203,7 +203,7 @@ test('Actual-sized 172KB HD media playlist is accepted and first video segment v
     fetchImpl,allowedHosts:['cdn.example']
   });
   assert.deepEqual(result,{
-    ok:true,quality:720,width:1280,playableUrl:hls
+    ok:true,quality:0,width:0,playableUrl:hls
   });
   assert.equal(calls.length,2);
 });
@@ -236,7 +236,7 @@ test('Extensionless signed-path HLS segment passes only when real video bytes an
   };
   assert.deepEqual(await probeHlsFirstSegment(hls,{
     fetchImpl,allowedHosts:['cdn.example']
-  }),{ok:true,quality:720,width:1280,playableUrl:hls});
+  }),{ok:true,quality:0,width:0,playableUrl:hls});
   assert.equal(seen.length,2);
 });
 test('Extensionless HLS segment is rejected if it switches to an unapproved CDN host',async()=>{
@@ -267,7 +267,7 @@ test('An HLS segment server refusing byte ranges can still play using ordinary G
   };
   assert.deepEqual(await probeHlsFirstSegment(url,{
     fetchImpl,allowedHosts:['cdn.example']
-  }),{ok:true,quality:720,width:1280,playableUrl:url});
+  }),{ok:true,quality:0,width:0,playableUrl:url});
   assert.equal(checks.length,2);
   assert.equal(checks[0].Range,'bytes=0-2047');
   assert.equal(checks[1].Range,undefined);
@@ -295,6 +295,25 @@ test('200 video segment without CORS is distinctly rejected',async()=>{
   assert.deepEqual(await probeHlsFirstSegment(url,{
     fetchImpl,allowedHosts:['cdn.example']
   }),{ok:false,reason:'segment_cors_missing'});
+});
+test('Standalone media playlist never becomes a 720p CineStream source without real resolution data',async()=>{
+  const direct='https://cdn.example/video/direct.m3u8';
+  const piece='https://cdn.example/video/actual.ts';
+  const fetchImpl=async (url)=>{
+    if(url==='https://streamdata.vaplayer.ru/api.php?imdb=tt1727587&type=movie')
+      return response(JSON.stringify({...valid(),
+        data:{...valid().data,stream_urls:[direct]}}),200,'application/json');
+    if(url===direct)return response('#EXTM3U\n#EXTINF:9,\nactual.ts');
+    if(url===piece)return response(new Uint8Array([0x47,...new Array(2047).fill(0)]),206,'video/mp2t');
+    throw Error('Unexpected URL');
+  };
+  assert.deepEqual(await probeHlsFirstSegment(direct,{
+    fetchImpl,allowedHosts:['cdn.example']
+  }),{ok:true,quality:0,width:0,playableUrl:direct},
+  'Segment is real, but its encoded dimensions remain unknown');
+  assert.deepEqual(await fromCineStreamVaPlayer(movie,{
+    enabled:true,mediaHosts:['cdn.example'],fetchImpl
+  }),[],'Unknown height must not be promoted as 720p');
 });
 test('No arbitrary unapproved media hosts or dangerous HTTP URLs can be probed',async()=>{
   const {fetchImpl,calls}=fake();

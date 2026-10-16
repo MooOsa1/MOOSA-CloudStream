@@ -273,3 +273,16 @@ attempts are bounded and canceled after the first video chunk, with no
 proxy, forged Referer, cookies or bypass. Distinct failure reasons report
 segment_http_<status> versus segment_cors_missing; direct playback is
 never announced unless video magic bytes and browser CORS both pass.
+
+## Fix: no assumed 720p for bare HLS media playlists
+
+Live Chrome decoder returned **852x480** for a CineStream segment whose bare
+HLS media manifest lacks a resolution declaration. Previous first-segment
+probe incorrectly assumed `{height:720,width:1280}` for every standalone
+media playlist. The HLS probe now reports quality `0` / width `0` when
+resolution is unknown, while still accurately reporting successful first
+video bytes. The VaPlayer source aggregator rejects unknown dimensions as
+ineligible for the user's minimum 720p policy. A master playlist declaring
+HD is still only a provider quality *claim*, not a full decoded-frame proof.
+
+Evidence: https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/38964692426

@@ -67,7 +67,11 @@ export async function fromCineStreamVaPlayer(meta,{
       const probe=await probeHlsFirstSegment(url,{
         fetchImpl,allowedHosts:mediaHosts,timeoutMs
       });
-      if(!probe.ok)return null;
+      // Never promote an unlabelled HLS media playlist as >=720p: only an
+      // explicit HD master RESOLUTION is accepted as a candidate quality.
+      // Browser decode can reveal a still-lower real resolution later.
+      if(!probe.ok || !Number.isInteger(probe.quality) || probe.quality<720 ||
+         !Number.isInteger(probe.width) || probe.width<1280)return null;
       return {
         url:probe.playableUrl,name:'CineStream • VaPlayer '+(i+1),
         quality:probe.quality,verifiedSegment:true,subtitles:[]
