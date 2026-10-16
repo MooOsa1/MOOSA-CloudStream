@@ -1,0 +1,36 @@
+name: MOOSA Web parallel Stremio subtitles browser test
+on:
+  pull_request:
+    paths:
+      - 'MOOSAWeb/web-stremio-subtitles.mjs'
+      - 'MOOSAWeb/providers.mjs'
+      - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/public/source-search.js'
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/tests/stremio-subtitles.browser.mjs'
+      - '.github/workflows/web-stremio-subtitles-browser.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/web-stremio-subtitles.mjs'
+      - 'MOOSAWeb/public/source-search.js'
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/tests/stremio-subtitles.browser.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --no-package-lock playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/stremio-subtitles.browser.mjs

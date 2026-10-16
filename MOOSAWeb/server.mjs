@@ -3,12 +3,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBridge } from './bridge.mjs';
-import { resolveWebSources } from './providers.mjs';
+import { resolveWebSources, configuredAddons } from './providers.mjs';
 import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
 import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
 import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
 import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream-stremio-interop.mjs';
+import {collectStremioAddonSubtitles} from './web-stremio-subtitles.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -146,6 +147,13 @@ async function handle(req,res) {
       return json(res,200,{
         engine:'node_js',runtime:'server_native',pairingRequired:false,
         catalogIntegrated:true,
+        httpStremioSubtitles:{
+          supported:true,protocol:'stremio_subtitles_http',
+          media:['movie','series'],languages:['ar','en'],
+          configuredAddonCount:configuredAddons().length,
+          active:configuredAddons().length>0,
+          note:'Only operator-approved HTTPS addon manifests are queried. Active indicates configured addons, not proven available subtitle tracks.'
+        },
         activeReviewedProviders:[{
           id:'commons-authorized',protocol:'nuvio_getStreams',
           media:'licensed_movies_only',approvedFilmIds:supportedJsFilmIds()
@@ -220,6 +228,38 @@ async function handle(req,res) {
           originalAndroidPluginsExecuted:false
         }
       });
+    }
+    if(url.pathname==='/api/stremio-subtitles'){
+      const allowed=new Set(['media','id','season','episode']);
+      if([...url.searchParams.keys()].some(k=>!allowed.has(k)) ||
+        [...url.searchParams.keys()].length!==new Set(url.searchParams.keys()).size)
+        return err(res,400,'Unsupported subtitle parameters');
+      const media=url.searchParams.get('media');
+      const id=cleanId(url.searchParams.get('id'));
+      const episodeRequested=url.searchParams.has('season')||url.searchParams.has('episode');
+      const season=Number(url.searchParams.get('season'));
+      const episode=Number(url.searchParams.get('episode'));
+      if(!id || !mediaTypes.has(media) ||
+         (media==='tv' && (!url.searchParams.has('season') || !url.searchParams.has('episode') ||
+           !Number.isInteger(season) || season<0 || season>100 ||
+           !Number.isInteger(episode) || episode<1 || episode>1000)) ||
+         (media==='movie' && episodeRequested))
+        return err(res,400,'Invalid movie or episode');
+      const addons=configuredAddons();
+      if(!addons.length)return json(res,200,{subtitles:[],active:false,count:0});
+      try {
+        const details=await tmdbGet({endpoint:'/'+media+'/'+id,
+          params:{language:'en-US',append_to_response:'external_ids'}});
+        const meta={
+          media,id:Number(id),
+          imdbId:details.imdb_id||details.external_ids?.imdb_id||null,
+          ...(media==='tv'?{season,episode}:{})
+        };
+        const subtitles=await collectStremioAddonSubtitles(meta,{addons});
+        return json(res,200,{subtitles,active:true,count:subtitles.length});
+      }catch(e){
+        return err(res,e.status||502,'Subtitle lookup temporarily unavailable');
+      }
     }
     if(url.pathname==='/api/resolve'){
       const media=url.searchParams.get('media');
