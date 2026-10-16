@@ -66,6 +66,21 @@ try {
   assert.equal((await page.locator('#player-subtitles option').count()),1,
     'subtitle results from a previous movie must be cleared on a new title');
   assert.equal(await page.locator('#player-title').textContent(),'Different exact TV episode');
+  // A source search started by an old film must be canceled when a third
+  // title (including an independent open-film shelf title) opens.
+  await page.evaluate(async()=>{
+    const {searchAutomaticSources}=await import('/source-search.js');
+    const {showPlayer,appendPlayerSources}=await import('/player.js');
+    void searchAutomaticSources('movie',222);
+    showPlayer({title:'Independent third title',sources:[]});
+    appendPlayerSources([{url:'https://video.example/third.mp4',
+      name:'Independent source',quality:720}]);
+  });
+  await page.waitForTimeout(2550);
+  assert.equal(await page.locator('#player-title').textContent(),'Independent third title');
+  assert.equal(await page.locator('#player-source option').count(),2);
+  assert.equal(await page.locator('#player-subtitles option').count(),1,
+    'Cancelled subtitles from the prior movie must never leak to a new title');
   assert.deepEqual(errors,[]);
   console.log('STREMIO_SUBTITLE_MOBILE_BROWSER_PASS '+JSON.stringify({
     videoRequests:videoResolve,optionalSubtitleRequests:subtitleResolve,
