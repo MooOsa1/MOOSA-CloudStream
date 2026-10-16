@@ -24,7 +24,7 @@ function nextUri(lines,at){
   }
   return null;
 }
-function selectMasterVariant(raw,origin,hosts,minWidth){
+function rankedMasterVariants(raw,origin,hosts,minWidth){
   const lines=raw.split(/\r?\n/);
   const choices=[];
   for(let i=0;i<lines.length;i++){
@@ -36,20 +36,23 @@ function selectMasterVariant(raw,origin,hosts,minWidth){
     const path=nextUri(lines,i);
     if(!path)continue;
     let candidate;
-    try{candidate=new URL(path,origin).href}catch{continue}
+    try{candidate=new URL(path,origin).href;}catch{continue;}
     const allowed=safeMediaUrl(candidate,hosts);
-    if(!allowed)continue;
+    if(!allowed||!allowed.pathname.endsWith('.m3u8'))continue;
+    if(choices.some(x=>x.url===allowed.href))continue;
     choices.push({url:allowed.href,width,height});
   }
-  choices.sort((a,b)=>b.width-a.width||b.height-a.height);
-  return choices[0]||null;
+  // Probe up to three HD renditions in parallel. A broken 4K track must not
+  // prevent a healthy 1080p/720p variant from becoming a usable source.
+  choices.sort((a,b)=>b.height-a.height||b.width-a.width);
+  return choices.slice(0,3);
 }
-async function fetchText(url,fetchImpl,timeoutMs){
+async function fetchText(url,fetchImpl,timeoutMs,origin){
   const response=await fetchImpl(url,{
-    method:'GET',headers:{Accept:'application/vnd.apple.mpegurl, application/x-mpegURL'},
+    method:'GET',headers:{Accept:'application/vnd.apple.mpegurl, application/x-mpegURL',Origin:origin},
     redirect:'error',signal:AbortSignal.timeout(timeoutMs)
   });
-  if(!response.ok || Number(response.headers.get('content-length')||0)>MAX_PLAYLIST_BYTES)
+  if(!response.ok || !validCors(response,origin) ||\n     Number(response.headers.get('content-length')||0)>MAX_PLAYLIST_BYTES)
     return null;
   const txt=await response.text();
   if(txt.length>MAX_PLAYLIST_BYTES||!txt.startsWith('#EXTM3U'))return null;
@@ -95,31 +98,39 @@ export async function probeHlsFirstSegment(rawUrl,{
   if(!root||!root.pathname.endsWith('.m3u8'))
     return {ok:false,reason:'not_approved_https_hls'};
   try{
-    const playlist=await fetchText(root.href,fetchImpl,timeoutMs);
+    const playlist=await fetchText(root.href,fetchImpl,timeoutMs,origin);
     if(!playlist)return {ok:false,reason:'invalid_master'};
-    let variant,media=playlist,mediaUrl=root.href;
-    if(playlist.includes('#EXT-X-STREAM-INF:')){
-      variant=selectMasterVariant(playlist,root.href,hosts,minWidth);
-      if(!variant)return {ok:false,reason:'no_hd_variant'};
-      mediaUrl=variant.url;
-      media=await fetchText(mediaUrl,fetchImpl,timeoutMs);
-      if(!media)return {ok:false,reason:'invalid_variant'};
-    }
-    if(!media.includes('#EXTINF:'))
-      return {ok:false,reason:'no_media_segments'};
-    const lines=media.split(/\r?\n/);
-    const marker=lines.findIndex(x=>x.startsWith('#EXTINF:'));
-    const segment=marker>=0?nextUri(lines,marker):null;
-    if(!segment)return {ok:false,reason:'no_first_segment'};
-    let full;
-    try{full=new URL(segment,mediaUrl).href}catch{
-      return {ok:false,reason:'invalid_segment_url'};
-    }
-    const allowed=safeMediaUrl(full,hosts);
-    if(!allowed||!SAFE_SEGMENT_EXT.test(allowed.pathname))
-      return {ok:false,reason:'untrusted_segment'};
-    const verified=await checkSegment(allowed.href,fetchImpl,timeoutMs,origin);
-    if(!verified.ok)return verified;
-    return {ok:true,quality:variant?.height||720,width:variant?.width||1280};
+    const isMaster=playlist.includes('#EXT-X-STREAM-INF:');
+    const variants=isMaster
+      ?rankedMasterVariants(playlist,root.href,hosts,minWidth)
+      :[{url:root.href,width:1280,height:720}];
+    if(!variants.length)return {ok:false,reason:'no_hd_variant'};
+    // Return the exact media playlist that was verified, never the master.
+    // A master may cause Safari to select a broken high-resolution rendition.
+    const attempted=await Promise.all(variants.map(async variant=>{
+      try{
+        const media=variant.url===root.href
+          ?playlist:await fetchText(variant.url,fetchImpl,timeoutMs,origin);
+        if(!media)return {ok:false,reason:'invalid_variant'};
+        if(!media.includes('#EXTINF:'))return {ok:false,reason:'no_media_segments'};
+        const lines=media.split(/\r?\n/);
+        const marker=lines.findIndex(x=>x.startsWith('#EXTINF:'));
+        const segment=marker>=0?nextUri(lines,marker):null;
+        if(!segment)return {ok:false,reason:'no_first_segment'};
+        let full;
+        try{full=new URL(segment,variant.url).href;}catch{
+          return {ok:false,reason:'invalid_segment_url'};
+        }
+        const allowed=safeMediaUrl(full,hosts);
+        if(!allowed||!SAFE_SEGMENT_EXT.test(allowed.pathname))
+          return {ok:false,reason:'untrusted_segment'};
+        const verified=await checkSegment(allowed.href,fetchImpl,timeoutMs,origin);
+        return verified.ok
+          ?{ok:true,quality:variant.height,width:variant.width,playableUrl:variant.url}
+          :verified;
+      }catch{return {ok:false,reason:'timeout_or_network'};}
+    }));
+    return attempted.find(x=>x.ok)||attempted[0]||
+      {ok:false,reason:'no_media_segments'};
   }catch{return {ok:false,reason:'timeout_or_network'};}
 }

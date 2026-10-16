@@ -69,7 +69,7 @@ export async function fromCineStreamVaPlayer(meta,{
       });
       if(!probe.ok)return null;
       return {
-        url,name:'CineStream • VaPlayer '+(i+1),
+        url:probe.playableUrl,name:'CineStream • VaPlayer '+(i+1),
         quality:probe.quality,verifiedSegment:true,subtitles:[]
       };
     }));

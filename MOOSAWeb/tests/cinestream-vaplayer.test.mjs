@@ -59,7 +59,7 @@ test('Approved host 1080 HLS playlist and first actual MPEG-TS video packet pass
   const res=await probeHlsFirstSegment(master,{
     fetchImpl,allowedHosts:['cdn.example']
   });
-  assert.deepEqual(res,{ok:true,quality:1080,width:1920});
+  assert.deepEqual(res,{ok:true,quality:1080,width:1920,playableUrl:variant});
   assert.deepEqual(calls.map(x=>x.path),[
     '/video/master.m3u8','/video/1080.m3u8','/video/first.ts'
   ]);
@@ -80,9 +80,59 @@ test('Ported real CineStream VaPlayer accepts only first-segment-verified source
   });
   assert.equal(sources.length,1);
   assert.equal(sources[0].quality,1080);
-  assert.equal(sources[0].url,master);
+  assert.equal(sources[0].url,variant);
   assert.match(sources[0].name,/CineStream.*VaPlayer/);
   assert.ok(calls.some(x=>x.host==='streamdata.vaplayer.ru'));
+});
+test('Blocked 1080p falls back to verified 720p, returning the working playlist',async()=>{
+  const highest='https://cdn.example/video/1080.m3u8';
+  const fallback='https://cdn.example/video/720.m3u8';
+  const manifest=[
+    '#EXTM3U','#EXT-X-STREAM-INF:RESOLUTION=1920x1080','1080.m3u8',
+    '#EXT-X-STREAM-INF:RESOLUTION=1280x720','720.m3u8'
+  ].join('\\n').replaceAll('\\n','\n');
+  const playlist='#EXTM3U\n#EXTINF:9.9,\nfirst.ts\n#EXT-X-ENDLIST';
+  const transport=new Uint8Array([0x47,...new Array(2047).fill(0)]);
+  const seen=[];
+  const fetchImpl=async (url)=>{
+    seen.push(url);
+    if(url.includes('streamdata.vaplayer.ru'))return response(
+      JSON.stringify({...valid(),data:{...valid().data,stream_urls:[master]}}),
+      200,'application/json');
+    if(url===master)return response(manifest);
+    if(url===highest||url===fallback)return response(playlist);
+    if(url.endsWith('/video/first.ts'))return response('Forbidden',403);
+    if(url.endsWith('/video/first.ts?720'))return response(transport,206,'video/mp2t');
+    return response('missing',404);
+  };
+  // Give each rendition its own segment, so the 720p one can succeed.
+  const first=async (url,opts)=>{
+    if(url===fallback)return response(playlist.replace('first.ts','first-720.ts'));
+    if(url.endsWith('/first-720.ts')){seen.push(url);return response(transport,206,'video/mp2t');}
+    return fetchImpl(url,opts);
+  };
+  const check=await probeHlsFirstSegment(master,{
+    fetchImpl:first,allowedHosts:['cdn.example']
+  });
+  assert.deepEqual(check,{ok:true,quality:720,width:1280,playableUrl:fallback});
+  const streams=await fromCineStreamVaPlayer(movie,{
+    enabled:true,mediaHosts:['cdn.example'],fetchImpl:first
+  });
+  assert.deepEqual(streams.map(x=>[x.quality,x.url]),[[720,fallback]]);
+  assert.ok(seen.some(x=>x===highest));
+});
+test('Playlist without browser CORS is refused before trying media segments',async()=>{
+  const calls=[];
+  const fetchImpl=async url=>{
+    calls.push(url);
+    return new Response(hlsMaster,{status:200,
+      headers:{'Content-Type':'application/vnd.apple.mpegurl'}});
+  };
+  const result=await probeHlsFirstSegment(master,{
+    fetchImpl,allowedHosts:['cdn.example']
+  });
+  assert.deepEqual(result,{ok:false,reason:'invalid_master'});
+  assert.deepEqual(calls,[master]);
 });
 test('No arbitrary unapproved media hosts or dangerous HTTP URLs can be probed',async()=>{
   const {fetchImpl,calls}=fake();

@@ -198,3 +198,20 @@ Running Android on a persistent isolated VPS may require additional spending and
 5. Measure reliability, responsiveness, memory footprint and security isolation before deciding whether a persistent VPS is worth paying for.
 
 The GitHub CI tests validate the registry, request contract, URL/quality filtering, and behavior when the runtime is absent. They **do not prove** that Android plugins run or that copyrighted films can be played in a browser.
+
+## HLS rendition fallback and browser CORS preflight (October 16, 2026)
+
+A master playlist that returns HTTP 200 is not sufficient to recommend a
+source. The web-native CineStream VaPlayer adapter now probes up to three
+720p-or-higher variants in parallel, with browser-Origin CORS checks on both
+playlists and the actual first segment. If 4K or 1080p responds 403, a verified
+lower HD rendition can be returned instead. **The player receives that exact
+working media playlist URL, not the master playlist**, which might auto-select
+the broken 4K rendition again. Every URL and segment host remains an explicit
+operator allowlist; no cookies, forged Referer, DRM bypass or proxy is added.
+
+This is a compatibility improvement to the existing disabled-by-default
+CineStream adapter, not evidence that VaPlayer streams currently work.
+Enabling it still requires licensed sources, approved public hosts, and
+independent real-browser playback evidence. Original CloudStream .cs3 plugin
+execution remains unsupported on the free Node host.
