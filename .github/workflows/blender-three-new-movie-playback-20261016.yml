@@ -1,0 +1,49 @@
+name: Validate three direct Blender CC licensed new movie servers
+on:
+  push:
+    branches: [diagnostics/blender-peertube-licensed-video-sources-20261016]
+permissions:
+  contents: read
+jobs:
+  three:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact film uuid, license, MP4 file and byte range
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://video.blender.org';
+          const tests=[
+            {name:'Glass Half',uuid:'64222c8a-c4c7-4b3b-9850-7fb2078edcf6',expected:1,tmdb:420577,year:2015},
+            {name:'Spring',uuid:'3d95fb3d-c866-42c8-9db1-fe82f48ccb95',expected:2,tmdb:593048,year:2019},
+            {name:'Caminandes: Llamigos',uuid:'23f3ef79-15dc-44c5-aa45-cf92e78a4509',expected:1,tmdb:406956,year:2016}
+          ];
+          for(const t of tests){
+            const r=await fetch(host+'/api/v1/videos/'+t.uuid,{signal:AbortSignal.timeout(13000)});
+            const d=await r.json();
+            const files=(d.files||[]).filter(f=>f.resolution?.id>=720);
+            const outputs=[];
+            for(const f of files.slice(0,2)){
+              const response=await fetch(f.fileUrl,{
+                headers:{Origin:'https://moosa-web.onrender.com',Range:'bytes=0-1023'},
+                signal:AbortSignal.timeout(15000)
+              });
+              const body=await response.arrayBuffer();
+              outputs.push({res:f.resolution?.id,url:f.fileUrl,status:response.status,
+                type:response.headers.get('content-type'),
+                cors:response.headers.get('access-control-allow-origin'),
+                contentRange:response.headers.get('content-range'),firstBytes:Array.from(new Uint8Array(body).slice(0,12))});
+            }
+            console.log('BLENDER_NEW_MOVIE_PLAYBACK_PROBE '+JSON.stringify({
+              title:t.name,tmdb:t.tmdb,year:t.year,uuid:d.uuid,name:d.name,
+              licence:d.licence?.id,licenseText:d.licence?.label,
+              duration:d.duration,account:d.account?.name,
+              channel:d.channel?.name,public:d.privacy?.id===1,
+              files:outputs
+            }));
+          }
+          NODE
