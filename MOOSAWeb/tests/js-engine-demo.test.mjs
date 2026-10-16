@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createJsEngineDemo,DEMO_META} from '../js-engine-demo.mjs';
+import {createJsEngineDemo,DEMO_META,matchVerifiedJsMedia} from '../js-engine-demo.mjs';
 import {createServer} from '../server.mjs';
 
 const allowed={
@@ -84,4 +84,29 @@ test('Fixed sample Node engine endpoint is GET-only and excludes user parameters
     const method=await fetch(base+'/api/js-engine/demo',{method:'POST'});
     assert.equal(method.status,405);
   }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+
+test('Only identical licensed Commons URLs can be promoted to JS-verified playback',()=>{
+  const existing={id:'big-buck-bunny',sources:[
+    {url:allowed.url,quality:720,sourcePage:'https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_alt.webm'},
+    {url:'https://upload.wikimedia.org/some-other-4k.webm',quality:2250}
+  ]};
+  const proposed={
+    state:'browser_preflight_passed',sources:[
+      {...allowed,preflight:{verified:true,mime:'video/webm'}},
+      {url:'https://evil.example/unknown.mp4',quality:2160,preflight:{verified:true,mime:'video/mp4'}}
+    ]
+  };
+  const result=matchVerifiedJsMedia(existing,proposed);
+  assert.equal(result.length,1);
+  assert.equal(result[0].url,allowed.url);
+  assert.equal(result[0].preflight.verified,true);
+  assert.equal(result[0].sourcePage,existing.sources[0].sourcePage);
+  assert.equal(matchVerifiedJsMedia({...existing,id:'sintel'},proposed),null);
+  assert.equal(matchVerifiedJsMedia(existing,{...proposed,state:'no_browser_approved_sources'}),null);
+  assert.equal(matchVerifiedJsMedia(existing,{
+    state:'browser_preflight_passed',sources:[{...allowed,
+      preflight:{verified:false}}]
+  }),null);
 });
