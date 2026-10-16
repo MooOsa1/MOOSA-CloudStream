@@ -52,7 +52,8 @@ async function fetchText(url,fetchImpl,timeoutMs,origin){
     method:'GET',headers:{Accept:'application/vnd.apple.mpegurl, application/x-mpegURL',Origin:origin},
     redirect:'error',signal:AbortSignal.timeout(timeoutMs)
   });
-  if(!response.ok || !validCors(response,origin) ||\n     Number(response.headers.get('content-length')||0)>MAX_PLAYLIST_BYTES)
+  if(!response.ok || !validCors(response,origin) ||
+     Number(response.headers.get('content-length')||0)>MAX_PLAYLIST_BYTES)
     return null;
   const txt=await response.text();
   if(txt.length>MAX_PLAYLIST_BYTES||!txt.startsWith('#EXTM3U'))return null;

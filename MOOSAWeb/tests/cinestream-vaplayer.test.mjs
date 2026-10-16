@@ -90,7 +90,7 @@ test('Blocked 1080p falls back to verified 720p, returning the working playlist'
   const manifest=[
     '#EXTM3U','#EXT-X-STREAM-INF:RESOLUTION=1920x1080','1080.m3u8',
     '#EXT-X-STREAM-INF:RESOLUTION=1280x720','720.m3u8'
-  ].join('\\n').replaceAll('\\n','\n');
+  ].join('\n');
   const playlist='#EXTM3U\n#EXTINF:9.9,\nfirst.ts\n#EXT-X-ENDLIST';
   const transport=new Uint8Array([0x47,...new Array(2047).fill(0)]);
   const seen=[];
@@ -102,7 +102,6 @@ test('Blocked 1080p falls back to verified 720p, returning the working playlist'
     if(url===master)return response(manifest);
     if(url===highest||url===fallback)return response(playlist);
     if(url.endsWith('/video/first.ts'))return response('Forbidden',403);
-    if(url.endsWith('/video/first.ts?720'))return response(transport,206,'video/mp2t');
     return response('missing',404);
   };
   // Give each rendition its own segment, so the 720p one can succeed.
