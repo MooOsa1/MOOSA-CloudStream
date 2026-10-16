@@ -7,6 +7,8 @@ on:
       - 'MOOSAWeb/tools/JvmOriginalProviderLoad.java'
       - 'MOOSAWeb/tools/JvmOriginalProviderLinks.java'
       - 'MOOSAWeb/tests/original-provider-media-proof.mjs'
+      - 'MOOSAWeb/real-hls-segment-probe.mjs'
+      - 'MOOSAWeb/tests/cinestream-vaplayer.test.mjs'
       - 'MOOSAWeb/headless-jvm-shims/**'
       - '.github/workflows/moosa-official-jvm-provider.yml'
   workflow_dispatch:
