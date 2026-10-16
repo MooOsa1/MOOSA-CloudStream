@@ -2,7 +2,7 @@ name: StreamPlay DEX-to-JVM large-heap conversion
 on:
   push:
     branches: [experiment/cloudstream-jvm-engine-20261016]
-    paths: ['.github/workflows/cloudstream-streamplay-dex2jar-20261016.yml']
+    paths: ['.github/workflows/cloudstream-streamplay-dex2jar-20261016.yml', 'MOOSAJVM/StreamPlayInstanceProbe.java']
   workflow_dispatch:
 permissions:
   contents: read
