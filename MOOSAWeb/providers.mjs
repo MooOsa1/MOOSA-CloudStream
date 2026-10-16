@@ -10,6 +10,7 @@
  * These adapters intentionally never load arbitrary Android plugin code.
  */
 import { queryRemoteEngine } from './cloudstream-engine.mjs';
+import {comparePlaybackSources,compareSubtitleTracks} from './public/stream-preferences.js';
 import { validateExternalArchiveStream } from './archive-stream-verifier.mjs';
 import {fromCineStreamVaPlayer} from './cinestream-vaplayer.mjs';
 import { fromCommons } from './commons-provider.mjs';
@@ -56,7 +57,7 @@ function subtitleList(tracks=[]) {
     const short=language==='ar'||language.startsWith('ara')?'ar':
       language==='en'||language.startsWith('eng')?'en':null;
     return short?[{url,language:short,label:String(t.label||short).slice(0,90),source:String(t.source||'Web source').slice(0,60)}]:[];
-  });
+  }).sort(compareSubtitleTracks);
 }
 function cleanStream(value,provider){
   const url=secureHttpUrl(value.url),name=String(value.name||provider||'Web Source').slice(0,95);
@@ -94,7 +95,7 @@ function uniqueSort(values) {
   return values.map(x=>cleanStream(x,x.name)).filter(x=>{
     if(!x||seen.has(x.url))return false;
     seen.add(x.url);return true;
-  }).sort((a,b)=>Number(b.preferred===true)-Number(a.preferred===true)||b.quality-a.quality).slice(0,MAX_SOURCES);
+  }).sort(comparePlaybackSources).slice(0,MAX_SOURCES);
 }
 async function getJson(url,fetchImpl,timeout=4000) {
   const response=await fetchImpl(url,{headers:{Accept:'application/json'},redirect:'error',

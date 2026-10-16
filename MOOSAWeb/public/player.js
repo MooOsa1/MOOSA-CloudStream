@@ -1,6 +1,7 @@
 import {nextPlaybackSource} from './playback-fallback.js';
 import {chooseBrowserSources} from './source-compatibility.js';
 import {safeSubtitleFileUrl} from './subtitle-file-url.js';
+import {comparePlaybackSources} from './stream-preferences.js';
 const $ = s => document.querySelector(s);
 const video = $('#video');
 let hls = null;
@@ -192,7 +193,11 @@ function addSubtitleOption(optionList,track){
     ' • '+(track.source||'Stremio')+' • '+(track.label||track.language),track.url);
   option.dataset.label=track.label||track.language;
   option.dataset.language=track.language;
-  optionList.add(option);
+  // An Arabic subtitle discovered after the English tracks belongs ahead
+  // of them. Keep the user's current selection and all track URLs untouched.
+  const firstEnglish=track.language==='ar'
+    ?[...optionList.options].find(x=>x.dataset.language==='en'):null;
+  optionList.add(option,firstEnglish||null);
 }
 export function appendExternalSubtitles(items){
   if($('#player-panel').classList.contains('hidden')||!Array.isArray(items))return;
@@ -238,10 +243,8 @@ export function appendPlayerSources(items) {
   // only that specific original on iOS when the same-file transcode exists.
   activeSources=chooseBrowserSources(activeSources,navigator.userAgent);
   picker.disabled=false;
-  activeSources.sort((a,b) =>
-    Number(b.codecOptimized===true)-Number(a.codecOptimized===true) ||
-    Number(b.preferred===true)-Number(a.preferred===true) ||
-    (Number(b.quality)||0)-(Number(a.quality)||0));
+  // 4K -> 1080p -> 720p. A "preferred" 720p server must not hide 4K.
+  activeSources.sort(comparePlaybackSources);
   picker.replaceChildren(new Option('اختر السيرفر',''));
   for (let i=0;i<activeSources.length;i++) {
     const src=activeSources[i];
