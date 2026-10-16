@@ -1,0 +1,59 @@
+name: Live production Arabic English OpenSubtitles probe
+on:
+  push:
+    branches: [diagnostics/prod-official-bilingual-subtitles-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify official subtitle sources returned by deployed MOOSA Web
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://moosa-web.onrender.com';
+          async function get(path){
+            const response=await fetch(root+path,{headers:{Accept:'application/json'},
+              signal:AbortSignal.timeout(23000)});
+            return {status:response.status,data:await response.json()};
+          }
+          const health=await get('/healthz');
+          assert.equal(health.status,200);
+          const status=await get('/api/web-native/status');
+          assert.equal(status.status,200);
+          assert.equal(status.data.httpStremioSubtitles.includedOfficialAddon,'OpenSubtitles v3');
+          assert.equal(status.data.httpStremioSubtitles.active,true);
+          const res=await get('/api/stremio-subtitles?media=movie&id=45745&utm_source=chatgpt.com');
+          assert.equal(res.status,200,'Movie subtitle route not ready: '+JSON.stringify(res.data));
+          const subtitles=res.data.subtitles||[];
+          const counts={ar:subtitles.filter(x=>x.language==='ar').length,
+            en:subtitles.filter(x=>x.language==='en').length};
+          console.log('MOOSA_PRODUCTION_REAL_SUBTITLES '+JSON.stringify({
+            http:res.status,active:res.data.active,count:subtitles.length,byLanguage:counts,
+            sources:[...new Set(subtitles.map(x=>x.source))],
+            hosts:[...new Set(subtitles.map(x=>new URL(x.url).hostname))]
+          }));
+          assert.ok(counts.ar>=1,'Arabic real track not returned');
+          assert.ok(counts.en>=1,'English real track not returned');
+          const track=subtitles.find(x=>x.language==='ar');
+          const fetched=await fetch(track.url,{
+            signal:AbortSignal.timeout(13000),
+            headers:{Origin:'https://moosa-web.onrender.com'}
+          });
+          const raw=await fetched.text();
+          assert.equal(fetched.status,200);
+          assert.ok(/\d\d:\d\d:\d\d[,\.]\d\d\d\s*-->/.test(raw));
+          assert.ok(/[\u0600-\u06FF]/.test(raw));
+          assert.equal(fetched.headers.get('access-control-allow-origin'),'*');
+          console.log('MOOSA_PRODUCTION_REAL_SRT_PASS '+JSON.stringify({
+            urlHost:new URL(track.url).hostname,arabicText:true,
+            srtCueTimes:true,cors:true,length:raw.length
+          }));
+          NODE
