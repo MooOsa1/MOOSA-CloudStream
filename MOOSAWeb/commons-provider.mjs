@@ -66,7 +66,7 @@ export function selectCommonsMovies(meta,data){
     const credit=humanCredit(info.extmetadata);
     return [{
       name:'Wikimedia Commons • '+licenseName,
-      url,quality,subtitles:[],
+      url,quality,subtitles:[],preferred:quality<=1080,
       licenseUrl,sourcePage,attribution:credit||'Wikimedia Commons'
     }];
   }).sort((a,b)=>b.quality-a.quality).slice(0,3);
