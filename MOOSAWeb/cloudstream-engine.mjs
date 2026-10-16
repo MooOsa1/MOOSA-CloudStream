@@ -68,12 +68,20 @@ export function configuredEngine(env=process.env) {
 export function registry() {
   return REPOS.map(x=>({id:x.id,name:x.label,repositoryUrl:x.repository}));
 }
+function approvedPluginList(repo, declaredLists) {
+  if(!Array.isArray(declaredLists))return null;
+  // GitHub Raw supports both /builds/ and /refs/heads/builds/ paths.
+  // Accept ONLY these two explicit aliases of our trusted index; don't
+  // follow arbitrary manifest-supplied hosts or plugin indexes.
+  const canonical=repo.expectedPlugins;
+  const refStyle=canonical.replace('/builds/', '/refs/heads/builds/');
+  return declaredLists.find(url=>url===canonical||url===refStyle)||null;
+}
 async function inspectOne(repo, fetchImpl){
   const manifest=await readJson(repo.repository,fetchImpl);
-  if(!manifest||!Array.isArray(manifest.pluginLists) ||
-      !manifest.pluginLists.includes(repo.expectedPlugins))
-    throw Error('Unexpected repository manifest');
-  const listing=await readJson(repo.expectedPlugins,fetchImpl);
+  const pluginListUrl=approvedPluginList(repo,manifest?.pluginLists);
+  if(!pluginListUrl)throw Error('Unexpected repository manifest');
+  const listing=await readJson(pluginListUrl,fetchImpl);
   if(!Array.isArray(listing))throw Error('Unexpected plugin index');
   const candidates=listing.filter(x=>x && (x.internalName===repo.plugin||x.name===repo.plugin));
   const usable=candidates.filter(x=>isPluginURL(x.url,repo.id)

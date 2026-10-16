@@ -21,8 +21,8 @@ function makeFetcher() {
       return response({pluginLists:['https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/plugins.json']});
     if(u.pathname==='/SaurabhKaperwan/CSX/builds/plugins.json')return response([list[0]]);
     if(u.pathname==='/phisher98/cloudstream-extensions-phisher/builds/repo.json')
-      return response({pluginLists:['https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/plugins.json']});
-    if(u.pathname==='/phisher98/cloudstream-extensions-phisher/builds/plugins.json')return response([list[1]]);
+      return response({pluginLists:['https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/plugins.json']});
+    if(u.pathname==='/phisher98/cloudstream-extensions-phisher/refs/heads/builds/plugins.json')return response([list[1]]);
     return response({error:'missing'},404);
   };
 }
@@ -33,6 +33,28 @@ test('CineStream and StreamPlay original repository index is discovered without 
   assert.deepEqual(result.map(x=>x.version),[487,690]);
   assert.ok(result.every(x=>x.execution==='requires_android_runtime'&&x.state==='indexed'));
   assert.ok(result.every(x=>x.pluginUrl.endsWith('.cs3')));
+});
+
+test('accepts both official GitHub Raw spelling variants without following arbitrary repository URLs',async()=>{
+  const actual=await inspectRepositories({fetchImpl:makeFetcher(),force:true});
+  assert.equal(actual.find(x=>x.id==='streamplay').state,'indexed');
+  const canonical=async url=>{
+    const u=new URL(url);
+    if(u.pathname.endsWith('/repo.json'))
+      return response({pluginLists:['https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/plugins.json']});
+    if(u.pathname.endsWith('/CS.json'))
+      return response({pluginLists:['https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/plugins.json']});
+    if(u.pathname.endsWith('/plugins.json'))
+      return response([{name:u.pathname.includes('phisher98')?'StreamPlay':'CineStream',
+        internalName:u.pathname.includes('phisher98')?'StreamPlay':'CineStream',
+        version:1,fileHash:'sha256-'+('c'.repeat(64)),
+        url:u.pathname.includes('phisher98')?
+        'https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/StreamPlay.cs3':
+        'https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CineStream.cs3'}]);
+    return response({error:'missing'},404);
+  };
+  const second=await inspectRepositories({fetchImpl:canonical,force:true});
+  assert.ok(second.every(x=>x.state==='indexed'));
 });
 
 test('unexpected index host fails closed instead of importing arbitrary plugins',async()=>{
