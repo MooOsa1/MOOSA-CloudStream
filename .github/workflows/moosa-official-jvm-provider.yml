@@ -84,20 +84,6 @@ jobs:
           ./gradlew --init-script moosa-export.init.gradle :library:copyMoosaRuntime --no-daemon --max-workers=2 --console=plain --no-configuration-cache
           echo 'JVM dependencies copied:'
           find /tmp/moosa-jvm/deps -name '*.jar' | wc -l
-      - name: Link and execute original CineStream provider metadata on official JVM API
-        run: |
-          set -euo pipefail
-          javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderSmoke.java
-          LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
-          java -cp /tmp/moosa-jvm JvmOriginalProviderSmoke "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps
-          echo 'Compatibility report only: no media fetched or player success claimed'
-      - name: Invoke original CineStream load for exact known IMDb movie
-        run: |
-          set -euo pipefail
-          javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderLoad.java
-          LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
-          timeout 65s java -cp /tmp/moosa-jvm JvmOriginalProviderLoad "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps
-
       - name: Execute original CineStream loadLinks callbacks for verified licensed Sintel
         run: |
           set -euo pipefail

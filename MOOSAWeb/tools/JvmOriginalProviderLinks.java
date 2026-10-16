@@ -31,7 +31,7 @@ public final class JvmOriginalProviderLinks {
         Object suspended=Enum.valueOf((Class)sentinels.asSubclass(Enum.class),"COROUTINE_SUSPENDED");
         CountDownLatch latch=new CountDownLatch(1);
         AtomicReference<Object> resumed=new AtomicReference<>();
-        Object continuation=Proxy.newProxyInstance(loader,new Class<?>[]{cont},(p,m,a)->{
+        Object continuation=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{cont},(p,m,a)->{
             switch(m.getName()){
                 case "getContext":return context;
                 case "resumeWith":resumed.set(a[0]);latch.countDown();return null;
@@ -87,7 +87,7 @@ public final class JvmOriginalProviderLinks {
             Object unit=Class.forName("kotlin.Unit",true,loader).getField("INSTANCE").get(null);
             AtomicInteger links=new AtomicInteger(0),subs=new AtomicInteger(0),hdLinks=new AtomicInteger(0);
             Set<String> videoHosts=ConcurrentHashMap.newKeySet();
-            Object linkCallback=Proxy.newProxyInstance(loader,new Class<?>[]{fn1},(proxy,method,a)->{
+            Object linkCallback=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{fn1},(proxy,method,a)->{
                 if("invoke".equals(method.getName())&&a!=null&&a.length==1&&a[0]!=null){
                     links.incrementAndGet();
                     Object link=a[0];
@@ -104,7 +104,7 @@ public final class JvmOriginalProviderLinks {
                 }
                 return unit;
             });
-            Object subtitleCallback=Proxy.newProxyInstance(loader,new Class<?>[]{fn1},(proxy,method,a)->{
+            Object subtitleCallback=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{fn1},(proxy,method,a)->{
                 if("invoke".equals(method.getName())&&a!=null&&a.length==1&&a[0]!=null)subs.incrementAndGet();
                 return unit;
             });
