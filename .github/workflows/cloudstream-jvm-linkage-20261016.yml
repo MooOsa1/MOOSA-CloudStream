@@ -35,7 +35,7 @@ jobs:
               }
           }
           GRADLE
-          ./gradlew :library:jvmJar :library:moosaJvmClasspath --no-daemon --console plain
+          ./gradlew :library:jvmJar :library:moosaJvmClasspath --no-daemon --no-configuration-cache --console plain
           test -s library/build/libs/library-jvm-1.0.1.jar
           test -s library/build/moosa-jvm-runtime-classpath.txt
       - name: Download SHA256-verified original CineStream cs3, convert to Java class files
