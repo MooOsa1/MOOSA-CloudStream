@@ -144,6 +144,45 @@ OpenSubtitles v3 is now included as a pre-approved **subtitle-only** HTTP addon:
 https://opensubtitles-v3.strem.io/manifest.json .
 On 2026-10-16 its actual movie/IMDB endpoints returned two Arabic and four English subtitle results for Sintel, with direct SRT text at subs5.strem.io. We independently fetched Arabic and English payloads, verified valid SRT cue times, Arabic Unicode text and permissive CORS. Official CDN subtitle URLs do not have .srt/.vtt suffixes, so the Node and browser URL validator only accepts the narrowly verified /en/download/subencoding-stremio-utf8/src-api/file/<numeric> format on subs*.strem.io. The site does not proxy subtitle content, and its built-in native SRT -> VTT converter handles direct playback in HTML5. Additional operator-provided subtitle addons remain optional. No original Android .cs3 executes and source video compatibility is unchanged. Individual subtitles can still be out of sync; the existing subtitle offset slider stays available.
 
+## Upstream CineStream video provider adapter: VaPlayer (October 2026)
+
+A direct Node.js port of the upstream Kotlin function
+`CineStreamExtractors.invokeVaPlayer` now lives in
+`cinestream-vaplayer.mjs` and is included in the ordinary movie
+resolver as a strictly operator-opt-in source. This is an **actual
+CineStream video provider adapter**, not another demo-film shelf.
+
+Before any VaPlayer URL can appear in the player it must pass:
+- exact TMDB-provided original movie name, year, IMDb match against
+  the upstream API response (no fuzzy series/episode confusion)
+- HTTPS origin and explicitly operator-allowlisted PUBLIC media hosts
+- a usable 1280px-or-wider HLS stream variant
+- **successfully fetched first video segment** with CORS and video magic;
+  a 200 status on a master or variant playlist is explicitly insufficient
+- rejection of encrypted HLS, third-party protected cookies/headers,
+  wrong HTML responses, 403/404 and invalid stream host.
+
+Live upstream checks 2026-10-16:
+- VaPlayer's API returned 3 URLs for Sintel, Tears of Steel, and
+  public-domain classics; master HLS advertised up to 1920px AVC/AAC.
+- Actual first segments consistently returned HTTP 403, even when
+  both playlists returned HTTP 200. Thus **zero VaPlayer sources were
+  verified browser-playable** on the test runner. Do not present them
+  as usable 1080p sources.
+- StreamPlay's older VidsrcSU HTML parser is currently incompatible
+  with the React-based upstream. Browser session on Sintel returned
+  `No available servers found`, with no video requests.
+- CineStream PrimeSrc returned 403 and Vidrock could not be fetched.
+
+The adapter is **OFF by default** and imposes no extra Play lookup latency.
+It can be enabled only by the operator after upstream media segments pass
+real browser playback checks:
+`CINESTREAM_VAPLAYER_ENABLED=1`
+`CINESTREAM_ALLOWED_MEDIA_HOSTS=trusted-host.example,other-host.example`
+Do not enable a broad wildcard: media domains can change and must be
+individually verified. This feature does not run Kotlin .cs3 plugins,
+proxy video segments, fake custom Referer, or bypass DRM/access controls.
+
 ## Deployment boundary
 
 Use \`CLOUDSTREAM_RUNTIME_URL\` and \`CLOUDSTREAM_RUNTIME_TOKEN\` in **Render environment variables** only after a tested secure Android execution service exists. Do **not** publish a token in the GitHub repository or browser code. Never point them to an unrelated third-party endpoint.
