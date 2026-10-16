@@ -1,0 +1,50 @@
+name: Pipe HTTP coverage metadata-only representative titles
+on:
+  push:
+    branches: [diagnostics/pipe-http-provider-live-evaluation-20261016]
+permissions:
+  contents: read
+jobs:
+  covered:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compare representative result counts without visiting media links
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const ids=[
+            ['tt4154796','Avengers Endgame'],
+            ['tt1375666','Inception'],
+            ['tt0133093','The Matrix'],
+            ['tt0063350','Night of the Living Dead'],
+            ['tt1727587','Sintel'],
+            ['tt0944947:1:1','Game of Thrones S1E1']
+          ];
+          await Promise.all(ids.map(async ([id,title])=>{
+            const type=id.includes(':')?'series':'movie';
+            let result={id,title};
+            try{
+              const url='https://pipe.boringways.workers.dev/stream/'+type+'/'+id+'.json';
+              const r=await fetch(url,{
+                headers:{Accept:'application/json'},signal:AbortSignal.timeout(18000)
+              });
+              const data=await r.json();
+              const list=Array.isArray(data.streams)?data.streams:[];
+              result={
+                ...result,status:r.status,total:list.length,
+                direct:list.filter(s=>typeof s.url==='string' && /^https:\/\//.test(s.url)).length,
+                torrent:list.filter(s=>s.infoHash).length,
+                embed:list.filter(s=>s.externalUrl).length,
+                protected:list.filter(s=>s.headers||s.behaviorHints?.proxyHeaders).length,
+                hosts:[...new Set(list.filter(s=>s.url).map(s=>{
+                  try{return new URL(s.url).hostname}catch{return 'invalid'}
+                }))].slice(0,12)
+              };
+            }catch(e){result.error=String(e.message).slice(0,110)}
+            console.log('PIPE_METADATA_ONLY_COVERAGE '+JSON.stringify(result));
+          }));
+          NODE
