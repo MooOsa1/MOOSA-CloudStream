@@ -24,7 +24,7 @@ public final class JvmCs3ClassProbe {
                 System.out.println(label + " JVM_CLASS_BLOCKED_BY_MISSING_DEPENDENCY: " + missing.getMessage());
             } catch (ClassNotFoundException missing) {
                 System.out.println(label + " JVM_ENTRY_CLASS_NOT_FOUND: " + missing.getMessage());
-            } catch (UnsupportedClassVersionError | ClassFormatError invalid) {
+            } catch (ClassFormatError invalid) {
                 System.out.println(label + " JVM_CLASS_CONVERSION_INVALID: " + invalid.getMessage());
             } catch (LinkageError error) {
                 System.out.println(label + " JVM_LINKAGE_ERROR: " + error.getClass().getSimpleName() + ": " + error.getMessage());
