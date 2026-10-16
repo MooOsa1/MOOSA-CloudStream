@@ -31,3 +31,34 @@ To enable any **original** Streamline/CloudStream source for mainstream TMDB tit
 ## Four-film expansion
 
 The approved JavaScript worker now resolves each fixed open film by an internal movie identity. User-chosen IDs cannot add unreviewed content. Every returned JS source must additionally match the separately licensed Commons metadata URL for that **same title**; no source may leak into a different film. Explicit originals remain untouched. An original CloudStream provider remains out of scope until its rights, runtime, browser and codec requirements are met.
+
+## Integrated server-native provider (no device pairing)
+
+The ordinary `GET /api/resolve?media=movie&id=<TMDB-ID>` now calls the
+same reviewed, local JS worker for the four exact-name/year-matched open films
+**only when** `fromCommons` has independently verified the movie's
+specific media URL and Creative Commons license. The worker's URL must be an
+exact match for a separately licensed Commons URL before attaching
+`runtime: "web_native_js"` and preflight metadata to the stream. The
+pre-existing metadata-licensed source stays playable even when the JS plugin
+stalls or fails. The deadline is bounded to 1.4 seconds beyond Commons
+discovery; unrelated movie and TV title searches do not spawn the JS worker.
+
+`GET /api/web-native/status` exposes the genuine server-side capabilities,
+approved local provider and currently supported film IDs. It rejects all
+client-selected code, URL and provider parameters. The normal film catalog
+and the independent open-film shelf share one in-memory worker cache.
+
+This is a reusable integration seam for **developer-reviewed, independently
+authorized** web-native JS providers. It does **not** compile CineStream
+or StreamPlay's Android Kotlin `.cs3` into JavaScript; those original binaries
+remain unavailable on the public Node instance. Upstream CSX's
+`CineStream.kt` imports Android Context and CloudStream APIs; the site must
+not claim Android binary compatibility based on this native JS layer.
+
+- Ordinary catalog sources can carry `runtime: web_native_js` only when
+  preflight, exact film identity and original file-level license all pass.
+- Opening an ordinary unknown or commercial title cannot opt into a reviewed
+  film or cause a reviewed provider to return another movie.
+- Runtime subprocesses execute only pinned reviewed source code; untrusted
+  uploaded JS and arbitrary remote plugins are never downloaded or executed.

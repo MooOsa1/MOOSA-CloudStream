@@ -11,6 +11,7 @@
  */
 import { queryRemoteEngine } from './cloudstream-engine.mjs';
 import { fromCommons } from './commons-provider.mjs';
+import { augmentCatalogCommonsWithNativeJs } from './native-js-catalog-runtime.mjs';
 
 const MAX_SOURCES = 30;
 const MIN_QUALITY = 720;
@@ -68,6 +69,13 @@ function cleanStream(value,provider){
     if(typeof value.sourcePage==='string'&&/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/i.test(value.sourcePage))
       extra.sourcePage=value.sourcePage;
     if(typeof value.attribution==='string')extra.attribution=value.attribution.slice(0,135);
+    // JS approval is attached only after exact URL intersection with the
+    // separate file-level rights source returned by Commons.
+    if(value.preflight?.verified===true &&
+       /^video\/(?:webm|mp4)$/i.test(String(value.preflight.mime||''))){
+      extra.preflight={verified:true,mime:value.preflight.mime};
+      extra.runtime='web_native_js';
+    }
   }
   return {url,name,quality,subtitles:subtitleList(value.subtitles),...extra};
 }
@@ -175,7 +183,7 @@ export async function fromArchive(meta,{fetchImpl=fetch}={}) {
 export async function resolveWebSources(meta,opts={}) {
   if(!meta|| !['movie','tv'].includes(meta.media) || !(Number(meta.id)>0))return [];
   if(meta.media==='tv'&&(!Number.isInteger(meta.season) || !Number.isInteger(meta.episode)))return [];
-  const key=[meta.media,meta.id,meta.season??'',meta.episode??'',String(meta.imdbId||'')].join(':');
+  const key=[meta.media,meta.id,meta.season??'',meta.episode??'',String(meta.imdbId||''),String(meta.originalTitle||meta.title||''),meta.year??''].join(':');
   const now=Date.now(),cached=state.get(key);
   if(cached && cached.expiry>now)return cached.sources;
   // Keep one in-flight request per title; prevents multiple clients from
@@ -183,8 +191,14 @@ export async function resolveWebSources(meta,opts={}) {
   if(cached?.pending)return cached.pending;
   const pending=Promise.allSettled([
     fromWebAddons(meta,opts),fromArchive(meta,opts),fromCommons(meta,opts),queryRemoteEngine(meta,opts)
-  ]).then(res=>{
-    const sources=uniqueSort(res.flatMap(r=>r.status==='fulfilled'?r.value:[]));
+  ]).then(async res=>{
+    const commons=res[2]?.status==='fulfilled'?res[2].value:[];
+    const enhanced=await augmentCatalogCommonsWithNativeJs(meta,commons,{
+      ...(opts.jsLoad?{load:opts.jsLoad}:{})
+    });
+    const byProvider=res.flatMap((r,i)=>
+      i===2?enhanced.sources:(r.status==='fulfilled'?r.value:[]));
+    const sources=uniqueSort(byProvider);
     if(state.size>250)state.delete(state.keys().next().value);
     state.set(key,{sources,expiry:Date.now()+(sources.length?300_000:90_000)});
     return sources;
