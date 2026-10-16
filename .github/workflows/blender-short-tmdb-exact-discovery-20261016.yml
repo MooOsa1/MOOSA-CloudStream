@@ -1,0 +1,36 @@
+name: Identify licensed Blender shorts exactly in TMDB catalog
+on:
+  push:
+    branches: [diagnostics/blender-peertube-licensed-video-sources-20261016]
+permissions:
+  contents: read
+jobs:
+  lookup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Find exact known film identities
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const root='https://moosa-web.onrender.com';
+          for(const name of ['Glass Half','Spring','Caminandes','Llamigos','Caminandes: Llamigos']){
+            const options=[];
+            for(const page of [1,2,3]){
+              const r=await fetch(root+'/api/search?q='+encodeURIComponent(name)+'&page='+page,
+                {signal:AbortSignal.timeout(12000)});
+              const data=await r.json();
+              options.push(...(data.results||[]).filter(x=>x.media_type==='movie'&&
+                (String(x.title||'').toLowerCase().includes(name.toLowerCase().slice(0,7)) ||
+                String(x.original_title||'').toLowerCase().includes(name.toLowerCase().slice(0,7)))));
+              if(name==='Spring'&&!page)break;
+            }
+            console.log('BLENDER_TMDB_DISCOVERY '+JSON.stringify({query:name,
+              movies:options.slice(0,24).map(x=>({id:x.id,title:x.title,
+                original:x.original_title,year:x.release_date,overview:String(x.overview||'').slice(0,125)}))
+            }));
+          }
+          NODE
