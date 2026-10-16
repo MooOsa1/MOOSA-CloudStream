@@ -69,6 +69,14 @@ function cleanStream(value,provider){
     if(typeof value.sourcePage==='string'&&/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/i.test(value.sourcePage))
       extra.sourcePage=value.sourcePage;
     if(typeof value.attribution==='string')extra.attribution=value.attribution.slice(0,135);
+    // Carry the verified official Safari transcode flag from Commons through
+    // the catalog resolver; without this flag the iPhone cannot distinguish
+    // the working 4:2:0 variant from the older 4:4:4 master.
+    if(value.codecOptimized===true &&
+       value.sourcePage==='https://commons.wikimedia.org/wiki/File:Elephants_Dream_(2006).webm' &&
+       new URL(url).hostname==='upload.wikimedia.org'){
+      extra.codecOptimized=true;
+    }
     // JS approval is attached only after exact URL intersection with the
     // separate file-level rights source returned by Commons.
     if(value.preflight?.verified===true &&
