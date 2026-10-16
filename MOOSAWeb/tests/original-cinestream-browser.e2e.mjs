@@ -17,7 +17,7 @@ const raw=(await readFile(tokenFile,'utf8')).trim();
 const streamUrl=Buffer.from(raw,'base64').toString('utf8');
 if(!/^https:\/\/[a-z0-9.-]+\/[^\s]*\.m3u8(?:[?#]|$)/i.test(streamUrl))
   throw Error('A valid, private first-segment-verified HLS URL was not provided');
-const errors=[],failed=[];
+const errors=[],failed=[],responses=[];
 const server=createServer();
 await new Promise((resolve,reject)=>{
   server.once('error',reject);
@@ -36,7 +36,55 @@ try{
     viewport:{width:1280,height:720},
     serviceWorkers:'block'
   });
+  // Diagnostics strictly within the test: instrument the hls.js runtime,
+  // never output manifest URLs, signed query strings or response bodies.
+  await page.addInitScript(()=>{
+    const errors=[];
+    window.__moosaHlsDiagnostics=errors;
+    let ctor;
+    Object.defineProperty(window,'Hls',{
+      configurable:true,
+      get(){return ctor;},
+      set(HlsClass){
+        if(typeof HlsClass!=='function'){ctor=HlsClass;return;}
+        class ObservedHls extends HlsClass {
+          constructor(...args){
+            super(...args);
+            this.on(HlsClass.Events.ERROR,(_ev,data)=>{
+              errors.push({
+                fatal:Boolean(data?.fatal),
+                type:String(data?.type||'').slice(0,70),
+                details:String(data?.details||'').slice(0,100),
+                responseCode:data?.response?.code??null,
+                fragType:String(data?.frag?.type||'').slice(0,45),
+                level:data?.level??null
+              });
+            });
+            this.on(HlsClass.Events.MANIFEST_PARSED,(_ev,data)=>{
+              window.__moosaManifestLevels=(data?.levels||[]).map(x=>({
+                height:x.height??null,videoCodec:String(x.videoCodec||'').slice(0,50),
+                audioCodec:String(x.audioCodec||'').slice(0,50)
+              })).slice(0,8);
+            });
+          }
+        }
+        ctor=ObservedHls;
+      }
+    });
+  });
   page.on('pageerror',e=>errors.push(e.name||'page_error'));
+  page.on('response',res=>{
+    try{
+      const u=new URL(res.url());
+      if(!['img.fcxmb.com','img1.fcxmb.com','cdn.jsdelivr.net'].includes(u.hostname))return;
+      responses.push({
+        host:u.hostname,status:res.status(),
+        kind:res.request().resourceType(),
+        mime:(res.headers()['content-type']||'').split(';')[0].slice(0,55),
+        cors:res.headers()['access-control-allow-origin']||null
+      });
+    }catch{}
+  });
   page.on('requestfailed',req=>{
     try{failed.push({
       host:new URL(req.url()).hostname,
@@ -78,15 +126,23 @@ try{
   const state=await page.locator('#video').evaluate(v=>({
     secondsPlayed:Math.round(v.currentTime*10)/10,
     width:v.videoWidth,height:v.videoHeight,
-    readyState:v.readyState,
+    readyState:v.readyState,networkState:v.networkState,
     paused:v.paused,
-    errorCode:v.error?.code||null
+    errorCode:v.error?.code||null,
+    errorMessage:String(v.error?.message||'').slice(0,140),
+    nativeHls:v.canPlayType('application/vnd.apple.mpegurl'),
+    hasHlsjs:typeof window.Hls==='function',
+    hlsjsSupported:typeof window.Hls==='function'&&window.Hls.isSupported(),
+    hlsEvents:window.__moosaHlsDiagnostics||[],
+    manifestLevels:window.__moosaManifestLevels||[],
+    playerMessage:String(document.querySelector('#player-message')?.textContent||'').slice(0,200)
   }));
   const played=!timedOut&&state.secondsPlayed>0&&state.width>0;
   console.log('ORIGINAL_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
     actuallyDecodedFrames:played,video:state,
     pageErrorTypes:errors.slice(0,5),
-    networkFailures:failed.slice(0,7)
+    networkFailures:failed.slice(0,7),
+    mediaResponses:responses.slice(-18)
   }));
   if(played){
     // Screenshot only the video frame — do not capture hidden signed URL input.
