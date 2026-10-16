@@ -1,0 +1,57 @@
+name: Verify production CineStream HTTP interop
+on:
+  push:
+    branches: [diagnostics/stremio-public-release-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check public Stremio protocol and licensed film URLs
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://moosa-web.onrender.com';
+          async function get(path){
+            const response=await fetch(root+path,{signal:AbortSignal.timeout(25000)});
+            const json=await response.json();
+            return {status:response.status,json};
+          }
+          const manifest=await get('/api/stremio/manifest.json');
+          assert.equal(manifest.status,200);
+          assert.equal(manifest.json.id,'org.moosa.web.licensed');
+          assert.ok(manifest.json.resources.some(r=>r.name==='stream'));
+          const movies=[
+            ['tt1254207','Big Buck Bunny'],
+            ['tt1727587','Sintel'],
+            ['tt2285752','Tears of Steel'],
+            ['tt0807840','Elephants Dream']
+          ];
+          const results=await Promise.all(movies.map(async ([imdb,title])=>{
+            const r=await get('/api/stremio/stream/movie/'+imdb+'.json');
+            assert.equal(r.status,200,title);
+            assert.ok(Array.isArray(r.json.streams));
+            assert.ok(r.json.streams.every(s=>
+              s.url.startsWith('https://upload.wikimedia.org/') &&
+              !s.headers && !s.infoHash));
+            return {imdb,title,streams:r.json.streams.length,
+              bestSource:r.json.streams[0]?.title};
+          }));
+          assert.ok(results.filter(x=>x.streams>0).length>=3);
+          const bad=await get('/api/stremio/stream/movie/tt99999999.json');
+          assert.equal(bad.status,200);assert.deepEqual(bad.json,{streams:[]});
+          const malformed=await get('/api/stremio/manifest.json?url=evil');
+          assert.equal(malformed.status,400);
+          const registry=await get('/api/cloudstream/repositories');
+          assert.equal(registry.status,200);
+          assert.equal(registry.json.httpStremioCompatibility?.cineStreamAddonTransportCompatible,true);
+          assert.equal(registry.json.httpStremioCompatibility?.originalAndroidPluginsExecuted,false);
+          console.log('PRODUCTION_CINESTREAM_STREMIO_HTTP_PASS '+JSON.stringify(results));
+          NODE
