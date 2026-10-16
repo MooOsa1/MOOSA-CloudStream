@@ -110,6 +110,24 @@ try {
   assert.match(await page.locator('#player-message').textContent(),/يُشغّل الآن/,
     'Indicator reflects video actually playing');
   await page.screenshot({path:path.join(artifacts,'hls-playing.png')});
+  // This SAME real 320x180 H.264 stream is now mislabeled by an automatic
+  // source as 1080p. The player must reject it at decoded video metadata,
+  // rather than playing a 180p stream while claiming HD.
+  await page.evaluate(async()=>{
+    const {showPlayer,appendPlayerSources}=await import('/player.js');
+    showPlayer({title:'Single exact title / actual quality gate',sources:[]});
+    appendPlayerSources([{
+      url:'https://video.moosa-e2e.invalid/playlist.m3u8',
+      name:'Misleading 1080p source',quality:1080
+    }]);
+  });
+  await page.waitForFunction(()=>/رفضنا سيرفرًا بدقة فعلية/.test(
+    document.querySelector('#player-message')?.textContent||''
+  ),null,{timeout:26000});
+  assert.match(await page.locator('#player-message').textContent(),/320×180/,
+    'Actual decoded dimensions are reported instead of the claimed 1080p');
+  assert.equal(await page.locator('#video').evaluate(v=>v.paused),true);
+  console.log('PASS decoded-180p source automatically rejected despite claimed 1080p');
 
   await page.locator('#custom-stream').fill('https://video.moosa-e2e.invalid/broken.m3u8');
   await page.locator('#play-custom').click();

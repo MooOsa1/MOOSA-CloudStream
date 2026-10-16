@@ -223,7 +223,11 @@ export function appendPlayerSources(items) {
   const seen = new Set(activeSources.map(item => item.url));
   let added = 0;
   for (const item of items) {
-    if (!item?.url || seen.has(item.url)) continue;
+    const advertised=Number(item?.quality);
+    // Never accept low / unknown-quality automatic sources, even if an
+    // untrusted plugin bypasses the server's source normalization.
+    if (!item?.url || seen.has(item.url) ||
+        !Number.isInteger(advertised) || advertised<720 || advertised>4320) continue;
     seen.add(item.url);
     activeSources.push(attachExternalSubtitles(item));
     added++;
@@ -375,7 +379,29 @@ $('#play-custom').addEventListener('click',()=>{
 $('#custom-stream').addEventListener('keydown',e=>{if(e.key==='Enter')$('#play-custom').click();});
 $('#local-video').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;selectedSourceUrl=null;resetVideo();mediaUrl=URL.createObjectURL(file);video.src=mediaUrl;showVideo();$('#player-title').textContent=file.name;video.play().catch(()=>{});notice('تشغيل ملف محلي من جهازك');e.target.value='';});
 $('#local-subtitle').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>3*1024*1024)throw new Error('ملف الترجمة كبير جدًا');const ticket=subtitleToken;const raw=await file.text();if(ticket===subtitleToken)loadSubtitle(raw,file.name,/\bar\b|arabic/i.test(file.name)?'ar':'en')}catch(error){notice(error.message)}e.target.value='';});
+let rejectedVideoToken=-1;
+function enforceDecodedHd(){
+  if(!selectedSourceUrl || rejectedVideoToken===playbackToken ||
+     !video.videoHeight||!video.videoWidth)return false;
+  if(video.videoHeight>=720 && video.videoWidth>=1280)return false;
+  const measured=video.videoWidth+'×'+video.videoHeight;
+  rejectedVideoToken=playbackToken;
+  video.pause();
+  // Retain the exact movie/episode. A verified sub-HD stream cannot
+  // silently continue to play under a misleading "1080p" server label.
+  if(tryFallbackSource()){
+    notice('تم رفض مصدر بدقة فعلية '+measured+'، جاري تجربة سيرفر آخر لنفس العنوان.');
+    return true;
+  }
+  selectedSourceUrl=null;
+  resetVideo();
+  notice('رفضنا سيرفرًا بدقة فعلية '+measured+'. الحد الأدنى 720p.');
+  return true;
+}
+video.addEventListener('loadedmetadata',enforceDecodedHd);
+video.addEventListener('resize',enforceDecodedHd);
 video.addEventListener('playing',()=>{
+  if(enforceDecodedHd())return;
   if(!$('#player-panel').classList.contains('hidden'))
     notice('يُشغّل الآن: '+(currentMediaTitle||'الفيديو'));
 });

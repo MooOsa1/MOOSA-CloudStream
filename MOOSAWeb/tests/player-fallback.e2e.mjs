@@ -25,7 +25,8 @@ try{
     appendPlayerSources([
       {url:'https://retry.example/one.mp4',name:'Source one',quality:1080},
       {url:'https://retry.example/two.mp4',name:'Source two',quality:720},
-      {url:'https://retry.example/three.mp4',name:'Source three',quality:480}
+      {url:'https://retry.example/three.mp4',name:'Source three',quality:720},
+      {url:'https://retry.example/ignored-low.mp4',name:'Source low',quality:480}
     ]);
   });
   await page.waitForFunction(()=>{
@@ -36,6 +37,10 @@ try{
   assert.equal((await page.locator('#player-title').textContent()),
     'One verified title','A source retry cannot substitute a movie title');
   assert.equal(await page.locator('#player-source').inputValue(),'2');
+  assert.equal(await page.locator('#player-source option').count(),4,
+    'Low quality declared 480p never appears in picker');
+  assert.ok(network.every(x=>x!=='/ignored-low.mp4'),
+    'Below-minimum source must never be requested');
   const tried=new Set(network.filter(p=>/\/(one|two|three)\.mp4/.test(p)));
   assert.deepEqual([...tried].sort(),
     ['/one.mp4','/three.mp4','/two.mp4']);
