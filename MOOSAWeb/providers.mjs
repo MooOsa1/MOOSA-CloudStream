@@ -183,7 +183,7 @@ export async function fromArchive(meta,{fetchImpl=fetch}={}) {
 export async function resolveWebSources(meta,opts={}) {
   if(!meta|| !['movie','tv'].includes(meta.media) || !(Number(meta.id)>0))return [];
   if(meta.media==='tv'&&(!Number.isInteger(meta.season) || !Number.isInteger(meta.episode)))return [];
-  const key=[meta.media,meta.id,meta.season??'',meta.episode??'',String(meta.imdbId||'')].join(':');
+  const key=[meta.media,meta.id,meta.season??'',meta.episode??'',String(meta.imdbId||''),String(meta.originalTitle||meta.title||''),meta.year??''].join(':');
   const now=Date.now(),cached=state.get(key);
   if(cached && cached.expiry>now)return cached.sources;
   // Keep one in-flight request per title; prevents multiple clients from
