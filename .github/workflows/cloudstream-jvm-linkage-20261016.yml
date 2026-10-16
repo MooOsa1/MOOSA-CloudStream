@@ -85,5 +85,6 @@ jobs:
         shell: bash
         run: |
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
-          javac -cp "$runtime" MOOSAJVM/ProviderLinksProbe.java
+          javac -cp "$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/network/CloudflareKiller.java
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/ProviderLinksProbe.java
           timeout 85 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLinksProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
