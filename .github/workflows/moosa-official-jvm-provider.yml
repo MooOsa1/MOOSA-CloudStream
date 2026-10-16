@@ -79,7 +79,7 @@ jobs:
           }
           GRADLE
           cd /tmp/cloudstream-official
-          ./gradlew --init-script moosa-export.init.gradle :library:copyMoosaRuntime --no-daemon --max-workers=2 --console=plain
+          ./gradlew --init-script moosa-export.init.gradle :library:copyMoosaRuntime --no-daemon --max-workers=2 --console=plain --no-configuration-cache
           echo 'JVM dependencies copied:'
           find /tmp/moosa-jvm/deps -name '*.jar' | wc -l
       - name: Link and execute original CineStream provider metadata on official JVM API
