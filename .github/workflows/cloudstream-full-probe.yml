@@ -28,7 +28,7 @@ jobs:
           gradle-version: '8.12'
       - name: Build private test extension only; do not publish
         run: |
-          gradle :MOOSAProbe:make --no-daemon --stacktrace
+          MOOSA_ENABLE_PROBE=1 gradle :MOOSAProbe:make --no-daemon --stacktrace
           ls -la MOOSAProbe/build/
       - name: Accelerate ephemeral Android emulator
         run: |
