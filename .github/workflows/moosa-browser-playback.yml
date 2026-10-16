@@ -1,0 +1,61 @@
+name: MOOSA Web Browser Playback E2E
+
+on:
+  push:
+    branches: [test/browser-video-playback-e2e]
+    paths:
+      - 'MOOSAWeb/tests/browser-playback.e2e.mjs'
+      - '.github/workflows/moosa-browser-playback.yml'
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/public/index.html'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-browser:
+    name: Chrome MP4 and HLS decode
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install transient browser dependencies (not deployed)
+        run: npm install --no-save --no-package-lock playwright@1.56.1 hls.js@1.6.15
+      - name: Install Chromium and codec dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Generate test-only synthetic H.264/AAC video and HLS segments
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+          mkdir -p tests/playback-fixtures
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=size=320x180:rate=24 \
+            -f lavfi -i sine=frequency=440:sample_rate=44100 \
+            -t 5 -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -g 48 -keyint_min 48 -c:a aac -b:a 96k -movflags +faststart \
+            tests/playback-fixtures/clip.mp4
+          ffmpeg -hide_banner -loglevel error -y \
+            -i tests/playback-fixtures/clip.mp4 -c copy \
+            -hls_time 2 -hls_list_size 0 -hls_playlist_type vod \
+            -hls_segment_filename 'tests/playback-fixtures/clip-%d.ts' \
+            tests/playback-fixtures/playlist.m3u8
+          ls -lh tests/playback-fixtures/
+      - name: Confirm actual video frame playback through MOOSA Player
+        run: node tests/browser-playback.e2e.mjs
+      - name: Preserve screenshots and errors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: moosa-browser-playback-evidence
+          path: MOOSAWeb/browser-artifacts/
+          if-no-files-found: ignore
+          retention-days: 4
