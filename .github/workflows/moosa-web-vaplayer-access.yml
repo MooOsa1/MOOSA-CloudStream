@@ -1,0 +1,21 @@
+name: CineStream original-header browser segment access reality check
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tests/vaplayer-browser-access.live.mjs'
+      - '.github/workflows/moosa-web-vaplayer-access.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check real exact-title VaPlayer response and one segment with and without original Referer
+        run: node MOOSAWeb/tests/vaplayer-browser-access.live.mjs
