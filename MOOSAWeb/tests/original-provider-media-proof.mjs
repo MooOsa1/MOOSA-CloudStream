@@ -63,6 +63,84 @@ async function directSegment(url){
     return {ok:magic,status:res.status,reason:magic?'first_video_bytes':'not_video'};
   }catch(e){return {ok:false,reason:e.name||'network_error'};}
 }
+
+async function trustedPlaylist(url){
+  if(!await approved(url))return null;
+  try{
+    const response=await fetch(url,{
+      method:'GET',redirect:'error',signal:AbortSignal.timeout(timeoutMs),
+      headers:{Origin:origin,Accept:'application/vnd.apple.mpegurl'}
+    });
+    if(!response.ok||!['*',origin].includes(
+      response.headers.get('access-control-allow-origin')))return null;
+    if(Number(response.headers.get('content-length')||0)>512_000)return null;
+    if(!response.body)return null;
+    const reader=response.body.getReader();
+    let size=0,text='';
+    const decoder=new TextDecoder();
+    try{
+      while(true){
+        const {done,value}=await reader.read();
+        if(done)break;
+        size+=value.byteLength;
+        if(size>512_000)return null;
+        text+=decoder.decode(value,{stream:true});
+      }
+      text+=decoder.decode();
+    }finally{await reader.cancel().catch(()=>{});}
+    return text.startsWith('#EXTM3U')?text:null;
+  }catch{return null;}
+}
+function firstHlsUri(playlist,type){
+  const rows=playlist.split(/\r?\n/);
+  for(let i=0;i<rows.length;i++){
+    const marker=rows[i].trim();
+    if(type==='variant' && !marker.startsWith('#EXT-X-STREAM-INF:'))continue;
+    if(type==='segment' && !marker.startsWith('#EXTINF:'))continue;
+    if(type==='variant'){
+      const m=marker.match(/RESOLUTION=\d+x(\d+)/i);
+      if(m && Number(m[1])<720)continue;
+    }
+    for(let j=i+1;j<rows.length;j++){
+      const line=rows[j].trim();
+      if(line&&!line.startsWith('#'))return line;
+    }
+  }
+  return null;
+}
+async function diagnoseCrossHost(root){
+  // One targeted check for the source that was blocked before media request.
+  // Never print signed URLs, paths, userinfo or original playlist bytes.
+  let media=root,playlist=await trustedPlaylist(root);
+  if(!playlist)return {status:'root_playlist_unavailable'};
+  if(playlist.includes('#EXT-X-STREAM-INF:')){
+    const variant=firstHlsUri(playlist,'variant');
+    if(!variant)return {status:'no_hd_variant'};
+    try{media=new URL(variant,root).href;}catch{return {status:'invalid_variant'};}
+    playlist=await trustedPlaylist(media);
+    if(!playlist)return {status:'variant_unavailable_or_unapproved'};
+  }
+  if(/#EXT-X-(?:SESSION-)?KEY:/i.test(playlist))
+    return {status:'encrypted_segment_not_tested'};
+  const first=firstHlsUri(playlist,'segment');
+  if(!first)return {status:'no_segment'};
+  let actual;
+  try{actual=new URL(first,media);}catch{return {status:'invalid_segment'};}
+  if(!await approved(actual.href))return {status:'segment_host_not_public_https'};
+  const host=actual.hostname;
+  if(host===new URL(root).hostname)return {status:'same_host_but_invalid_path'};
+  const safeHosts=[...new Set([new URL(root).hostname,new URL(media).hostname,host])];
+  const verified=await probeHlsFirstSegment(root,{
+    allowedHosts:safeHosts,timeoutMs
+  });
+  return {
+    status:verified.ok?'first_real_video_segment':'cross_host_still_unplayable',
+    segmentHost:host,
+    quality:verified.ok?verified.quality:null,
+    reason:verified.ok?'verified_video_bytes':verified.reason
+  };
+}
+
 const content=await readFile(filename,'utf8');
 const candidates=[...new Set(content.trim().split(/\r?\n/).filter(Boolean)
   .slice(0,12).map(s=>Buffer.from(s,'base64').toString('utf8')))];
@@ -81,6 +159,13 @@ for(const url of candidates){
     row.ok=probe.ok;
     row.reason=probe.ok?'first_hls_segment_proven':probe.reason;
     if(probe.ok)row.quality=probe.quality;
+    if(probe.reason==='unapproved_segment_host_or_url'){
+      row.crossHostCheck=await diagnoseCrossHost(url);
+      if(row.crossHostCheck.status==='first_real_video_segment'){
+        row.ok=true;row.quality=row.crossHostCheck.quality;
+        row.reason='first_hls_segment_proven_on_public_cross_host';
+      }
+    }
   }else if(/\.(?:mp4|webm|m4v|ts)(?:$|[?#])/i.test(url)){
     row.kind='direct';
     const result=await directSegment(url);
