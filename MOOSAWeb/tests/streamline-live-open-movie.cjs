@@ -74,9 +74,31 @@ async function main(){
         needsCookie:!!(x.headers?.Cookie||x.headers?.cookie)
       };
     }):[];
+    let browserHead=null;
+    if(meta.title==='Tears of Steel' && Array.isArray(sources)){
+      const sample=sources.find(x=>String(x.quality)==='720p');
+      if(sample){
+        try{
+          const u=new URL(sample.url);
+          // Do not let a remote plugin make us probe arbitrary URLs.
+          if(u.protocol==='https:' && u.hostname==='bcdnxw.hakunaymatata.com'){
+            const r=await fetchOriginal(sample.url,{
+              method:'HEAD',redirect:'error',
+              headers:{Origin:'https://moosa-web.onrender.com'},
+              signal:AbortSignal.timeout(6500)
+            });
+            browserHead={
+              status:r.status,contentType:r.headers.get('content-type'),
+              cors:r.headers.get('access-control-allow-origin'),
+              acceptsRanges:r.headers.get('accept-ranges')
+            };
+          }else browserHead={blocked:'unexpected_host'};
+        }catch(e){browserHead={error:e.name};}
+      }
+    }
     console.log('STREAMLINE_LIVE_OPEN_MOVIE_RESULT '+JSON.stringify({
       title:meta.title+' (CC-BY)',outcome,candidateCount:summaries.length,
-      sources:summaries,requests:network.slice(visitedAt)
+      sources:summaries,requests:network.slice(visitedAt),browserHead
     }));
   }
 }
