@@ -28,8 +28,8 @@ jobs:
           node-version: '22'
       - name: Install transient browser dependencies (not deployed)
         run: npm install --no-save --no-package-lock playwright@1.56.1 hls.js@1.6.15
-      - name: Install Chromium and codec dependencies
-        run: npx playwright install --with-deps chromium
+      - name: Install Google Chrome with proprietary MP4 codec support
+        run: npx playwright install --with-deps chrome
       - name: Generate test-only synthetic H.264/AAC video and HLS segments
         run: |
           if ! command -v ffmpeg >/dev/null; then
