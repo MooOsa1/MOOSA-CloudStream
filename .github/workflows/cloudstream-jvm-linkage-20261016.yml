@@ -24,8 +24,20 @@ jobs:
           git clone --depth 1 https://github.com/recloudstream/cloudstream.git /tmp/cloudstream-upstream
           cd /tmp/cloudstream-upstream
           chmod +x ./gradlew
-          ./gradlew :library:jvmJar --no-daemon --console plain
+          cat >> library/build.gradle.kts <<'GRADLE'
+          
+          tasks.register("moosaJvmClasspath") {
+              doLast {
+                  val path = configurations.getByName("jvmRuntimeClasspath")
+                      .files.joinToString(":") { it.absolutePath }
+                  file("build/moosa-jvm-runtime-classpath.txt").writeText(path)
+                  println("MOOSA_JVM_RUNTIME_CLASSPATH_READY")
+              }
+          }
+          GRADLE
+          ./gradlew :library:jvmJar :library:moosaJvmClasspath --no-daemon --console plain
           test -s library/build/libs/library-jvm-1.0.1.jar
+          test -s library/build/moosa-jvm-runtime-classpath.txt
       - name: Download SHA256-verified original CineStream cs3, convert to Java class files
         shell: bash
         run: |
@@ -53,27 +65,5 @@ jobs:
         shell: bash
         run: |
           javac MOOSAJVM/ClassProbe.java
-          java -cp MOOSAJVM ClassProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar com.megix.CineStreamProvider com.megix.CineStream
-      - name: Try converting StreamPlay with larger JVM heap and report if converter cannot handle it
-        shell: bash
-        run: |
-          set -euo pipefail
-          root=https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds
-          curl -fLsS --retry 2 "$root/plugins.json" -o /tmp/sp-index.json
-          digest="$(jq -r --arg n StreamPlay --arg u "$root/StreamPlay.cs3" '[.[]|select(.internalName==$n and .url==$u)]|sort_by(.version)|last|.fileHash // empty' /tmp/sp-index.json)"
-          [[ "$digest" =~ ^sha256-[a-f0-9]{64}$ ]]
-          curl -fLsS --retry 2 "$root/StreamPlay.cs3" -o /tmp/StreamPlay.cs3
-          echo "$(echo "$digest"|sed s/^sha256-//)  /tmp/StreamPlay.cs3"|sha256sum --check
-          unzip -p /tmp/StreamPlay.cs3 classes.dex > /tmp/StreamPlay.dex
-          converter="$(find /tmp/dex-tools -name d2j-dex2jar.sh -print -quit)"
-          set +e
-          JAVA_OPTS='-Xms256m -Xmx4g' timeout 130 "$converter" --force --output /tmp/converted/StreamPlay.jar /tmp/StreamPlay.dex > /tmp/sp-conversion.log 2>&1
-          status=$?
-          set -e
-          if [ "$status" = 0 ] && [ -s /tmp/converted/StreamPlay.jar ]; then
-            echo "STREAMPLAY_DEX2JAR=status_success classes=$(jar tf /tmp/converted/StreamPlay.jar|grep -c '\.class$')"
-            javap -classpath /tmp/converted/StreamPlay.jar -public com.phisher98.StreamPlayPlugin | head -n 24 || true
-          else
-            echo "STREAMPLAY_DEX2JAR=status_failed exit=$status"
-            tail -n 16 /tmp/sp-conversion.log
-          fi
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          java -cp "MOOSAJVM:$runtime" ClassProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar com.megix.CineStreamProvider com.megix.CineStream
