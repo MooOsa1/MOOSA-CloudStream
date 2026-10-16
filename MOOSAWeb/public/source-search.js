@@ -1,4 +1,4 @@
-import { appendPlayerSources, markNoAutomaticSources, showPlayer } from './player.js';
+import { appendPlayerSources, appendExternalSubtitles, markNoAutomaticSources, showPlayer } from './player.js';
 import { describeSourceResolution } from './source-diagnostics.js';
 let generation=0;
 let currentAbort=null;
@@ -22,6 +22,17 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
     params.set('episode',String(episode));
   }
   message('جاري البحث عن السيرفرات تلقائيًا من مصادر الويب...');
+  // Subtitles are optional and must NEVER delay or block the video sources.
+  // Start both requests independently and append tracks after the video
+  // can already be playing. The same AbortController guards stale titles.
+  void fetch('/api/stremio-subtitles?'+params.toString(),{
+    headers:{Accept:'application/json'},
+    signal:AbortSignal.any([controller.signal,AbortSignal.timeout(5500)])
+  }).then(async res=>res.ok?res.json():null)
+    .then(data=>{
+      if(job!==generation || !data || !Array.isArray(data.subtitles))return;
+      appendExternalSubtitles(data.subtitles);
+    }).catch(()=>{}); // Subtitle network failure must not affect playback.
   try {
     const response=await fetch('/api/resolve?'+params.toString(),{
       headers:{Accept:'application/json'},
