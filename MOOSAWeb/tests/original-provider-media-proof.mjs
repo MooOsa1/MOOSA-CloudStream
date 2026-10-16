@@ -133,6 +133,12 @@ async function diagnoseCrossHost(root){
   const verified=await probeHlsFirstSegment(root,{
     allowedHosts:safeHosts,timeoutMs
   });
+  // Byte-level minimum-quality gate on the SAME real external segment.
+  // Preserve the browser diagnostic for lower quality, but never promote it
+  // as an HD source. No signed URL is printed.
+  const qualityCheck=verified.ok?await probeHlsFirstSegment(root,{
+    allowedHosts:safeHosts,timeoutMs,verifyEncodedResolution:true
+  }):null;
   if(verified.ok && verified.playableUrl){
     // Signed URL never enters workflow logs or artifacts. Only the next test
     // in this same isolated runner receives the exact segment-verified HLS.
@@ -144,6 +150,9 @@ async function diagnoseCrossHost(root){
     status:verified.ok?'first_real_video_segment':'cross_host_still_unplayable',
     segmentHost:host,
     quality:verified.ok?verified.quality:null,
+    encodedQuality:qualityCheck?.ok?qualityCheck.quality:null,
+    hdProof:qualityCheck?.ok===true,
+    hdGateReason:qualityCheck?.ok?'verified_hd':qualityCheck?.reason||null,
     reason:verified.ok?'verified_video_bytes':verified.reason
   };
 }

@@ -6,6 +6,7 @@
  * returned third-party URLs from becoming an SSRF primitive on Render.
  * Never retries with forged Referer, cookies, credentials or DRM keys.
  */
+import {getH264ResolutionFromMpegTs} from './h264-mpegts-resolution.mjs';
 const MAX_PLAYLIST_BYTES=512_000;
 
 function safeMediaUrl(raw,hosts){
@@ -96,11 +97,11 @@ function validCors(response,origin){
   const c=String(response.headers.get('access-control-allow-origin')||'').trim();
   return c==='*'||c===origin;
 }
-async function checkSegment(segmentUrl,fetchImpl,timeoutMs,origin){
+async function checkSegment(segmentUrl,fetchImpl,timeoutMs,origin,{verifyEncodedResolution=false,minWidth=1280}={}){
   const fetchChunk=range=>fetchImpl(segmentUrl,{
     method:'GET',redirect:'error',signal:AbortSignal.timeout(timeoutMs),
     headers:range
-      ?{Range:'bytes=0-2047',Origin:origin}
+      ?{Range:verifyEncodedResolution?'bytes=0-98303':'bytes=0-2047',Origin:origin}
       :{Origin:origin}
   });
   let response=await fetchChunk(true);
@@ -118,22 +119,50 @@ async function checkSegment(segmentUrl,fetchImpl,timeoutMs,origin){
   const reader=response.body?.getReader();
   if(!reader)return {ok:false,reason:'segment_no_body'};
   let part;
-  try{part=(await reader.read()).value||new Uint8Array();}
-  finally{await reader.cancel().catch(()=>{});}
+  let dimensions=null;
+  try{
+    const blocks=[];
+    let total=0;
+    while(total<98304){
+      const {value,done}=await reader.read();
+      if(done)break;
+      if(!value?.length)continue;
+      const limited=value.subarray(0,98304-total);
+      blocks.push(limited);
+      total+=limited.length;
+      if(!verifyEncodedResolution)break;
+      // SPS commonly appears in the first video PES, but may straddle TS
+      // packets or HTTP chunks. Decode progressively with a hard 96KiB cap.
+      const current=new Uint8Array(total);
+      let pos=0;
+      for(const block of blocks){current.set(block,pos);pos+=block.length;}
+      dimensions=getH264ResolutionFromMpegTs(current.subarray(0,
+        Math.floor(current.length/188)*188));
+      if(dimensions)break;
+    }
+    part=new Uint8Array(total);
+    let pos=0;
+    for(const block of blocks){part.set(block,pos);pos+=block.length;}
+  }finally{await reader.cancel().catch(()=>{});}
   if(part.length<12)return {ok:false,reason:'segment_too_small'};
   const preview=new TextDecoder().decode(part.slice(0,80));
   const magicMp4=preview.includes('ftyp')||preview.includes('styp')||preview.includes('moof');
   const magicTs=part[0]===0x47 || (part.length>188&&part[188]===0x47);
-  return magicMp4||magicTs
-    ?{ok:true}
-    :{ok:false,reason:'segment_not_video'};
+  if(!magicMp4&&!magicTs)return {ok:false,reason:'segment_not_video'};
+  if(!verifyEncodedResolution)return {ok:true};
+  if(!dimensions)return {ok:false,reason:'segment_resolution_unverified'};
+  if(dimensions.height<720||dimensions.width<minWidth)
+    return {ok:false,reason:'segment_below_min_quality',
+      measuredHeight:dimensions.height,measuredWidth:dimensions.width};
+  return {ok:true,measuredHeight:dimensions.height,
+    measuredWidth:dimensions.width,frameVerified:true};
 }
 /**
  * @returns {{ok:boolean, reason?:string, quality?:number, width?:number}}
  */
 export async function probeHlsFirstSegment(rawUrl,{
   fetchImpl=fetch,allowedHosts=[],origin='https://moosa-web.onrender.com',
-  timeoutMs=3500,minWidth=1280
+  timeoutMs=3500,minWidth=1280,verifyEncodedResolution=false
 }={}){
   const hosts=[...new Set(allowedHosts.map(x=>String(x).trim().toLowerCase()))]
     .filter(h=>/^[a-z0-9.-]{4,130}$/.test(h)&&!h.startsWith('.') &&
@@ -173,10 +202,12 @@ export async function probeHlsFirstSegment(rawUrl,{
         // Real HLS segments may use extensionless signed URLs. Require the
         // exact approved HTTPS hostname, valid browser CORS, and actual video
         // magic bytes instead of trusting the filename extension.
-        const verified=await checkSegment(allowed.href,fetchImpl,timeoutMs,origin);
-        return verified.ok
-          ?{ok:true,quality:variant.height,width:variant.width,playableUrl:variant.url}
-          :verified;
+        const verified=await checkSegment(allowed.href,fetchImpl,timeoutMs,origin,{verifyEncodedResolution,minWidth});
+        if(!verified.ok)return verified;
+        return verifyEncodedResolution
+          ?{ok:true,quality:verified.measuredHeight,width:verified.measuredWidth,
+              playableUrl:variant.url,frameVerified:true}
+          :{ok:true,quality:variant.height,width:variant.width,playableUrl:variant.url};
       }catch{return {ok:false,reason:'timeout_or_network'};}
     }));
     return attempted.find(x=>x.ok)||attempted[0]||

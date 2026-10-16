@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {gunzipSync} from 'node:zlib';
+import {probeHlsFirstSegment} from '../real-hls-segment-probe.mjs';
 import {getH264ResolutionFromMpegTs,readH264SpsDimensions}
   from '../h264-mpegts-resolution.mjs';
 // Independent FFmpeg/libx264 generated MPEG-TS samples (1 frame each).
@@ -26,4 +27,44 @@ test('Truncated or misaligned first segment fails closed',()=>{
   const ts=gunzipSync(Buffer.from(CASES[1][2],'base64'));
   assert.equal(getH264ResolutionFromMpegTs(ts.subarray(1)),null);
   assert.equal(getH264ResolutionFromMpegTs(ts.subarray(0,188)),null);
+});
+
+test('Browser-ready HLS quality gate rejects genuine libx264 480p video despite claimed 1080p',async()=>{
+  const first='https://video.example/test/1080.m3u8';
+  const master='https://video.example/test/master.m3u8';
+  const playlist='#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1920x1080\n1080.m3u8';
+  const media='#EXTM3U\n#EXTINF:9,\nclip.ts\n#EXT-X-ENDLIST';
+  const ts=gunzipSync(Buffer.from(CASES[0][2],'base64'));
+  const fetchImpl=async url=>{
+    if(url===master)return new Response(playlist,{headers:{'Access-Control-Allow-Origin':'*'}});
+    if(url===first)return new Response(media,{headers:{'Access-Control-Allow-Origin':'*'}});
+    if(url==='https://video.example/test/clip.ts')return new Response(ts,{
+      status:206,headers:{'Access-Control-Allow-Origin':'*'}
+    });
+    throw Error('Unknown URL');
+  };
+  assert.deepEqual(await probeHlsFirstSegment(master,{
+    allowedHosts:['video.example'],fetchImpl,verifyEncodedResolution:true
+  }),{ok:false,reason:'segment_below_min_quality',measuredHeight:480,measuredWidth:852});
+});
+test('Browser-ready HLS gate accepts genuine libx264 1280x720 segment without invented dimensions',async()=>{
+  const hls='https://video.example/clip.m3u8';
+  const ts=gunzipSync(Buffer.from(CASES[1][2],'base64'));
+  const fetchImpl=async url=>url===hls
+    ?new Response('#EXTM3U\n#EXTINF:9,\nclip.ts',{headers:{'Access-Control-Allow-Origin':'*'}})
+    :new Response(ts,{status:206,headers:{'Access-Control-Allow-Origin':'*'}});
+  assert.deepEqual(await probeHlsFirstSegment(hls,{
+    allowedHosts:['video.example'],fetchImpl,verifyEncodedResolution:true
+  }),{ok:true,quality:720,width:1280,playableUrl:hls,frameVerified:true});
+});
+test('False TS sync byte and absent SPS are not treated as verified HD',async()=>{
+  const hls='https://video.example/clip.m3u8';
+  const fake=new Uint8Array(188*4);fake[0]=0x47;fake[188]=0x47;
+  fake[376]=0x47;fake[564]=0x47;
+  const fetchImpl=async url=>url===hls
+    ?new Response('#EXTM3U\n#EXTINF:9,\nclip.ts',{headers:{'Access-Control-Allow-Origin':'*'}})
+    :new Response(fake,{status:206,headers:{'Access-Control-Allow-Origin':'*'}});
+  assert.deepEqual(await probeHlsFirstSegment(hls,{
+    allowedHosts:['video.example'],fetchImpl,verifyEncodedResolution:true
+  }),{ok:false,reason:'segment_resolution_unverified'});
 });

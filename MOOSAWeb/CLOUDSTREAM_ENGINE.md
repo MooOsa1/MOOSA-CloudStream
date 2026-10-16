@@ -286,3 +286,15 @@ ineligible for the user's minimum 720p policy. A master playlist declaring
 HD is still only a provider quality *claim*, not a full decoded-frame proof.
 
 Evidence: https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/38964692426
+
+## Enforce actual MPEG-TS H.264 frame dimensions (verified quality gate)
+
+The backend now optionally reads H.264 SPS dimensions from up to 96 KiB of
+real MPEG-TS video bytes before promoting a stream as 720p+. The
+`fromCineStreamVaPlayer` adapter always uses this strict mode; if video has
+no readable AVC SPS, if a codec is unsupported, or if its actual encoded
+height is below 720 / width below 1280, no HD stream is advertised.
+Both a genuine FFmpeg 852×480 fixture and 1280×720 fixture exercise this
+gate, including a deliberate false `RESOLUTION=1920x1080` master. The
+original CineStream JVM test also checks the strict gate on its same media
+sample, without mistaking first-segment accessibility for HD.
