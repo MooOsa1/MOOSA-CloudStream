@@ -1,0 +1,34 @@
+name: Diagnose StreamPlay VidSrcSU changed embed markup
+on:
+  push:
+    branches: [diagnostics/cinestream-streamplay-direct-http-provider-20261016]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read changed StreamPlay iframe markup and identify stale extractor markers
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const url='https://vidsrc.su/embed/movie/45745';
+          try{
+            const r=await fetch(url,{signal:AbortSignal.timeout(14000),redirect:'error'});
+            const text=await r.text();
+            console.log('STREAMPLAY_EMBED_MARKUP '+JSON.stringify({
+              status:r.status,finalHost:new URL(r.url).hostname,
+              title:text.match(/<title[^>]*>(.*?)<\/title>/i)?.[1],
+              preview:text.replace(/\s+/g,' ').slice(0,1600),
+              scriptSources:[...text.matchAll(/<script[^>]*src=['"]([^'"]+)['"]/gi)]
+                .map(x=>x[1]).slice(0,8),
+              iframes:[...text.matchAll(/<iframe[^>]*src=['"]([^'"]+)['"]/gi)]
+                .map(x=>x[1]).slice(0,8),
+              blocked:/Just a moment|verify you are human|Cloudflare|captcha/i.test(text)
+            }));
+          }catch(e){console.log('STREAMPLAY_EMBED_MARKUP_ERROR '+String(e.message))}
+          NODE
