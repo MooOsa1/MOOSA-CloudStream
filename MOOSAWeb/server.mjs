@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBridge } from './bridge.mjs';
+import { resolveWebSources } from './providers.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -119,7 +120,35 @@ async function handle(req,res) {
     if(req.method !== 'GET' && req.method !== 'HEAD')return err(res,405,'Method not allowed');
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
-    if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only'});
+    if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true});
+    if(url.pathname==='/api/resolve'){
+      const media=url.searchParams.get('media');
+      const id=cleanId(url.searchParams.get('id'));
+      const episodeRequested=url.searchParams.has('season')||url.searchParams.has('episode');
+      const season=Number(url.searchParams.get('season'));
+      const episode=Number(url.searchParams.get('episode'));
+      if(!id || !mediaTypes.has(media) ||
+        (media==='tv' && (!url.searchParams.has('season') || !url.searchParams.has('episode') ||
+           !Number.isInteger(season) || season<0 || season>100 ||
+           !Number.isInteger(episode) || episode<1 || episode>1000)) ||
+        (media==='movie' && episodeRequested)) return err(res,400,'Invalid movie or episode');
+      try {
+        const details=await tmdbGet({endpoint:'/'+media+'/'+id,
+          params:{language:'en-US',append_to_response:'external_ids'}});
+        const meta={
+          media,id:Number(id),title:details.title||details.name||'',
+          originalTitle:details.original_title||details.original_name||'',
+          year:Number(String(details.release_date||details.first_air_date||'').slice(0,4))||null,
+          imdbId:details.imdb_id||details.external_ids?.imdb_id||null,
+          ...(media==='tv'?{season,episode}:{})
+        };
+        const sources=await resolveWebSources(meta);
+        return json(res,200,{sources,providerMode:'server',count:sources.length});
+      } catch(e) {
+        return err(res,e.status||502,e.message==='TMDB_NOT_CONFIGURED'?
+          'Configure TMDB for automatic source matching':'Source lookup temporarily unavailable');
+      }
+    }
     if(url.pathname==='/api/streams'){
       const media=mediaType(url.searchParams.get('media'));
       const id=cleanId(url.searchParams.get('id'));
