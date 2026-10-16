@@ -92,8 +92,7 @@ jobs:
           # defined only in the Android app, not official common/JVM library.
           # Compile an intentionally powerless pass-through shim: no bypass.
           mkdir -p /tmp/moosa-jvm/shim-classes
-          javac -cp '/tmp/moosa-jvm/deps/*' -d /tmp/moosa-jvm/shim-classes \
-            MOOSAWeb/headless-jvm-shims/com/lagradost/cloudstream3/network/CloudflareKiller.java
+          javac -cp '/tmp/moosa-jvm/deps/*' -d /tmp/moosa-jvm/shim-classes $(find MOOSAWeb/headless-jvm-shims -name '*.java' -print)
           jar cf /tmp/moosa-jvm/deps/moosa-jvm-shims.jar -C /tmp/moosa-jvm/shim-classes .
           javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderLinks.java
           LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
