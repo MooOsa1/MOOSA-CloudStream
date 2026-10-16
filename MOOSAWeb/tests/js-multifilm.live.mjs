@@ -58,6 +58,32 @@ try{
       issues:checked.issues||{},workerState:checked.state
     }));
   }
+  // Confirm the Commons API actually offers a lower-bandwidth 4:2:0
+  // transcode of the troublesome Elephants Dream full film.
+  const elephant=await getCuratedFilm('elephants-dream');
+  for(const media of elephant.sources.slice(0,2)){
+    const raw=decodeURIComponent(new URL(media.sourcePage).pathname.replace(/^\/wiki\//,''));
+    const api=new URL('https://commons.wikimedia.org/w/api.php');
+    for(const [k,v] of Object.entries({
+      action:'query',format:'json',formatversion:'2',
+      titles:raw,prop:'videoinfo',viprop:'url|size|extmetadata|derivatives'
+    }))api.searchParams.set(k,v);
+    const response=await fetch(api,{
+      headers:{'User-Agent':'MOOSAWeb/0.1 (https://github.com/MooOsa1/MOOSA-CloudStream; read-only CC media variants)'},
+      signal:AbortSignal.timeout(7000)
+    });
+    if(!response.ok)throw Error('Commons derivatives HTTP '+response.status);
+    const data=await response.json();
+    const v=data?.query?.pages?.[0]?.videoinfo?.[0];
+    console.log('ELEPHANTS_DERIVATIVES '+JSON.stringify({
+      sourceTitle:raw,sourceQuality:media.quality,
+      originals:v?.url?1:0,
+      candidates:(v?.derivatives||[]).map(d=>({
+        type:d.type,width:d.width,height:d.height,transcodekey:d.transcodekey,
+        host:d.src?new URL(d.src,'https://commons.wikimedia.org').hostname:null
+      })).filter(d=>d.height>=360).slice(0,16)
+    }));
+  }
   const invalid=await fetch(base+'/api/js-engine/demo?id=sintel&url=https://evil.example/');
   assert.equal(invalid.status,400);
 }finally{
