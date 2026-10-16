@@ -1,0 +1,70 @@
+name: Probe CineStream VaPlayer on recognizable public-domain older movies
+on:
+  push:
+    branches: [diagnostics/cinestream-streamplay-direct-http-provider-20261016]
+permissions:
+  contents: read
+jobs:
+  classic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check original CineStream API, identity, HLS and segment reachability only
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const candidates=[
+            ['tt0063350','Night of the Living Dead (1968)'],
+            ['tt0017925','The General (1926)'],
+            ['tt0012349','The Kid (1921)'],
+            ['tt0052077','Plan 9 from Outer Space (1957)']
+          ];
+          for(const [imdb,title] of candidates){
+            const result={imdb,title};
+            try{
+              const r=await fetch('https://streamdata.vaplayer.ru/api.php?imdb='+imdb+'&type=movie',
+                {headers:{Referer:'https://nextgencloudfabric.com/'},
+                  signal:AbortSignal.timeout(14000),redirect:'error'});
+              const d=await r.json();
+              result.http=r.status;result.providerStatus=d.status_code;
+              result.returnedImdb=d.data?.imdb_id;
+              result.title=d.data?.title;result.fileName=d.data?.file_name?.slice(0,100);
+              const streams=(d.data?.stream_urls||[]).slice(0,2);
+              result.streams=[];
+              for(const url of streams){
+                const v={};
+                try{
+                  const r=await fetch(url,{signal:AbortSignal.timeout(9500),redirect:'error'});
+                  v.hlsHttp=r.status;
+                  if(r.ok){
+                    const body=await r.text();
+                    v.hls=body.startsWith('#EXTM3U');
+                    const variant=body.split(/\r?\n/).find(line=>line&&!line.startsWith('#'));
+                    if(variant){
+                      const child=await fetch(new URL(variant,url),{
+                        signal:AbortSignal.timeout(10000),redirect:'error'});
+                      v.childHttp=child.status;
+                      if(child.ok){
+                        const b=await child.text();
+                        const seg=b.split(/\r?\n/).find(line=>line&&!line.startsWith('#'));
+                        if(seg){
+                          const s=await fetch(new URL(seg,new URL(variant,url)),{
+                            headers:{Range:'bytes=0-2047',Origin:'https://moosa-web.onrender.com'},
+                            signal:AbortSignal.timeout(10000),redirect:'error'});
+                          v.segmentHttp=s.status;
+                          v.segmentCors=s.headers.get('access-control-allow-origin');
+                          await s.body?.cancel().catch(()=>{});
+                        }
+                      }
+                    }
+                  }
+                }catch(e){v.error=String(e.message).slice(0,100)}
+                result.streams.push(v);
+              }
+            }catch(e){result.error=String(e.message).slice(0,120)}
+            console.log('CINESTREAM_CLASSIC_LIVE '+JSON.stringify(result));
+          }
+          NODE
