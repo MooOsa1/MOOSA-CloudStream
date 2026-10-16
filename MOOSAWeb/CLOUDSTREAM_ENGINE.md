@@ -140,7 +140,9 @@ Neither this feature nor Stremio source transport executes original
 CineStream/StreamPlay Android code.
 
 The operator must separately configure and review authorized add-on manifests.
-No external subtitle addon is enabled by default.
+OpenSubtitles v3 is now included as a pre-approved **subtitle-only** HTTP addon:
+https://opensubtitles-v3.strem.io/manifest.json .
+On 2026-10-16 its actual movie/IMDB endpoints returned two Arabic and four English subtitle results for Sintel, with direct SRT text at subs5.strem.io. We independently fetched Arabic and English payloads, verified valid SRT cue times, Arabic Unicode text and permissive CORS. Official CDN subtitle URLs do not have .srt/.vtt suffixes, so the Node and browser URL validator only accepts the narrowly verified /en/download/subencoding-stremio-utf8/src-api/file/<numeric> format on subs*.strem.io. The site does not proxy subtitle content, and its built-in native SRT -> VTT converter handles direct playback in HTML5. Additional operator-provided subtitle addons remain optional. No original Android .cs3 executes and source video compatibility is unchanged. Individual subtitles can still be out of sync; the existing subtitle offset slider stays available.
 
 ## Deployment boundary
 
