@@ -1,0 +1,56 @@
+name: Read-only real OpenSubtitles v3 Stremio provider probe
+on:
+  push:
+    branches: [diagnostics/real-stremio-subtitles-opensubtitles-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Probe trusted official Stremio subtitle provider by IMDb and language
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const root='https://opensubtitles-v3.strem.io/';
+          async function get(path){
+            try{
+              const response=await fetch(root+path,{
+                signal:AbortSignal.timeout(16000),redirect:'error',
+                headers:{Accept:'application/json'}
+              });
+              const txt=await response.text();
+              return {status:response.status,cors:response.headers.get('access-control-allow-origin'),
+                data:txt.length<2e6?JSON.parse(txt):null};
+            }catch(e){return {error:String(e.message).slice(0,125)};}
+          }
+          const manifest=await get('manifest.json');
+          console.log('OFFICIAL_SUBTITLE_MANIFEST '+JSON.stringify({
+            status:manifest.status,error:manifest.error,
+            name:manifest.data?.name,id:manifest.data?.id,
+            types:manifest.data?.types,resources:manifest.data?.resources
+          }));
+          for(const [imdb,title] of [
+            ['tt1727587','Sintel'],['tt2285752','Tears of Steel'],
+            ['tt0807840','Elephants Dream'],['tt1254207','Big Buck Bunny']
+          ]){
+            const result=await get('subtitles/movie/'+imdb+'.json');
+            const all=Array.isArray(result.data?.subtitles)?result.data.subtitles:[];
+            const langs=all.reduce((a,s)=>(a[String(s.lang||s.lang_code||s.language||'').toLowerCase()]=(a[String(s.lang||s.lang_code||s.language||'').toLowerCase()]||0)+1,a),{});
+            const eligible=all.filter(s=>/^(ar|ara|en|eng|ar-[a-z]+|en-[a-z]+)$/i.test(String(s.lang||s.lang_code||s.language||'')));
+            console.log('OFFICIAL_SUBTITLE_FILM '+JSON.stringify({
+              imdb,title,status:result.status,error:result.error,cors:result.cors,
+              total:all.length,langs,selected:eligible.slice(0,6).map(s=>{
+                let u;try{u=new URL(s.url)}catch{}
+                return {lang:s.lang||s.lang_code||s.language,host:u?.hostname,
+                  pathTail:u?.pathname?.slice(-120),ext:u?.pathname?.match(/\.(?:srt|vtt)(?:$|\.)/i)?.[0]||'',
+                  id:String(s.id||'').slice(0,90)};
+              })
+            }));
+          }
+          NODE
