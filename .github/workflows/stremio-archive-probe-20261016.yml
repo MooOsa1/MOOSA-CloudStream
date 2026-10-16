@@ -1,0 +1,61 @@
+name: Read-only public domain Stremio addon investigation
+on:
+  push:
+    branches: [diagnostics/stremio-archive-addon-probe-20261016]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect real HTTP-only Archive.org Stremio addon without returning third-party links to users
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const root='https://dev.nebulawp.org/stremio/archive.org-addon/';
+          async function query(path){
+            try{
+              const r=await fetch(root+path,{headers:{Accept:'application/json'},
+                signal:AbortSignal.timeout(18000),redirect:'error'});
+              if(!r.ok)return {http:r.status};
+              const body=await r.text();
+              if(body.length>500000)return {http:r.status,oversize:true};
+              return {http:r.status,data:JSON.parse(body)};
+            }catch(e){return {error:e.name||'network-error'};}
+          }
+          const manifest=await query('manifest.json');
+          console.log('PUBLIC_DOMAIN_STREMIO_MANIFEST '+JSON.stringify({
+            status:manifest.http,name:manifest.data?.name,
+            resources:manifest.data?.resources,types:manifest.data?.types
+          }));
+          const known=[
+            ['tt1254207','Big Buck Bunny','open-film'],
+            ['tt1727587','Sintel','open-film'],
+            ['tt2285752','Tears of Steel','open-film'],
+            ['tt0807840','Elephants Dream','open-film'],
+            ['tt0017925','The General (1926)','public-domain-candidate'],
+            ['tt0012349','The Kid (1921)','public-domain-candidate'],
+            ['tt0011841','The Cabinet of Dr. Caligari (1920)','public-domain-candidate'],
+            ['tt0063350','Night of the Living Dead (1968)','public-domain-candidate']
+          ];
+          for(const [imdb,title,kind] of known){
+            const r=await query('stream/movie/'+imdb+'.json');
+            const streams=Array.isArray(r.data?.streams)?r.data.streams:[];
+            const candidates=streams.map(s=>{
+              let host='',extension='';
+              try{let u=new URL(s.url);host=u.hostname;
+                extension=u.pathname.match(/\.(?:m3u8|mp4|m4v|webm)$/i)?.[0]||'';}catch{}
+              return {host,extension,direct:Boolean(extension)};
+            });
+            console.log('PUBLIC_DOMAIN_STREMIO_CANDIDATE '+JSON.stringify({
+              imdb,title,kind,http:r.http||0,error:r.error||null,
+              count:streams.length,direct:candidates.filter(x=>x.direct).length,
+              hosts:[...new Set(candidates.map(x=>x.host).filter(Boolean))].slice(0,8)
+            }));
+          }
+          NODE
