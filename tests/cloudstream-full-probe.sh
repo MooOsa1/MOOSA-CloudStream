@@ -65,6 +65,25 @@ print('Android HTTP probe is reachable from CI host via adb forward')
 PY
 
 printf '[6/6] Request a licensed sample from OUTSIDE Android and inspect bounded statuses\n'
+# A client cannot probe arbitrary films or omit the test credential.
+DENIED_AUTH="$(curl -sS --max-time 5 -o "$REPORT/unauthorized.json" -w '%{http_code}' \
+  -X POST 'http://127.0.0.1:18878/v1/probe' \
+  -H 'Content-Type: application/json' \
+  --data '{"media":"movie","title":"Big Buck Bunny","purpose":"licensed-emulator-test"}')"
+if [[ "$DENIED_AUTH" != 401 ]]; then
+  echo "Security regression: unauthenticated probe returned HTTP $DENIED_AUTH (expected 401)"; exit 1
+fi
+
+DENIED_MEDIA="$(curl -sS --max-time 5 -o "$REPORT/rejected-media.json" -w '%{http_code}' \
+  -X POST 'http://127.0.0.1:18878/v1/probe' \
+  -H 'Authorization: Bearer moosa-ci-local-test-token-not-for-production' \
+  -H 'Content-Type: application/json' \
+  --data '{"media":"movie","title":"Unlicensed Other Film","purpose":"licensed-emulator-test"}')"
+if [[ "$DENIED_MEDIA" != 400 ]]; then
+  echo "Security regression: unallowlisted media returned HTTP $DENIED_MEDIA (expected 400)"; exit 1
+fi
+echo 'SECURITY_PROBE_VERIFIED: unauthorized requests and non-test media rejected'
+
 code="$(curl -sS --connect-timeout 4 --max-time 115 -o "$REPORT/api-probe-result.json" -w '%{http_code}' \
   -X POST 'http://127.0.0.1:18878/v1/probe' \
   -H 'Authorization: Bearer moosa-ci-local-test-token-not-for-production' \
