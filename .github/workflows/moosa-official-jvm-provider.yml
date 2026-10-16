@@ -5,6 +5,7 @@ on:
     paths:
       - 'MOOSAWeb/tools/JvmOriginalProviderSmoke.java'
       - 'MOOSAWeb/tools/JvmOriginalProviderLoad.java'
+      - 'MOOSAWeb/tools/JvmOriginalProviderLinks.java'
       - '.github/workflows/moosa-official-jvm-provider.yml'
   workflow_dispatch:
 permissions:
@@ -96,3 +97,10 @@ jobs:
           javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderLoad.java
           LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
           timeout 65s java -cp /tmp/moosa-jvm JvmOriginalProviderLoad "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps
+
+      - name: Execute original CineStream loadLinks callbacks for verified licensed Sintel
+        run: |
+          set -euo pipefail
+          javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderLinks.java
+          LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
+          timeout 62s java -Xmx1500m -cp /tmp/moosa-jvm JvmOriginalProviderLinks "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps
