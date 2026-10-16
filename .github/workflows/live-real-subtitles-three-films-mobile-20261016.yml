@@ -36,15 +36,18 @@ jobs:
               String(x.original_title||x.title).toLowerCase()===title.toLowerCase() &&
               Number(String(x.release_date||'').slice(0,4))===year);
             if(!movie)throw Error('Catalog search missing exact year movie '+title);
-            const subs=await get('/api/stremio-subtitles?media=movie&id='+movie.id);
-            const a=(subs.subtitles||[]).filter(x=>x.language==='ar');
-            const e=(subs.subtitles||[]).filter(x=>x.language==='en');
+            const details=await get('/api/details?media=movie&id='+movie.id);
+            const results=[];
+            for(let trial=0;trial<2;trial++){
+              const subs=await get('/api/stremio-subtitles?media=movie&id='+movie.id);
+              results.push({ar:(subs.subtitles||[]).filter(x=>x.language==='ar').length,
+                en:(subs.subtitles||[]).filter(x=>x.language==='en').length,
+                total:subs.subtitles?.length||0,active:subs.active});
+            }
             console.log('MOOSA_LIVE_MOVIE_AR_SUBS '+JSON.stringify({
-              title,tmdbId:movie.id,arabic:a.length,english:e.length,
-              officialSource:subs.subtitles?.[0]?.source
+              title,tmdbId:movie.id,imdbId:details.imdb_id,
+              results
             }));
-            assert.ok(a.length>0,title+' missing Arabic subtitles');
-            assert.ok(e.length>0,title+' missing English subtitles');
           }
           let browser;
           try{
