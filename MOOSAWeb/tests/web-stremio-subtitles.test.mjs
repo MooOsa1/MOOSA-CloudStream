@@ -4,6 +4,7 @@ import {
   stremioSubtitleIdentity,selectStremioSubtitles,collectStremioAddonSubtitles
 } from '../web-stremio-subtitles.mjs';
 import {resolveWebSources} from '../providers.mjs';
+import {createServer} from '../server.mjs';
 
 const licensedAddon='https://authorized.example/addons/open/manifest.json';
 const movie={media:'movie',id:980005,title:'Demo Licensed Movie',
@@ -175,4 +176,21 @@ test('Exact TV episode subtitles do not cross to adjacent season or episode',asy
   assert.equal(b[0].subtitles[0].url,'https://sub.example/show.s02e5.vtt');
   assert.ok(!a[0].subtitles.some(s=>s.url.includes('e5.')));
   assert.ok(!b[0].subtitles.some(s=>s.url.includes('e4.')));
+});
+
+test('public runtime reports Stremio subtitles are supported but not necessarily active',async()=>{
+  const server=createServer();
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const url='http://127.0.0.1:'+server.address().port+'/api/web-native/status';
+    const response=await fetch(url);
+    assert.equal(response.status,200);
+    const json=await response.json();
+    assert.equal(json.httpStremioSubtitles.supported,true);
+    assert.equal(json.httpStremioSubtitles.protocol,'stremio_subtitles_http');
+    assert.deepEqual(json.httpStremioSubtitles.languages,['ar','en']);
+    assert.equal(json.httpStremioSubtitles.active,json.httpStremioSubtitles.configuredAddonCount>0);
+    assert.equal(json.cloudstreamCs3Supported,false);
+    assert.equal(json.cineStreamAndStreamPlayOriginals,false);
+  }finally{await new Promise(resolve=>server.close(resolve));}
 });
