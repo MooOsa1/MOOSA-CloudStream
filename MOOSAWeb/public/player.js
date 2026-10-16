@@ -14,6 +14,18 @@ const HTTPS = /^https:\/\/[^\s]+$/i;
 const extensions = /\.(m3u8|mp4|webm|mov)(?:[?#]|$)/i;
 
 function notice(message){$('#player-message').textContent=message;}
+function setAttribution(source){
+  const box=$('#source-attribution');
+  if(!box)return;
+  const valid=source && /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/i.test(source.sourcePage||'')
+    && /^https:\/\/creativecommons\.org\//.test(source.licenseUrl||'');
+  box.classList.toggle('hidden',!valid);
+  if(!valid)return;
+  $('#source-attribution-text').textContent=
+    'العمل متاح برخصة Creative Commons • '+String(source.attribution||'Wikimedia Commons').slice(0,135);
+  $('#source-attribution-link').href=source.sourcePage;
+}
+
 function clearSubtitle(resetMenu=true){
   subtitleToken++;
   for(const tr of [...video.querySelectorAll('track')])tr.remove();
@@ -24,6 +36,7 @@ function clearSubtitle(resetMenu=true){
   if(resetMenu)$('#player-subtitles').replaceChildren(new Option('بدون ترجمة',''));
 }
 function resetVideo(){
+  setAttribution(null);
   playbackToken++;
   customSubtitle=null;
   video.pause();clearSubtitle();
@@ -199,6 +212,7 @@ function sourceSelected(value){
   // playLink resets the track menu synchronously; repopulate immediately,
   // instead of waiting for a remote video to load or fail.
   void playLink(src.url,src.name);
+  setAttribution(src);
   const list=$('#player-subtitles');
   for(const t of src.subtitles||[]){const option=new Option(`${t.language==='ar'?'Arabic':'English'} • ${t.source} • ${t.label}`,t.url);option.dataset.label=t.label;option.dataset.language=t.language;list.add(option);}
 }
