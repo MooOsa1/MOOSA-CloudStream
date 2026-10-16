@@ -1,5 +1,6 @@
 import { showPlayer, hidePlayer, startDemo } from './player.js';
 import { initAutomaticSources, searchAutomaticSources } from './source-search.js';
+import { loadFreeLibrary } from './free-film-ui.js';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const state = {
@@ -193,6 +194,7 @@ function showWatch(){
 function openStandalone(){state.lastFocus=document.activeElement;state.current=null;state.sources=[];showPlayer({title:'مشغل MOOSA',sources:[]});}
 async function init(){
   initAutomaticSources();
+  void loadFreeLibrary();
   $('#year').textContent=new Date().getFullYear();
   $$('[data-nav]').forEach(el=>el.addEventListener('click',()=>navigate(el.dataset.nav)));
   $$('[data-section-view]').forEach(el=>el.addEventListener('click',()=>browseSection(el.dataset.sectionView)));
