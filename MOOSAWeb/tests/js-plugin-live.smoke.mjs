@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {runLicensedJsProbe} from '../js-plugin-sidecar.mjs';
 
 const result=await runLicensedJsProbe({
-  media:'movie',id:12345,title:'Big Buck Bunny',originalTitle:'Big Buck Bunny'
+  media:'movie',id:10378,title:'Big Buck Bunny',originalTitle:'Big Buck Bunny'
 },{
   provider:'commons-authorized',
   licensedMedia:true,
