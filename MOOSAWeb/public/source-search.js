@@ -93,5 +93,6 @@ async function openLicensedFullFilm(){
 }
 export function initAutomaticSources(){
   document.addEventListener('moosa-player-closed',cancelAutomaticSourceSearch);
+  document.addEventListener('moosa-player-opened',cancelAutomaticSourceSearch);
   $('#open-free-film')?.addEventListener('click',openLicensedFullFilm);
 }
