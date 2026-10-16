@@ -96,3 +96,23 @@ test('standalone runtime status API is truthful and refuses arbitrary web provid
     assert.equal((await fetch(base+'/api/web-native/status?provider=https://malware.invalid')).status,400);
   }finally{await new Promise(resolve=>app.close(resolve));}
 });
+
+test('approved JS starts in parallel with Commons instead of after search',async()=>{
+  let commonsResolved=false,workerBeforeCommons=false;
+  const fetchSlow=async url=>{
+    if(new URL(url).hostname==='commons.wikimedia.org'){
+      await new Promise(resolve=>setTimeout(resolve,40));
+      commonsResolved=true;
+    }
+    return fakeFetch(url);
+  };
+  const sources=await resolveWebSources(film(313105),{
+    addons:[],fetchImpl:fetchSlow,engine:null,
+    jsLoad:async()=>{
+      workerBeforeCommons=!commonsResolved;
+      return approved();
+    }
+  });
+  assert.equal(workerBeforeCommons,true);
+  assert.equal(sources[0].runtime,'web_native_js');
+});

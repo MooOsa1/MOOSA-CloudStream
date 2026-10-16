@@ -11,7 +11,7 @@
  */
 import { queryRemoteEngine } from './cloudstream-engine.mjs';
 import { fromCommons } from './commons-provider.mjs';
-import { augmentCatalogCommonsWithNativeJs } from './native-js-catalog-runtime.mjs';
+import { augmentCatalogCommonsWithNativeJs, nativeJsFilmForCatalog, nativeJsEngine } from './native-js-catalog-runtime.mjs';
 
 const MAX_SOURCES = 30;
 const MIN_QUALITY = 720;
@@ -189,12 +189,20 @@ export async function resolveWebSources(meta,opts={}) {
   // Keep one in-flight request per title; prevents multiple clients from
   // hammering metadata services when clicking Play simultaneously.
   if(cached?.pending)return cached.pending;
+  // Start the reviewed Node worker while Commons/other sources are being
+  // discovered. Waiting until after Commons returned previously added
+  // another 1.4s to the normal Play path and often lost worker readiness.
+  // Never spawn it for an unapproved original title, year or TV episode.
+  const nativeFilm=nativeJsFilmForCatalog(meta);
+  const nativePending=nativeFilm?Promise.resolve().then(()=>
+    (opts.jsLoad||((slug)=>nativeJsEngine.load(slug)))(nativeFilm.slug)
+  ).catch(()=>null):null;
   const pending=Promise.allSettled([
     fromWebAddons(meta,opts),fromArchive(meta,opts),fromCommons(meta,opts),queryRemoteEngine(meta,opts)
   ]).then(async res=>{
     const commons=res[2]?.status==='fulfilled'?res[2].value:[];
     const enhanced=await augmentCatalogCommonsWithNativeJs(meta,commons,{
-      ...(opts.jsLoad?{load:opts.jsLoad}:{})
+      ...(nativePending?{load:()=>nativePending}:{})
     });
     const byProvider=res.flatMap((r,i)=>
       i===2?enhanced.sources:(r.status==='fulfilled'?r.value:[]));
