@@ -34,7 +34,7 @@ public final class ProviderSearchProbe {
             Object result=null;
             try{
                 result=type.getMethod("search",String.class,Continuation.class)
-                    .invoke(provider,"Big Buck Bunny",completion);
+                    .invoke(provider,"Sintel",completion);
                 if(result==IntrinsicsKt.getCOROUTINE_SUSPENDED()){
                     if(!done.await(35,TimeUnit.SECONDS)){
                         System.out.println("JVM_REAL_SEARCH status=timeout query=licensed_test durationMs="+elapsed(started));
@@ -47,9 +47,15 @@ public final class ProviderSearchProbe {
                     long exact=list.stream().filter(o->{
                         try{
                             String n=String.valueOf(o.getClass().getMethod("getName").invoke(o));
-                            return n.equalsIgnoreCase("Big Buck Bunny");
+                            return n.equalsIgnoreCase("Sintel");
                         }catch(Throwable ignore){return false;}
                     }).count();
+                    String firstNames=list.stream().limit(8).map(o->{
+                        try{return String.valueOf(o.getClass().getMethod("getName").invoke(o));}
+                        catch(Throwable x){return "(unreadable)";}
+                    }).map(x->x.replaceAll("[^\\p{L}\\p{N} .,:()/-]","_").substring(0,Math.min(x.length(),48)))
+                        .reduce((a,b)->a+" | "+b).orElse("");
+                    System.out.println("JVM_REAL_SEARCH_NAMES "+firstNames);
                     System.out.println("JVM_REAL_SEARCH status=completed query=licensed_test count="+list.size()+
                         " exactMatches="+exact+" durationMs="+elapsed(started));
                 }else{
@@ -66,6 +72,9 @@ public final class ProviderSearchProbe {
                     " durationMs="+elapsed(started));
             }
         }
+        // NiceHTTP coroutines can leave non-daemon housekeeping threads active on the JVM.
+        // CI probe exits only after printing its final structured result.
+        System.exit(0);
     }
     private static long elapsed(long started){return (System.nanoTime()-started)/1_000_000;}
 }
