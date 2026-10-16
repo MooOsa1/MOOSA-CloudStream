@@ -29,7 +29,8 @@ export async function runLicensedJsProbe(meta,{
   timeoutMs=3000
 }={}){
   const start=Date.now();
-  if(provider!=='licensed-fixture')return fail('provider_not_approved',0);
+  if(!['licensed-fixture','commons-authorized'].includes(provider))
+    return fail('provider_not_approved',0);
   if(!licensedMedia || !Array.isArray(permittedHosts)||!permittedHosts.length)
     return fail('rights_not_approved',0);
   if(!meta||meta.media!=='movie'||meta.title!=='Big Buck Bunny'||
@@ -83,10 +84,12 @@ export async function runLicensedJsProbe(meta,{
         if(report.error || !Array.isArray(report.streams))
           return finish(fail(report.error||'bad_worker_data',0));
         const clean=adaptNuvioStreams(report.streams,{
-          provider:'JS fixture',permittedHosts,licensedMedia
+          provider:provider==='commons-authorized'?'JS Commons (verified)':'JS fixture',
+          permittedHosts,licensedMedia
         });
         // No output is a playback guarantee. The URL is test-only!
-        return finish({ok:true,reason:'mock_only',
+        return finish({ok:true,
+          reason:provider==='commons-authorized'?'reviewed_commons_provider':'mock_only',
           ...clean});
       }catch{
         return finish(fail('invalid_worker_response',0));
