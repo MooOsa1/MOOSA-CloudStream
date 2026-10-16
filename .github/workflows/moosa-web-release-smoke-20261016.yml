@@ -53,6 +53,16 @@ jobs:
           assert.ok(kinds.every(x=>x.rights && x.hostname==='upload.wikimedia.org'));
           if(film.body.available)assert.ok(kinds.some(x=>x.optimized && x.quality===1080),
             'The official Commons 1080p transcode should remain selectable');
+          const readiness=[];
+          for(const id of ['big-buck-bunny','sintel','tears-of-steel','elephants-dream']){
+            const result=await read('/api/js-engine/demo?id='+id);
+            assert.equal(result.status,200);
+            assert.equal(result.body.filmId,id);
+            assert.equal(result.body.originalCloudStreamPlugins,false);
+            readiness.push({id,state:result.body.state,
+              sources:result.body.count,qualities:result.body.sources.map(s=>s.quality)});
+          }
+          console.log('PRODUCTION_FOUR_FILM_JS_READINESS '+JSON.stringify(readiness));
           console.log('PRODUCTION_MOOSA_WEB_SMOKE '+JSON.stringify({
             health:health.body.status,sintelApiStatus:demo.status,
             sintelJsState:demo.body.state,
