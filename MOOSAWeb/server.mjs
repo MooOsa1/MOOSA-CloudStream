@@ -265,6 +265,9 @@ async function handle(req,res) {
           params:{language:'en-US',append_to_response:'external_ids'}});
         const meta={
           media,id:Number(id),
+          title:details.title||details.name||'',
+          originalTitle:details.original_title||details.original_name||'',
+          year:Number(String(details.release_date||details.first_air_date||'').slice(0,4))||null,
           imdbId:details.imdb_id||details.external_ids?.imdb_id||null,
           ...(media==='tv'?{season,episode}:{})
         };

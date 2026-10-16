@@ -80,13 +80,28 @@ export function selectStremioSubtitles(data,{sourceName='Stremio subtitles'}={})
   }).sort((a,b)=>Number(b.language==='ar')-Number(a.language==='ar'))
     .slice(0,16);
 }
+/**
+ * Identity-verified exception based on IMDbPro and Creative Commons project
+ * records for the original 2012 Blender film (tt2285752). The current TMDB
+ * record 133701 returns tt5129250, under which the official subtitle API
+ * has no tracks. This is NOT fuzzy title matching or a general fallback.
+ */
+export function canonicalSubtitleImdbId(meta){
+  if(meta?.media==='movie' && Number(meta.id)===133701 &&
+     meta.originalTitle==='Tears of Steel' &&
+     meta.title==='Tears of Steel' && Number(meta.year)===2012 &&
+     ['tt5129250','tt2285752'].includes(meta.imdbId))
+    return 'tt2285752';
+  return meta?.imdbId||null;
+}
 export function stremioSubtitleIdentity(meta){
-  if(!IMDB.test(meta?.imdbId||''))return null;
-  if(meta.media==='movie')return {type:'movie',id:meta.imdbId};
+  const imdbId=canonicalSubtitleImdbId(meta);
+  if(!IMDB.test(imdbId||''))return null;
+  if(meta.media==='movie')return {type:'movie',id:imdbId};
   if(meta.media==='tv' &&
     Number.isInteger(meta.season)&&meta.season>=0&&meta.season<=100 &&
     Number.isInteger(meta.episode)&&meta.episode>=1&&meta.episode<=1000)
-    return {type:'series',id:meta.imdbId+':'+meta.season+':'+meta.episode};
+    return {type:'series',id:imdbId+':'+meta.season+':'+meta.episode};
   return null;
 }
 export async function collectStremioAddonSubtitles(meta,{
@@ -100,7 +115,7 @@ export async function collectStremioAddonSubtitles(meta,{
     if(!safe||!new URL(safe).pathname.endsWith('/manifest.json'))return [];
     const signal=AbortSignal.timeout(Math.min(4000,Math.max(250,deadlineMs)));
     const manifest=await fetchJson(safe,fetchImpl,signal);
-    if(!supportsResource(manifest,'subtitles',identity.type,meta.imdbId))return [];
+    if(!supportsResource(manifest,'subtitles',identity.type,identity.id.split(':')[0]))return [];
     const endpoint=safe.slice(0,-'manifest.json'.length)+'subtitles/'+
       identity.type+'/'+encodeURIComponent(identity.id)+'.json';
     const data=await fetchJson(endpoint,fetchImpl,signal);
