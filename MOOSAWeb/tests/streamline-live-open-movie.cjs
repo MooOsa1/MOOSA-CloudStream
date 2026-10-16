@@ -20,6 +20,7 @@ const details={
   production_countries:[]
 };
 const network=[];
+const fetchOriginal=globalThis.fetch.bind(globalThis);
 global.fetch=async function guardedFetch(raw,options={}){
   const u=new URL(String(raw));
   if(u.hostname==='api.themoviedb.org'){
@@ -45,7 +46,6 @@ global.fetch=async function guardedFetch(raw,options={}){
     throw e;
   }
 };
-const fetchOriginal=globalThis.fetch.bind(globalThis);
 async function main(){
   let outcome='no_sources';
   let sources=[];
