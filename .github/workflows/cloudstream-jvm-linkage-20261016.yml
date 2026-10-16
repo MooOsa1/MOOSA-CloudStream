@@ -195,30 +195,13 @@ jobs:
           set -euo pipefail
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
           javac -cp "MOOSAJVM:$runtime" MOOSAJVM/GenericProviderProbe.java
-          provider="$(grep -E '^CS3_JVM_PROVIDER label=StreamPlay name=com\.phisher98\.StreamPlay
-        shell: bash
-        run: |
-          set -euo pipefail
-          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
-          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/StreamPlayLiteProbe.java
-          set +e
-          timeout 55 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayLiteProbe \
-            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
-            /tmp/converted/StreamPlay.jar > /tmp/streamplay-lite-private.log 2>&1
-          status=$?
-          set -e
-          echo "JVM_STREAMPLAY_PROBE_PROCESS_EXIT=$status"
-          grep -E '^JVM_STREAMPLAY_LITE stage=' /tmp/streamplay-lite-private.log || true
- \
-            /tmp/streamplay-discovery.log | sed 's/^.* name=//' | head -n 1)"
+          provider="$(grep -F 'CS3_JVM_PROVIDER label=StreamPlay name=com.phisher98.StreamPlay' /tmp/streamplay-discovery.log | grep -v 'StreamPlayAnime' | sed -n 's/^.* name=//p' | grep -x 'com.phisher98.StreamPlay' | head -n 1)"
           test "$provider" = 'com.phisher98.StreamPlay'
-          # Metadata only. Never requests streams, downloads, cookies or video.
           timeout 25 java -Xmx512m -cp "MOOSAJVM:$runtime" GenericProviderProbe \
             /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
             /tmp/converted/StreamPlay.jar "$provider" inspect \
             | tee /tmp/streamplay-generic-inspect.log
-          grep -F 'phase=instantiate result=success class=com.phisher98.StreamPlay' \
-            /tmp/streamplay-generic-inspect.log
+          grep -F 'phase=instantiate result=success class=com.phisher98.StreamPlay' /tmp/streamplay-generic-inspect.log
       - name: Test original StreamPlay loadLinks on licensed Sintel with no streaming
         shell: bash
         run: |
