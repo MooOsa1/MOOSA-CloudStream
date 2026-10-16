@@ -93,20 +93,69 @@ test('Only identical licensed Commons URLs can be promoted to JS-verified playba
     {url:'https://upload.wikimedia.org/some-other-4k.webm',quality:2250}
   ]};
   const proposed={
-    state:'browser_preflight_passed',sources:[
+    filmId:'big-buck-bunny',state:'browser_preflight_passed',sources:[
       {...allowed,preflight:{verified:true,mime:'video/webm'}},
       {url:'https://evil.example/unknown.mp4',quality:2160,preflight:{verified:true,mime:'video/mp4'}}
     ]
   };
   const result=matchVerifiedJsMedia(existing,proposed);
-  assert.equal(result.length,1);
+  assert.equal(result.length,2,'Keep licensed unverified alternatives as playback fallback');
   assert.equal(result[0].url,allowed.url);
   assert.equal(result[0].preflight.verified,true);
   assert.equal(result[0].sourcePage,existing.sources[0].sourcePage);
+  assert.equal(result[1].preflight,undefined);
   assert.equal(matchVerifiedJsMedia({...existing,id:'sintel'},proposed),null);
   assert.equal(matchVerifiedJsMedia(existing,{...proposed,state:'no_browser_approved_sources'}),null);
   assert.equal(matchVerifiedJsMedia(existing,{
     state:'browser_preflight_passed',sources:[{...allowed,
       preflight:{verified:false}}]
   }),null);
+});
+
+test('A separate reviewed JS worker request supports every fixed curated film without cross-title cache',async()=>{
+  const metaCalls=[];
+  const engine=createJsEngineDemo({run:async meta=>{
+    metaCalls.push(meta);
+    return {sources:[allowed],state:'browser_preflight_passed'};
+  }});
+  const ids=['big-buck-bunny','sintel','tears-of-steel','elephants-dream'];
+  for(const id of ids){
+    const sample=await engine.load(id);
+    assert.equal(sample.filmId,id);
+    assert.equal(sample.originalCloudStreamPlugins,false);
+  }
+  assert.deepEqual(metaCalls.map(x=>x.title),
+    ['Big Buck Bunny','Sintel','Tears of Steel','Elephants Dream']);
+  await engine.load('sintel');
+  assert.equal(metaCalls.length,4,'Each film is cached independently');
+  assert.equal(await engine.load('../../evil'),null);
+});
+
+test('No JavaScript verification or attribution can cross between approved film identities',()=>{
+  const existing={id:'sintel',sources:[
+    {url:allowed.url,licenseUrl:'https://creativecommons.org/licenses/by-sa/3.0/',
+      attribution:'Original license metadata',quality:720}
+  ]};
+  const bad={filmId:'big-buck-bunny',state:'browser_preflight_passed',sources:[allowed]};
+  assert.equal(matchVerifiedJsMedia(existing,bad),null);
+  const verified={...bad,filmId:'sintel'};
+  const sources=matchVerifiedJsMedia(existing,verified);
+  assert.equal(sources.length,1);
+  assert.equal(sources[0].licenseUrl,existing.sources[0].licenseUrl);
+  assert.equal(sources[0].attribution,'Original license metadata');
+});
+
+test('HTTP route only accepts an explicitly approved title ID, never code, URLs or extra arguments',async()=>{
+  const server=createServer();
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const base='http://127.0.0.1:'+server.address().port;
+    for(const query of [
+      '?id=evil-film','?id=../../evil','?url=https://example.com/a.mp4',
+      '?id=sintel&provider=remote','?id=sintel&id=big-buck-bunny'
+    ]){
+      const res=await fetch(base+'/api/js-engine/demo'+query);
+      assert.equal(res.status,400,query);
+    }
+  }finally{await new Promise(resolve=>server.close(resolve));}
 });
