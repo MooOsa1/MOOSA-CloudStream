@@ -27,11 +27,16 @@ function send(res,status,payload){
   res.end(body);
 }
 function parseResult(stdout){
+  // Only accept the two structured lines emitted by our approved JVM worker.
+  // Substring matching incorrectly accepted CineStreamProviderEvil, Sintel2,
+  // or another IMDb ID prefixed by a valid value.
   const lines=stdout.split(/\r?\n/).filter(s=>s.startsWith('MOOSA_GENERIC_PROVIDER '));
-  if(!lines.some(x=>x.includes('phase=instantiate result=success')&&
-      x.includes('class=com.megix.CineStreamProvider')))return null;
-  if(!lines.some(x=>x.includes('phase=load result=exact')&&
-      x.includes('title=Sintel')&&x.includes('expectedImdb=tt1727587')))return null;
+  if(lines.length!==2)return null;
+  const inst=/^MOOSA_GENERIC_PROVIDER phase=instantiate result=success class=com\.megix\.CineStreamProvider(?:\s|$)/;
+  const load=/^MOOSA_GENERIC_PROVIDER phase=load result=exact title=Sintel(?:\s|$)/;
+  const imdb=/(?:^|\s)expectedImdb=tt1727587(?:\s|$)/;
+  if(!inst.test(lines[0])||!load.test(lines[1])||!imdb.test(lines[1]))
+    return null;
   return {provider:'CineStream',movie:{imdb:TARGET.imdb,title:TARGET.title},
     metadataVerified:true,playbackVerified:false,streams:[]};
 }
