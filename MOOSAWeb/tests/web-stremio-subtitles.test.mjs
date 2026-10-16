@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  stremioSubtitleIdentity,selectStremioSubtitles,collectStremioAddonSubtitles
+  stremioSubtitleIdentity,canonicalSubtitleImdbId,selectStremioSubtitles,collectStremioAddonSubtitles
 } from '../web-stremio-subtitles.mjs';
 import {resolveWebSources} from '../providers.mjs';
 import {createServer} from '../server.mjs';
@@ -216,4 +216,46 @@ test('Subtitle API is strict and rejects arbitrary providers and wrong episodes'
     // Real subtitle availability is verified in separate live API probes.
     // Unit tests avoid depending on TMDB credentials or external endpoints.
   }finally{await new Promise(resolve=>app.close(resolve));}
+});
+
+test('Tears of Steel uses the independently confirmed original IMDb title only on exact film identity',()=>{
+  const verified={
+    media:'movie',id:133701,title:'Tears of Steel',
+    originalTitle:'Tears of Steel',year:2012,imdbId:'tt5129250'
+  };
+  assert.equal(canonicalSubtitleImdbId(verified),'tt2285752');
+  assert.deepEqual(stremioSubtitleIdentity(verified),{type:'movie',id:'tt2285752'});
+  for(const candidate of [
+    {...verified,id:999},
+    {...verified,year:2013},
+    {...verified,title:'Different movie'},
+    {...verified,originalTitle:'Different movie'},
+    {...verified,media:'tv',season:1,episode:1},
+    {...verified,imdbId:'tt7777777'}
+  ])assert.equal(canonicalSubtitleImdbId(candidate),candidate.imdbId);
+});
+test('Tears of Steel query hits correct official Stremio movie IMDb endpoint, not wrong TMDB identifier',async()=>{
+  const verified={
+    media:'movie',id:133701,title:'Tears of Steel',
+    originalTitle:'Tears of Steel',year:2012,imdbId:'tt5129250'
+  };
+  const urls=[];
+  const fetchImpl=fakeFetch(u=>{
+    urls.push(u.pathname);
+    if(u.pathname==='/manifest.json')return{
+      name:'OpenSubtitles v3',types:['movie','series'],
+      resources:['subtitles'],idPrefixes:['tt']
+    };
+    if(u.pathname==='/subtitles/movie/tt2285752.json')
+      return {subtitles:[
+        {lang:'ara',url:'https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1953862780'},
+        {lang:'eng',url:'https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1955318576'}
+      ]};
+    return undefined;
+  });
+  const tracks=await collectStremioAddonSubtitles(verified,{
+    addons:['https://opensubtitles-v3.strem.io/manifest.json'],fetchImpl
+  });
+  assert.deepEqual(urls,['/manifest.json','/subtitles/movie/tt2285752.json']);
+  assert.deepEqual(tracks.map(x=>x.language),['ar','en']);
 });
