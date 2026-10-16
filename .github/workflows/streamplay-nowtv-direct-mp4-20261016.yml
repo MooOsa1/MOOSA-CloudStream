@@ -1,0 +1,41 @@
+name: Real StreamPlay NowTv direct MP4 viability
+on:
+  push:
+    branches: [diagnostics/streamplay-direct-mp4-real-20261016]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify upstream StreamPlay direct MP4 status and actual video bytes on CC movies only
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const base='https://myfilestorage.xyz';
+          for(const [id,imdb,title] of [[45745,'tt1727587','Sintel'],[133701,'tt2285752','Tears of Steel'],[9761,'tt0807840','Elephants Dream']]){
+            for(const code of [String(id),imdb,String(id)+'-1']){
+              const item={title,code};
+              try{
+                const r=await fetch(base+'/'+code+'.mp4',{
+                  headers:{Origin:'https://moosa-web.onrender.com',Range:'bytes=0-2047'},
+                  signal:AbortSignal.timeout(10000),redirect:'error'
+                });
+                item.http=r.status;item.type=r.headers.get('content-type');
+                item.cors=r.headers.get('access-control-allow-origin');
+                item.range=r.headers.get('content-range')?.slice(0,65);
+                if(r.ok){
+                  const reader=r.body?.getReader();const val=await reader?.read();
+                  const bytes=val?.value||new Uint8Array();
+                  item.video= new TextDecoder().decode(bytes.slice(0,80)).includes('ftyp');
+                  await reader?.cancel().catch(()=>{});
+                }
+              }catch(e){item.error=String(e.message).slice(0,100)}
+              console.log('STREAMPLAY_NOWTV_DIRECT_VIDEO '+JSON.stringify(item));
+            }
+          }
+          NODE
