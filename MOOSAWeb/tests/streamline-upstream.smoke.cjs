@@ -16,6 +16,14 @@ const visited=[];
 const SAMPLE_URL='https://licensed.example.org/creative-commons-test-720.m3u8';
 const FAKE_MOVIE_ID=11223344;
 const FAKE_IMDB='tt999888777';
+const realSetTimeout=setTimeout;
+global.setTimeout=(handler,delay,...args)=>{
+  const t=realSetTimeout(handler,delay,...args);
+  // The upstream Nuvio timeout helper leaves an orphan timer after a
+  // successful response. Avoid keeping this disposable CI worker alive.
+  t.unref?.();
+  return t;
+};
 const DATA={
   title:'Licensed Test Film',
   original_title:'Licensed Test Film',
@@ -27,15 +35,26 @@ global.fetch=async function(url,options={}){
   const x=new URL(String(url));
   visited.push(x.hostname);
   if(x.hostname==='api.themoviedb.org'){
-    assert.equal(x.pathname,'/3/movie/'+FAKE_MOVIE_ID);
-    return new Response(JSON.stringify(DATA),{status:200,headers:{'Content-Type':'application/json'}});
+    assert.ok(['/3/movie/'+FAKE_MOVIE_ID,'/3/tv/'+FAKE_MOVIE_ID].includes(x.pathname));
+    const payload=x.pathname.includes('/tv/')?{
+      name:'Licensed Test Series',
+      original_name:'Licensed Test Series',
+      first_air_date:'2022-08-01',
+      external_ids:{imdb_id:FAKE_IMDB},
+      production_countries:[]
+    }:DATA;
+    return new Response(JSON.stringify(payload),{status:200,headers:{'Content-Type':'application/json'}});
   }
   if(x.hostname==='enc-dec.app'){
     assert.match(x.pathname,/\/api\/enc-vidlink/);
     return new Response(JSON.stringify({result:'fake-encrypted-id'}),{status:200});
   }
   if(x.hostname==='vidlink.pro'){
-    assert.equal(x.pathname,'/api/b/movie/fake-encrypted-id');
+    assert.ok(
+      ['/api/b/movie/fake-encrypted-id',
+       '/api/b/tv/fake-encrypted-id/2/3'].includes(x.pathname),
+      'Movie and season/episode paths must be preserved'
+    );
     return new Response(JSON.stringify({
       stream:{qualities:{'720':{
         url:SAMPLE_URL,type:'m3u8',headers:{}
@@ -55,8 +74,12 @@ async function main(){
     'Original Streamline Vidlink parser should produce simulated licensed media source');
   assert.ok(visited.includes('vidlink.pro'));
   assert.ok(visited.includes('api.themoviedb.org'));
+  const series=await provider.getStreams(FAKE_MOVIE_ID,'tv',2,3);
+  assert.ok(Array.isArray(series) && series.some(x=>x.url===SAMPLE_URL),
+    'Original Streamline JS provider must pass season 2 episode 3 through to the TV endpoint');
   console.log('STREAMLINE_ORIGINAL_NODE_COMPAT_PASS',JSON.stringify({
-    parsedSourceCount:result.length,quality:result.find(x=>x.url===SAMPLE_URL)?.quality,
+    movieSources:result.length,tvSources:series.length,
+    quality:result.find(x=>x.url===SAMPLE_URL)?.quality,
     mockedHosts:[...new Set(visited)].sort(),
     note:'Mocked endpoints. No actual media hosts contacted, and no production provider enabled.'
   }));
