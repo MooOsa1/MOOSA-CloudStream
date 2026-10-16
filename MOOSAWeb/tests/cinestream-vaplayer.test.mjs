@@ -1,4 +1,9 @@
 import test from 'node:test';
+import {gunzipSync} from 'node:zlib';
+// Real FFmpeg/libx264-encoded 1280x720 MPEG-TS fixture. Old fake sync-byte
+// packets cannot establish real quality and must never pass strict gating.
+const real720=gunzipSync(Buffer.from('H4sIAAAAAAACA9VXTWgTQRR+W9taQW1atfXfqSKK2HQ3qaUtLrQNNr0UCkIRaV0mu5Nk6f5ldmMSFQnSg4h49KSg9OJRvXgq6MHfg1ereKgeREE0eBbim1WoF/G32H27vH0z72e+/eZl2KSH2mIwUtsL0j2AulQH6XN141i71Dw6ansst+Yo4ydNnclK6UzqSX1lSXoIYgA314XYQarBgVuNt+vRkPQEYm+42R5ifwU12CbUpvnxyQhgHwZ59QTA6bVnBe+LANVqUxesXqBiuKYmdG7k7q4X0lDH+8YhgFUQqrkHa28IX/5p6yN8NDfV68deHnk3/+b52J3LBxfI8z0fPpYTfb2km+guZ0RBkycVuZ8kFaYMZAfQMRbHgJ7xiSPp7l4yPJnCSIPp6Ei5XsVi2YAkZDnZnZATSZzMB4E32NNTKpXiJ02DuRZNS9DmxF2e6xErxfOBbWGc6wWm6/iDRKcZqqsy4SyrKsRgGcvVZ1R5EC9CHWpVfCZGxGaqYVLiFzNoycTzKxiOWuOGqsRlDEFFbLPMDE3UEhkap06OqUof0fPctamGqQoJOLMs08eI/nK/oQdo6AUbtcGoccp1mJpQDioKyVIfsbcHmufPmB4mfitS8DQ3m/WZSAzyHJN89RCxXHeG5nGgLc35Fv6QlyaUrxPC4/BwPd20aSAwmU7AuEUxGuczVpHTiqa7tkdDdEhUwKnpYC0M5FTEZDm1mXiJEjNz+cBDa4ZV0K0mDoUmYt+AQ802HbGyzhymF0W5sITgiDM/L5jXVZ1niZ1BYgS1OFATybhMCgKBKsf70PREmfBJy2rfABp+wDy1l5gesox7iZvQiztWUGWoYqux87ODbRegQSnchdSTfmhpevwbgtg3/kLYs+niyrsR+6biikT28xuxd6xAWIuioeD47q71s5kqXJzyIPbpEjRI/HtB7J38r+W/8b45oi3zDLFviR7ucthSiH1rd8v51PXN12BP53ZoPDxXherUlX8qV5eN920RbRlxRm6P8Bm544fuE2FbxV7vjr0d3Q8t9x+C1Lp/EUjnvn8rf877zgjzvivCZ2Tsj5PDzynoOPefekp8v0eY9/YIn5HJaVjOf5XLhr36BXsrMxvkEAAA','base64'));
+
 import assert from 'node:assert/strict';
 import {probeHlsFirstSegment} from '../real-hls-segment-probe.mjs';
 import {exactVaPlayerMovie,fromCineStreamVaPlayer,
@@ -30,7 +35,7 @@ function response(body,status=200,contentType='application/vnd.apple.mpegurl'){
   }});
 }
 function fake(mediaStatus=206,{identity=valid(),segmentHost='cdn.example',
-  segmentBody=new Uint8Array([0x47,...new Array(2047).fill(0)])}={}){
+  segmentBody=real720}={}){
   const calls=[];
   const fetchImpl=async(url,opts)=>{
     const u=new URL(url);calls.push({path:u.pathname,host:u.hostname});
@@ -73,13 +78,13 @@ test('Real-life VaPlayer symptom: valid master + variant but first segment 403 i
     enabled:true,mediaHosts:['cdn.example'],fetchImpl
   }),[]);
 });
-test('Ported real CineStream VaPlayer accepts only first-segment-verified sources',async()=>{
+test('CineStream VaPlayer uses actual 720p SPS even if HLS master claims 1080p',async()=>{
   const {fetchImpl,calls}=fake();
   const sources=await fromCineStreamVaPlayer(movie,{
     enabled:true,mediaHosts:['cdn.example'],fetchImpl
   });
   assert.equal(sources.length,1);
-  assert.equal(sources[0].quality,1080);
+  assert.equal(sources[0].quality,720); // actual SPS beats claimed 1080p
   assert.equal(sources[0].url,variant);
   assert.match(sources[0].name,/CineStream.*VaPlayer/);
   assert.ok(calls.some(x=>x.host==='streamdata.vaplayer.ru'));
@@ -92,7 +97,7 @@ test('Blocked 1080p falls back to verified 720p, returning the working playlist'
     '#EXT-X-STREAM-INF:RESOLUTION=1280x720','720.m3u8'
   ].join('\n');
   const playlist='#EXTM3U\n#EXTINF:9.9,\nfirst.ts\n#EXT-X-ENDLIST';
-  const transport=new Uint8Array([0x47,...new Array(2047).fill(0)]);
+  const transport=real720;
   const seen=[];
   const fetchImpl=async (url)=>{
     seen.push(url);
