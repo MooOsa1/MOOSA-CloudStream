@@ -10,8 +10,13 @@
  * execute CloudStream Android extensions. Fail closed for unapproved URL,
  * a mismatching resource type, invalid language, format or episode.
  */
+import {safeSubtitleFileUrl} from './public/subtitle-file-url.js';
+export const VERIFIED_OPENSUBTITLES_MANIFEST='https://opensubtitles-v3.strem.io/manifest.json';
+export function officialSubtitleAddons(addons=[]){
+  return [VERIFIED_OPENSUBTITLES_MANIFEST,...(Array.isArray(addons)?addons:[])]
+    .filter((x,i,a)=>a.indexOf(x)===i).slice(0,6);
+}
 const IMDB=/^tt\d{5,12}$/;
-const SUB_EXT=/\.(?:vtt|srt)$/i;
 const BAD_HOST=/(?:^localhost$|\.localhost$|\.local$|\.internal$|\.test$|\.invalid$)/i;
 function safeHttps(value,{subtitle=false}={}){
   if(typeof value!=='string'||value.length>2500)return null;
@@ -20,7 +25,7 @@ function safeHttps(value,{subtitle=false}={}){
     if(u.protocol!=='https:'||u.username||u.password||
       BAD_HOST.test(u.hostname)||u.hostname.includes(':')||
       /^(?:\d+\.){3}\d+$/.test(u.hostname))return null;
-    if(subtitle&&!SUB_EXT.test(u.pathname))return null;
+    if(subtitle)return safeSubtitleFileUrl(u.href);
     return u.href;
   }catch{return null;}
 }
