@@ -63,7 +63,10 @@ async function fetchJson(url,fetchImpl,signal){
 export function selectStremioSubtitles(data,{sourceName='Stremio subtitles'}={}){
   if(!Array.isArray(data?.subtitles))return [];
   const seen=new Set();
-  return data.subtitles.slice(0,35).flatMap(item=>{
+  // Actual OpenSubtitles response contains 84 tracks for Sintel; Arabic
+  // results can be listed after the first 35. Scan a capped 240 entries
+  // before sorting Arabic to the top and limiting final UI options.
+  return data.subtitles.slice(0,240).flatMap(item=>{
     const lang=languageOf(item?.lang||item?.lang_code||item?.language);
     const url=safeHttps(item?.url,{subtitle:true});
     if(!lang||!url||seen.has(url))return [];

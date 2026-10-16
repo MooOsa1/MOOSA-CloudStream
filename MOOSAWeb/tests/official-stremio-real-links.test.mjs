@@ -64,3 +64,27 @@ test('Mock official manifest yields verified bilingual tracks from actual OpenSu
   assert.ok(out.every(s=>s.source==='OpenSubtitles v3'));
   assert.deepEqual(called,['/manifest.json','/subtitles/movie/tt1727587.json']);
 });
+
+test('Actual Stremio order: Arabic tracks beyond 35 entries are still discovered',async()=>{
+  const englishRows=Array.from({length:45},(_,i)=>({
+    id:String(100+i),lang:i<4?'eng':'fre',
+    url:'https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/'+(1953000000+i)
+  }));
+  const realArabic=[
+    {id:'3868082',lang:'ara',
+      url:'https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1952533551'},
+    {id:'3912402',lang:'ara',
+      url:'https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/1952580438'}
+  ];
+  const response={subtitles:[...englishRows,...realArabic]};
+  const received=await collectStremioAddonSubtitles({media:'movie',imdbId:'tt1727587'},{
+    addons:officialSubtitleAddons(),
+    fetchImpl:async url=>new Response(JSON.stringify(
+      new URL(url).pathname.endsWith('/manifest.json')?manifest:response
+    ),{headers:{'Content-Type':'application/json'}})
+  });
+  assert.equal(received.filter(x=>x.language==='ar').length,2);
+  assert.equal(received.filter(x=>x.language==='en').length,4);
+  assert.equal(received[0].language,'ar');
+  assert.equal(received[1].language,'ar');
+});
