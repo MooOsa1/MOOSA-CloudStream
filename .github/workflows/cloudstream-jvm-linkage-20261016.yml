@@ -1,0 +1,79 @@
+name: Original CineStream DEX -> JVM linkage proof
+on:
+  push:
+    branches: [experiment/cloudstream-jvm-engine-20261016]
+    paths:
+      - 'MOOSAJVM/**'
+      - '.github/workflows/cloudstream-jvm-linkage-20261016.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Compile real CloudStream JVM library (not Android)
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/recloudstream/cloudstream.git /tmp/cloudstream-upstream
+          cd /tmp/cloudstream-upstream
+          chmod +x ./gradlew
+          ./gradlew :library:jvmJar --no-daemon --console plain
+          test -s library/build/libs/library-jvm-1.0.1.jar
+      - name: Download SHA256-verified original CineStream cs3, convert to Java class files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/converted
+          curl -fLsS --retry 2 https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip -o /tmp/dex-tools.zip
+          unzip -q /tmp/dex-tools.zip -d /tmp/dex-tools
+          converter="$(find /tmp/dex-tools -name d2j-dex2jar.sh -print -quit)"
+          chmod +x "$converter"
+          echo 'DEX2JAR_MEMORY_SETTINGS:'
+          grep -nE 'Xmx|JAVA_OPTS|java ' "$converter" | head -n 12 || true
+          root=https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds
+          curl -fLsS --retry 2 "$root/plugins.json" -o /tmp/index.json
+          digest="$(jq -r --arg n CineStream --arg u "$root/CineStream.cs3" '[.[]|select(.internalName==$n and .url==$u)]|sort_by(.version)|last|.fileHash // empty' /tmp/index.json)"
+          [[ "$digest" =~ ^sha256-[a-f0-9]{64}$ ]]
+          curl -fLsS --retry 2 "$root/CineStream.cs3" -o /tmp/CineStream.cs3
+          echo "$(echo "$digest"|sed s/^sha256-//)  /tmp/CineStream.cs3"|sha256sum --check
+          unzip -p /tmp/CineStream.cs3 classes.dex >/tmp/CineStream.dex
+          "$converter" --force --output /tmp/converted/CineStream.jar /tmp/CineStream.dex
+          test -s /tmp/converted/CineStream.jar
+          echo "CINESTREAM_JVM_BYTECODE_CLASSES=$(jar tf /tmp/converted/CineStream.jar|grep -c '\.class$')"
+          javap -classpath /tmp/converted/CineStream.jar -public com.megix.CineStream | head -n 24
+          javap -classpath /tmp/converted/CineStream.jar -public com.megix.CineStreamProvider | head -n 27
+      - name: Observe real linking blockers on unmodified original CineStream provider
+        shell: bash
+        run: |
+          javac MOOSAJVM/ClassProbe.java
+          java -cp MOOSAJVM ClassProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar com.megix.CineStreamProvider com.megix.CineStream
+      - name: Try converting StreamPlay with larger JVM heap and report if converter cannot handle it
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds
+          curl -fLsS --retry 2 "$root/plugins.json" -o /tmp/sp-index.json
+          digest="$(jq -r --arg n StreamPlay --arg u "$root/StreamPlay.cs3" '[.[]|select(.internalName==$n and .url==$u)]|sort_by(.version)|last|.fileHash // empty' /tmp/sp-index.json)"
+          [[ "$digest" =~ ^sha256-[a-f0-9]{64}$ ]]
+          curl -fLsS --retry 2 "$root/StreamPlay.cs3" -o /tmp/StreamPlay.cs3
+          echo "$(echo "$digest"|sed s/^sha256-//)  /tmp/StreamPlay.cs3"|sha256sum --check
+          unzip -p /tmp/StreamPlay.cs3 classes.dex > /tmp/StreamPlay.dex
+          converter="$(find /tmp/dex-tools -name d2j-dex2jar.sh -print -quit)"
+          set +e
+          JAVA_OPTS='-Xms256m -Xmx4g' timeout 130 "$converter" --force --output /tmp/converted/StreamPlay.jar /tmp/StreamPlay.dex > /tmp/sp-conversion.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" = 0 ] && [ -s /tmp/converted/StreamPlay.jar ]; then
+            echo "STREAMPLAY_DEX2JAR=status_success classes=$(jar tf /tmp/converted/StreamPlay.jar|grep -c '\.class$')"
+            javap -classpath /tmp/converted/StreamPlay.jar -public com.phisher98.StreamPlayPlugin | head -n 24 || true
+          else
+            echo "STREAMPLAY_DEX2JAR=status_failed exit=$status"
+            tail -n 16 /tmp/sp-conversion.log
+          fi
