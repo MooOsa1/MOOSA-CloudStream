@@ -34,6 +34,16 @@ export function json(res, status, data) {
   res.end(JSON.stringify(data));
 }
 const err = (res, status, message) => json(res, status, {error: message});
+// ChatGPT and other link previews may add harmless UTM tracking fields to
+// links users tap. Read-only endpoints ignore these exact conventional keys,
+// but do NOT accept custom providers, stream URLs, repeated identity fields,
+// or unknown options. No tracking field is ever forwarded to a provider.
+const LINK_TRACKING_KEYS = new Set([
+  'utm_source','utm_medium','utm_campaign','utm_content','utm_term'
+]);
+function functionalParams(params){
+  return [...params.keys()].filter(key=>!LINK_TRACKING_KEYS.has(key));
+}
 function clampPage(value) {const n = Number(value); return Number.isInteger(n) ? Math.min(500,Math.max(1,n)) : 1;}
 function mediaType(value) { return mediaTypes.has(value) ? value : 'movie'; }
 function cleanId(value) {return /^\d{1,10}$/.test(value || '') && Number(value) > 0 ? value : null;}
@@ -143,7 +153,8 @@ async function handle(req,res) {
     }
     if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
     if(url.pathname==='/api/web-native/status'){
-      if(url.search)return err(res,400,'No arbitrary provider parameters');
+      if(functionalParams(url.searchParams).length)
+        return err(res,400,'No arbitrary provider parameters');
       return json(res,200,{
         engine:'node_js',runtime:'server_native',pairingRequired:false,
         catalogIntegrated:true,
@@ -231,8 +242,9 @@ async function handle(req,res) {
     }
     if(url.pathname==='/api/stremio-subtitles'){
       const allowed=new Set(['media','id','season','episode']);
-      if([...url.searchParams.keys()].some(k=>!allowed.has(k)) ||
-        [...url.searchParams.keys()].length!==new Set(url.searchParams.keys()).size)
+      const keys=functionalParams(url.searchParams);
+      if(keys.some(k=>!allowed.has(k)) ||
+         keys.length!==new Set(keys).size)
         return err(res,400,'Unsupported subtitle parameters');
       const media=url.searchParams.get('media');
       const id=cleanId(url.searchParams.get('id'));
