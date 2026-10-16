@@ -40,7 +40,7 @@ jobs:
             sources:[...new Set(subtitles.map(x=>x.source))],
             hosts:[...new Set(subtitles.map(x=>new URL(x.url).hostname))]
           }));
-          assert.ok(counts.ar>=1,'Arabic real track not returned');
+          assert.ok(counts.ar>=2,'Both real Arabic Sintel subtitle tracks must be returned after full candidate scan');
           assert.ok(counts.en>=1,'English real track not returned');
           const track=subtitles.find(x=>x.language==='ar');
           const fetched=await fetch(track.url,{
