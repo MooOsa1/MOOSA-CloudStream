@@ -6,7 +6,8 @@ import { createBridge } from './bridge.mjs';
 import { resolveWebSources } from './providers.mjs';
 import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
 import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
-import { createJsEngineDemo, matchVerifiedJsMedia } from './js-engine-demo.mjs';
+import { matchVerifiedJsMedia } from './js-engine-demo.mjs';
+import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
