@@ -1,0 +1,81 @@
+name: Live MOOSA search Arabic subtitle integration (3 films + mobile UI)
+on:
+  push:
+    branches: [diagnostics/prod-official-bilingual-subtitles-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --no-package-lock playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - name: Verify independent movies and actual mobile browser subtitle controls
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {chromium} from 'playwright';
+          const root='https://moosa-web.onrender.com';
+          async function get(path) {
+            const response=await fetch(root+path,{headers:{Accept:'application/json'},
+              signal:AbortSignal.timeout(20000)});
+            assert.equal(response.status,200,path+' HTTP '+response.status);
+            return response.json();
+          }
+          for(const [title,year] of [
+            ['Sintel',2010],['Tears of Steel',2012],['Elephants Dream',2006]
+          ]){
+            const search=await get('/api/search?q='+encodeURIComponent(title));
+            const movie=(search.results||[]).find(x=>x.media_type==='movie' &&
+              String(x.original_title||x.title).toLowerCase()===title.toLowerCase() &&
+              Number(String(x.release_date||'').slice(0,4))===year);
+            if(!movie)throw Error('Catalog search missing exact year movie '+title);
+            const subs=await get('/api/stremio-subtitles?media=movie&id='+movie.id);
+            const a=(subs.subtitles||[]).filter(x=>x.language==='ar');
+            const e=(subs.subtitles||[]).filter(x=>x.language==='en');
+            console.log('MOOSA_LIVE_MOVIE_AR_SUBS '+JSON.stringify({
+              title,tmdbId:movie.id,arabic:a.length,english:e.length,
+              officialSource:subs.subtitles?.[0]?.source
+            }));
+            assert.ok(a.length>0,title+' missing Arabic subtitles');
+            assert.ok(e.length>0,title+' missing English subtitles');
+          }
+          let browser;
+          try{
+            browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844},
+              userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1'});
+            await page.route('https://upload.wikimedia.org/**',route=>route.abort('failed'));
+            await page.route('https://archive.org/download/**',route=>route.abort('failed'));
+            await page.goto(root,{waitUntil:'domcontentloaded'});
+            await page.evaluate(async()=>{
+              const {showPlayer}=await import('/player.js');
+              const {searchAutomaticSources}=await import('/source-search.js');
+              showPlayer({title:'Sintel',sources:[]});
+              void searchAutomaticSources('movie',45745);
+            });
+            await page.waitForFunction(()=>
+              document.querySelector('#player-subtitles')?.options.length>=3,
+              null,{timeout:19000});
+            const options=await page.locator('#player-subtitles option').allTextContents();
+            assert.ok(options.some(t=>t.includes('Arabic')));
+            assert.ok(options.some(t=>t.includes('English')));
+            const ar=await page.locator('#player-subtitles option').evaluateAll(nodes=>
+              nodes.find(x=>x.textContent.includes('Arabic'))?.value);
+            await page.selectOption('#player-subtitles',ar);
+            await page.waitForFunction(()=>document.querySelector('#video track')?.src?.startsWith('blob:'),
+              null,{timeout:13000});
+            assert.equal(await page.locator('#player-subtitles').inputValue(),ar);
+            console.log('MOOSA_PRODUCTION_MOBILE_SUBTITLE_MENU_PASS '+JSON.stringify({
+              title:await page.locator('#player-title').textContent(),
+              choices:options.length,arabicSelectable:true,html5TrackCreated:true
+            }));
+            await page.close();
+          }finally{await browser?.close();}
+          NODE
