@@ -41,7 +41,9 @@ public final class StreamPlayInstanceProbe {
                         Throwable t=e instanceof java.lang.reflect.InvocationTargetException ite?
                             ite.getTargetException():e;
                         System.out.println("STREAMPLAY_JVM_GETTER status=error method="+method+
-                            " exception="+t.getClass().getSimpleName());
+                            " exception="+t.getClass().getSimpleName()+
+                            " dependency="+String.valueOf(t.getMessage()).replaceAll("[^a-zA-Z0-9_./ -]","_").substring(0,
+                            Math.min(String.valueOf(t.getMessage()).length(),150)));
                     }
                 }
             }catch(Throwable e){
