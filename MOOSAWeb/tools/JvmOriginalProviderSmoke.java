@@ -10,6 +10,10 @@ import java.util.*;
  * This experiment runs on an isolated GitHub runner without secrets.
  */
 public final class JvmOriginalProviderSmoke {
+    private static String shortText(Object value,int limit){
+        String text=String.valueOf(value);
+        return text.substring(0,Math.min(limit,text.length()));
+    }
     public static void main(String[] args) throws Exception {
         if (args.length != 3) throw new IllegalArgumentException("lib jar, provider jar, dep dir");
         List<URL> urls = new ArrayList<>();
@@ -42,7 +46,7 @@ public final class JvmOriginalProviderSmoke {
                 for (String getter : List.of("getName", "getMainUrl")) {
                     try {
                         Method m=providerClass.getMethod(getter);
-                        System.out.println("ORIGINAL_PROVIDER_" + getter + ": " + String.valueOf(m.invoke(instance)).substring(0,100));
+                        System.out.println("ORIGINAL_PROVIDER_" + getter + ": " + shortText(m.invoke(instance),100));
                     } catch (NoSuchMethodException e) {
                         System.out.println("ORIGINAL_PROVIDER_MISSING_GETTER: " + getter);
                     }
@@ -51,7 +55,8 @@ public final class JvmOriginalProviderSmoke {
             } catch (Throwable failure) {
                 Throwable root=failure;
                 while(root instanceof InvocationTargetException && root.getCause()!=null)root=root.getCause();
-                System.out.println("ORIGINAL_PROVIDER_CONSTRUCTOR_BLOCKED: " + root.getClass().getName() + ": " + String.valueOf(root.getMessage()).substring(0,200));
+                System.out.println("ORIGINAL_PROVIDER_CONSTRUCTOR_BLOCKED: " + root.getClass().getName() + ": " + shortText(root.getMessage(),200));
+                System.exit(3);
             }
         }
     }
