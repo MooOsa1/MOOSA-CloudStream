@@ -1,0 +1,68 @@
+name: Verify Blender Video additional movie streams and browser byte range
+on:
+  push:
+    branches: [diagnostics/blender-peertube-licensed-video-sources-20261016]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check real PeerTube video metadata and byte range with Safari origin
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://video.blender.org';
+          const production='https://moosa-web.onrender.com';
+          const titles=['Sintel','Tears of Steel','Big Buck Bunny','Elephants Dream','Glass Half','Spring','Caminandes 3'];
+          for(const title of titles){
+            const report={title};
+            try{
+              const search=await fetch(host+'/api/v1/search/videos?search='+encodeURIComponent(title)+'&count=20',
+                {signal:AbortSignal.timeout(12000)});
+              const items=(await search.json()).data||[];
+              const candidates=items.filter(x=>x.channel?.name==='blender_open_movies'&&
+                (x.name.toLowerCase()===title.toLowerCase() ||
+                x.name.toLowerCase().includes(title.toLowerCase()+' -') ||
+                x.name.toLowerCase().startsWith(title.toLowerCase()+' -')));
+              report.candidates=candidates.map(x=>({id:x.uuid,name:x.name,license:x.licence?.label}));
+              const selected=candidates.find(x=>/Attribution/i.test(x.licence?.label||''));
+              if(!selected){console.log('BLENDER_VIDEO_SERVER_PROBE '+JSON.stringify(report));continue;}
+              const d=await fetch(host+'/api/v1/videos/'+selected.uuid,
+                {signal:AbortSignal.timeout(12000)});
+              const data=await d.json();
+              report.license=data.licence?.label;
+              report.duration=data.duration;
+              report.description=String(data.description||'').slice(0,140);
+              report.sources=(data.files||[]).filter(x=>Number(x.resolution?.id)>=720).map(x=>({
+                res:x.resolution?.id,url:x.fileUrl,size:x.size
+              }));
+              const sample=report.sources.find(x=>x.res>=720);
+              if(sample){
+                const response=await fetch(sample.url,{
+                  headers:{Range:'bytes=0-2047',Origin:production},
+                  signal:AbortSignal.timeout(14000)
+                });
+                const reader=response.body?.getReader();
+                const bytes=await reader?.read();
+                await reader?.cancel().catch(()=>{});
+                report.range={status:response.status,cors:response.headers.get('access-control-allow-origin'),
+                  contentType:response.headers.get('content-type'),
+                  contentRange:response.headers.get('content-range'),
+                  firstBytes:bytes?.value?.slice(0,14).toString()
+                };
+              }
+              const p=await fetch(production+'/api/search?q='+encodeURIComponent(title),{
+                signal:AbortSignal.timeout(14000)});
+              const searchResults=(await p.json()).results||[];
+              report.tmdb=searchResults.filter(x=>x.media_type==='movie'&&
+                String(x.original_title||x.title).toLowerCase()===title.toLowerCase())
+                .slice(0,4).map(x=>({id:x.id,title:x.original_title,year:x.release_date}));
+            }catch(e){report.error=String(e).slice(0,140);}
+            console.log('BLENDER_VIDEO_SERVER_PROBE '+JSON.stringify(report));
+          }
+          NODE
