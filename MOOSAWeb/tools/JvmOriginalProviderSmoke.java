@@ -25,8 +25,11 @@ public final class JvmOriginalProviderSmoke {
         Class<?> continuationInterface=Class.forName("kotlin.coroutines.Continuation",false,loader);
         Class<?> contextClass=Class.forName("kotlin.coroutines.EmptyCoroutineContext",true,loader);
         Object context=contextClass.getField("INSTANCE").get(null);
-        Object suspended=Class.forName("kotlin.coroutines.intrinsics.IntrinsicsKt",true,loader)
-            .getMethod("getCOROUTINE_SUSPENDED").invoke(null);
+        // Kotlin's IntrinsicsKt public facade delegates to a non-public
+        // implementation; reflectively invoking it raises IllegalAccessException.
+        // Read the public enum constant instead, without private reflection.
+        Class<?> sentinels=Class.forName("kotlin.coroutines.intrinsics.CoroutineSingletons",true,loader);
+        Object suspended=Enum.valueOf((Class)sentinels.asSubclass(Enum.class),"COROUTINE_SUSPENDED");
         CountDownLatch completed=new CountDownLatch(1);
         final Object[] delivered=new Object[1];
         Object continuation=java.lang.reflect.Proxy.newProxyInstance(
