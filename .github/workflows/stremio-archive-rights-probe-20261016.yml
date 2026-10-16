@@ -1,0 +1,62 @@
+name: Confirm public-domain Stremio file-level rights
+on:
+  push:
+    branches: [diagnostics/stremio-archive-addon-probe-20261016]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect external Archive metadata, title and file identity read-only
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const addon='https://dev.nebulawp.org/stremio/archive.org-addon/';
+          const ids=[
+            ['tt1254207','Big Buck Bunny',2008],
+            ['tt1727587','Sintel',2010],
+            ['tt2285752','Tears of Steel',2012],
+            ['tt0807840','Elephants Dream',2006],
+            ['tt0012349','The Kid',1921],
+            ['tt0011841','The Cabinet of Dr. Caligari',1920],
+            ['tt0063350','Night of the Living Dead',1968]
+          ];
+          async function json(u){
+            const r=await fetch(u,{signal:AbortSignal.timeout(12000),
+              headers:{Accept:'application/json'},redirect:'error'});
+            if(!r.ok)throw Error('HTTP '+r.status);
+            const txt=await r.text();
+            if(txt.length>600000)throw Error('metadata too large');
+            return JSON.parse(txt);
+          }
+          await Promise.all(ids.map(async ([imdb,title,year])=>{
+            let report={imdb,title,year,status:'unknown'};
+            try{
+              const streams=(await json(addon+'stream/movie/'+imdb+'.json')).streams||[];
+              const a=streams.find(x=>{
+                try{return new URL(x.url).hostname==='archive.org' &&
+                  /^\/download\//.test(new URL(x.url).pathname);}catch{return false;}
+              });
+              if(!a){report.status='no_archive_file';}
+              else {
+                const u=new URL(a.url);
+                const parts=u.pathname.slice('/download/'.length).split('/');
+                const identifier=decodeURIComponent(parts.shift()||'');
+                const file=decodeURIComponent(parts.join('/'));
+                if(!/^[\w.-]{2,96}$/.test(identifier))throw Error('bad archive identifier');
+                const metadata=await json('https://archive.org/metadata/'+encodeURIComponent(identifier));
+                const item=metadata.files?.find(f=>f.name===file);
+                report={...report,status:'metadata_loaded',archiveTitle:metadata.metadata?.title,
+                  archiveYear:metadata.metadata?.year,archiveLicense:metadata.metadata?.licenseurl||metadata.metadata?.license_url||null,
+                  fileMatched:Boolean(item),fileMime:item?.format||null,
+                  fileHeight:item?.height||null,fileSize:item?.size||null};
+              }
+            }catch(e){report.status=e.message.slice(0,120);}
+            console.log('STREMIO_ARCHIVE_RIGHTS '+JSON.stringify(report));
+          }));
+          NODE
