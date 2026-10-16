@@ -140,7 +140,7 @@ export function appendPlayerSources(items) {
   }
   if (!added) return;
   picker.disabled=false;
-  activeSources.sort((a,b) => (Number(b.quality)||0)-(Number(a.quality)||0));
+  activeSources.sort((a,b) => Number(b.preferred===true)-Number(a.preferred===true) || (Number(b.quality)||0)-(Number(a.quality)||0));
   picker.replaceChildren(new Option('اختر السيرفر',''));
   for (let i=0;i<activeSources.length;i++) {
     const src=activeSources[i];
