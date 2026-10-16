@@ -7,7 +7,6 @@
  * viewer/operator has distribution/playback authorization for the URL.
  */
 const SAFE_VIDEO=/\.(?:m3u8|mp4|webm)(?:$|[?#])/i;
-const TRUSTED_SUFFIXES=/\.(?:m3u8|mp4|webm)$/i;
 const HEADERS_BLOCKED=new Set([
   'authorization','cookie','referer','origin','proxy-authorization','x-api-key'
 ]);
@@ -46,8 +45,7 @@ function subtitles(list){
   const seen=new Set();
   return list.slice(0,25).flatMap(item=>{
     if(!item||typeof item!=='object')return [];
-    const url=httpsMedia(item.url);
-    // video extensions are not subtitle extensions. Use a separate
+    // Video extensions are not subtitle extensions. Use a separate
     // restrictive HTTPS check without the media file extension.
     let sub;
     try {
