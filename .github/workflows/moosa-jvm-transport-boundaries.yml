@@ -1,0 +1,22 @@
+name: MOOSA JVM loopback transport boundary tests
+on:
+  push:
+    branches: [experiment/cloudstream-jvm-engine-20261016]
+    paths:
+      - "MOOSAJVM/headless-http.mjs"
+      - "MOOSAJVM/headless-http.boundary.test.mjs"
+      - ".github/workflows/moosa-jvm-transport-boundaries.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  node-transport:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run loopback-only bridge contract tests with disposable fake Java executables
+        run: node --test MOOSAJVM/headless-http.boundary.test.mjs
