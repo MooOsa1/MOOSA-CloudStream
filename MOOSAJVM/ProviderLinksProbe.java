@@ -76,6 +76,7 @@ public final class ProviderLinksProbe {
             }catch(Throwable e){System.out.println("JVM_REAL_LINKS stage=payload status=error reason="+clean(e));return;}
             AtomicInteger total=new AtomicInteger(), hd=new AtomicInteger(), captions=new AtomicInteger();
             Map<String,AtomicInteger> sourceGroups=new ConcurrentHashMap<>();
+            List<String> approvedHttpsHls=java.util.Collections.synchronizedList(new ArrayList<>());
             AtomicInteger needsReferer=new AtomicInteger(), linksWithHeaders=new AtomicInteger();
             AtomicInteger declaredHls=new AtomicInteger(), declaredMp4=new AtomicInteger(), https=new AtomicInteger();
             Function1<Object,Unit> onSub=subtitle->{captions.incrementAndGet();return Unit.INSTANCE;};
@@ -103,6 +104,9 @@ public final class ProviderLinksProbe {
                         ext.endsWith(".mp4")?"mp4":
                         ext.endsWith(".webm")?"webm":"other";
                     if(kind.equals("hls"))declaredHls.incrementAndGet();
+                    if(kind.equals("hls") && u.getHost().equalsIgnoreCase("visionaryfounderslab.site")
+                        && approvedHttpsHls.size()<3 && !approvedHttpsHls.contains(String.valueOf(val)))
+                        approvedHttpsHls.add(String.valueOf(val));
                     if(kind.equals("mp4"))declaredMp4.incrementAndGet();
                     String host=u.getHost().toLowerCase();
                     if(host.length()>100)host="unclassified";
@@ -124,6 +128,7 @@ public final class ProviderLinksProbe {
                     " hosts="+new TreeMap<>(sourceGroups).entrySet().stream()
                         .limit(20).map(e->e.getKey()+":"+e.getValue().get())
                         .reduce((a,b)->a+";"+b).orElse("none"));
+                HlsSourceProbe.probe(approvedHttpsHls);
             }catch(Throwable e){
                 System.out.println("JVM_REAL_LINKS stage=loadLinks status=error reason="+clean(e)+
                     " sources="+total.get()+" hd720plus="+hd.get()+" subtitles="+captions.get());
