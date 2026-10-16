@@ -1,0 +1,29 @@
+name: Isolated JS provider live licensed source
+on:
+  push:
+    branches: [experiment/js-plugin-sidecar-v1]
+    paths:
+      - 'MOOSAWeb/js-plugin-*'
+      - 'MOOSAWeb/js-plugins/**'
+      - 'MOOSAWeb/nuvio-js-adapter.mjs'
+      - 'MOOSAWeb/tests/js-plugin-*'
+      - '.github/workflows/js-plugin-live.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify strict isolated Node provider fixture and timeout tests
+        run: node --test tests/js-plugin-sidecar.test.mjs
+      - name: Discover actual rights-verified HD video using isolated JS child
+        run: node tests/js-plugin-live.smoke.mjs
