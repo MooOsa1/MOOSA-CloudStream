@@ -23,11 +23,9 @@ class MOOSAEngineProbe : Plugin() {
     private val title = "Big Buck Bunny"
 
     override fun load(context: Context) {
-        Thread({
-            runCatching { runProbe() }.onFailure {
-                Log.e(tag, "stage=init outcome=error class=" + it.javaClass.simpleName)
-            }
-        }, "MOOSA-Engine-Probe").start()
+        // The emulator probe is now explicitly started by POST /v1/probe
+        // forwarded over ADB loopback, not by an uncontrolled startup scan.
+        MOOSAProbeHttp.start()
     }
 
     private fun normalized(value: String): String =
