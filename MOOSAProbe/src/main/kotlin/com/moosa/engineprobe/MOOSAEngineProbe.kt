@@ -103,11 +103,36 @@ class MOOSAEngineProbe : Plugin() {
         }
         val streams = AtomicInteger(0)
         val subtitles = AtomicInteger(0)
+        val https = AtomicInteger(0)
+        val hd = AtomicInteger(0)
+        val hls = AtomicInteger(0)
+        val mp4 = AtomicInteger(0)
+        val withReferer = AtomicInteger(0)
+        val withHeaders = AtomicInteger(0)
+        val arabicSubtitles = AtomicInteger(0)
+        val englishSubtitles = AtomicInteger(0)
         val extracted = withTimeoutOrNull(18000L) {
             try {
                 api.loadLinks(payload, false,
-                    { subtitles.incrementAndGet() },
-                    { streams.incrementAndGet() }
+                    { subtitle ->
+                        subtitles.incrementAndGet()
+                        if (subtitle.lang.startsWith("ar", ignoreCase = true) ||
+                            subtitle.lang.contains("arabic", ignoreCase = true))
+                            arabicSubtitles.incrementAndGet()
+                        if (subtitle.lang.startsWith("en", ignoreCase = true) ||
+                            subtitle.lang.contains("english", ignoreCase = true))
+                            englishSubtitles.incrementAndGet()
+                    },
+                    { link ->
+                        streams.incrementAndGet()
+                        if (link.url.startsWith("https://", ignoreCase = true)) https.incrementAndGet()
+                        if (link.quality >= 720) hd.incrementAndGet()
+                        val bare = link.url.substringBefore('?').substringBefore('#').lowercase()
+                        if (bare.endsWith(".m3u8")) hls.incrementAndGet()
+                        if (bare.endsWith(".mp4")) mp4.incrementAndGet()
+                        if (link.referer.isNotBlank()) withReferer.incrementAndGet()
+                        if (link.headers.isNotEmpty()) withHeaders.incrementAndGet()
+                    }
                 )
             } catch (err: Throwable) {
                 Log.w(tag, "provider=" + provider + " stage=loadLinks outcome=error class=" + err.javaClass.simpleName)
@@ -116,6 +141,10 @@ class MOOSAEngineProbe : Plugin() {
         }
         Log.i(tag, "provider=" + provider + " stage=loadLinks outcome=" +
             (if (extracted == null) "timeout" else "returned") + " success=" +
-            (extracted == true) + " links=" + streams.get() + " subtitles=" + subtitles.get())
+            (extracted == true) + " links=" + streams.get() + " subtitles=" + subtitles.get() +
+            " https=" + https.get() + " hd720plus=" + hd.get() +
+            " hls=" + hls.get() + " mp4=" + mp4.get() +
+            " referer_required=" + withReferer.get() + " custom_headers=" + withHeaders.get() +
+            " ar_subtitles=" + arabicSubtitles.get() + " en_subtitles=" + englishSubtitles.get())
     }
 }
