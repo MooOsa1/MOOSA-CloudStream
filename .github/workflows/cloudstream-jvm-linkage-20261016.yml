@@ -82,6 +82,9 @@ jobs:
         run: |
           set -euo pipefail
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          # The HTTP bridge launches this Java class in a child process; compile it first.
+          javac -cp "$runtime" MOOSAJVM/GenericProviderProbe.java
+          test -s MOOSAJVM/GenericProviderProbe.class
           node --check MOOSAJVM/headless-http.mjs
           node --check MOOSAJVM/headless-bridge-ci.mjs
           timeout 45 node MOOSAJVM/headless-bridge-ci.mjs "$runtime" \
