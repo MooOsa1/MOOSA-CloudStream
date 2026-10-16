@@ -14,6 +14,7 @@ const MAX_PLUGINS=500;
 function reject(reason){throw new Error(reason)}
 export function trustedRawUrl(raw,allowedRepos=[],kind='index'){
   if(typeof raw!=='string'||raw.length>2500)reject('invalid_url');
+  if(/(?:^|\/)\.{1,2}(?:\/|$)|%/.test(raw))reject('unsafe_url_path');
   let u;
   try{u=new URL(raw)}catch{reject('invalid_url')}
   if(u.protocol!=='https:'||u.hostname!=='raw.githubusercontent.com' ||
