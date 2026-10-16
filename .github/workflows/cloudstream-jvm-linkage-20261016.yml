@@ -110,7 +110,13 @@ jobs:
           core=collections.defaultdict(set)
           with open('/tmp/cinestream-jdeps.txt',errors='replace') as source:
             for row in source:
-              m=re.search(r'^\\s*(com\\.megix[^\\s]+)\\s+->\\s+(\\S+)\\s+not found\\s*
+              if '->' not in row or 'not found' not in row: continue
+              left,right=row.split('->',1)
+              owner=left.strip().split()[-1]
+              dep=right.strip().split()[0]
+              if owner.startswith('com.megix.'): core[owner].add(dep)
+          for cls,deps in sorted(core.items(),key=lambda x:-len(x[1]))[:17]:
+            print('CINESTREAM_MISSING_OWNER '+cls+' count='+str(len(deps))+' dependencies='+','.join(sorted(deps)[:13]))
           PY
       - name: Invoke original CineStreamProvider.loadLinks against licensed Sintel with no video downloads
         shell: bash
