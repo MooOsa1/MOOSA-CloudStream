@@ -27,7 +27,7 @@ function qualityLabel(raw){
   const s=String(raw??'').toLowerCase().trim();
   if(/(?:cam|telesync|hdcam|\bts\b)/.test(s))return null;
   if(/\b(?:4k|uhd|2160p?)\b/.test(s))return 2160;
-  const m=s.match(/(?:^|\D)(1080|720|1440|2160|480|360)p?(?:\D|$)/);
+  const m=s.match(/(?:^|\D)(\d{3,4})p(?:\D|$)/);
   return m?Number(m[1]):null;
 }
 function unauthorizedHeaderCount(value){
