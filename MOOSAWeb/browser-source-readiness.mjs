@@ -94,11 +94,19 @@ export async function checkApprovedSources(sources,{
   origin=PUBLIC_ORIGIN,max=READY_LIMIT,timeoutMs=3500
 }={}){
   const candidates=Array.isArray(sources)?sources.slice(0,Math.max(0,Math.min(READY_LIMIT,max))):[];
-  // Parallel preflights with no bytes downloaded. Use this on a short,
-  // curated set only; do not HEAD hundreds of third-party provider links.
-  const checked=await Promise.all(candidates.map(async source=>{
-    const result=await inspectBrowserSource(source,{allowedHosts,fetchImpl,origin,timeoutMs});
-    return {source,result};
+  // Cap live network pressure to three HEAD requests at once, instead of
+  // hammering a remote CDN or delaying the UI with dozens of preflights.
+  const checked=new Array(candidates.length);
+  let next=0;
+  await Promise.all(Array.from({length:Math.min(3,candidates.length)},async()=>{
+    while(next<candidates.length){
+      const i=next++;
+      const source=candidates[i];
+      const result=await inspectBrowserSource(source,{
+        allowedHosts,fetchImpl,origin,timeoutMs
+      });
+      checked[i]={source,result};
+    }
   }));
   return {
     ready:checked.filter(x=>x.result.ready).map(x=>({...x.source,preflight:{
