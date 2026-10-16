@@ -1,0 +1,47 @@
+name: CloudStream original plugin Android execution smoke
+on:
+  push:
+    branches:
+      - experiment/android-cs3-execution-smoke
+    paths:
+      - tests/cloudstream-android-smoke.sh
+      - .github/workflows/cloudstream-android-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-cs3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare Linux hardware acceleration for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run official CloudStream with hash-verified CineStream.cs3
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          ram-size: 3072M
+          heap-size: 512M
+          disk-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -camera-back none -camera-front none
+          script: bash tests/cloudstream-android-smoke.sh
+      - name: Upload emulator evidence (even if not proven)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cinestream-original-cs3-smoke
+          path: smoke-artifacts/
+          if-no-files-found: warn
+          retention-days: 5
