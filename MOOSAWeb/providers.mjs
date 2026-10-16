@@ -9,6 +9,8 @@
  * CloudStream .cs3 extensions are Android/Kotlin plugins, not HTTP sources.
  * These adapters intentionally never load arbitrary Android plugin code.
  */
+import { queryRemoteEngine } from './cloudstream-engine.mjs';
+
 const MAX_SOURCES = 30;
 const MIN_QUALITY = 720;
 const EXCLUDED_NAME = /download|داونلود|تحميل|تنزيل/i;
@@ -170,7 +172,7 @@ export async function resolveWebSources(meta,opts={}) {
   // hammering metadata services when clicking Play simultaneously.
   if(cached?.pending)return cached.pending;
   const pending=Promise.allSettled([
-    fromWebAddons(meta,opts),fromArchive(meta,opts)
+    fromWebAddons(meta,opts),fromArchive(meta,opts),queryRemoteEngine(meta,opts)
   ]).then(res=>{
     const sources=uniqueSort(res.flatMap(r=>r.status==='fulfilled'?r.value:[]));
     if(state.size>250)state.delete(state.keys().next().value);
