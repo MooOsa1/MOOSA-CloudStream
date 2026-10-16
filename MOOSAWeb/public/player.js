@@ -4,6 +4,7 @@ let hls = null;
 let mediaUrl = null;
 let subtitleUrl = null;
 let activeSources = [];
+let currentMediaTitle='';
 let previousFocus = null;
 let cueBaseline = new Map();
 let playbackToken = 0;
@@ -108,6 +109,7 @@ async function playLink(url, label='Video'){
 export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   previousFocus=document.activeElement;
   activeSources=sources;
+  currentMediaTitle=title;
   resetVideo();
   $('#player-title').textContent=title;
   const options=$('#player-source');
@@ -168,6 +170,7 @@ export function markNoAutomaticSources(){
 
 export function startDemo(){
   $('#player-source').value='';
+  currentMediaTitle='فيديو تجريبي حر — MDN Flower (CC0)';
   $('#player-title').textContent='فيديو تجريبي حر — MDN Flower (CC0)';
   playLink(DEMO,'الفيديو التجريبي الحر');
 }
@@ -208,7 +211,7 @@ function sourceSelected(value){
   if(value===''){resetVideo();notice('اختر مصدرًا للتشغيل أو افتح فيديو من جهازك.');return;}
   const src=activeSources[Number(value)];
   if(!src)return;
-  $('#player-title').textContent=src.name||'مشغل MOOSA';
+  $('#player-title').textContent=currentMediaTitle||src.name||'مشغل MOOSA';
   // playLink resets the track menu synchronously; repopulate immediately,
   // instead of waiting for a remote video to load or fail.
   void playLink(src.url,src.name);

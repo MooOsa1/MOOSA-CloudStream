@@ -55,3 +55,22 @@ footer{padding:26px 4.3%;border-top:1px solid #26282e;display:flex;flex-wrap:wra
 
 .open-video-tests{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 @media(max-width:650px){.open-video-tests .btn{white-space:normal;text-align:center}}
+
+
+.free-movies-shelf{margin:26px 4.3% 12px;padding:22px;background:#161a1c;border:1px solid #303e39;border-radius:18px}
+.free-movies-shelf .shelf-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.free-library-note,.free-library-status,.free-library-disclaimer{font-size:12px;color:#a7bdb4;line-height:1.8}
+.free-library-status{margin:6px 0 14px}
+.free-library-disclaimer{margin:14px 0 0;color:#8e9795}
+.free-movie-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}
+.free-film-card{display:flex;flex-direction:column;gap:0;min-width:0;text-align:start;border:1px solid #3a443e;background:#23292b;border-radius:12px;overflow:hidden;color:#f4f5f5;padding:0}
+.free-film-card:hover,.free-film-card:focus-visible{border-color:#bddbcd;background:#2a3632}
+.free-film-art{aspect-ratio:16/10;background:radial-gradient(ellipse at 80% 20%,#536e69,#283740 55%,#171f2a);display:flex;align-items:flex-start;justify-content:flex-end;flex-direction:column;padding:18px;gap:6px}
+.free-film-card:nth-child(2) .free-film-art{background:radial-gradient(ellipse at 22% 5%,#56677d,#303645 60%,#242933)}
+.free-film-card:nth-child(3) .free-film-art{background:radial-gradient(ellipse at 25% 0%,#806963,#403b45 58%,#28272e)}
+.free-film-card:nth-child(4) .free-film-art{background:radial-gradient(ellipse at 20% 10%,#627864,#333e38 60%,#1e2826)}
+.free-film-art strong{font-size:clamp(17px,2vw,26px);letter-spacing:.1px;line-height:1.2;overflow-wrap:anywhere}
+.free-film-art span{font-size:12px;color:#d9dbdf}
+.free-film-details{display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;padding:13px 12px;font-size:11px;color:#becfc9}
+@media(max-width:900px){.free-movie-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.free-movies-shelf{margin:18px 4.3%}.free-film-art{padding:14px}}
+@media(max-width:540px){.free-movies-shelf{padding:14px;border-radius:12px}.free-movies-shelf .shelf-title{flex-wrap:wrap}.free-movie-grid{gap:9px}.free-film-art{aspect-ratio:4/5}.free-film-art strong{font-size:17px}.free-film-details{font-size:10px;padding:9px}.free-library-note{font-size:11px}}
