@@ -5,7 +5,7 @@ set -Eeuo pipefail
 
 REPORT="$GITHUB_WORKSPACE/probe-evidence"
 mkdir -p "$REPORT"
-trap 'rc=$?; adb logcat -d -v time > "$REPORT/logcat.txt" 2>/dev/null || true; grep "MOOSA_ENGINE_PROBE" "$REPORT/logcat.txt" > "$REPORT/probe-only.log" || true; exit "$rc"' EXIT
+trap 'rc=$?; adb logcat -d -v time 2>/dev/null | grep -E "MOOSA_HTTP_PROBE|MOOSA_ENGINE_PROBE|FATAL EXCEPTION|Failed to load .*MOOSAProbe" > "$REPORT/sanitized-logcat.txt" || true; exit "$rc"' EXIT
 
 printf '[1/6] Build local-only probe artifact\n'
 test -f "$GITHUB_WORKSPACE/MOOSAProbe/build/MOOSAProbe.cs3" || {
