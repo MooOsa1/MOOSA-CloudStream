@@ -80,3 +80,28 @@ export function createJsEngineDemo({
   }
   return {load};
 }
+
+
+/**
+ * Upgrade ONLY the exact independently licensed Big Buck Bunny Commons URLs
+ * that passed our separate JS engine browser HEAD gate.
+ *
+ * Other curated films retain the existing source path and are never mislabeled
+ * as having passed a JavaScript provider browser preflight.
+ */
+export function matchVerifiedJsMedia(film,verified){
+  if(film?.id!=='big-buck-bunny'||!Array.isArray(film.sources)||
+    verified?.state!=='browser_preflight_passed'||
+    !Array.isArray(verified.sources))return null;
+  const approved=new Map(verified.sources.filter(s=>
+    s?.preflight?.verified===true && typeof s.url==='string')
+    .map(s=>[s.url,s]));
+  const sources=film.sources.filter(s=>approved.has(s.url))
+    .map(s=>({
+      ...s,preflight:{
+        verified:true,
+        mime:approved.get(s.url).preflight.mime
+      }
+    }));
+  return sources.length?sources:null;
+}
