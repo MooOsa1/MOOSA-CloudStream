@@ -8,9 +8,18 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - "*.md"
-      - "plugins.json"
+    # Website-only updates must not compile and republish Android .cs3 files.
+    # Keep manual workflow_dispatch available to rebuild when requested.
+    paths:
+      - 'MOOSAHub/**'
+      - 'MOOSAArabic/**'
+      - 'MOOSAProbe/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - 'repo.json'
+      - '.github/workflows/build.yml'
 
 concurrency:
   group: cloudstream-build-v7

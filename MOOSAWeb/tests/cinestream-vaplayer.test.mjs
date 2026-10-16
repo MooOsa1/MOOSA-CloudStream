@@ -133,6 +133,55 @@ test('Playlist without browser CORS is refused before trying media segments',asy
   assert.deepEqual(result,{ok:false,reason:'invalid_master'});
   assert.deepEqual(calls,[master]);
 });
+test('Five HD master renditions still probe 1080p and 720p fallback',async()=>{
+  const master='https://cdn.example/video/multi.m3u8';
+  const variants=[4320,2160,1440,1080,720];
+  const playlist=[
+    '#EXTM3U',
+    ...variants.flatMap(height=>[
+      '#EXT-X-STREAM-INF:RESOLUTION='+Math.floor(height*16/9)+'x'+height,
+      height+'.m3u8'
+    ])
+  ].join('\n');
+  const calls=[];
+  const transport=new Uint8Array([0x47,...new Array(2047).fill(0)]);
+  const fetchImpl=async url=>{
+    calls.push(url);
+    if(url===master)return response(playlist);
+    const suffix=url.split('/').at(-1);
+    if(suffix==='720.m3u8')return response('#EXTM3U\n#EXTINF:8,\n720.ts');
+    if(suffix==='1080.m3u8')return response('#EXTM3U\n#EXTINF:8,\n1080.ts');
+    if(suffix==='4320.m3u8'||suffix==='2160.m3u8')
+      return response('#EXTM3U\n#EXTINF:8,\nblocked.ts');
+    if(suffix==='720.ts')return response(transport,206,'video/mp2t');
+    if(suffix==='1080.ts'||suffix==='blocked.ts')
+      return response('Forbidden',403,'text/plain');
+    throw Error('Unexpected URL '+url);
+  };
+  const result=await probeHlsFirstSegment(master,{
+    fetchImpl,allowedHosts:['cdn.example']
+  });
+  assert.deepEqual(result,{
+    ok:true,quality:720,width:1280,
+    playableUrl:'https://cdn.example/video/720.m3u8'
+  });
+  assert.ok(calls.some(x=>x.endsWith('1080.m3u8')),'1080p was examined');
+  assert.ok(calls.some(x=>x.endsWith('720.ts')),'720p video was actually fetched');
+  assert.equal(calls.some(x=>x.endsWith('1440.m3u8')),false,
+    'Do not probe redundant 1440p when 1080p and 720p are available');
+});
+test('A wide, low-height variant is not mislabeled as 720p HD',async()=>{
+  const master='https://cdn.example/video/low.m3u8';
+  let requests=0;
+  const fetchImpl=async()=>{requests++;return response(
+    '#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=1280x360\n360.m3u8'
+  );};
+  const result=await probeHlsFirstSegment(master,{
+    fetchImpl,allowedHosts:['cdn.example']
+  });
+  assert.deepEqual(result,{ok:false,reason:'no_hd_variant'});
+  assert.equal(requests,1);
+});
 test('No arbitrary unapproved media hosts or dangerous HTTP URLs can be probed',async()=>{
   const {fetchImpl,calls}=fake();
   const rejected=await probeHlsFirstSegment('http://cdn.example/video/master.m3u8',{

@@ -215,3 +215,22 @@ CineStream adapter, not evidence that VaPlayer streams currently work.
 Enabling it still requires licensed sources, approved public hosts, and
 independent real-browser playback evidence. Original CloudStream .cs3 plugin
 execution remains unsupported on the free Node host.
+
+## Reliable HD fallback and build queue isolation (October 16, 2026)
+
+The HLS adapter now checks a representative set of at most four media
+renditions in parallel: the two highest variants, an available true 1080p
+(or next lower HD) variant, and the lowest approved >=720p variant. This
+fixes masters whose first three highest renditions fail while 720p still
+works. Candidate resolution requires **both** width >=1280 and height >=720,
+so an ultrawide 1280x360 stream cannot masquerade as HD.
+
+Live video is still denied by the upstream segment host (HTTP 403 in the
+observed tests); the fallback is a compatibility improvement, not a bypass
+or proof of newly playable commercial sources. No new source is activated.
+
+Website-only commits no longer trigger the CloudStream Android plugin build:
+that workflow is path-scoped to Android plugin and Gradle inputs. The
+independent MOOSA Web CI workflow cancels superseded runs on the same ref,
+reducing duplicated free runner work. Explicit manual plugin builds remain
+available; Android sources and existing plugin packages are untouched.

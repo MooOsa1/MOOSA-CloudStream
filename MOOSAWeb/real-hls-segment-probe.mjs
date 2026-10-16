@@ -32,7 +32,7 @@ function rankedMasterVariants(raw,origin,hosts,minWidth){
     const m=lines[i].match(/RESOLUTION=(\d+)x(\d+)/i);
     const width=Number(m?.[1]),height=Number(m?.[2]);
     if(!Number.isInteger(width)||!Number.isInteger(height) ||
-       width<minWidth||height<360||height>4320)continue;
+       width<minWidth||height<720||height>4320)continue;
     const path=nextUri(lines,i);
     if(!path)continue;
     let candidate;
@@ -42,10 +42,23 @@ function rankedMasterVariants(raw,origin,hosts,minWidth){
     if(choices.some(x=>x.url===allowed.href))continue;
     choices.push({url:allowed.href,width,height});
   }
-  // Probe up to three HD renditions in parallel. A broken 4K track must not
-  // prevent a healthy 1080p/720p variant from becoming a usable source.
+  // Check a representative spread of HD variants, not just the top three.
+  // A master with 8K / 4K / 1440p / 1080p / 720p previously never tested
+  // its best browser-friendly 1080p or 720p fallback.
   choices.sort((a,b)=>b.height-a.height||b.width-a.width);
-  return choices.slice(0,3);
+  const selected=[];
+  const add=choice=>{
+    if(choice&&!selected.some(item=>item.url===choice.url))selected.push(choice);
+  };
+  choices.slice(0,2).forEach(add);
+  add(choices.find(x=>x.height===1080) ||
+      choices.find(x=>x.height<1080&&x.height>=720));
+  add(choices.at(-1));
+  for(const choice of choices){
+    if(selected.length>=4)break;
+    add(choice);
+  }
+  return selected.sort((a,b)=>b.height-a.height||b.width-a.width).slice(0,4);
 }
 async function fetchText(url,fetchImpl,timeoutMs,origin){
   const response=await fetchImpl(url,{
