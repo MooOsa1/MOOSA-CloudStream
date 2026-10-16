@@ -66,7 +66,7 @@ public final class HlsSourceProbe {
             n++;
             int masterStatus=0,childStatus=0,segmentStatus=0;
             boolean masterHls=false,firstSegmentVideo=false,segmentCors=false,encrypted=false;
-            String error="none";
+            String error="none",segmentType="unknown";
             try{
                 URI uri=checked(URI.create(text));
                 if(!uri.getPath().toLowerCase(Locale.ROOT).endsWith(".m3u8"))
@@ -87,11 +87,18 @@ public final class HlsSourceProbe {
                     segmentUrl=child;
                     childStatus=-1;
                 }
-                // Do not ever fetch a remote key, bearer token or DRM URL.
-                if(!(segmentUrl.getPath().toLowerCase(Locale.ROOT).matches(".*\\.(ts|m4s|mp4|m4v|aac)")))
-                    throw new IllegalStateException("segment_ext_not_allowed");
+                // HLS fragments can have extensionless URLs. Only trust the
+                // exact observed public host, HTTPS, no redirects, no encrypted HLS,
+                // and verify the returned bytes rather than guessing by extension.
+                // Explicit secret/key files are never fetched.
+                String segmentPath=segmentUrl.getPath().toLowerCase(Locale.ROOT);
+                if(segmentPath.endsWith(".key")||segmentPath.endsWith(".m3u8")||
+                    segmentPath.endsWith(".json")||segmentPath.endsWith(".xml"))
+                    throw new IllegalStateException("not_plain_media_segment");
                 Result segment=get(segmentUrl,2048,true);
                 segmentStatus=segment.status;
+                segmentType=segment.contentType.replaceAll("[^a-zA-Z0-9_./;-]","_")
+                    .substring(0,Math.min(segment.contentType.length(),70));
                 segmentCors=hasCors(segment);
                 byte[] bytes=segment.body.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
                 firstSegmentVideo=(segment.status==200||segment.status==206)
@@ -105,6 +112,7 @@ public final class HlsSourceProbe {
             System.out.println("JVM_MEDIA_DIRECT_VERIFY sample="+n+
                 " masterStatus="+masterStatus+" masterHls="+masterHls+
                 " variantStatus="+childStatus+" segmentStatus="+segmentStatus+
+                " segmentType="+segmentType+
                 " segmentVideo="+firstSegmentVideo+" segmentCors="+segmentCors+
                 " error="+error);
         }
