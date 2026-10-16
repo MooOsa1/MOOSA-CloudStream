@@ -41,6 +41,15 @@ try{
   await page.addInitScript(()=>{
     const errors=[];
     window.__moosaHlsDiagnostics=errors;
+    // Test-only A/B isolation: Chrome advertises native HLS as "maybe"
+    // but decoded zero frames with MEDIA_ERR_SRC_NOT_SUPPORTED. Force the
+    // existing production hls.js branch without changing any site code.
+    const originalCanPlay=HTMLMediaElement.prototype.canPlayType;
+    HTMLMediaElement.prototype.canPlayType=function(mime){
+      if(String(mime||'').toLowerCase().startsWith('application/vnd.apple.mpegurl'))return '';
+      return originalCanPlay.call(this,mime);
+    };
+    window.__moosaForcedHlsJs=true;
     let ctor;
     Object.defineProperty(window,'Hls',{
       configurable:true,
