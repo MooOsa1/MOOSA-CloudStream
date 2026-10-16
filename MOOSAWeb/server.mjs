@@ -8,6 +8,7 @@ import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
 import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
 import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
 import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
+import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream-stremio-interop.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -125,6 +126,20 @@ async function handle(req,res) {
     if(req.method !== 'GET' && req.method !== 'HEAD')return err(res,405,'Method not allowed');
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
+    // CineStream supports Stremio-compatible HTTPS add-ons through its
+    // configurable Settings.AddonType.HTTPS provider interface.
+    // This *exports* licensed MOOSA sources through the compatible HTTP
+    // transport. It does NOT run CineStream / StreamPlay Android plugins.
+    if(url.pathname==='/api/stremio/manifest.json'){
+      if(url.search)return err(res,400,'Stremio manifest takes no parameters');
+      return json(res,200,stremioProtocolManifest());
+    }
+    if(url.pathname.startsWith('/api/stremio/stream/')){
+      if(url.search)return err(res,400,'Stremio stream takes no parameters');
+      const match=url.pathname.match(/^\/api\/stremio\/stream\/movie\/(tt\d{5,12})\.json$/);
+      if(!match)return err(res,404,'Unsupported Stremio stream route');
+      return json(res,200,await resolveStremioProtocolMovie(match[1]));
+    }
     if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
     if(url.pathname==='/api/web-native/status'){
       if(url.search)return err(res,400,'No arbitrary provider parameters');
@@ -196,7 +211,14 @@ async function handle(req,res) {
         caveat:configuredEngine()?
           'Configured remote runtime has not been verified. Provider availability depends on external compatible execution and browser playback.':
           'Repository indexes only. Android .cs3 plugins are not executed by the Node server.',
-        repositories:results
+        repositories:results,
+        httpStremioCompatibility:{
+          manifest:'/api/stremio/manifest.json',
+          streaming:'/api/stremio/stream/movie/{imdbId}.json',
+          status:'reviewed_licensed_movie_sources_only',
+          cineStreamAddonTransportCompatible:true,
+          originalAndroidPluginsExecuted:false
+        }
       });
     }
     if(url.pathname==='/api/resolve'){
