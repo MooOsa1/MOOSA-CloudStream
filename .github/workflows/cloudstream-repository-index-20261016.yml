@@ -1,0 +1,73 @@
+name: Validate generic CloudStream .cs3 manifest importer
+on:
+  push:
+    branches: [experiment/cloudstream-jvm-engine-20261016]
+    paths:
+      - 'MOOSAJVM/cloudstream-repository.mjs'
+      - 'MOOSAJVM/stage-cloudstream-plugin.mjs'
+      - 'MOOSAJVM/tests/repository.test.mjs'
+      - '.github/workflows/cloudstream-repository-index-20261016.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  repository-index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify normal indexes, malicious URLs, archive tampering and limits
+        run: node --test MOOSAJVM/tests/repository.test.mjs
+      - name: Verify live official CineStream and StreamPlay plugin metadata and binary SHA256
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {inspectCloudStreamRepo,downloadCheckedCs3} from './MOOSAJVM/cloudstream-repository.mjs';
+          for(const spec of [
+            {
+              name:'CineStream',slug:'SaurabhKaperwan/CSX',
+              index:'https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/plugins.json'
+            },{
+              name:'StreamPlay',slug:'phisher98/cloudstream-extensions-phisher',
+              index:'https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/repo.json'
+            }
+          ]){
+            const registry=await inspectCloudStreamRepo(spec.index,{
+              allowedRepos:[spec.slug],timeoutMs:18000
+            });
+            const plugin=registry.accepted.find(p=>p.internalName===spec.name);
+            if(!plugin)throw new Error('Missing expected upstream original plugin: '+spec.name);
+            const verified=await downloadCheckedCs3(plugin,{
+              allowedRepos:[spec.slug],timeoutMs:22000
+            });
+            console.log('MOOSA_CS3_REPOSITORY_VERIFIED '+JSON.stringify({
+              name:plugin.internalName,
+              version:plugin.version,
+              apiVersion:plugin.apiVersion,
+              catalogCount:registry.catalogCount,
+              totalAccepted:registry.accepted.length,
+              rejected:registry.rejected,
+              bytes:verified.bytes.byteLength,
+              sha256Verified:verified.sha256===plugin.sha256,
+              zipHeaderValid:true
+            }));
+          }
+          NODE
+      - name: Stage original CineStream and StreamPlay without hardcoded Java provider classes
+        shell: bash
+        run: |
+          node MOOSAJVM/stage-cloudstream-plugin.mjs \
+            https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/plugins.json \
+            SaurabhKaperwan/CSX CineStream | tee /tmp/moosa-staged-cinestream.log
+          node MOOSAJVM/stage-cloudstream-plugin.mjs \
+            https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/repo.json \
+            phisher98/cloudstream-extensions-phisher StreamPlay | tee /tmp/moosa-staged-streamplay.log
+          for name in cinestream streamplay; do
+            file="$(sed -n 's/.*"stagedFile":"\([^"]*\)".*/\1/p' "/tmp/moosa-staged-$name.log")"
+            test -n "$file"
+            unzip -Z1 "$file" | grep -qx classes.dex
+            echo "MOOSA_CS3_STAGING_VERIFIED plugin=$name dexPresent=true"
+          done
