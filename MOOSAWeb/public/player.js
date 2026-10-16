@@ -62,6 +62,18 @@ function updateQuality(){
   else el.add(new Option('حسب مصدر الفيديو','-2'));
 }
 let scriptPromise=null;
+function preferNativeHls(){
+  // Chrome may report "maybe" for native HLS but still fail to decode real
+  // MPEG-TS. When MediaSource is available prefer the verified hls.js path.
+  // Safari/iOS continue using their native HLS implementation.
+  if(!video.canPlayType('application/vnd.apple.mpegurl'))return false;
+  const ua=navigator.userAgent||'';
+  const ios=/iPhone|iPad|iPod/i.test(ua) ||
+    (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  const safari=/Safari/i.test(ua) &&
+    !/Chrome|Chromium|CriOS|Edg|OPR|FxiOS|Silk/i.test(ua);
+  return ios||safari||!window.MediaSource;
+}
 function loadHls(){
   if(window.Hls)return Promise.resolve(window.Hls);
   if(scriptPromise)return scriptPromise;
@@ -83,7 +95,7 @@ async function playLink(url, label='Video'){
   $('#video-overlay').classList.remove('hidden');
   const isHls=/\.m3u8(?:[?#]|$)/i.test(url);
   try {
-    if(isHls && video.canPlayType('application/vnd.apple.mpegurl')){video.src=url;}
+    if(isHls && preferNativeHls()){video.src=url;}
     else if(isHls){
       const Hls=await loadHls();
       if(currentPlayback!==playbackToken)return;

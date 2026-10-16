@@ -59,6 +59,15 @@ try {
     headless:true,channel:'chrome',args:['--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']
   });
   page=await browser.newPage({viewport:{width:1365,height:768}});
+  // Reproduce the misleading native HLS "maybe" reported by Linux Chrome.
+  // MOOSA Web must prefer hls.js on Chrome while preserving Safari native HLS.
+  await page.addInitScript(()=>{
+    const original=HTMLMediaElement.prototype.canPlayType;
+    HTMLMediaElement.prototype.canPlayType=function(type){
+      if(String(type||'').toLowerCase().startsWith('application/vnd.apple.mpegurl'))return 'maybe';
+      return original.call(this,type);
+    };
+  });
   page.on('pageerror',e=>jsErrors.push(e.message));
   page.on('requestfailed',req=>{
     if(/moosa-e2e|interactive-examples|jsdelivr/i.test(req.url()))
@@ -96,6 +105,8 @@ try {
     await page.locator('#player-message').textContent()),
     'Valid delayed manifest must not show a premature HLS failure');
   await untilPlaying('HLS M3U8 + MPEG-TS');
+  assert.equal(await page.evaluate(()=>typeof window.Hls==='function'),true,
+    'Chrome must use hls.js even when canPlayType(native HLS) returns maybe');
   assert.match(await page.locator('#player-message').textContent(),/يُشغّل الآن/,
     'Indicator reflects video actually playing');
   await page.screenshot({path:path.join(artifacts,'hls-playing.png')});
