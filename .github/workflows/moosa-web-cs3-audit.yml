@@ -1,0 +1,46 @@
+name: Audit original CloudStream CS3 package format
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/audit_cs3.py'
+      - 'MOOSAWeb/tests/audit_cs3.test.py'
+      - '.github/workflows/moosa-web-cs3-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cs3-format-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  static-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check offline synthetic CS3 packages
+        run: python3 MOOSAWeb/tests/audit_cs3.test.py
+      - name: Download only two original upstream packages for static analysis
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          urls = {
+              'CineStream': 'https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CineStream.cs3',
+              'StreamPlay': 'https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/StreamPlay.cs3',
+          }
+          target = Path('/tmp/moosa-cs3-audit')
+          target.mkdir(parents=True, exist_ok=True)
+          for name, url in urls.items():
+              request = Request(url, headers={'User-Agent':'MOOSAWeb-Static-CS3-Audit/1.0'})
+              with urlopen(request, timeout=20) as response:
+                  if response.status != 200:
+                      raise RuntimeError(f'{name}: HTTP {response.status}')
+                  data = response.read(8 * 1024 * 1024 + 1)
+              if len(data) > 8 * 1024 * 1024:
+                  raise RuntimeError(f'{name}: package too large')
+              (target / (name + '.cs3')).write_bytes(data)
+              print(f'{name}: downloaded {len(data)} bytes; code will not be executed')
+          PY
+      - name: Inspect manifests and DEX headers without executing
+        run: python3 MOOSAWeb/tools/audit_cs3.py /tmp/moosa-cs3-audit/CineStream.cs3 /tmp/moosa-cs3-audit/StreamPlay.cs3
