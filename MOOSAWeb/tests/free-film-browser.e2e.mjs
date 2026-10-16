@@ -36,7 +36,7 @@ try {
     showPlayer({title:'Animals',sources:[]});
   });
   await page.locator('#open-free-film').click();
-  await page.waitForFunction(()=>document.querySelector('#player-title')?.textContent.includes('Wikimedia Commons'));
+  await page.waitForFunction(()=>document.querySelector('#player-title')?.textContent.includes('Big Buck Bunny'));
   assert.match(await page.locator('#automatic-source-status').innerText(),/2 نسخة/);
   assert.equal(await page.locator('#player-source option').count(),3);
   assert.equal(await page.locator('#player-source').isDisabled(),false);
