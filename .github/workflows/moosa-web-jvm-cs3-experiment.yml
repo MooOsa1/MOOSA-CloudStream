@@ -1,4 +1,4 @@
-name: Test actual CS3 Android DEX to JVM class linkage
+name: Check original CloudStream extension JVM linkage
 on:
   push:
     branches: [main]
@@ -9,90 +9,63 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: cs3-jvm-experiment-${{ github.ref }}
+  group: cs3-jvm-link-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   jvm-linkage:
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - name: Fetch real unmodified original CS3 packages and dex2jar v2.4
+      - name: Download upstream archives and official dex2jar v2.4
         run: |
           python3 - <<'PY'
           from pathlib import Path
           from urllib.request import Request, urlopen
-          items = {
-            'CineStream.cs3': ('https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CineStream.cs3', 8_000_000),
-            'StreamPlay.cs3': ('https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/StreamPlay.cs3', 8_000_000),
-            'dex2jar.zip': ('https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip', 25_000_000),
+          urls = {
+            'CineStream.cs3': 'https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CineStream.cs3',
+            'StreamPlay.cs3': 'https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/StreamPlay.cs3',
+            'dex2jar.zip': 'https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip',
           }
-          target = Path('/tmp/cs3-jvm')
-          target.mkdir(parents=True, exist_ok=True)
-          for name, (url, limit) in items.items():
-            with urlopen(Request(url, headers={'User-Agent':'MOOSA-JVM-Probe'}), timeout=35) as response:
-              data = response.read(limit + 1)
-            if len(data) > limit:
-              raise RuntimeError(f'{name} download exceeds bound')
-            (target / name).write_bytes(data)
-            print(f'Downloaded {name}: {len(data)} bytes')
+          folder = Path('/tmp/cs3-jvm')
+          folder.mkdir(parents=True, exist_ok=True)
+          for name, url in urls.items():
+            limit = 25_000_000 if name.endswith('.zip') else 8_000_000
+            with urlopen(Request(url, headers={'User-Agent': 'MOOSAWeb-JVM-Probe'}), timeout=35) as response:
+              content = response.read(limit + 1)
+            if len(content) > limit:
+              raise RuntimeError(name + ' exceeds maximum size')
+            (folder / name).write_bytes(content)
+            print(name + ': ' + str(len(content)) + ' bytes')
           PY
-      - name: Convert original Android DEX bytecode into JVM class files
+      - name: Convert actual CineStream methods and only StreamPlay class signatures
         run: |
           set -euo pipefail
           cd /tmp/cs3-jvm
-          mkdir -p cinesrc streamsrc dex2jar
-          unzip -q -o CineStream.cs3 'classes.dex' -d cinesrc
-          unzip -q -o StreamPlay.cs3 'classes.dex' -d streamsrc
-          unzip -q -o dex2jar.zip -d dex2jar
-          CONVERTER="$(find dex2jar -name d2j-dex2jar.sh -type f -print -quit)"
-          test -n "$CONVERTER" || { echo "dex2jar converter missing"; exit 1; }
-          chmod +x "$CONVERTER"
-          echo "DEX conversion using $CONVERTER"
-          "$CONVERTER" --force --output CineStream.jar cinesrc/classes.dex
-          echo 'Try converting complete StreamPlay code with 4 GB heap, max 75 seconds'
-          set +e
-          timeout 75s java -Xmx4g -cp "dex2jar/dex-tools-v2.4/lib/*" \
-            com.googlecode.dex2jar.tools.Dex2jarCmd --force --output StreamPlay.jar streamsrc/classes.dex \
-            > streamplay-conversion.log 2>&1
-          FULL_RESULT=$?
-          set -e
-          if [ "$FULL_RESULT" -ne 0 ]; then
-            echo "StreamPlay full method conversion failed: exit $FULL_RESULT"
-            tail -15 streamplay-conversion.log
-            echo 'Falling back to class signatures WITHOUT method bodies: not runtime-ready'
-            rm -f StreamPlay.jar
-            java -Xmx2g -cp "dex2jar/dex-tools-v2.4/lib/*" \
-              com.googlecode.dex2jar.tools.Dex2jarCmd --no-code --force --output StreamPlay.jar streamsrc/classes.dex
-            echo 'STREAMPLAY_METHOD_CODE_NOT_CONVERTED'
-          else
-            echo 'STREAMPLAY_COMPLETE_BYTECODE_CONVERTED'
-          fi
-          echo 'Actual JVM bytecode artifacts produced:'
+          mkdir -p cine stream converter
+          unzip -q CineStream.cs3 classes.dex -d cine
+          unzip -q StreamPlay.cs3 classes.dex -d stream
+          unzip -q dex2jar.zip -d converter
+          DEX2JAR="$(find converter -name d2j-dex2jar.sh -type f -print -quit)"
+          test -n "$DEX2JAR"
+          chmod +x "$DEX2JAR"
+          "$DEX2JAR" --force --output CineStream.jar cine/classes.dex
+          echo 'CINESTREAM_FULL_METHODS_CONVERTED'
+          echo 'Original StreamPlay full conversion previously failed even with 4 GiB heap'
+          echo 'Inspecting ONLY StreamPlay class signatures; NOT executable method code'
+          java -Xmx2g -cp "converter/dex-tools-v2.4/lib/*" com.googlecode.dex2jar.tools.Dex2jarCmd --no-code --force --output StreamPlay.jar stream/classes.dex
+          echo 'STREAMPLAY_CLASS_SIGNATURES_ONLY'
           ls -lh CineStream.jar StreamPlay.jar
-          jar tf CineStream.jar | grep -E '^com/megix/CineStream.class
-      - name: Try actual JVM linking of plugin entry points without running plugin code
+          jar tf CineStream.jar | grep -F 'com/megix/CineStream.class'
+          jar tf StreamPlay.jar | grep -F 'com/phisher98/StreamPlayPlugin.class'
+      - name: Load original entry class signatures on standard JVM without Android
         run: |
+          set -euo pipefail
           javac -d /tmp/cs3-jvm MOOSAWeb/tools/JvmCs3ClassProbe.java
           java -cp /tmp/cs3-jvm JvmCs3ClassProbe CineStream /tmp/cs3-jvm/CineStream.jar com.megix.CineStream
           java -cp /tmp/cs3-jvm JvmCs3ClassProbe StreamPlay /tmp/cs3-jvm/StreamPlay.jar com.phisher98.StreamPlayPlugin
-          echo 'Class loading only: no Android, HTTP, source resolution or video playback attempted'
-
-          jar tf StreamPlay.jar | grep -E '^com/phisher98/StreamPlayPlugin.class
-      - name: Try actual JVM linking of plugin entry points without running plugin code
-        run: |
-          javac -d /tmp/cs3-jvm MOOSAWeb/tools/JvmCs3ClassProbe.java
-          java -cp /tmp/cs3-jvm JvmCs3ClassProbe CineStream /tmp/cs3-jvm/CineStream.jar com.megix.CineStream
-          java -cp /tmp/cs3-jvm JvmCs3ClassProbe StreamPlay /tmp/cs3-jvm/StreamPlay.jar com.phisher98.StreamPlayPlugin
-          echo 'Class loading only: no Android, HTTP, source resolution or video playback attempted'
-
-      - name: Try actual JVM linking of plugin entry points without running plugin code
-        run: |
-          javac -d /tmp/cs3-jvm MOOSAWeb/tools/JvmCs3ClassProbe.java
-          java -cp /tmp/cs3-jvm JvmCs3ClassProbe CineStream /tmp/cs3-jvm/CineStream.jar com.megix.CineStream
-          java -cp /tmp/cs3-jvm JvmCs3ClassProbe StreamPlay /tmp/cs3-jvm/StreamPlay.jar com.phisher98.StreamPlayPlugin
-          echo 'Class loading only: no Android, HTTP, source resolution or video playback attempted'
+          echo 'No downloaded extension bytecode was executed'
