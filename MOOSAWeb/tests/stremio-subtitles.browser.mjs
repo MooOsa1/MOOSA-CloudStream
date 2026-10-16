@@ -43,12 +43,12 @@ try {
     void searchAutomaticSources('movie',111);
   });
   await page.waitForFunction(()=>
-    document.querySelector('#player-source option')?.length===2 &&
+    document.querySelector('#player-source')?.options.length===2 &&
     document.querySelector('#player-source')?.value==='0',null,{timeout:1500});
   const early=await page.locator('#player-subtitles option').allTextContents();
   assert.equal(early.length,1,'video source must appear before slow subtitles finish');
   assert.equal(videoResolve,1);
-  await page.waitForFunction(()=>document.querySelector('#player-subtitles option')?.length===3,
+  await page.waitForFunction(()=>document.querySelector('#player-subtitles')?.options.length===3,
     null,{timeout:5000});
   const tracks=await page.locator('#player-subtitles option').allTextContents();
   assert.ok(tracks[1].includes('Arabic'));
