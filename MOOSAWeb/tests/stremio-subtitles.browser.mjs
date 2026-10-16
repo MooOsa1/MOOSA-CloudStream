@@ -31,7 +31,7 @@ try {
         {url:'https://subs.example/film.ar.vtt',language:'ar',label:'Arabic',source:'HTTP Stremio'},
         {url:'https://subs.example/film.en.srt',language:'en',label:'English',source:'HTTP Stremio'}
       ],count:2,active:true
-    })});
+    })}.catch(()=>{});
   });
   await page.goto('http://127.0.0.1:'+server.address().port+'/',{
     waitUntil:'domcontentloaded'
