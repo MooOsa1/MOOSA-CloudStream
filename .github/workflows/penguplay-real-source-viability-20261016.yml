@@ -1,0 +1,75 @@
+name: Real PenguPlay HTTP/Stremio source viability
+on:
+  push:
+    branches: [diagnostics/penguplay-source-evaluation-20261016]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check manifest and direct stream eligibility on public CC movies
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const root='https://pengu.uk';
+          async function get(path){
+            try{
+              const response=await fetch(root+path,{
+                signal:AbortSignal.timeout(16000),redirect:'error',
+                headers:{Accept:'application/json'}
+              });
+              const raw=await response.text();
+              let json;try{json=JSON.parse(raw)}catch{}
+              return {status:response.status,json,
+                type:response.headers.get('content-type'),
+                cors:response.headers.get('access-control-allow-origin'),
+                length:raw.length,html:raw.slice(0,120).includes('<')};
+            }catch(e){return{error:String(e.message).slice(0,170)}}
+          }
+          const manifest=await get('/manifest.json');
+          console.log('PENGUPLAY_PUBLIC_MANIFEST '+JSON.stringify({
+            status:manifest.status,error:manifest.error,id:manifest.json?.id,
+            version:manifest.json?.version,
+            supported:manifest.json?.resources?.filter(x=>typeof x==='object'&&x.name==='stream')
+              .map(x=>({types:x.types,prefixes:x.idPrefixes})),
+            cors:manifest.cors
+          }));
+          const items=[
+            ['tt1727587','Sintel'],
+            ['tt2285752','Tears of Steel'],
+            ['tt0807840','Elephants Dream'],
+            ['tt1254207','Big Buck Bunny']
+          ];
+          await Promise.all(items.map(async ([id,title])=>{
+            const result=await get('/stream/movie/'+id+'.json');
+            const list=Array.isArray(result.json?.streams)?result.json.streams:[];
+            const direct=list.filter(x=>typeof x.url==='string' && /^https:\/\//.test(x.url));
+            const classify=link=>{
+              try{
+                const u=new URL(link.url);
+                return {host:u.hostname,extension:u.pathname.match(/\.(?:mp4|webm|m3u8|mkv|ts)$/i)?.[0]||'',
+                  quality:String(link.title||link.name||'').match(/\b(?:2160|1080|720|480)p\b/i)?.[0]||null,
+                  hasHeaders:!!(link.headers||link.behaviorHints?.headers||link.behaviorHints?.proxyHeaders),
+                  hasDRM:!!link.drm,hasHLS:u.pathname.endsWith('.m3u8')};
+              }catch{return{invalid:true}}
+            };
+            const unique=[...new Map(direct.map(x=>[classify(x).host,classify(x)])).values()].slice(0,12);
+            console.log('PENGUPLAY_CC_MOVIE '+JSON.stringify({
+              id,title,status:result.status,error:result.error,type:result.type,
+              cors:result.cors,length:result.length,html:result.html,
+              keys:Object.keys(result.json||{}).slice(0,12),
+              total:list.length,direct:direct.length,
+              infoHash:list.filter(x=>x.infoHash).length,
+              external:list.filter(x=>x.externalUrl).length,
+              hosts:unique
+            }));
+            // No opening of third-party streaming content here; only compare
+            // protocol compatibility on separately-licensed film identities.
+          }));
+          NODE
