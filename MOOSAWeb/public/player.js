@@ -1,4 +1,5 @@
 import {nextPlaybackSource} from './playback-fallback.js';
+import {chooseBrowserSources} from './source-compatibility.js';
 const $ = s => document.querySelector(s);
 const video = $('#video');
 let hls = null;
@@ -116,7 +117,7 @@ async function playLink(url, label='Video'){
 }
 export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   previousFocus=document.activeElement;
-  activeSources=sources;
+  activeSources=chooseBrowserSources(sources,navigator.userAgent);
   currentMediaTitle=title;
   selectedSourceUrl=null;
   attemptedSourceUrls.clear();
@@ -124,10 +125,10 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   resetVideo();
   $('#player-title').textContent=title;
   const options=$('#player-source');
-  options.replaceChildren(new Option(sources.length?'اختر مصدرًا مصرّحًا به':'لا توجد سيرفرات متاحة',''));
-  options.disabled=!sources.length;
-  for(let i=0;i<sources.length;i++)options.add(new Option(sources[i].name||`مصدر ${i+1}`,String(i)));
-  $('#player-subtitle').textContent=sources.length?`${sources.length} مصادر مصرّح بها`:'لا يوجد مصدر تلقائي مضاف لهذا العنوان';
+  options.replaceChildren(new Option(activeSources.length?'اختر مصدرًا مصرّحًا به':'لا توجد سيرفرات متاحة',''));
+  options.disabled=!activeSources.length;
+  for(let i=0;i<activeSources.length;i++)options.add(new Option(activeSources[i].name||`مصدر ${i+1}`,String(i)));
+  $('#player-subtitle').textContent=activeSources.length?`${activeSources.length} مصادر مصرّح بها`:'لا يوجد مصدر تلقائي مضاف لهذا العنوان';
   $('#automatic-source-status').textContent='يبدأ البحث تلقائيًا عند اختيار فيلم أو حلقة.';
   $('#overlay').classList.remove('hidden');$('#player-panel').classList.remove('hidden');
   notice('اختر مصدرًا مصرحًا به أو استخدم فيديو الاختبار الحر. ملفات HLS تتطلب CORS من السيرفر.');
@@ -153,8 +154,15 @@ export function appendPlayerSources(items) {
     added++;
   }
   if (!added) return;
+  // The official Elephants Dream Safari transcode is known to decode on
+  // iPhone while its older original does not. Keep both on desktop; omit
+  // only that specific original on iOS when the same-file transcode exists.
+  activeSources=chooseBrowserSources(activeSources,navigator.userAgent);
   picker.disabled=false;
-  activeSources.sort((a,b) => Number(b.preferred===true)-Number(a.preferred===true) || (Number(b.quality)||0)-(Number(a.quality)||0));
+  activeSources.sort((a,b) =>
+    Number(b.codecOptimized===true)-Number(a.codecOptimized===true) ||
+    Number(b.preferred===true)-Number(a.preferred===true) ||
+    (Number(b.quality)||0)-(Number(a.quality)||0));
   picker.replaceChildren(new Option('اختر السيرفر',''));
   for (let i=0;i<activeSources.length;i++) {
     const src=activeSources[i];

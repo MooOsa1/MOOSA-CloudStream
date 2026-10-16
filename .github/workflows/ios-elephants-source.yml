@@ -1,0 +1,35 @@
+name: MOOSA Web iPhone Elephants Safari source
+on:
+  pull_request:
+    paths:
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/public/source-compatibility.js'
+      - 'MOOSAWeb/providers.mjs'
+      - 'MOOSAWeb/tests/ios-elephants-source.e2e.mjs'
+      - '.github/workflows/ios-elephants-source.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/public/source-compatibility.js'
+      - 'MOOSAWeb/providers.mjs'
+      - 'MOOSAWeb/tests/ios-elephants-source.e2e.mjs'
+      - '.github/workflows/ios-elephants-source.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --no-package-lock playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/ios-elephants-source.e2e.mjs
