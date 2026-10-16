@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'MOOSAWeb/tools/JvmOriginalProviderSmoke.java'
+      - 'MOOSAWeb/tools/JvmOriginalProviderLoad.java'
       - '.github/workflows/moosa-official-jvm-provider.yml'
   workflow_dispatch:
 permissions:
@@ -89,3 +90,9 @@ jobs:
           LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
           java -cp /tmp/moosa-jvm JvmOriginalProviderSmoke "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps
           echo 'Compatibility report only: no media fetched or player success claimed'
+      - name: Invoke original CineStream load for exact known IMDb movie
+        run: |
+          set -euo pipefail
+          javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderLoad.java
+          LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
+          timeout 65s java -cp /tmp/moosa-jvm JvmOriginalProviderLoad "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps
