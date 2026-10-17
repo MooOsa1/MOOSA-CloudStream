@@ -91,6 +91,11 @@ jobs:
         run: |
           timeout 140 node tests/original-castle-chrome.e2e.mjs
           rm -f tests/.private-castle-candidates.json
+      - name: Always delete private signed candidate URLs from the disposable runner
+        if: always()
+        run: |
+          rm -f MOOSAWeb/tests/.private-castle-candidates.json
+          docker exec moosa-jvm-pilot rm -f /tmp/moosa-castle-private.json || true
       - name: Container status if a test fails
         if: failure()
         run: |
