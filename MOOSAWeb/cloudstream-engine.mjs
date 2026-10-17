@@ -180,6 +180,10 @@ function cleanRuntimeResult(source,{pilot=false,meta=null}={}) {
   return {url:u.href,name:provider+' • '+name,quality,subtitles,
     ...(acceptedPilot?{singleFilmPilot:true,verifiedFilmImdbId:PILOT_IMDB}:{})};
 }
+/** Normal sources keep 12s; exact opt-in original JVM film can wait 65s. */
+export function originalRuntimeTimeoutMs(meta,{pilotEnabled=false}={}){
+  return pilotEnabled && pilotMovie(meta) ? 65000 : 12000;
+}
 export async function queryRemoteEngine(meta,{
   fetchImpl=fetch,engine=configuredEngine(),
   pilotEnabled=singleFilmPilotStatus().enabled
@@ -191,7 +195,8 @@ export async function queryRemoteEngine(meta,{
     const response=await fetchImpl(engine.url+'/v1/resolve',{
       method:'POST',redirect:'error',
       headers:{Authorization:'Bearer '+engine.token,'Content-Type':'application/json',Accept:'application/json'},
-      body:JSON.stringify(task),signal:AbortSignal.timeout(12_000)
+      body:JSON.stringify(task),signal:AbortSignal.timeout(
+        originalRuntimeTimeoutMs(meta,{pilotEnabled}))
     });
     if(!response.ok||Number(response.headers.get('content-length')||0)>MAX_JSON)return [];
     const text=await response.text();

@@ -2,6 +2,21 @@ import { appendPlayerSources, appendExternalSubtitles, markNoAutomaticSources, s
 import { describeSourceResolution } from './source-diagnostics.js';
 let generation=0;
 let currentAbort=null;
+import {sourceLookupBudgetMs} from './source-timeout-policy.js';
+let runtimeReadiness;
+function pilotRuntimeReady(){
+  if(!runtimeReadiness){
+    runtimeReadiness=fetch('/api/cloudstream/pilot-status',{
+      headers:{Accept:'application/json'},
+      signal:AbortSignal.timeout(2000)
+    }).then(async r=>{
+      if(!r.ok)return false;
+      const data=await r.json();
+      return data?.readyForQuery===true && data?.filmImdbId==='tt5719076';
+    }).catch(()=>false);
+  }
+  return runtimeReadiness;
+}
 const $=query=>document.querySelector(query);
 function message(text){
   const el=$('#automatic-source-status');
@@ -34,9 +49,11 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
       appendExternalSubtitles(data.subtitles);
     }).catch(()=>{}); // Subtitle network failure must not affect playback.
   try {
+    const longPilot=media==='movie' && await pilotRuntimeReady();
+    if(job!==generation)return;
     const response=await fetch('/api/resolve?'+params.toString(),{
       headers:{Accept:'application/json'},
-      signal:AbortSignal.any([controller.signal,AbortSignal.timeout(16500)])
+      signal:AbortSignal.any([controller.signal,AbortSignal.timeout(sourceLookupBudgetMs(media,longPilot))])
     });
     if(!response.ok) {
       const result=await response.json().catch(()=>({}));
@@ -95,4 +112,5 @@ export function initAutomaticSources(){
   document.addEventListener('moosa-player-closed',cancelAutomaticSourceSearch);
   document.addEventListener('moosa-player-opened',cancelAutomaticSourceSearch);
   $('#open-free-film')?.addEventListener('click',openLicensedFullFilm);
+  void pilotRuntimeReady();
 }

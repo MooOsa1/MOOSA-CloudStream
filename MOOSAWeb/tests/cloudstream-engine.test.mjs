@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {registry,configuredEngine,inspectRepositories,queryRemoteEngine,singleFilmPilotStatus} from '../cloudstream-engine.mjs';
+import {registry,configuredEngine,inspectRepositories,queryRemoteEngine,singleFilmPilotStatus,originalRuntimeTimeoutMs} from '../cloudstream-engine.mjs';
 import {createServer} from '../server.mjs';
 
 function response(json,status=200){
@@ -175,4 +175,15 @@ test('single-film theatrical release metadata still matches original premiere',a
   });
   assert.equal(result.length,1);
   assert.equal(result[0].singleFilmPilot,true);
+});
+
+test('slow original JVM is allowed only for the exact pilot film',()=>{
+ const exact={media:'movie',id:100,imdbId:'tt5719076',
+  originalTitle:'Dead Night',year:2018};
+ assert.equal(originalRuntimeTimeoutMs(exact,{pilotEnabled:true}),65000);
+ assert.equal(originalRuntimeTimeoutMs(exact,{pilotEnabled:false}),12000);
+ assert.equal(originalRuntimeTimeoutMs({...exact,imdbId:'tt1234567'},
+  {pilotEnabled:true}),12000);
+ assert.equal(originalRuntimeTimeoutMs({...exact,media:'tv',season:1,episode:1},
+  {pilotEnabled:true}),12000);
 });
