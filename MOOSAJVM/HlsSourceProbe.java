@@ -125,13 +125,25 @@ public final class HlsSourceProbe {
                 (segmentStatus==200||segmentStatus==206)&&
                 segmentCors&&firstSegmentVideo;
             if(firstSegmentCandidate)firstSegmentCandidates++;
+            // Distinguish a blocked segment from a parse error, bad CORS,
+            // and media that has not yet been browser-decoded.
+            String blocker=!error.equals("none")?"probe_"+error:
+                masterStatus!=200?"master_http_"+masterStatus:
+                !masterHls?"master_not_hls":
+                !masterCors?"master_cors_missing":
+                childStatus!=-1&&childStatus!=200?"variant_http_"+childStatus:
+                !variantCors?"variant_cors_missing":
+                segmentStatus!=200&&segmentStatus!=206?"segment_http_"+segmentStatus:
+                !segmentCors?"segment_cors_missing":
+                !firstSegmentVideo?"segment_invalid_media":
+                "needs_browser_decode";
             System.out.println("JVM_MEDIA_DIRECT_VERIFY sample="+n+
                 " masterStatus="+masterStatus+" masterHls="+masterHls+" masterCors="+masterCors+
                 " variantStatus="+childStatus+" variantCors="+variantCors+" segmentStatus="+segmentStatus+
                 " segmentType="+segmentType+
                 " segmentVideo="+firstSegmentVideo+" segmentCors="+segmentCors+
                 " firstSegmentCandidate="+firstSegmentCandidate+
-                " decodeVerified=false error="+error);
+                " decodeVerified=false blocker="+blocker);
         }
         System.out.println("JVM_MEDIA_SUMMARY inspected="+n+
             " firstSegmentCandidates="+firstSegmentCandidates+
