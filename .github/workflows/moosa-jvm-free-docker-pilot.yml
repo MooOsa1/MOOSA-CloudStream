@@ -1,0 +1,70 @@
+name: MOOSA experimental free Docker JVM sidecar
+on:
+  push:
+    branches: [experiment/render-free-cs-jvm-sidecar-20261017]
+    paths:
+      - 'MOOSAWeb/jvm-pilot/**'
+      - 'MOOSAWeb/tools/JvmOriginalProviderLinks.java'
+      - 'MOOSAWeb/headless-jvm-shims/**'
+      - '.github/workflows/moosa-jvm-free-docker-pilot.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-jvm-gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build real original CloudStream and CineStream in isolated Docker
+        run: docker build -f MOOSAWeb/jvm-pilot/Dockerfile -t moosa-jvm-free-pilot .
+      - name: Run the restricted port with distribution disabled
+        run: |
+          docker run -d --name moosa-jvm-pilot -p 127.0.0.1:18640:10000 \
+            -e MOOSA_JVM_TOKEN=test-internal-token-at-least-32-characters \
+            -e MOOSA_MEDIA_HOSTS=img1.hscow.com \
+            moosa-jvm-free-pilot
+          sleep 3
+          curl --fail --silent --show-error http://127.0.0.1:18640/healthz
+      - name: Verify authorization and exact movie identity at the container edge
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const base='http://127.0.0.1:18640/v1/resolve';
+          const film={media:'movie',imdbId:'tt5719076',tmdbId:100,
+            title:'Dead Night',year:2018};
+          const noToken=await fetch(base,{method:'POST',
+            body:JSON.stringify(film)});
+          assert.equal(noToken.status,401);
+          const incorrect=await fetch(base,{method:'POST',
+            headers:{Authorization:'Bearer test-internal-token-at-least-32-characters'},
+            body:JSON.stringify({...film,imdbId:'tt1234567'})});
+          assert.equal(incorrect.status,400);
+          console.log('JVM_GATEWAY_AUTH_AND_IDENTITY_PROVEN');
+          JS
+      - name: Test actual Kotlin loadLinks via authenticated HTTP without distributing media
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const ctl=new AbortController();
+          const t=setTimeout(()=>ctl.abort(),90_000);
+          try{
+            const response=await fetch('http://127.0.0.1:18640/v1/resolve',{
+              method:'POST',headers:{Authorization:'Bearer test-internal-token-at-least-32-characters',
+                'Content-Type':'application/json'},
+              body:JSON.stringify({media:'movie',imdbId:'tt5719076',tmdbId:100,
+                title:'Dead Night',year:2018}),signal:ctl.signal
+            });
+            assert.equal(response.status,200);
+            const result=await response.json();
+            assert.equal(result.distributionEnabled,false);
+            assert.deepEqual(result.sources,[]);
+            assert.equal(result.state,'original_callbacks_returned');
+            console.log('JVM_GATEWAY_ORIGINAL_CINESTREAM_HTTP_EXECUTED=true');
+          }finally{clearTimeout(t)}
+          JS
+      - name: Container status if a test fails
+        if: failure()
+        run: |
+          docker ps -a --filter name=moosa-jvm-pilot
+          docker logs --tail 50 moosa-jvm-pilot || true
