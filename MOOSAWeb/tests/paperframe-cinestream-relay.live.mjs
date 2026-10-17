@@ -50,6 +50,9 @@ function videoSignature(bytes,mime){
     ['video/mp2t','application/octet-stream'].includes(type);
 }
 
+// Regression: an HTML anti-bot response containing “ftyp” is NOT video.
+assert.equal(videoSignature(Buffer.from('<html><body>ftyp</body></html>'),'text/html'),false);
+assert.equal(videoSignature(Buffer.from([0,0,0,16,102,116,121,112,0,0,0,0]),'video/mp4'),true);
 const response=await fetch(BASE+'/api/plugins/resolve',{
   method:'POST',
   headers:{'Content-Type':'application/json'},
@@ -141,3 +144,5 @@ assert.ok(diagnostics.length>0,'Original plugin repository did not load in Quick
 // Do not mark a returned URL as playback success. Real Chrome frames and
 // movie duration verification are necessary before enabling in production.
 assert.ok(relevant.length>0,'No original CineStream plugin produced media capabilities');
+assert.ok(segmentValid>0,
+  'The relay returned media capabilities, but ZERO authentic MPEG-TS/MP4 video byte signatures; browser playback is NOT established');
