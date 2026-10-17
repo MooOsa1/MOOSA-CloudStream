@@ -35,13 +35,14 @@ function fakeCommons({deny}={}){
     });
   };
 }
-test('Free shelf contains 15 independently pre-reviewed complete movie IDs, newest 2026 first',()=>{
+test('Free shelf contains 16 independently pre-reviewed complete movie IDs, newest 2026 first',()=>{
   const ids=curatedFilmIds();
-  assert.equal(ids.length,15);
+  assert.equal(ids.length,16);
   assert.equal(new Set(ids).size,15,'Never duplicate movie cards');
   assert.deepEqual(ids.slice(0,4),[
     'singularity-2026','wing-it','charge','sprite-fright'
   ]);
+  assert.ok(ids.includes('sita-sings-the-blues'));
   assert.deepEqual(ids.slice(-4),[
     'tears-of-steel','sintel','big-buck-bunny','elephants-dream'
   ]);
@@ -85,4 +86,36 @@ test('Direct movie lookup lists newer complete open films by immutable IDs, not 
   assert.equal(info.available,false);
   assert.equal(info.sources.length,0);
   assert.equal(await getCuratedFilm('singularity-2025',{fetchImpl:fakeCommons()}),null);
+});
+
+test('Sita film is a distinct curated feature and refuses unrelated video metadata',async()=>{
+  const reviewed=await getCuratedFilm('sita-sings-the-blues',{
+    fetchImpl:async raw=>{
+      const u=new URL(raw);
+      assert.equal(u.hostname,'commons.wikimedia.org');
+      assert.equal(u.searchParams.get('generator'),null,
+        'Reviewed film must use exact imageinfo, not fuzzy search');
+      assert.equal(u.searchParams.get('titles'),'File:Sita Sings the Blues.webm');
+      return new Response(JSON.stringify({query:{pages:[{
+        title:'File:Sita Sings the Blues.webm',
+        imageinfo:[{
+          url:'https://upload.wikimedia.org/wikipedia/commons/8/86/Sita_Sings_the_Blues.webm',
+          descriptionurl:'https://commons.wikimedia.org/wiki/File:Sita_Sings_the_Blues.webm',
+          height:720,width:1280,size:1_180_000_000,mime:'video/webm',
+          extmetadata:{
+            LicenseUrl:{value:'https://creativecommons.org/publicdomain/zero/1.0/'},
+            LicenseShortName:{value:'CC0 1.0'},
+            Artist:{value:'Nina Paley'}
+          }
+        }]
+      }]}}),{status:200,headers:{'content-type':'application/json'}});
+    }
+  });
+  assert.equal(reviewed.id,'sita-sings-the-blues');
+  assert.equal(reviewed.available,true);
+  assert.equal(reviewed.sources.length,1);
+  assert.equal(reviewed.sources[0].quality,720);
+  assert.equal(reviewed.sources[0].licenseUrl,
+    'https://creativecommons.org/publicdomain/zero/1.0/');
+  assert.equal(reviewed.sources[0].attribution,'Nina Paley');
 });

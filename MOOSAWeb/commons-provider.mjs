@@ -16,6 +16,7 @@ const DENY=/\b(?:trailer|teaser|excerpt|clip|preview|sample|part|segment|behind|
 // videos or trailers as movie matches. Rights, format and file height are
 // re-verified against Commons imageinfo for EVERY playback request.
 const CURATED_EXACT_FILES=new Map([
+  ["Sita Sings the Blues|2008","File:Sita Sings the Blues.webm"],
   ["Singularity|2026","File:SINGULARITY - Blender Open Movie-full movie.webm"],
   ["Wing It!|2023","File:WING IT! - Blender Open Movie-full movie.webm"],
   ["Charge|2022","File:Charge - Blender Open Movie-full movie.webm"],
