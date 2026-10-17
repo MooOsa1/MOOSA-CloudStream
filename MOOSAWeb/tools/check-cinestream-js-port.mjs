@@ -27,6 +27,30 @@ const requestHosts=new Set([
   'vidrock.ru','player.vidzee.wtf'
 ]);
 let fetches=0,deniedRequests=0;
+const apiDiagnostics=new Map();
+function safeRoute(url){
+  // No paths with signed values, titles, IDs or query strings in output.
+  const parts=url.pathname.split('/').filter(Boolean);
+  const name=(parts[0]||'root').toLowerCase()
+    .replace(/[^a-z-]/g,'').slice(0,22);
+  return url.hostname.toLowerCase()+'/'+(name||'dynamic');
+}
+function recordApi(u,status,mime='',failure='none'){
+  const key=safeRoute(u);
+  const current=apiDiagnostics.get(key)||{requests:0,statusCodes:{},
+    mimeTypes:{},errors:{}};
+  current.requests++;
+  const code=String(status);
+  current.statusCodes[code]=(current.statusCodes[code]||0)+1;
+  const media=String(mime||'unknown').split(';')[0]
+    .replace(/[^a-z0-9/.+-]/gi,'').slice(0,38)||'none';
+  current.mimeTypes[media]=(current.mimeTypes[media]||0)+1;
+  if(failure!=='none'){
+    const error=String(failure).slice(0,38);
+    current.errors[error]=(current.errors[error]||0)+1;
+  }
+  apiDiagnostics.set(key,current);
+}
 globalThis.fetch=async(url,opts={})=>{
   const u=new URL(String(url));
   if(u.protocol!=='https:'||u.port||!requestHosts.has(u.hostname)){
@@ -34,8 +58,15 @@ globalThis.fetch=async(url,opts={})=>{
     throw Error('unreviewed_provider_request');
   }
   fetches++;
-  return origFetch(url,{...opts,redirect:'error',
-    signal:AbortSignal.timeout(13000)});
+  try{
+    const response=await origFetch(url,{...opts,redirect:'error',
+      signal:AbortSignal.timeout(13000)});
+    recordApi(u,response.status,response.headers.get('content-type')||'');
+    return response;
+  }catch(e){
+    recordApi(u,'network','',e?.name||'error');
+    throw e;
+  }
 };
 const require=createRequire(import.meta.url);
 const providers=['videasy','vidrock','vidzee'];
@@ -116,6 +147,10 @@ if(hexaCandidate){
     mediaPlaybackProven:false
   }));
 }
+console.log('MOOSA_JS_PORT_UPSTREAM_HTTP_DIAGNOSTICS '+JSON.stringify(
+  Object.fromEntries([...apiDiagnostics.entries()].sort((a,b)=>
+    a[0].localeCompare(b[0])).slice(0,35))
+));
 console.log('MOOSA_JS_CINESTREAM_AUDIT_SUMMARY '+JSON.stringify({
   upstreamSha:SHA.slice(0,12),totalPlausibleDirectSources:total,
   allowlistedFetches:fetches,blockedUnreviewedFetches:deniedRequests,
