@@ -94,7 +94,7 @@ test('single-film pilot status is truthful and disabled without the external JVM
     const res=await fetch(url);
     assert.equal(res.status,200);
     const data=await res.json();
-    assert.equal(data.operational,false);
+    assert.equal(data.readyForQuery,false);
     assert.equal(data.filmImdbId,'tt5719076');
     assert.equal((await fetch(url+'?url=https://untrusted.example')).status,400);
   }finally{await new Promise(resolve=>srv.close(resolve));}
