@@ -4,11 +4,13 @@ on:
     branches: [experiment/moosa-vyla-sdk-source-20261017]
     paths:
       - 'MOOSAWeb/tools/vyla-sintel-source-audit.mjs'
+      - 'MOOSAWeb/tools/vyla-fixed-sintel-metadata-audit.mjs'
       - '.github/workflows/moosa-vyla-source-probe.yml'
   pull_request:
     branches: [main]
     paths:
       - 'MOOSAWeb/tools/vyla-sintel-source-audit.mjs'
+      - 'MOOSAWeb/tools/vyla-fixed-sintel-metadata-audit.mjs'
       - '.github/workflows/moosa-vyla-source-probe.yml'
   workflow_dispatch:
 permissions:
@@ -32,5 +34,10 @@ jobs:
           npm install --prefix /tmp/moosa-vyla-check --ignore-scripts --no-audit --no-fund @vyla-entertainment/sdk
           npm ls --prefix /tmp/moosa-vyla-check --depth 0 @vyla-entertainment/sdk
           cp MOOSAWeb/tools/vyla-sintel-source-audit.mjs /tmp/moosa-vyla-check/audit.mjs
+          cp MOOSAWeb/tools/vyla-fixed-sintel-metadata-audit.mjs /tmp/moosa-vyla-check/fixed-audit.mjs
       - name: Query licensed Blender Sintel direct-no-proxy availability without media download
         run: timeout 115 node /tmp/moosa-vyla-check/audit.mjs
+      - name: Confirm metadata-dependent resolvers using exact Sintel metadata only (no TMDB secrets)
+        run: |
+          node --check MOOSAWeb/tools/vyla-fixed-sintel-metadata-audit.mjs
+          timeout 145 node /tmp/moosa-vyla-check/fixed-audit.mjs
