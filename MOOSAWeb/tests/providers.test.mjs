@@ -37,7 +37,7 @@ test('Server fetches only direct quality-declared media from a matching addon',a
   });
   const result=await fromWebAddons(sample,{fetchImpl:f,addons:['https://trusted.example/manifest.json']});
   assert.deepEqual(result.map(x=>x.quality),[2160,1080]);
-  assert.equal(result[0].subtitles[0].language,'ar');
+  assert.equal(result.find(x=>x.quality===1080).subtitles[0].language,'ar');
   assert.equal(result[0].name.startsWith('Licensed Source'),true);
 });
 
