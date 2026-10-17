@@ -79,7 +79,7 @@ for(const [quality,url] of links){
   }else info.probeError=result.err.slice(-250).replace(/https?:\/\/\S+/g,'[media-url]');
   findings.push(info);
   console.log('SITA_AUDIO_CANDIDATE '+JSON.stringify(info));
-  if(info.playbackCompatible&&info.audioSampleDecodes)break;
+  // Check all filmmaker-listed resolutions; the site should prefer sound + HD.
 }
 console.log('SITA_AUDIO_VERDICT '+JSON.stringify({
   verified:findings.some(f=>f.playbackCompatible&&f.audioSampleDecodes),
