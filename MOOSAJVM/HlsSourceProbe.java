@@ -105,9 +105,7 @@ public final class HlsSourceProbe {
                 segmentCors=hasCors(segment);
                 byte[] bytes=segment.body.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
                 firstSegmentVideo=(segment.status==200||segment.status==206)
-                    &&bytes.length>12
-                    &&(bytes[0]==0x47||segment.body.substring(0,Math.min(80,segment.body.length()))
-                        .contains("ftyp")||segment.body.substring(0,Math.min(80,segment.body.length())).contains("styp"));
+                    &&MediaSegmentSignature.isLikelyVideo(bytes);
             }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();
                 error=error.replaceAll("[^a-zA-Z0-9 _:-]","_");
                 error=error.substring(0,Math.min(error.length(),85));
