@@ -1,0 +1,13 @@
+gradle.projectsEvaluated {
+  def lib = gradle.rootProject.project(':library')
+  lib.tasks.register('copyMoosaRuntime') {
+    doLast {
+      def target = new File('/tmp/moosa-jvm/deps')
+      target.mkdirs()
+      lib.configurations.getByName('jvmRuntimeClasspath').files.each { artifact ->
+        if (artifact.isFile() && artifact.name.endsWith('.jar'))
+          lib.copy { from artifact; into target }
+      }
+    }
+  }
+}
