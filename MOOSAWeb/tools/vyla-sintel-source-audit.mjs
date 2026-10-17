@@ -22,9 +22,17 @@ catch(e){
 const raw=Array.isArray(sources)?sources:
   Array.isArray(sources?.sources)?sources.sources:
   Object.values(sources||{}).flatMap(x=>Array.isArray(x)?x:[]);
+// Movies, not anime-only extractors. Restrict to source configurations that
+// explicitly claim browser-direct operation without protected CDN headers.
+const MOVIE_DIRECT_PREFERENCE=[
+  '1embed','fsonline','purstream','vidrift','xpass','vixsrc','vidnest-sub','flaxmovies'
+];
 const candidates=raw.filter(x=>
   x&&typeof x.key==='string'&&x.key.length<64&&
-  x.disabled!==true&&x.skipProxy===true);
+  MOVIE_DIRECT_PREFERENCE.includes(x.key)&&x.disabled!==true&&x.skipProxy===true&&
+  (!Array.isArray(x.cdnHeaders)||x.cdnHeaders.length===0))
+  .sort((a,b)=>MOVIE_DIRECT_PREFERENCE.indexOf(a.key)-
+    MOVIE_DIRECT_PREFERENCE.indexOf(b.key));
 console.log('VYLA_BOOT installed=true total='+raw.length+
   ' declaredDirectNoProxy='+candidates.length+
   ' directProviderNames='+JSON.stringify(candidates.map(x=>x.key).slice(0,20))+
