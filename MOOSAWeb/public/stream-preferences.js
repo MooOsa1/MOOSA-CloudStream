@@ -1,15 +1,21 @@
 /**
- * MOOSA Web source priority policy: native 4K first (2160), then FHD
- * (1080), then the minimum acceptable verified HD (720). Codec flags and
- * user-preferred provenance only break ties in resolution. Actual encoded
- * dimensions are checked separately by the server and browser.
+ * User-selected FHD playback priority: stable 1080p first, larger sources
+ * as optional fallbacks, then >=720p HD when FHD is unavailable.
+ * This avoids automatically starting giant 4K files when an authorized
+ * 1080p derivative exists. Browser decoder still checks real dimensions.
  */
 export function comparePlaybackSources(a,b){
   const quality=x=>{
     const n=Number(x?.quality);
     return Number.isInteger(n)&&n>=720&&n<=4320?n:0;
   };
-  return quality(b)-quality(a) ||
+  const rank=q=>{
+    if(q===1080)return 5000;
+    if(q>1080)return 4000-(q-1080)/1000;
+    if(q>=720)return 2000+q;
+    return 0;
+  };
+  return rank(quality(b))-rank(quality(a)) ||
     Number(b?.codecOptimized===true)-Number(a?.codecOptimized===true) ||
     Number(b?.preferred===true)-Number(a?.preferred===true);
 }
