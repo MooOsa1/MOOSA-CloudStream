@@ -95,6 +95,7 @@ public final class ProviderLinksProbe {
             AtomicInteger total=new AtomicInteger(), hd=new AtomicInteger(), captions=new AtomicInteger();
             Map<String,AtomicInteger> sourceGroups=new ConcurrentHashMap<>();
             List<String> approvedHttpsHls=java.util.Collections.synchronizedList(new ArrayList<>());
+            Map<String,String> nativeDeclaredReferers=new ConcurrentHashMap<>();
             AtomicInteger needsReferer=new AtomicInteger(), linksWithHeaders=new AtomicInteger();
             AtomicInteger declaredHls=new AtomicInteger(), declaredMp4=new AtomicInteger(), https=new AtomicInteger();
             Function1<Object,Unit> onSub=subtitle->{captions.incrementAndGet();return Unit.INSTANCE;};
@@ -123,8 +124,16 @@ public final class ProviderLinksProbe {
                         ext.endsWith(".webm")?"webm":"other";
                     if(kind.equals("hls"))declaredHls.incrementAndGet();
                     if(kind.equals("hls") && u.getHost().equalsIgnoreCase("visionaryfounderslab.site")
-                        && approvedHttpsHls.size()<3 && !approvedHttpsHls.contains(String.valueOf(val)))
+                        && approvedHttpsHls.size()<3 && !approvedHttpsHls.contains(String.valueOf(val))){
                         approvedHttpsHls.add(String.valueOf(val));
+                        // Only allow a byte-range A/B test when the native
+                        // plugin itself declared this exact reviewed Referer.
+                        try{
+                            Object declared=link.getClass().getMethod("getReferer").invoke(link);
+                            if(HlsSourceProbe.APPROVED_REFERER.equals(declared))
+                                nativeDeclaredReferers.put(String.valueOf(val),String.valueOf(declared));
+                        }catch(Throwable ignored){}
+                    }
                     if(kind.equals("mp4"))declaredMp4.incrementAndGet();
                     String host=u.getHost().toLowerCase();
                     if(host.length()>100)host="unclassified";
@@ -146,7 +155,7 @@ public final class ProviderLinksProbe {
                     " hosts="+new TreeMap<>(sourceGroups).entrySet().stream()
                         .limit(20).map(e->e.getKey()+":"+e.getValue().get())
                         .reduce((a,b)->a+";"+b).orElse("none"));
-                HlsSourceProbe.probe(approvedHttpsHls);
+                HlsSourceProbe.probe(approvedHttpsHls,nativeDeclaredReferers);
             }catch(Throwable e){
                 System.out.println("JVM_REAL_LINKS stage=loadLinks status=error reason="+clean(e)+
                     " sources="+total.get()+" hd720plus="+hd.get()+" subtitles="+captions.get());
