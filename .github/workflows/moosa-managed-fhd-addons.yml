@@ -7,6 +7,7 @@ on:
       - 'MOOSAWeb/tools/managed-fhd-browser-sintel.mjs'
       - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
       - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
+      - 'MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs'
       - 'MOOSAWeb/tools/managed-fhd-embed-audit.mjs'
       - '.github/workflows/moosa-managed-fhd-addons.yml'
   pull_request:
@@ -16,6 +17,7 @@ on:
       - 'MOOSAWeb/tools/managed-fhd-browser-sintel.mjs'
       - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
       - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
+      - 'MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs'
       - '.github/workflows/moosa-managed-fhd-addons.yml'
   workflow_dispatch:
 permissions:
@@ -35,6 +37,10 @@ jobs:
         run: |
           node --check MOOSAWeb/tools/managed-fhd-embed-audit.mjs
           node MOOSAWeb/tools/managed-fhd-embed-audit.mjs
+      - name: Verify advertised direct HLS API against licensed Sintel ID (metadata only)
+        run: |
+          node --check MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs
+          node MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs
       - name: Read-only zero-ad provider markup and iframe policy check
         run: |
           node --check MOOSAWeb/tools/managed-noads-embed-audit.mjs
