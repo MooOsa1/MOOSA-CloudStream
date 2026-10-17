@@ -22,7 +22,7 @@ jobs:
       - name: Install Chrome without production dependencies
         run: |
           cd MOOSAWeb
-          npm install --no-save --no-package-lock playwright@1.56.1
+          npm install --no-save --no-package-lock playwright@1.56.1 hls.js@1.6.15
           npx playwright install --with-deps chrome
       - name: Generate local synthetic MP4 fixture for relay codec proof
         run: |
@@ -31,6 +31,12 @@ jobs:
           ffmpeg -hide_banner -loglevel error -y \
             -f lavfi -i testsrc2=size=320x180:rate=24 \
             -t 4 -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -g 48 -keyint_min 48 \
             -movflags +faststart MOOSAWeb/tests/playback-fixtures/clip.mp4
-      - name: Prove Chrome renders MOOSA tokenized MP4 via Play
+          ffmpeg -hide_banner -loglevel error -y \
+            -i MOOSAWeb/tests/playback-fixtures/clip.mp4 -c copy \
+            -hls_time 2 -hls_list_size 0 -hls_playlist_type vod \
+            -hls_segment_filename 'MOOSAWeb/tests/playback-fixtures/clip-%d.ts' \
+            MOOSAWeb/tests/playback-fixtures/playlist.m3u8
+      - name: Prove Chrome renders MOOSA tokenized MP4 and HLS via Play
         run: cd MOOSAWeb && node tests/capability-real-browser.e2e.mjs
