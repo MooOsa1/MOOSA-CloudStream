@@ -141,6 +141,7 @@ try{
   }catch{timedOut=true;}
   const state=await page.locator('#video').evaluate(v=>({
     secondsPlayed:Math.round(v.currentTime*10)/10,
+    durationSeconds:Number.isFinite(v.duration)?Math.round(v.duration):null,
     width:v.videoWidth,height:v.videoHeight,
     readyState:v.readyState,networkState:v.networkState,
     paused:v.paused,
@@ -163,10 +164,42 @@ try{
     mediaResponses:responses.slice(-18)
   }));
   if(played){
-    // Screenshot only the video frame — do not capture hidden signed URL input.
-    await page.locator('#video').screenshot({
-      path:path.join(out,'original-cinestream-night-of-the-living-dead-frame.png')
-    });
+    // The first HLS frame can be black. Test several non-opening positions of
+    // the SAME original-provider stream and retain screenshot evidence only;
+    // a video decoder alone cannot establish film identity.
+    const shots=[];
+    for(const timestamp of [45,180,900]){
+      if(!Number.isFinite(state.durationSeconds)||state.durationSeconds<timestamp+60)
+        continue;
+      const playedFrom=Date.now();
+      try{
+        await page.locator('#video').evaluate((v,seconds)=>{v.currentTime=seconds;},timestamp);
+        await page.waitForFunction(seconds=>{
+          const v=document.querySelector('#video');
+          return v && v.readyState>=2 && !v.paused &&
+            v.currentTime>=seconds+0.2 && v.currentTime<seconds+30 &&
+            v.videoWidth>0 && v.videoHeight>0;
+        },timestamp,{timeout:18000});
+        // Wait a moment beyond the seek boundary to avoid pure-black keyframes.
+        await page.waitForTimeout(400);
+        const filename='cinestream-feature-film-at-'+timestamp+'s.png';
+        await page.locator('#video').screenshot({path:path.join(out,filename)});
+        shots.push({atSeconds:timestamp,decoded:true,elapsedMs:Date.now()-playedFrom});
+      }catch(error){
+        shots.push({atSeconds:timestamp,decoded:false,reason:String(error?.name||'seek_error').slice(0,70)});
+      }
+    }
+    console.log('ORIGINAL_CINESTREAM_FILM_SEEK_EVIDENCE '+JSON.stringify({
+      claimedTitle:'Night of the Living Dead',
+      expectedNominalRuntimeMinutes:96,
+      durationSeconds:state.durationSeconds,
+      firstFrameDecoded:played,
+      durationMatchesNominal:Number.isFinite(state.durationSeconds)&&
+        state.durationSeconds>=87*60&&state.durationSeconds<=101*60,
+      scenes:shots,
+      contentIdentityVerified:false
+    }));
+    // The raw signed URL is never printed and never uploaded.
   }
   assert.equal(played,true,
     'Original CineStream low-resolution link did not decode via the MOOSA source picker');
