@@ -22,6 +22,18 @@ function reply(res,status,obj){
     'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   res.end(JSON.stringify(obj));
 }
+/**
+ * Validate the actual provider details line, not a fuzzy Castle search result
+ * or a previously requested film title. This is a conservative first guard;
+ * correct upstream metadata still does not prove decoded movie identity.
+ */
+export function matchesLicensedFilmDetails(logs){
+  if(typeof logs!=='string')return false;
+  const rows=logs.split(/\r?\n/);
+  return rows.some(row=>row.includes('Castle: details:') &&
+    /"title"\s*:\s*"Sintel"/i.test(row) &&
+    /"duration"\s*:\s*(?:8[6-9]\d|9[0-3]\d)(?:\D|$)/.test(row));
+}
 export function exactFilm(x){
   return !!x && x.media==='movie' && x.imdbId===IMDB &&
     String(x.title||'').trim().toLowerCase()==='sintel' &&
@@ -90,9 +102,7 @@ export async function extractOriginal({timeoutMs=54000}={}){
     /ORIGINAL_LINKS_CALLBACK_COUNTS:\s*links=[1-9]\d*/.test(logs);
   // The film identity must come from the underlying Castle detail payload,
   // not just the requested title passed to CineStream.load().
-  const upstreamMatched=/(?:DEBUG|ERROR) Castle: details:/.test(logs) &&
-    /"title":"Sintel"/i.test(logs) &&
-    /"duration":(?:8[6-9]\d|9[0-3]\d)(?:\D|$)/.test(logs);
+  const upstreamMatched=matchesLicensedFilmDetails(logs);
   // Only a normalized error class and simple booleans may leave this
   // process. Never return third-party URLs, raw logs or signed query tokens.
   const exceptionClasses=[...logs.matchAll(/(?:java\.lang\.|java\.net\.|kotlin\.|org\.json\.)[A-Za-z0-9.$]*(?:Error|Exception)/g)]
