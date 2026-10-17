@@ -110,6 +110,100 @@ export function createMediaGateway({
     };
   }
   function issue(input){return add(input);}
+  // Perform a LIMITED read-only probe BEFORE putting a server under Play.
+  // Upstream source sites may return 200 HTML (VaPlayer), 400 or 426.
+  // Only actual media byte signatures plus compatible HLS child resources
+  // qualify. This cannot prove movie identity, full duration or playback.
+  async function issueIfBytesVerified(input){
+    if(input?.rightsApproved!==true||input?.sourceVerified!==true)
+      return {source:null,reason:'operator_approval_required'};
+    const kind=ALLOWED_FORMATS.get(String(input?.format||'').toLowerCase());
+    if(!kind)return {source:null,reason:'unsupported_media_type'};
+    let target;
+    try{target=mediaUrl(input.url,hosts);}
+    catch{return {source:null,reason:'not_on_operator_allowlist'};}
+    const reqHeaders=safeHeaders(input.headers);
+    let result='unknown';
+    async function prefix(response,maxBytes=4096){
+      const reader=response.body?.getReader();
+      if(!reader)return Buffer.alloc(0);
+      let size=0;
+      const chunks=[];
+      try{
+        while(size<maxBytes){
+          const part=await reader.read();
+          if(part.done)break;
+          const bytes=Buffer.from(part.value);
+          chunks.push(bytes.subarray(0,maxBytes-size));
+          size+=Math.min(bytes.length,maxBytes-size);
+        }
+      }finally{await reader.cancel().catch(()=>{});}
+      return Buffer.concat(chunks,size);
+    }
+    async function verify(url,format,depth=0){
+      if(depth>3)return 'too_many_hls_levels';
+      let remote;
+      try{remote=mediaUrl(url,hosts);}
+      catch{return 'hls_subresource_not_allowlisted';}
+      const playlist=format==='application/vnd.apple.mpegurl';
+      let response;
+      try{
+        response=await fetchImpl(remote.href,{
+          method:'GET',redirect:'error',
+          headers:{...reqHeaders,...(playlist?{}:{range:'bytes=0-4095'})},
+          signal:AbortSignal.timeout(10000)
+        });
+        if(![200,206].includes(response.status))
+          return 'upstream_http_'+String(response.status);
+        try{sniffContentMime(response,format);}
+        catch{return 'upstream_returned_nonvideo_mime';}
+        if(playlist){
+          let text;
+          try{text=await boundedText(response,256*1024);}
+          catch{return 'invalid_or_oversized_hls';}
+          if(!text.startsWith('#EXTM3U'))return 'invalid_hls_header';
+          if(/#EXT-X-(?:SESSION-)?KEY:(?![^\r\n]*METHOD=NONE)/i.test(text))
+            return 'encrypted_hls_unsupported';
+          const first=text.split(/\r?\n/).map(x=>x.trim()).find(x=>x&&!x.startsWith('#'));
+          if(!first)return 'empty_hls_media';
+          let child;
+          try{child=mediaUrl(new URL(first,remote).href,hosts);}
+          catch{return 'hls_subresource_not_allowlisted';}
+          const extension=child.pathname.toLowerCase().match(/\.(m3u8|mp4|webm|ts)$/)?.[1];
+          if(!extension)return 'unrecognized_hls_segment';
+          return verify(child.href,ALLOWED_FORMATS.get(extension),depth+1);
+        }
+        const bytes=await prefix(response);
+        if(format==='video/mp4'){
+          const box=bytes.subarray(4,8).toString('latin1');
+          return bytes.length>=12&&['ftyp','styp','moof'].includes(box)
+            ?'media_bytes_verified':'wrong_media_bytes';
+        }
+        if(format==='video/webm'){
+          return bytes.length>=4&&bytes.subarray(0,4).equals(
+            Buffer.from([0x1a,0x45,0xdf,0xa3]))
+            ?'media_bytes_verified':'wrong_media_bytes';
+        }
+        if(format==='video/mp2t'){
+          return bytes.length>=377 &&
+            bytes[0]===0x47&&bytes[188]===0x47&&bytes[376]===0x47
+            ?'media_bytes_verified':'wrong_media_bytes';
+        }
+        return 'unsupported_media_bytes';
+      }catch{return 'upstream_network_error';}
+      finally{
+        if(response?.body&&!response.body.locked)
+          await response.body.cancel().catch(()=>{});
+      }
+    }
+    result=await verify(target.href,kind);
+    if(result!=='media_bytes_verified')
+      return {source:null,reason:result};
+    // Only an operator-approved exact film with observed real media bytes
+    // receives a browser-facing capability. No public issue endpoint.
+    return {source:issue(input),reason:'media_bytes_verified'};
+  }
+
   function find(token){
     const value=entries.get(token);
     if(!value)return null;
@@ -186,5 +280,5 @@ export function createMediaGateway({
       }
     }
   }
-  return {issue,handle,activeTokenCount:()=>entries.size};
+  return {issue,issueIfBytesVerified,handle,activeTokenCount:()=>entries.size};
 }
