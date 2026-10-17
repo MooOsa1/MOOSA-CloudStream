@@ -15,14 +15,20 @@ function norm(value){
   return String(value||'').normalize('NFKD').toLowerCase()
     .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
 }
-function fullMovieFile(fileTitle,title){
+function fullMovieFile(fileTitle,title,year){
   if(typeof fileTitle!=='string'||!fileTitle.startsWith('File:')||!EXT.test(fileTitle))return false;
   const name=norm(fileTitle.slice(5).replace(EXT,''));
   const expected=norm(title);
   if(!expected || expected.length<3 || DENY.test(name))return false;
   if(name===expected)return true;
   if(!name.startsWith(expected+' '))return false;
-  return name.slice(expected.length+1).split(' ').every(part=>ALLOWED_SUFFIX.has(part));
+  const suffix=name.slice(expected.length+1).split(' ');
+  // "Elephants Dream (2006).webm" is an exact full-film source, not a
+  // similarly named movie. Accept the release year ONLY when separately
+  // supplied catalog metadata confirms that exact year.
+  if(suffix.length===1 && Number.isInteger(Number(year)) &&
+     Number(year)>=1888 && suffix[0]===String(year))return true;
+  return suffix.every(part=>ALLOWED_SUFFIX.has(part));
 }
 function commonsSourceUrl(value){
   try{
@@ -50,7 +56,7 @@ export function selectCommonsMovies(meta,data){
   const target=String(meta.originalTitle||meta.title);
   const pages=Object.values(data?.query?.pages||{});
   return pages.flatMap(page=>{
-    if(!fullMovieFile(page.title,target))return [];
+    if(!fullMovieFile(page.title,target,meta.year))return [];
     const info=Array.isArray(page.imageinfo)?page.imageinfo[0]:null;
     if(!info)return [];
     const quality=Number(info.height);
@@ -101,6 +107,52 @@ export function selectElephantsSafariDerivative(original,data){
       preferred:true,codecOptimized:true
     }];
   }).sort((a,b)=>b.quality-a.quality).slice(0,2);
+}
+
+/**
+ * MediaWiki's OWN 1080p transcoded rendition of an independently verified
+ * CC original. Unlike a guessed CDN path, every URL comes from the official
+ * videoinfo API for the SAME exact Commons file and retains attribution.
+ * The result is optional: a missing transcode never hides the original.
+ */
+export function selectVerifiedCommonsFhdDerivative(original,data){
+  if(!original || !commonsSourceUrl(original.url) ||
+     !cleanLicense(original.licenseUrl) ||
+     !/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/i.test(original.sourcePage||'') ||
+     Number(original.quality)<=1080)return [];
+  let title;
+  try{
+    const page=new URL(original.sourcePage);
+    if(page.hostname!=='commons.wikimedia.org')return [];
+    title=decodeURIComponent(page.pathname.split('/wiki/')[1]||'').replaceAll('_',' ');
+    if(!title.startsWith('File:')||!EXT.test(title))return [];
+  }catch{return [];}
+  const pages=Object.values(data?.query?.pages||{});
+  const file=pages.find(p=>p.title===title);
+  const info=file?.videoinfo?.[0];
+  if(!info || commonsSourceUrl(info.url)!==original.url)return [];
+  const derivatives=Array.isArray(info.derivatives)?info.derivatives:[];
+  return derivatives.filter(d=>{
+    const height=Number(d?.height),width=Number(d?.width);
+    return /^1080p\.vp9\.webm$/i.test(String(d?.transcodekey||'')) &&
+      /^video\/webm(?:;|$)/i.test(String(d?.type||'')) &&
+      Number.isInteger(height) && height>=800 && height<=1080 &&
+      (!Number.isFinite(width) || width>=1880);
+  }).flatMap(d=>{
+    let url;
+    try{url=commonsSourceUrl(new URL(d.src,'https://commons.wikimedia.org').href);}
+    catch{return [];}
+    if(!url||url===original.url)return [];
+    return [{
+      ...original,url,quality:1080,sizeBytes:null,
+      name:'Wikimedia Commons • official FHD (VP9)',
+      preferred:true,codecOptimized:true,
+      // Clearly separate the labelled 1080p rendition from real dimensions;
+      // user playback confirms videoWidth/videoHeight after decoding.
+      encodedHeight:Number(d.height),
+      encodedWidth:Number(d.width)||null
+    }];
+  }).slice(0,1);
 }
 
 export async function fromCommons(meta,{fetchImpl=fetch}={}){
@@ -170,7 +222,38 @@ export async function fromCommons(meta,{fetchImpl=fetch}={}){
       }catch{} // The original independently licensed source still works as fallback.
     }
   }
-  return [...compatible,...originals].sort((a,b)=>{
+  // The upstream approved 4K file is often several GB; fetch its official
+  // FHD derivative for these four precisely identified CC open movies, when
+  // Wikimedia exposes one. Never compute URL strings or fetch ad hosters.
+  const curatedYears={'Big Buck Bunny':2008,Sintel:2010,'Tears of Steel':2012};
+  let fhd=[];
+  if(curatedYears[title]===Number(meta.year)){
+    const master=originals.find(source=>source.quality>1080 &&
+      /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/i.test(source.sourcePage||''));
+    if(master){
+      try{
+        const fileTitle=decodeURIComponent(new URL(master.sourcePage).pathname
+          .split('/wiki/')[1]||'').replaceAll('_',' ');
+        if(fileTitle.startsWith('File:') && fileTitle.length<=130){
+          const api=new URL(API);
+          Object.entries({
+            action:'query',prop:'videoinfo',viprop:'url|derivatives',
+            titles:fileTitle,format:'json',formatversion:'2'
+          }).forEach(([k,v])=>api.searchParams.set(k,v));
+          const response=await fetchImpl(api.href,{
+            headers:{Accept:'application/json',
+              'User-Agent':'MOOSAWeb/0.1 (https://github.com/MooOsa1/MOOSA-CloudStream; CC FHD derivatives)'},
+            redirect:'error',signal:AbortSignal.timeout(3500)
+          });
+          if(response.ok && Number(response.headers.get('content-length')||0)<350000){
+            const raw=await response.text();
+            if(raw.length<350000)fhd=selectVerifiedCommonsFhdDerivative(master,JSON.parse(raw));
+          }
+        }
+      }catch{} // Original film remains playable when Commons is slow.
+    }
+  }
+  return [...compatible,...fhd,...originals].sort((a,b)=>{
     if(Boolean(a.codecOptimized)!==Boolean(b.codecOptimized))
       return Number(Boolean(b.codecOptimized))-Number(Boolean(a.codecOptimized));
     const light=q=>q<=1080?1:0;

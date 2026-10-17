@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fromCommons,selectCommonsMovies,selectElephantsSafariDerivative} from '../commons-provider.mjs';
+import {fromCommons,selectCommonsMovies,selectElephantsSafariDerivative,selectVerifiedCommonsFhdDerivative} from '../commons-provider.mjs';
 import {resolveWebSources} from '../providers.mjs';
 
 const movie={media:'movie',id:11787,title:'Big Buck Bunny',
@@ -112,4 +112,82 @@ test('Only exact separately licensed Elephants Dream original can expose real Co
   assert.equal(results[0].sizeBytes,null,'Never claim transcode size is original file size');
   assert.deepEqual(selectElephantsSafariDerivative({...source,url:'https://evil.example/file.webm'},data),[]);
   assert.deepEqual(selectElephantsSafariDerivative({...source,sourcePage:'https://evil.example/media'},data),[]);
+});
+
+test('Exact (2006) suffix is recognized only for independently matched movie year',()=>{
+  const original=info('https://upload.wikimedia.org/wikipedia/commons/f/f1/Elephants_Dream_2006.webm',{
+    LicenseUrl:{value:'https://creativecommons.org/licenses/by/2.5/'},
+    LicenseShortName:{value:'CC BY 2.5'}
+  });
+  original.height=1080;original.width=1920;original.size=800_000_000;
+  original.descriptionurl='https://commons.wikimedia.org/wiki/File:Elephants_Dream_(2006).webm';
+  const fixture=data([{title:'File:Elephants Dream (2006).webm',imageinfo:[original]}]);
+  const exact={media:'movie',title:'Elephants Dream',year:2006};
+  assert.equal(selectCommonsMovies(exact,fixture).length,1);
+  assert.equal(selectCommonsMovies({...exact,year:2007},fixture).length,0);
+  assert.equal(selectCommonsMovies({...exact,media:'tv'},fixture).length,0);
+});
+
+test('Commons official FHD derivative is accepted only after exact source identity and rights proof',()=>{
+  const original={
+    url:'https://upload.wikimedia.org/wikipedia/commons/4/4a/Big_Buck_Bunny_4K.webm',
+    sourcePage:'https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm',
+    licenseUrl:'https://creativecommons.org/licenses/by/3.0/',
+    quality:2250,attribution:'Blender Foundation',sizeBytes:2_900_000_000
+  };
+  const variant='https://upload.wikimedia.org/wikipedia/commons/transcoded/4/4a/Big_Buck_Bunny_4K.webm/Big_Buck_Bunny_4K.webm.1080p.vp9.webm';
+  const fixture=data([{title:'File:Big Buck Bunny 4K.webm',videoinfo:[{
+    url:original.url,
+    derivatives:[
+      {src:variant,transcodekey:'1080p.vp9.webm',type:'video/webm; codecs="vp9, opus"',width:1920,height:1080},
+      {src:'https://evil.example/advertisement.webm',transcodekey:'1080p.vp9.webm',type:'video/webm',width:1920,height:1080},
+      {src:'https://upload.wikimedia.org/short.webm',transcodekey:'480p.vp9.webm',type:'video/webm',width:854,height:480}
+    ]
+  }]}]);
+  const picked=selectVerifiedCommonsFhdDerivative(original,fixture);
+  assert.equal(picked.length,1);
+  assert.equal(picked[0].url,variant);
+  assert.equal(picked[0].quality,1080);
+  assert.equal(picked[0].encodedWidth,1920);
+  assert.equal(picked[0].encodedHeight,1080);
+  assert.equal(picked[0].licenseUrl,original.licenseUrl);
+  assert.equal(picked[0].sourcePage,original.sourcePage);
+  assert.equal(picked[0].sizeBytes,null);
+  assert.deepEqual(selectVerifiedCommonsFhdDerivative({...original,url:'https://attacker.example/video.webm'},fixture),[]);
+  assert.deepEqual(selectVerifiedCommonsFhdDerivative({...original,licenseUrl:'https://evil.example/free'},fixture),[]);
+  assert.deepEqual(selectVerifiedCommonsFhdDerivative({...original,sourcePage:'https://evil.example/page'},fixture),[]);
+  assert.deepEqual(selectVerifiedCommonsFhdDerivative({...original,quality:1080},fixture),[]);
+  assert.deepEqual(selectVerifiedCommonsFhdDerivative(original,data([{
+    title:'File:Big Buck Bunny 4K.webm',videoinfo:[{url:'https://upload.wikimedia.org/unrelated.webm',derivatives:[{
+      src:variant,transcodekey:'1080p.vp9.webm',type:'video/webm',width:1920,height:1080
+    }]}]
+  }])),[]);
+});
+
+test('Curated Commons source resolves official FHD media as a smaller playable alternative to heavy 4K',async()=>{
+  const raw='https://upload.wikimedia.org/wikipedia/commons/4/4a/Big_Buck_Bunny_4K.webm';
+  const variant='https://upload.wikimedia.org/wikipedia/commons/transcoded/4/4a/Big_Buck_Bunny_4K.webm/Big_Buck_Bunny_4K.webm.1080p.vp9.webm';
+  const calls=[];
+  const licensed={
+    url:raw,descriptionurl:'https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm',
+    size:2_900_000_000,height:2250,width:4000,mime:'video/webm',extmetadata:rights
+  };
+  const fetchImpl=async url=>{
+    const u=new URL(url);calls.push(u);
+    assert.equal(u.hostname,'commons.wikimedia.org');
+    if(u.searchParams.get('prop')==='videoinfo')
+      return new Response(JSON.stringify(data([{
+        title:'File:Big Buck Bunny 4K.webm',
+        videoinfo:[{url:raw,derivatives:[{src:variant,type:'video/webm',transcodekey:'1080p.vp9.webm',width:1920,height:1080}]}]
+      }])),{status:200,headers:{'content-type':'application/json'}});
+    return new Response(JSON.stringify(data([{
+      title:'File:Big Buck Bunny 4K.webm',imageinfo:[licensed]
+    }])),{status:200,headers:{'content-type':'application/json'}});
+  };
+  const films=await fromCommons(movie,{fetchImpl});
+  assert.ok(films.length>=2);
+  assert.equal(films[0].quality,1080);
+  assert.equal(films[0].url,variant);
+  assert.ok(films.some(item=>item.url===raw));
+  assert.equal(calls.filter(x=>x.searchParams.get('prop')==='videoinfo').length,1);
 });
