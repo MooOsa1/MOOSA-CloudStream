@@ -1,0 +1,31 @@
+name: MOOSA independently verify Archive.org external Stremio video addon
+on:
+  push:
+    branches: [experiment/archive-org-direct-stremio-20261017]
+    paths:
+      - 'MOOSAWeb/tools/archive-addon-https-audit.mjs'
+      - '.github/workflows/moosa-archive-addon-proof.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/archive-addon-https-audit.mjs'
+      - '.github/workflows/moosa-archive-addon-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate source-audit syntax
+        run: node --check tools/archive-addon-https-audit.mjs
+      - name: Check public Archive Stremio stream responses, film match and license
+        run: timeout 145 node tools/archive-addon-https-audit.mjs
