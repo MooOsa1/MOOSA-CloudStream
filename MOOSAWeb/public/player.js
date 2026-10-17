@@ -1,6 +1,7 @@
 import {nextPlaybackSource} from './playback-fallback.js';
 import {chooseBrowserSources} from './source-compatibility.js';
 import {safeSubtitleFileUrl} from './subtitle-file-url.js';
+import {isDirectVideoUrl} from './direct-media-policy.js';
 import {comparePlaybackSources} from './stream-preferences.js';
 const $ = s => document.querySelector(s);
 const video = $('#video');
@@ -89,7 +90,10 @@ function loadHls(){
   return scriptPromise;
 }
 async function playLink(url, label='Video'){
-  if(!HTTPS.test(url)){notice('الرجاء استخدام رابط فيديو آمن يبدأ بـ https://');return;}
+  if(!isDirectVideoUrl(url)){
+    notice('لحمايتك من إعلانات المشغلات الخارجية، نقبل روابط فيديو HTTPS مباشرة بصيغ MP4 أو WebM أو HLS فقط.');
+    return;
+  }
   resetVideo();
   const currentPlayback=playbackToken;
   notice(`جاري تجهيز ${label}...`);
@@ -155,7 +159,7 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   document.dispatchEvent(new Event('moosa-player-opened'));
   previousFocus=document.activeElement;
   externalSubtitles=[];
-  activeSources=chooseBrowserSources(sources,navigator.userAgent);
+  activeSources=chooseBrowserSources(sources.filter(x=>isDirectVideoUrl(x?.url)),navigator.userAgent);
   currentMediaTitle=title;
   selectedSourceUrl=null;
   attemptedSourceUrls.clear();
@@ -169,7 +173,7 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   $('#player-subtitle').textContent=activeSources.length?`${activeSources.length} مصادر مصرّح بها`:'لا يوجد مصدر تلقائي مضاف لهذا العنوان';
   $('#automatic-source-status').textContent='يبدأ البحث تلقائيًا عند اختيار فيلم أو حلقة.';
   $('#overlay').classList.remove('hidden');$('#player-panel').classList.remove('hidden');
-  notice('اختر مصدرًا مصرحًا به أو استخدم فيديو الاختبار الحر. ملفات HLS تتطلب CORS من السيرفر.');
+  notice('مشغل MOOSA المباشر لا يعرض إعلانات أو صفحات مشغلات خارجية؛ الإعلان المدمج داخل فيديو المصدر لا يمكن منعه بضمان.');
   $('#close-player').focus();
 }
 export function hidePlayer(){
@@ -231,7 +235,7 @@ export function appendPlayerSources(items) {
     const advertised=Number(item?.quality);
     // Never accept low / unknown-quality automatic sources, even if an
     // untrusted plugin bypasses the server's source normalization.
-    if (!item?.url || seen.has(item.url) ||
+    if (!isDirectVideoUrl(item?.url) || seen.has(item.url) ||
         !Number.isInteger(advertised) || advertised<720 || advertised>4320) continue;
     seen.add(item.url);
     activeSources.push(attachExternalSubtitles(item));
