@@ -9,6 +9,7 @@ on:
       - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
       - 'MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs'
       - 'MOOSAWeb/tools/managed-fhd-media-origin-diagnosis.mjs'
+      - 'MOOSAWeb/tools/orb-control-vs-managed-fhd.mjs'
       - 'MOOSAWeb/tools/managed-fhd-embed-audit.mjs'
       - '.github/workflows/moosa-managed-fhd-addons.yml'
   pull_request:
@@ -20,6 +21,7 @@ on:
       - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
       - 'MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs'
       - 'MOOSAWeb/tools/managed-fhd-media-origin-diagnosis.mjs'
+      - 'MOOSAWeb/tools/orb-control-vs-managed-fhd.mjs'
       - '.github/workflows/moosa-managed-fhd-addons.yml'
   workflow_dispatch:
 permissions:
@@ -70,6 +72,10 @@ jobs:
         run: npm install --no-audit --no-fund --prefix /tmp/moosa-browser puppeteer-core@24.24.0
       - name: Check decoded frame of freely licensed Sintel in real Chrome
         run: timeout 65 node MOOSAWeb/tools/managed-fhd-browser-sintel.mjs
+      - name: Compare approved CC0 browser video with managed CC licensed claimed FHD
+        run: |
+          node --check MOOSAWeb/tools/orb-control-vs-managed-fhd.mjs
+          timeout 80 node MOOSAWeb/tools/orb-control-vs-managed-fhd.mjs
       - name: Inspect fixed licensed Sintel hosted embed in sandboxed Chrome
         run: |
           node --check MOOSAWeb/tools/managed-noads-browser-audit.mjs
