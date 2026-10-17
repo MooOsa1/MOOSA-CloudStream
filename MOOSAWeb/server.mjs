@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createBridge } from './bridge.mjs';
 import { resolveWebSources, configuredAddons } from './providers.mjs';
 import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
+import {filmmakerSoundSources,FILMMAKER_LICENSE} from './sita-filmmaker-sound.mjs';
 import { inspectRepositories, configuredEngine, singleFilmPilotStatus } from './cloudstream-engine.mjs';
 import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
 import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
@@ -223,7 +224,11 @@ async function handle(req,res) {
       if(!film)return err(res,404,'Unknown open-licensed film');
       let sources=film.sources;
       let sourceEngine='commons_metadata';
-      if(film.available){
+      const authenticAudio=filmmakerSoundSources(film);
+      if(authenticAudio.length){
+        sources=authenticAudio;
+        sourceEngine='filmmaker_official_archive_h264_aac';
+      }else if(film.available){
         // Existing open-licensed sources remain the fallback. A slow or
         // unavailable external JS worker must not stall the phone's player.
         let timer;
@@ -241,7 +246,10 @@ async function handle(req,res) {
       }
       return json(res,200,{
         ...film,sources,sourceEngine,
-        copyright:film.license||'No verified source available',
+        copyright:authenticAudio.length?FILMMAKER_LICENSE:
+          film.license||'No verified source available',
+        soundtrackNote:authenticAudio.length?
+          'The official MP4 includes licensed music; the Commons WebM fallback is SILENT.':null,
         note:'Independent open-license sample, not a source for the selected commercial movie.',
         count:sources.length
       });

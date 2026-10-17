@@ -28,12 +28,17 @@ function notice(message){$('#player-message').textContent=message;}
 function setAttribution(source){
   const box=$('#source-attribution');
   if(!box)return;
-  const valid=source && /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/i.test(source.sourcePage||'')
+  const commons=source && /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/i.test(source.sourcePage||'')
     && /^https:\/\/creativecommons\.org\//.test(source.licenseUrl||'');
-  box.classList.toggle('hidden',!valid);
-  if(!valid)return;
-  $('#source-attribution-text').textContent=
-    'العمل متاح برخصة Creative Commons • '+String(source.attribution||'Wikimedia Commons').slice(0,135);
+  const filmmaker=source?.officialSoundtrack===true &&
+    source?.sourcePage==='https://www.sitasingstheblues.com/watch.html' &&
+    source?.licenseUrl==='https://www.sitasingstheblues.com/license.html' &&
+    source?.url==='https://archive.org/download/Sita_Sings_the_Blues/Sita_Sings_the_Blues_720p.mp4';
+  box.classList.toggle('hidden',!(commons||filmmaker));
+  if(!commons&&!filmmaker)return;
+  $('#source-attribution-text').textContent=filmmaker
+    ?'نسخة بالصوت من الموقع الرسمي لـ Nina Paley • الأغاني لها حقوق مستقلة'
+    :'العمل متاح برخصة Creative Commons • '+String(source.attribution||'Wikimedia Commons').slice(0,135);
   $('#source-attribution-link').href=source.sourcePage;
 }
 

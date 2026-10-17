@@ -1,0 +1,31 @@
+name: MOOSA Sita original H264 AAC real browser
+on:
+  push:
+    branches: [main, experiment/sita-official-audio-20261017]
+    paths:
+      - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/sita-filmmaker-sound.mjs'
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/tests/sita-original-audio.browser.e2e.mjs'
+      - '.github/workflows/moosa-sita-audio-browser.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-h264-aac-sound:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install disposable Chrome supporting real AAC and H264
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Play exact director-supplied full feature via real MOOSA UI
+        run: node tests/sita-original-audio.browser.e2e.mjs
