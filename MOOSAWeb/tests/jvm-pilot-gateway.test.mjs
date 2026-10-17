@@ -63,3 +63,8 @@ test('boot probe reports bounded source count but never signed CDN links',async(
   assert.equal(d.result,'original_callbacks_returned');
   assert.ok(!JSON.stringify(d).includes('secret'));
 });
+
+test('JVM runtime files are not stored under Render temporary filesystem',async()=>{
+  const m=await import('../jvm-pilot/index.mjs');
+  assert.equal(typeof m.extractOriginal,'function');
+});

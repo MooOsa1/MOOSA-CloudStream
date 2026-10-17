@@ -1,11 +1,12 @@
 import http from 'node:http';
 import {spawn} from 'node:child_process';
-import {readFile,rm,access} from 'node:fs/promises';
+import {readFile,rm,access,mkdir} from 'node:fs/promises';
 import {timingSafeEqual} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 
 /** Isolated original CloudStream/CineStream JVM bridge; no user-selected code. */
-const ROOT='/tmp/moosa-jvm';
+const ROOT='/opt/moosa/jvm';
+const OUTPUT_DIR='/tmp/moosa-jvm';
 const IMDB='tt5719076';
 // Read-only status of one controlled startup extraction in the FREE container.
 // No media URLs, signatures, request headers or raw JVM logs reach healthz.
@@ -35,12 +36,13 @@ export function approvedUrls(input,allowedHosts){
   }).slice(0,4);
 }
 export async function extractOriginal(){
-  const outputFile=ROOT+'/cinestream-candidates.b64';
+  await mkdir(OUTPUT_DIR,{recursive:true});
+  const outputFile=OUTPUT_DIR+'/cinestream-candidates.b64';
   await rm(outputFile,{force:true});
   const args=['-Xmx250m','-cp',ROOT,'JvmOriginalProviderLinks',
     ROOT+'/official-cloudstream-jvm.jar',ROOT+'/original-cinestream.jar',
     ROOT+'/deps',IMDB,'Dead Night'];
-  const process=spawn('java',args,{cwd:ROOT,stdio:['ignore','pipe','pipe']});
+  const process=spawn('/usr/bin/java',args,{cwd:ROOT,stdio:['ignore','pipe','pipe']});
   let logs='',total=0;
   const collect=bytes=>{
     total+=bytes.length;

@@ -43,9 +43,9 @@ RUN set -eux; \
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
   openjdk-17-jre-headless && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /tmp/moosa-jvm /tmp/moosa-jvm
+COPY --from=builder /tmp/moosa-jvm /opt/moosa/jvm
 COPY MOOSAWeb/jvm-pilot/index.mjs /opt/moosa/index.mjs
-RUN chmod -R a+rX /tmp/moosa-jvm
+RUN chmod -R a+rX /opt/moosa/jvm
 ENV PORT=10000 NODE_ENV=production NODE_OPTIONS=--max-old-space-size=64
 WORKDIR /opt/moosa
 EXPOSE 10000
