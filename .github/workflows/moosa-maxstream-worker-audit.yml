@@ -4,11 +4,13 @@ on:
     branches: [experiment/maxstream-worker-direct-movies-20261017]
     paths:
       - 'MOOSAWeb/tools/maxstream-worker-readonly-audit.mjs'
+      - 'MOOSAWeb/tools/maxstream-episode-direct-http-probe.mjs'
       - '.github/workflows/moosa-maxstream-worker-audit.yml'
   pull_request:
     branches: [main]
     paths:
       - 'MOOSAWeb/tools/maxstream-worker-readonly-audit.mjs'
+      - 'MOOSAWeb/tools/maxstream-episode-direct-http-probe.mjs'
       - '.github/workflows/moosa-maxstream-worker-audit.yml'
   workflow_dispatch:
 permissions:
@@ -29,3 +31,7 @@ jobs:
         run: |
           node --check tools/maxstream-worker-readonly-audit.mjs
           timeout 180 node tools/maxstream-worker-readonly-audit.mjs
+      - name: Check the exact modern-TV direct MP4 endpoint from browser origin (no movie bytes)
+        run: |
+          node --check tools/maxstream-episode-direct-http-probe.mjs
+          timeout 60 node tools/maxstream-episode-direct-http-probe.mjs
