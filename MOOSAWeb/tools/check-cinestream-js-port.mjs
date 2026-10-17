@@ -5,6 +5,7 @@
  * contains AGPL-3.0; no source code is copied into MOOSA.
  */
 import assert from 'node:assert/strict';
+import {inspectBrowserSource} from '../browser-source-readiness.mjs';
 import {createRequire} from 'node:module';
 import {realpathSync,mkdirSync,writeFileSync,chmodSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
@@ -20,7 +21,7 @@ const requestHosts=new Set([
   'streamdata.vaplayer.ru','vidfast.vc','vidcore.io',
   'h5-api.aoneroom.com','h5.aoneroom.com','fmoviesunblocked.net',
   'api.shegu.st','cinejoy.to','theemoviedb.hexa.su','hexa.su',
-  'primesrc.me','sub.wyzie.io','opensubtitles.stremio.homes',
+  'primesrc.me','fuckme.dragonballzfans.xyz','sub.wyzie.io','opensubtitles.stremio.homes',
   'subsense.nepiraw.com'
 ]);
 let fetches=0,deniedRequests=0;
@@ -42,6 +43,7 @@ const targets=[
 ];
 let total=0;
 const candidateBuffer=[];
+let hexaCandidate=null;
 for(const target of targets){
   for(const provider of providers){
     const codePath=path.join(root,'providers',provider+'.js');
@@ -68,6 +70,10 @@ for(const target of targets){
         const ext=u.pathname.toLowerCase().match(/\.(m3u8|mp4|webm|mkv)(?:$)/)?.[1]||'other';
         if(!['m3u8','mp4','webm'].includes(ext))continue;
         summary.httpsPlayable++;
+        if(provider==='hexa' && target.tmdbId==='693134' &&
+          u.hostname==='fuckme.dragonballzfans.xyz' && ext==='m3u8'){
+          hexaCandidate=u.href;
+        }
         if(target.licensed && provider==='vidlink' &&
           u.hostname==='bcdnxw.hakunaymatata.com' && ext==='mp4' &&
           candidateBuffer.length<3){
@@ -94,6 +100,20 @@ if(candidateBuffer.length){
   chmodSync(file,0o600);
 }
 console.log('MOOSA_ALTERNATIVE_CINESTREAM_PORT_AUDITED='+providers.join(','));
+if(hexaCandidate){
+  // HEAD only: never download copyrighted media, bypass Referer or proxy
+  // video. The 720 value is solely a preflight eligibility placeholder,
+  // not a claim about real encoded quality.
+  const check=await inspectBrowserSource({url:hexaCandidate,quality:720},{
+    fetchImpl:globalThis.fetch,timeoutMs:6500,
+    allowedHosts:['fuckme.dragonballzfans.xyz']
+  });
+  console.log('MOOSA_HEXA_BROWSER_ORIGIN_PREFLIGHT '+JSON.stringify({
+    ready:check.ready,status:check.status||null,reason:check.reason||null,
+    reportedMime:check.mime||null,host:check.host||null,
+    mediaPlaybackProven:false
+  }));
+}
 console.log('MOOSA_JS_CINESTREAM_AUDIT_SUMMARY '+JSON.stringify({
   upstreamSha:SHA.slice(0,12),totalPlausibleDirectSources:total,
   allowlistedFetches:fetches,blockedUnreviewedFetches:deniedRequests,
