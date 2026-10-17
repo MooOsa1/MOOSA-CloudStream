@@ -79,3 +79,59 @@ export async function verifiedFilmVariants({
   }
   return accepted;
 }
+
+
+async function smallProviderJson(response,max=180000){
+  if(!response.ok)throw Error('provider_unavailable');
+  if(Number(response.headers.get('content-length')||0)>max)throw Error('oversized');
+  const reader=response.body?.getReader();
+  if(!reader)throw Error('missing_body');
+  let size=0;const chunks=[];
+  try{
+    for(;;){
+      const {done,value}=await reader.read();
+      if(done)break;
+      size+=value.length;
+      if(size>max)throw Error('oversized');
+      chunks.push(Buffer.from(value));
+    }
+  }finally{await reader.cancel().catch(()=>{});}
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+}
+
+/**
+ * Experimental two-film operator adapter. All external calls are pinned to
+ * the existing known protocol hosts; unapproved titles can NEVER contact it.
+ * No HTML to scrape, no downloading feature movies, and no source URLs in logs.
+ */
+export async function findVerifiedMultiFilmVidlink({
+  meta,mediaGateway,
+  enabled=process.env.CINESTREAM_MULTIFILM_PILOT==='1',
+  rightsReviewed=process.env.CINESTREAM_MULTIFILM_RIGHTS_APPROVED==='1',
+  fetchImpl=fetch
+}={}){
+  const film=exactExperimentalFilm(meta);
+  if(!enabled||!rightsReviewed||!mediaGateway||!film)return [];
+  try{
+    const query=new URL('https://enc-dec.app/api/enc-vidlink');
+    query.searchParams.set('text',String(film.tmdbId));
+    const keyResult=await smallProviderJson(await fetchImpl(query.href,{
+      headers:{Accept:'application/json'},redirect:'error',
+      signal:AbortSignal.timeout(11000)
+    }),24000);
+    const code=keyResult?.result;
+    if(typeof code!=='string'||!(/^[a-zA-Z0-9+/_=-]{3,320}$/).test(code))
+      return [];
+    const providerResponse=await smallProviderJson(await fetchImpl(
+      'https://vidlink.pro/api/b/movie/'+encodeURIComponent(code),{
+      headers:{Accept:'application/json',Referer:'https://vidlink.pro/',
+        Origin:'https://vidlink.pro/',
+        'User-Agent':'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36'},
+      redirect:'error',signal:AbortSignal.timeout(14000)
+    }));
+    return verifiedFilmVariants({meta,providerResponse,mediaGateway,
+      enabled:true,rightsReviewed:true});
+  }catch{
+    return [];
+  }
+}
