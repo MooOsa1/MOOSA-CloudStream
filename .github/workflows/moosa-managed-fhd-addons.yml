@@ -1,0 +1,28 @@
+name: MOOSA managed FHD HTTP addon reality check
+on:
+  push:
+    branches: [experiment/fhd-managed-addon-audit-20261017]
+    paths:
+      - 'MOOSAWeb/tools/managed-fhd-addons-audit.mjs'
+      - '.github/workflows/moosa-managed-fhd-addons.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/managed-fhd-addons-audit.mjs'
+      - '.github/workflows/moosa-managed-fhd-addons.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate independent Node audit syntax
+        run: node --check MOOSAWeb/tools/managed-fhd-addons-audit.mjs
+      - name: Query current third-party manifests and stream metadata (no video downloaded)
+        run: node MOOSAWeb/tools/managed-fhd-addons-audit.mjs
