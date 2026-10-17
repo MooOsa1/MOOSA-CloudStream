@@ -111,12 +111,21 @@ try{
   await page.goto('https://moosa-web.onrender.com/',{
     waitUntil:'domcontentloaded',timeout:25000
   });
+  // Exercise the SAME production source picker and quality policy that users
+  // reach by pressing Play. The old test pasted the HLS into a custom field,
+  // bypassing the automatic source pipeline and its 720p guard.
   await page.evaluate(async(url)=>{
-    const {showPlayer}=await import('/player.js');
-    showPlayer({title:'Sintel — licensed original CineStream stream',sources:[]});
-    document.querySelector('#custom-stream').value=url;
-    document.querySelector('#play-custom').click();
+    const {showPlayer,appendPlayerSources}=await import('/player.js');
+    showPlayer({title:'Sintel',sources:[]});
+    appendPlayerSources([{
+      provider:'CineStream',
+      name:'CineStream • original JVM test',
+      url,quality:0,singleFilmPilot:true,
+      originalCineStream:true,verifiedFilmImdbId:'tt1727587'
+    }]);
   },streamUrl);
+  const accepted=await page.locator('#player-source').inputValue();
+  assert.equal(accepted,'0','Original CineStream stream must survive player source filtering');
   let timedOut=false;
   try{
     await page.waitForFunction(()=>{
