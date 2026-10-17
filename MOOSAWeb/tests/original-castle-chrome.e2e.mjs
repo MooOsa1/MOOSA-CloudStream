@@ -115,6 +115,54 @@ try{
   report.hlsjs=state.hasHlsjs;
   report.sourceAccess=report.sourceAccess.slice(-12);
   report.networkFailures=report.networkFailures.slice(-6);
+  if(report.actualDecodedFrames){
+    // Initial readiness at 0.7s is not enough to establish sustained
+    // viewing. Observe real decoded frames through several more seconds.
+    let continued=false;
+    try{
+      await page.waitForFunction(()=>{
+        const v=document.querySelector('#video');
+        return v && !v.paused && v.videoWidth>0 && v.videoHeight>0 &&
+          v.readyState>=2 && v.currentTime>=6.0;
+      },null,{timeout:55000});
+      continued=true;
+    }catch{}
+    const playback=await page.locator('#video').evaluate(v=>{
+      let audioTrackCount=null;
+      try{
+        if(typeof v.captureStream==='function')
+          audioTrackCount=v.captureStream().getAudioTracks().length;
+      }catch{}
+      return {
+        seconds:Number(v.currentTime.toFixed(2)),
+        volume:v.volume,muted:v.muted,
+        audioTrackCount,ended:v.ended
+      };
+    });
+    report.sustainedPlaybackSixSeconds=continued;
+    report.sustainedPlaybackSeconds=playback.seconds;
+    report.audioTrackCount=playback.audioTrackCount;
+    report.browserMuted=playback.muted;
+    report.browserVolume=playback.volume;
+    // A seek exercises HLS segment switching and backend Range/CORS. A
+    // remote CDN can expire quickly; record outcome separately rather than
+    // falsely concluding the first six seconds never decoded.
+    let seekDecoded=false;
+    if(continued && Number.isFinite(state.duration)&&state.duration>3600){
+      try{
+        await page.locator('#video').evaluate(v=>{v.currentTime=180;});
+        await page.waitForFunction(()=>{
+          const v=document.querySelector('#video');
+          return v && !v.paused && v.readyState>=2 &&
+            v.currentTime>180.7 && v.videoWidth>0 && v.videoHeight>0;
+        },null,{timeout:25000});
+        seekDecoded=true;
+      }catch{}
+    }
+    report.seekToThreeMinutesDecoded=seekDecoded;
+    assert.equal(report.sustainedPlaybackSixSeconds,true,
+      'Castle video initial frames decoded but failed to sustain 6 seconds');
+  }
   await page.locator('#video').evaluate(v=>v.pause());
   assert.equal(report.actualDecodedFrames,true,
     'The original Castle HLS failed to decode in actual MOOSA Chrome playback');
