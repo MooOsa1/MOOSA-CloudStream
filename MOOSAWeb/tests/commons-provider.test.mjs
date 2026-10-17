@@ -271,3 +271,36 @@ test('New 2026 Singularity 4K source chooses official smaller FHD derivative wit
   assert.equal(sources[0].licenseUrl,img.extmetadata.LicenseUrl.value);
   assert.equal(sources[1].quality,1608);
 });
+
+test('Full 82-minute Nina Paley movie must match exact Wikimedia Commons file and CC0',()=>{
+  const original={
+    title:'File:Sita Sings the Blues.webm',
+    imageinfo:[{
+      url:'https://upload.wikimedia.org/wikipedia/commons/8/86/Sita_Sings_the_Blues.webm',
+      descriptionurl:'https://commons.wikimedia.org/wiki/File:Sita_Sings_the_Blues.webm',
+      size:1_150_000_000,width:1280,height:720,mime:'video/webm',
+      extmetadata:{
+        LicenseUrl:{value:'https://creativecommons.org/publicdomain/zero/1.0/'},
+        LicenseShortName:{value:'CC0 1.0'},
+        Artist:{value:'Nina Paley'}
+      }
+    }]
+  };
+  const meta={media:'movie',title:'Sita Sings the Blues',
+    originalTitle:'Sita Sings the Blues',year:2008};
+  const accepted=selectCommonsMovies(meta,data([original]));
+  assert.equal(accepted.length,1);
+  assert.equal(accepted[0].licenseUrl,
+    'https://creativecommons.org/publicdomain/zero/1.0/');
+  assert.deepEqual(selectCommonsMovies({...meta,year:2009},data([original])),[]);
+  assert.deepEqual(selectCommonsMovies(meta,data([{
+    ...original,title:'File:Sita Sings the Blues trailer.webm'
+  }])),[]);
+  assert.deepEqual(selectCommonsMovies(meta,data([{
+    ...original,imageinfo:[{
+      ...original.imageinfo[0],extmetadata:{
+        LicenseUrl:{value:'https://creativecommons.org/licenses/by-nc/4.0/'}
+      }
+    }]
+  }])),[]);
+});

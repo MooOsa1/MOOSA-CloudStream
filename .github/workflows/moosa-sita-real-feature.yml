@@ -1,0 +1,30 @@
+name: MOOSA real non-Blender feature film playback
+on:
+  push:
+    branches: [main, feature/full-length-licensed-sita-film-20261017]
+    paths:
+      - 'MOOSAWeb/free-film-library.mjs'
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/tests/sita-real-feature.browser.e2e.mjs'
+      - '.github/workflows/moosa-sita-real-feature.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-movie-in-chrome:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install disposable Playwright and Chrome
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Verify actual licensed full movie in the existing MOOSA UI
+        run: node tests/sita-real-feature.browser.e2e.mjs

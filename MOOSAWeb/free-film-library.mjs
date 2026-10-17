@@ -21,6 +21,7 @@ const FILMS=Object.freeze([
   Object.freeze({id:'caminandes-gran-dillama',title:'Caminandes: Gran Dillama',year:2013,creator:'Blender Studio',genre:'أنيميشن • كوميديا'}),
   Object.freeze({id:'tears-of-steel',title:'Tears of Steel',year:2012,creator:'Blender Foundation',genre:'خيال علمي • أكشن'}),
   Object.freeze({id:'sintel',title:'Sintel',year:2010,creator:'Blender Foundation',genre:'فانتازيا • مغامرة'}),
+  Object.freeze({id:'sita-sings-the-blues',title:'Sita Sings the Blues',year:2008,creator:'Nina Paley',genre:'فيلم طويل • أنيميشن • موسيقي'}),
   Object.freeze({id:'big-buck-bunny',title:'Big Buck Bunny',year:2008,creator:'Blender Foundation',genre:'أنيميشن • كوميديا'}),
   Object.freeze({id:'elephants-dream',title:'Elephants Dream',year:2006,creator:'Orange Open Movie Project',genre:'أنيميشن • خيال'})
 ]);

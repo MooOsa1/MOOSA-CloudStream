@@ -16,6 +16,7 @@ const DENY=/\b(?:trailer|teaser|excerpt|clip|preview|sample|part|segment|behind|
 // videos or trailers as movie matches. Rights, format and file height are
 // re-verified against Commons imageinfo for EVERY playback request.
 const CURATED_EXACT_FILES=new Map([
+  ["Sita Sings the Blues|2008","File:Sita Sings the Blues.webm"],
   ["Singularity|2026","File:SINGULARITY - Blender Open Movie-full movie.webm"],
   ["Wing It!|2023","File:WING IT! - Blender Open Movie-full movie.webm"],
   ["Charge|2022","File:Charge - Blender Open Movie-full movie.webm"],
@@ -39,6 +40,10 @@ function norm(value){
 }
 function fullMovieFile(fileTitle,title,year){
   if(typeof fileTitle!=='string'||!fileTitle.startsWith('File:')||!EXT.test(fileTitle))return false;
+  // A known, explicitly reviewed feature title must not fall back to fuzzy
+  // matching when the catalog supplies a different year for that title.
+  if([...CURATED_EXACT_FILES.keys()].some(key=>key.startsWith(String(title)+'|')) &&
+      !curatedExactFile(title,year))return false;
   // Full films with uploader-added subtitles such as "Blender Open Movie"
   // qualify only by EXACT reviewed file name + exact film year.
   if(fileTitle===curatedExactFile(title,year))return true;
@@ -67,7 +72,10 @@ function cleanLicense(value){
   let u;try{u=new URL(value)}catch{return null;}
   // Require the actual CC deed URL in the imageinfo licensing metadata.
   if(!LICENSE.test(u.origin+u.pathname))return null;
-  return u.origin+u.pathname;
+  // Commons legitimately supplies CC0 deeds as HTTP /deed.en.
+  // Normalize the known Creative Commons host to HTTPS so the player's
+  // safe attribution control links the official deed, not a dead label.
+  return 'https://creativecommons.org'+u.pathname;
 }
 function humanCredit(meta){
   // Artist/Credit are often HTML fragments; never render as HTML.
