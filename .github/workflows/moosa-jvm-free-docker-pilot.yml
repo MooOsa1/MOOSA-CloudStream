@@ -59,6 +59,7 @@ jobs:
             const result=await response.json();
             assert.equal(result.distributionEnabled,false);
             assert.deepEqual(result.sources,[]);
+            console.log('JVM_GATEWAY_DIAGNOSTIC '+JSON.stringify({state:result.state,diagnostic:result.diagnostic}));
             assert.equal(result.state,'original_callbacks_returned');
             console.log('JVM_GATEWAY_ORIGINAL_CINESTREAM_HTTP_EXECUTED=true');
           }finally{clearTimeout(t)}
