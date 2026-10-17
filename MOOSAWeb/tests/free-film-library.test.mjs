@@ -35,16 +35,22 @@ function fakeCommons({deny}={}){
     });
   };
 }
-test('Free shelf contains only four pre-reviewed title IDs',()=>{
-  assert.deepEqual(curatedFilmIds(),[
-    'big-buck-bunny','sintel','tears-of-steel','elephants-dream'
+test('Free shelf contains 15 independently pre-reviewed complete movie IDs, newest 2026 first',()=>{
+  const ids=curatedFilmIds();
+  assert.equal(ids.length,15);
+  assert.equal(new Set(ids).size,15,'Never duplicate movie cards');
+  assert.deepEqual(ids.slice(0,4),[
+    'singularity-2026','wing-it','charge','sprite-fright'
+  ]);
+  assert.deepEqual(ids.slice(-4),[
+    'tears-of-steel','sintel','big-buck-bunny','elephants-dream'
   ]);
 });
 test('Unknown or unverified titles do not become playable cards',async()=>{
   assert.equal(await getCuratedFilm('unknown'),null);
   const films=await listCuratedFilms({fetchImpl:fakeCommons({deny:'Sintel'})});
   assert.deepEqual(films.map(x=>x.id),[
-    'big-buck-bunny','tears-of-steel','elephants-dream'
+    'tears-of-steel','big-buck-bunny','elephants-dream'
   ]);
   assert.ok(films.every(x=>x.available&&x.license.startsWith('https://creativecommons.org/')));
   assert.ok(films.every(x=>!('sources' in x)),
@@ -70,4 +76,13 @@ test('Real HTTP route rejects arbitrary title IDs without attempting a network l
   }finally{
     await new Promise(resolve=>app.close(resolve));
   }
+});
+
+test('Direct movie lookup lists newer complete open films by immutable IDs, not arbitrary catalog matches',async()=>{
+  const info=await getCuratedFilm('singularity-2026',{fetchImpl:fakeCommons({deny:'Singularity'})});
+  assert.equal(info.id,'singularity-2026');
+  assert.equal(info.year,2026);
+  assert.equal(info.available,false);
+  assert.equal(info.sources.length,0);
+  assert.equal(await getCuratedFilm('singularity-2025',{fetchImpl:fakeCommons()}),null);
 });

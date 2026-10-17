@@ -11,12 +11,37 @@ const LICENSE=/^https?:\/\/creativecommons\.org\/(?:publicdomain\/(?:zero\/1\.0|
 const EXT=/\.(mp4|m4v|webm)$/i;
 const ALLOWED_SUFFIX=new Set(['alt','original','full','movie','film','hd','uhd','version','webm','1080p','720p','2160p','4k','2k']);
 const DENY=/\b(?:trailer|teaser|excerpt|clip|preview|sample|part|segment|behind|keyframe|first|seconds|strobing)\b/i;
+// Exactly identified complete Blender Studio open movies, pre-reviewed on
+// Wikimedia Commons. Generic title search MUST NOT interpret unrelated
+// videos or trailers as movie matches. Rights, format and file height are
+// re-verified against Commons imageinfo for EVERY playback request.
+const CURATED_EXACT_FILES=new Map([
+  ["Singularity|2026","File:SINGULARITY - Blender Open Movie-full movie.webm"],
+  ["Wing It!|2023","File:WING IT! - Blender Open Movie-full movie.webm"],
+  ["Charge|2022","File:Charge - Blender Open Movie-full movie.webm"],
+  ["Sprite Fright|2021","File:Sprite Fright - Blender Open Movie-full movie.webm"],
+  ["Coffee Run|2020","File:Coffee Run - Blender Open Movie-full movie.webm"],
+  ["Spring|2019","File:Spring - Blender Open Movie.webm"],
+  ["Hero|2018","File:HERO - Blender Open Movie-full movie.webm"],
+  ["The Daily Dweebs|2017","File:The Daily Dweebs - Blender Open Movie-full movie.webm"],
+  ["Glass Half|2015","File:Glass Half - Blender Open Movie-full movie.webm"],
+  ["Cosmos Laundromat: First Cycle|2015","File:Cosmos Laundromat - First Cycle - Official Blender Foundation release.webm"],
+  ["Caminandes: Gran Dillama|2013","File:Caminandes, Gran Dillama - Blender Foundation.webm"],
+]);
+export function curatedExactFile(title,year){
+  if(!Number.isInteger(Number(year)))return null;
+  return CURATED_EXACT_FILES.get(String(title)+'|'+Number(year))||null;
+}
+
 function norm(value){
   return String(value||'').normalize('NFKD').toLowerCase()
     .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
 }
 function fullMovieFile(fileTitle,title,year){
   if(typeof fileTitle!=='string'||!fileTitle.startsWith('File:')||!EXT.test(fileTitle))return false;
+  // Full films with uploader-added subtitles such as "Blender Open Movie"
+  // qualify only by EXACT reviewed file name + exact film year.
+  if(fileTitle===curatedExactFile(title,year))return true;
   const name=norm(fileTitle.slice(5).replace(EXT,''));
   const expected=norm(title);
   if(!expected || expected.length<3 || DENY.test(name))return false;
@@ -156,9 +181,12 @@ export function selectVerifiedCommonsFhdDerivative(original,data){
 }
 
 export async function fromCommons(meta,{fetchImpl=fetch}={}){
-  if(meta?.media!=='movie'||!meta.title || meta.title.length>100||
-    !/^[a-zA-Z0-9 ,.'-]{3,100}$/.test(meta.originalTitle||meta.title))return [];
+  if(meta?.media!=='movie'||!meta.title||meta.title.length>100)return [];
   const title=String(meta.originalTitle||meta.title);
+  const reviewed=curatedExactFile(title,meta.year);
+  // Allow punctuation in the *exact reviewed* Blender film title (Wing It!,
+  // Cosmos Laundromat: First Cycle). Unreviewed input keeps strict validation.
+  if(!reviewed && !/^[a-zA-Z0-9 ,.'-]{3,100}$/.test(title))return [];
   const base={
     action:'query',prop:'imageinfo',iiprop:'url|size|mime|extmetadata',
     format:'json',formatversion:'2'
@@ -170,7 +198,7 @@ export async function fromCommons(meta,{fetchImpl=fetch}={}){
   // 720p version from search results. Read only these exact possible filenames
   // and still verify every returned file's license, quality and full title.
   const exact=new URL(API);
-  Object.entries({...base,titles:[
+  Object.entries({...base,titles:reviewed || [
     'File:'+title+' alt.webm',
     'File:'+title+'.webm',
     'File:'+title+'.mp4'
@@ -189,7 +217,11 @@ export async function fromCommons(meta,{fetchImpl=fetch}={}){
       return selectCommonsMovies(meta,JSON.parse(json));
     }catch{return [];}
   }
-  const [searched,variants]=await Promise.all([query(search),query(exact)]);
+  // The pre-reviewed modern films have ONE known full film filename.
+  // Do not search thousands of unrelated category uploads; request the exact
+  // item in one round trip. This keeps Render free-tier/API load bounded.
+  const [searched,variants]=reviewed?[[],await query(exact)]:
+    await Promise.all([query(search),query(exact)]);
   const seen=new Set();
   const originals=[...variants,...searched].filter(source=>{
     if(seen.has(source.url))return false;
@@ -227,7 +259,7 @@ export async function fromCommons(meta,{fetchImpl=fetch}={}){
   // Wikimedia exposes one. Never compute URL strings or fetch ad hosters.
   const curatedYears={'Big Buck Bunny':2008,Sintel:2010,'Tears of Steel':2012};
   let fhd=[];
-  if(curatedYears[title]===Number(meta.year)){
+  if(curatedYears[title]===Number(meta.year)||reviewed){
     const master=originals.find(source=>source.quality>1080 &&
       /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/i.test(source.sourcePage||''));
     if(master){

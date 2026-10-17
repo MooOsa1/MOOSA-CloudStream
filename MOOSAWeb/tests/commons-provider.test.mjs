@@ -191,3 +191,83 @@ test('Curated Commons source resolves official FHD media as a smaller playable a
   assert.ok(films.some(item=>item.url===raw));
   assert.equal(calls.filter(x=>x.searchParams.get('prop')==='videoinfo').length,1);
 });
+
+test('New 2023 Blender film Wing It! is accepted ONLY by its exact reviewed complete-file title and year',async()=>{
+  const title='File:WING IT! - Blender Open Movie-full movie.webm';
+  const source='https://upload.wikimedia.org/wikipedia/commons/a/ab/WING_IT%21_-_Blender_Open_Movie-full_movie.webm';
+  const img={
+    url:source,descriptionurl:'https://commons.wikimedia.org/wiki/'+title.replaceAll(' ','_'),
+    size:34_500_000,height:1080,width:1920,mime:'video/webm',
+    extmetadata:{
+      LicenseUrl:{value:'https://creativecommons.org/licenses/by/4.0/'},
+      LicenseShortName:{value:'CC BY 4.0'},
+      Artist:{value:'Blender Studio'}
+    }
+  };
+  const meta={media:'movie',title:'Wing It!',originalTitle:'Wing It!',year:2023};
+  assert.equal(selectCommonsMovies(meta,data([{title,imageinfo:[img]}])).length,1);
+  assert.equal(selectCommonsMovies({...meta,year:2022},data([{title,imageinfo:[img]}])).length,0);
+  assert.equal(selectCommonsMovies({...meta,title:'Other Movie',originalTitle:'Other Movie'},
+    data([{title,imageinfo:[img]}])).length,0);
+  assert.equal(selectCommonsMovies(meta,data([{title:title.replace('full movie','trailer'),imageinfo:[img]}])).length,0);
+  assert.equal(selectCommonsMovies(meta,data([{title,imageinfo:[{
+    ...img,extmetadata:{LicenseUrl:{value:'https://creativecommons.org/licenses/by-nc/4.0/'}}
+  }]}])).length,0);
+  let calls=0;
+  const fetchImpl=async url=>{
+    calls++;
+    const query=new URL(url).searchParams;
+    assert.equal(query.get('titles'),title,'Exact reviewed Commons filename must be queried');
+    assert.equal(query.get('generator'),null,'Never run broad search on vetted movie file');
+    return new Response(JSON.stringify(data([{title,imageinfo:[img]}])),{
+      status:200,headers:{'content-type':'application/json'}});
+  };
+  const sources=await fromCommons(meta,{fetchImpl});
+  assert.equal(calls,1);
+  assert.equal(sources.length,1);
+  assert.equal(sources[0].quality,1080);
+  assert.equal(sources[0].url,source);
+  assert.equal(sources[0].licenseUrl,'https://creativecommons.org/licenses/by/4.0/');
+});
+
+test('New 2026 Singularity 4K source chooses official smaller FHD derivative with exact rights and identity',async()=>{
+  const title='File:SINGULARITY - Blender Open Movie-full movie.webm';
+  const src='https://upload.wikimedia.org/wikipedia/commons/1/12/SINGULARITY_-_Blender_Open_Movie-full_movie.webm';
+  const derivative='https://upload.wikimedia.org/wikipedia/commons/transcoded/1/12/SINGULARITY_-_Blender_Open_Movie-full_movie.webm/SINGULARITY_-_Blender_Open_Movie-full_movie.webm.1080p.vp9.webm';
+  const img={
+    url:src,descriptionurl:'https://commons.wikimedia.org/wiki/'+title.replaceAll(' ','_'),
+    size:694000000,height:1608,width:3840,mime:'video/webm',
+    extmetadata:{
+      LicenseUrl:{value:'https://creativecommons.org/licenses/by/4.0/'},
+      LicenseShortName:{value:'CC BY 4.0'},
+      Artist:{value:'Blender Studio'}
+    }
+  };
+  const meta={media:'movie',title:'Singularity',originalTitle:'Singularity',year:2026};
+  assert.equal(selectCommonsMovies(meta,data([{title,imageinfo:[img]}])).length,1);
+  assert.equal(selectCommonsMovies({...meta,year:2025},
+    data([{title,imageinfo:[img]}])).length,0);
+  const queries=[];
+  const fetchImpl=async u=>{
+    const q=new URL(u).searchParams;queries.push(q);
+    assert.equal(q.get('titles'),title);
+    if(q.get('prop')==='videoinfo')
+      return new Response(JSON.stringify(data([{
+        title,videoinfo:[{url:src,derivatives:[{
+          src:derivative,type:'video/webm; codecs="vp9, opus"',
+          height:804,width:1920,transcodekey:'1080p.vp9.webm'
+        }]}]
+      }])),{status:200,headers:{'content-type':'application/json'}});
+    return new Response(JSON.stringify(data([{title,imageinfo:[img]}])),{
+      status:200,headers:{'content-type':'application/json'}});
+  };
+  const sources=await fromCommons(meta,{fetchImpl});
+  assert.equal(queries.length,2,'Only exact Commons image info and native transcode lookups');
+  assert.equal(sources.length,2);
+  assert.equal(sources[0].url,derivative);
+  assert.equal(sources[0].quality,1080);
+  assert.equal(sources[0].encodedHeight,804);
+  assert.equal(sources[0].encodedWidth,1920);
+  assert.equal(sources[0].licenseUrl,img.extmetadata.LicenseUrl.value);
+  assert.equal(sources[1].quality,1608);
+});
