@@ -6,6 +6,12 @@ on:
       - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
       - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
       - '.github/workflows/moosa-noads-embed-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
+      - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
+      - '.github/workflows/moosa-noads-embed-validation.yml'
   workflow_dispatch:
 permissions:
   contents: read
