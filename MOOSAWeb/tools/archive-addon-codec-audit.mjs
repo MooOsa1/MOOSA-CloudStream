@@ -89,17 +89,17 @@ try{
 }catch(e){
   console.log('ARCHIVE_CODEC_GET_RANGE '+JSON.stringify({error:e?.name||'unknown'}));
 }
-const process=spawn('ffprobe',[
+const probe=spawn('ffprobe',[
   '-v','error','-rw_timeout','8000000',
   '-probesize','131072','-analyzeduration','1000000',
   '-show_entries','stream=codec_name,codec_type,width,height,pix_fmt,profile:format=format_name,duration',
   '-select_streams','v:0','-of','json',target.url
 ],{stdio:['ignore','pipe','pipe']});
 let out='',err='';
-process.stdout.on('data',b=>{if(out.length<18000)out+=String(b).slice(0,18000)});
-process.stderr.on('data',b=>{if(err.length<1500)err+=String(b).slice(0,1500)});
-const timer=setTimeout(()=>process.kill('SIGKILL'),14500);
-const exitCode=await new Promise(resolve=>process.on('close',resolve));
+probe.stdout.on('data',b=>{if(out.length<18000)out+=String(b).slice(0,18000)});
+probe.stderr.on('data',b=>{if(err.length<1500)err+=String(b).slice(0,1500)});
+const timer=setTimeout(()=>probe.kill('SIGKILL'),14500);
+const exitCode=await new Promise(resolve=>probe.on('close',resolve));
 clearTimeout(timer);
 let parsed=null;
 try{parsed=JSON.parse(out)}catch{}
