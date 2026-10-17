@@ -3,6 +3,7 @@ import {spawn} from 'node:child_process';
 import {readFile,rm,access,mkdir} from 'node:fs/promises';
 import {timingSafeEqual} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import {probeHlsFirstSegment} from '../real-hls-segment-probe.mjs';
 
 /** Isolated original CloudStream/CineStream JVM bridge; no user-selected code. */
 const ROOT='/opt/moosa/jvm';
@@ -104,16 +105,40 @@ function bearerAuth(value,secret){
   const a=Buffer.from(value.slice(7)),b=Buffer.from(secret);
   return a.length===b.length&&timingSafeEqual(a,b);
 }
-export async function executeBootProbe(extract=extractOriginal){
+export async function executeBootProbe(extract=extractOriginal,{
+  segmentProbe=probeHlsFirstSegment,
+  verifySegment=process.env.MOOSA_JVM_SEGMENT_PROBE==='1',
+  allowedHosts=String(process.env.MOOSA_MEDIA_HOSTS||'')
+    .split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)
+}={}){
+
   if(bootProbe.state==='running')return;
   bootProbe={state:'running'};
   const started=Date.now();
   try{
     const output=await extract();
+    let mediaProbe={checked:0,firstSegmentHttpVerified:0,
+      note:'Segment validation is HTTP-only, not actual Chrome playback.'};
+    if(verifySegment && output?.state==='original_callbacks_returned'){
+      const candidates=approvedUrls(output.urls,allowedHosts)
+        .filter(url=>new URL(url).pathname.endsWith('.m3u8')).slice(0,4);
+      const checks=await Promise.allSettled(candidates.map(url=>
+        segmentProbe(url,{allowedHosts,timeoutMs:5500,
+          origin:'https://moosa-web.onrender.com',
+          minWidth:1,verifyEncodedResolution:false})));
+      const successful=checks.filter(result=>
+        result.status==='fulfilled' && result.value?.ok===true).length;
+      mediaProbe={checked:checks.length,firstSegmentHttpVerified:successful,
+        reasons:checks.map(x=>x.status==='fulfilled'?
+          String(x.value?.reason|| (x.value?.ok?'verified':'unavailable')).slice(0,42):
+          'probe_error'),
+        note:'Video segment bytes verified over HTTP; not Chrome-decoded frames.'};
+    }
     bootProbe={
       state:'complete',
       result:String(output?.state||'unavailable').slice(0,50),
       candidateCount:Array.isArray(output?.urls)?output.urls.length:0,
+      mediaProbe,
       elapsedMs:Date.now()-started,
       failureType:output?.diagnostic?.javaFailureType||null,
       javaExitCode:output?.diagnostic?.javaExitCode??null,

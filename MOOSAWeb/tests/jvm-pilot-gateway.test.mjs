@@ -73,3 +73,24 @@ test('separate slow Render extraction probe function exists for free CPU tier',a
   const {extractOriginal}=await import('../jvm-pilot/index.mjs');
   assert.equal(typeof extractOriginal,'function');
 });
+
+test('HTTP first-segment probe sees only approved HLS hosts and reports counts',async()=>{
+  let called=0;
+  const {executeBootProbe,bootProbeStatus}=await import('../jvm-pilot/index.mjs');
+  await executeBootProbe(async()=>({
+    state:'original_callbacks_returned',
+    urls:[
+      'https://img1.hscow.com/proof.m3u8',
+      'https://unknown.example/blocked.m3u8'
+    ]
+  }),{
+    verifySegment:true,allowedHosts:['img1.hscow.com'],
+    segmentProbe:async(url)=>{called++;assert.equal(new URL(url).hostname,'img1.hscow.com');
+      return {ok:true,quality:720};}
+  });
+  const state=bootProbeStatus();
+  assert.equal(called,1);
+  assert.equal(state.mediaProbe.checked,1);
+  assert.equal(state.mediaProbe.firstSegmentHttpVerified,1);
+  assert.equal(JSON.stringify(state).includes('proof.m3u8'),false);
+});
