@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {gateway,exactFilm,approvedUrls} from '../jvm-pilot/index.mjs';
+import {gateway,exactFilm,approvedUrls,executeBootProbe,bootProbeStatus} from '../jvm-pilot/index.mjs';
 const film={media:'movie',tmdbId:100,imdbId:'tt5719076',
   title:'Dead Night',year:2018};
 test('only exact movie is accepted by JVM executor',()=>{
@@ -52,4 +52,14 @@ test('unauthorized clients, wrong movie, and missing distribution approval are r
   }finally{
     await new Promise(resolve=>server.close(resolve));
   }
+});
+
+test('boot probe reports bounded source count but never signed CDN links',async()=>{
+  await executeBootProbe(async()=>({state:'original_callbacks_returned',
+    urls:['https://signed.cdn.example/file.m3u8?token=secret']}));
+  const d=bootProbeStatus();
+  assert.equal(d.state,'complete');
+  assert.equal(d.candidateCount,1);
+  assert.equal(d.result,'original_callbacks_returned');
+  assert.ok(!JSON.stringify(d).includes('secret'));
 });

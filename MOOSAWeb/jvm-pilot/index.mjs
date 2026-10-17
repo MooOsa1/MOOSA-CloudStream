@@ -7,6 +7,9 @@ import {fileURLToPath} from 'node:url';
 /** Isolated original CloudStream/CineStream JVM bridge; no user-selected code. */
 const ROOT='/tmp/moosa-jvm';
 const IMDB='tt5719076';
+// Read-only status of one controlled startup extraction in the FREE container.
+// No media URLs, signatures, request headers or raw JVM logs reach healthz.
+let bootProbe={state:'not_requested'};
 function reply(res,status,obj){
   res.writeHead(status,{'Content-Type':'application/json; charset=utf-8',
     'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
@@ -89,6 +92,25 @@ function bearerAuth(value,secret){
   const a=Buffer.from(value.slice(7)),b=Buffer.from(secret);
   return a.length===b.length&&timingSafeEqual(a,b);
 }
+export async function executeBootProbe(extract=extractOriginal){
+  if(bootProbe.state==='running')return;
+  bootProbe={state:'running'};
+  const started=Date.now();
+  try{
+    const output=await extract();
+    bootProbe={
+      state:'complete',
+      result:String(output?.state||'unavailable').slice(0,50),
+      candidateCount:Array.isArray(output?.urls)?output.urls.length:0,
+      elapsedMs:Date.now()-started,
+      failureType:output?.diagnostic?.javaFailureType||null
+    };
+  }catch{
+    bootProbe={state:'failed',result:'runtime_exception',
+      candidateCount:0,elapsedMs:Date.now()-started};
+  }
+}
+export function bootProbeStatus(){return {...bootProbe};}
 export function gateway({
   token=process.env.MOOSA_JVM_TOKEN||'',
   hosts=String(process.env.MOOSA_MEDIA_HOSTS||'').split(',')
@@ -101,12 +123,13 @@ export function gateway({
   return http.createServer(async(req,res)=>{
     if(req.url==='/healthz'&&req.method==='GET')
       return reply(res,200,{status:'ok',engine:'cinestream_original_jvm',
-        playbackProven:false,distributionEnabled:rightsApproved});
+        playbackProven:false,distributionEnabled:rightsApproved,
+        extractionProbe:bootProbeStatus()});
     if(req.url!=='/v1/resolve'||req.method!=='POST')
       return reply(res,404,{error:'not_found'});
     if(!bearerAuth(req.headers.authorization,token))
       return reply(res,401,{error:'unauthorized'});
-    if(busy)return reply(res,429,{error:'busy'});
+    if(busy||bootProbe.state==='running')return reply(res,429,{error:'busy'});
     let raw='';
     try{
       for await(const part of req){
@@ -139,5 +162,6 @@ if(process.argv[1]===fileURLToPath(import.meta.url)){
   const port=Number(process.env.PORT||10000);
   gateway().listen(port,'0.0.0.0',()=>{
     console.log('MOOSA original JVM pilot service listening');
+    if(process.env.MOOSA_JVM_BOOT_PROBE==='1')void executeBootProbe();
   });
 }
