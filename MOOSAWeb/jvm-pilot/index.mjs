@@ -174,17 +174,22 @@ export async function executeBootProbe(extract=sharedOriginalExtraction,{
           origin:'https://moosa-web.onrender.com',
           minWidth:1,verifyEncodedResolution:false})));
       let successful=0,successWithoutDeclaredHeaders=0;
-      let successDespiteDeclaredHeaders=0;
+      let successDespiteDeclaredHeaders=0,exactCastleWithoutHeaders=0;
       for(let i=0;i<checks.length;i++){
         if(checks[i].status!=='fulfilled'||checks[i].value?.ok!==true)continue;
         successful++;
         if(declarations.get(candidates[i])?.requiresHeaders)
           successDespiteDeclaredHeaders++;
         else successWithoutDeclaredHeaders++;
+        // Castle upstream title and duration are independently checked by the
+        // JVM extractor. Do not equate a playable OTHER-provider URL with it.
+        if(declarations.get(candidates[i])?.provider==='Castle')
+          exactCastleWithoutHeaders++;
       }
       mediaProbe={checked:checks.length,firstSegmentHttpVerified:successful,
         noCustomHeaderHttpVerified:successWithoutDeclaredHeaders,
         declaredHeaderButHeaderlessHttpVerified:successDespiteDeclaredHeaders,
+        castleHeaderlessHttpVerified:exactCastleWithoutHeaders,
         reasons:checks.map(x=>x.status==='fulfilled'?
           String(x.value?.reason|| (x.value?.ok?'verified':'unavailable')).slice(0,42):
           'probe_error'),

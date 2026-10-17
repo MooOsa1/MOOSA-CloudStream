@@ -104,6 +104,7 @@ test('HTTP first-segment probe sees only approved HLS hosts and reports counts',
   // though one declares it in its original CloudStream extractor link.
   assert.equal(state.mediaProbe.noCustomHeaderHttpVerified,1);
   assert.equal(state.mediaProbe.declaredHeaderButHeaderlessHttpVerified,1);
+  assert.equal(state.mediaProbe.castleHeaderlessHttpVerified,2);
   assert.equal(state.castleCount,2);
   assert.equal(state.castleBrowserDirectCount,1);
   assert.equal(state.headerRequiredCount,1);
