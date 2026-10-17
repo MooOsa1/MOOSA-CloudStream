@@ -59,6 +59,7 @@ try{
     '--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']});
   for(const film of FILMS){
     let page;
+    let phase='provider_lookup';
     try{
       const key=await jsonSmall(
         'https://enc-dec.app/api/enc-vidlink?text='+film.tmdbId,
@@ -68,6 +69,7 @@ try{
         encodeURIComponent(key.result),
         {'User-Agent':agent,Accept:'application/json',
           Referer:'https://vidlink.pro/',Origin:'https://vidlink.pro'},16000);
+      phase='variant_listing';
       const variants=filmVariants(data);
       console.log('MOOSA_ADDITIONAL_FILM_VARIANTS '+JSON.stringify({
         film:film.title,year:film.year,
@@ -76,11 +78,14 @@ try{
       }));
       const target=variants.find(x=>x.quality===film.preferred)||variants[0];
       assert.ok(target,'No actual CineStream source for '+film.title);
+      phase='media_byte_preflight';
       const tested=await gateway.issueIfBytesVerified({
         url:target.url,format:'mp4',headers:target.headers,
         rightsApproved:true,sourceVerified:true
       });
+      console.log('MOOSA_ADDITIONAL_CINESTREAM_PREFLIGHT '+JSON.stringify({film:film.title,year:film.year,quality:target.quality,result:tested.reason||'unknown',mediaSourceIssued:!!tested.source}));
       assert.ok(tested.source,'Media byte check rejected '+film.title);
+      phase='browser_new_page';
       page=await browser.newPage({viewport:{width:1200,height:760}});
       page.on('pageerror',err=>browserErrors.push(String(err.name||'script_error')));
       const urlToken=new URL(tested.source.url).pathname;
@@ -112,7 +117,9 @@ try{
         if(parsed.pathname.startsWith('/api/media/'))rangeTotalBytes+=body.length;
         await route.fulfill({status:response.status,headers:forwarded,body});
       });
+      phase='browse_MOOSA_static_site';
       await page.goto(SITE+'/',{waitUntil:'domcontentloaded',timeout:35000});
+      phase='player_source_picker';
       const chosen=await page.evaluate(async({source,film})=>{
         const {showPlayer}=await import('/player.js');
         showPlayer({title:film.title,sources:[{
@@ -122,13 +129,16 @@ try{
         return {count:document.querySelector('#player-source').options.length,
           selected:document.querySelector('#player-source').value};
       },{source:tested.source,film});
+      console.log('MOOSA_ADDITIONAL_CINESTREAM_PICKER '+JSON.stringify({film:film.title,...chosen}));
       assert.equal(chosen.selected,'0');
+      phase='video_frames';
       await page.waitForFunction(()=>{
         const video=document.querySelector('#video');
         return video&&!video.error&&!video.paused&&video.currentTime>0.6 &&
           video.videoWidth>0&&video.videoHeight>0&&
           Number.isFinite(video.duration);
       },null,{timeout:70000});
+      phase='read_real_media_metadata';
       const actual=await page.locator('#video').evaluate(video=>({
         height:video.videoHeight,width:video.videoWidth,
         duration:Math.round(video.duration),
@@ -150,12 +160,14 @@ try{
         rangeRequestCount,approxReadBytes:rangeTotalBytes,
         siteProductionUnchanged:true
       }));
+      phase='assert_movie_identity';
       assert.ok(durationPlausible,film.title+' source likely wrong film by duration');
       acceptedFilms++;
     }catch(error){
       console.log('MOOSA_ADDITIONAL_CINESTREAM_CHROME_FAILED '+JSON.stringify({
         film:film.title,year:film.year,
         errorName:String(error?.name||'Error').slice(0,55),
+        stage:phase,
         notes:'No fake success; no production enable'
       }));
     }finally{await page?.close();}
