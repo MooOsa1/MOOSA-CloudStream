@@ -11,6 +11,8 @@ import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
 import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream-stremio-interop.mjs';
 import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
+import {createMediaGateway} from './verified-media-gateway.mjs';
+import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -367,7 +369,16 @@ async function handle(req,res,mediaGateway=null) {
           imdbId:details.imdb_id||details.external_ids?.imdb_id||null,
           ...(media==='tv'?{season,episode}:{})
         };
-        const sources=await resolveWebSources(meta);
+        // The separately gated Night pilot runs alongside existing web
+        // discovery and returns a FIRST-PARTY, short-lived same-origin media
+        // capability only when a genuine upstream MP4/HLS probe succeeded.
+        // No general CloudStream-provider endpoint or arbitrary URL relay.
+        const [usual,night]=await Promise.all([
+          resolveWebSources(meta),
+          findNightFromCineStream({meta,mediaGateway})
+        ]);
+        const sources=[...night,...usual.filter(x=>
+          !night.some(y=>y.url===x.url))];
         return json(res,200,{sources,providerMode:'server',count:sources.length,cloudstreamEngineConfigured:!!configuredEngine()});
       } catch(e) {
         return err(res,e.status||502,e.message==='TMDB_NOT_CONFIGURED'?
@@ -417,7 +428,18 @@ async function handle(req,res,mediaGateway=null) {
   }catch(e){err(res,500,'Server error');}
 }
 export function createServer({mediaGateway=null}={}){
-  return http.createServer((req,res)=>handle(req,res,mediaGateway));
+  // The operator must explicitly enable the single film AND pin CDN hosts.
+  // Without those two settings the public site remains entirely unchanged.
+  const approvedHosts=vidlinkPilotHosts();
+  const effectiveGateway=mediaGateway || (
+    process.env.CINESTREAM_NIGHT_PILOT==='1' && approvedHosts.length
+      ?createMediaGateway({
+          origin:'https://moosa-web.onrender.com',
+          allowedHosts:approvedHosts,
+          ttlMs:3*60*60_000
+        }):null
+  );
+  return http.createServer((req,res)=>handle(req,res,effectiveGateway));
 }
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const PORT = Number(process.env.PORT||3000);
