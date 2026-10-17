@@ -15,7 +15,7 @@ const fhd=film.sources.find(x=>x.quality===1080 &&
   x.encodedWidth>=1900&&x.encodedHeight>=1000);
 assert.ok(fhd,'Must find a Commons-generated source marked official 1920x1080, not just 4K');
 assert.equal(new URL(fhd.url).hostname,'upload.wikimedia.org');
-assert.match(fhd.licenseUrl,/^https:\/\/creativecommons\.org\/licenses\/by\/3\.0\//);
+assert.match(fhd.licenseUrl,/^https:\/\/creativecommons\.org\/licenses\/by\/3\.0\/?$/);
 assert.match(fhd.sourcePage,/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
 
 const app=createServer();
