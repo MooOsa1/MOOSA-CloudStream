@@ -1,0 +1,59 @@
+name: MOOSA genuine 1080p open-movie browser proof
+on:
+  push:
+    branches: [feat/web-verified-fhd-commons-20261017]
+    paths:
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/public/stream-preferences.js'
+      - 'MOOSAWeb/tests/commons-provider.test.mjs'
+      - 'MOOSAWeb/tests/stream-preferences.test.mjs'
+      - 'MOOSAWeb/tests/real-fhd-movie-browser.e2e.mjs'
+      - '.github/workflows/moosa-genuine-fhd-proof.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/public/stream-preferences.js'
+      - 'MOOSAWeb/tests/commons-provider.test.mjs'
+      - 'MOOSAWeb/tests/stream-preferences.test.mjs'
+      - 'MOOSAWeb/tests/real-fhd-movie-browser.e2e.mjs'
+      - '.github/workflows/moosa-genuine-fhd-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax validation and full Node regression suite
+        run: |
+          node --check commons-provider.mjs
+          node --check tests/real-fhd-movie-browser.e2e.mjs
+          npm run check
+  real-fhd-player:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test browser only
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Decode real 1920 by 1080 VP9 video in MOOSA's own HTML5 player
+        run: timeout 120 node tests/real-fhd-movie-browser.e2e.mjs
