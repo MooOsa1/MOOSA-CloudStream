@@ -68,7 +68,7 @@ jobs:
       - name: Extract one Castle candidate only inside disposable CI container
         run: |
           docker exec moosa-jvm-pilot node --input-type=module -e '
-            import {extractOriginal} from "/opt/moosa/index.mjs";
+            import {extractOriginal} from "/opt/moosa/jvm-pilot/index.mjs";
             import {writeFile} from "node:fs/promises";
             const r=await extractOriginal({timeoutMs:100000});
             if(r.state!=="original_callbacks_returned")process.exit(1);
