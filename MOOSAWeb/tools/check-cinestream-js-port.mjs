@@ -22,7 +22,9 @@ const requestHosts=new Set([
   'h5-api.aoneroom.com','h5.aoneroom.com','fmoviesunblocked.net',
   'api.shegu.st','cinejoy.to','theemoviedb.hexa.su','hexa.su',
   'primesrc.me','fuckme.dragonballzfans.xyz','sub.wyzie.io','opensubtitles.stremio.homes',
-  'subsense.nepiraw.com'
+  'subsense.nepiraw.com',
+  'api.speedracelight.com','player.videasy.to',
+  'vidrock.ru','player.vidzee.wtf'
 ]);
 let fetches=0,deniedRequests=0;
 globalThis.fetch=async(url,opts={})=>{
@@ -36,7 +38,7 @@ globalThis.fetch=async(url,opts={})=>{
     signal:AbortSignal.timeout(13000)});
 };
 const require=createRequire(import.meta.url);
-const providers=['moviebox','hexa','primesrc','cinejoy'];
+const providers=['videasy','vidrock','vidzee'];
 const targets=[
   {name:'Sintel',tmdbId:'45745',kind:'movie',licensed:true},
   {name:'Current feature film metadata',tmdbId:'693134',kind:'movie',licensed:false}
