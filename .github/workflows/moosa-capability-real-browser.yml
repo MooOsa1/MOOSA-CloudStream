@@ -6,6 +6,9 @@ on:
       - 'MOOSAWeb/public/media-capability-policy.js'
       - 'MOOSAWeb/public/player.js'
       - 'MOOSAWeb/tests/capability-real-browser.e2e.mjs'
+      - 'MOOSAWeb/tests/gateway-real-browser.e2e.mjs'
+      - 'MOOSAWeb/verified-media-gateway.mjs'
+      - 'MOOSAWeb/server.mjs'
       - '.github/workflows/moosa-capability-real-browser.yml'
   workflow_dispatch:
 permissions:
@@ -40,3 +43,5 @@ jobs:
             MOOSAWeb/tests/playback-fixtures/playlist.m3u8
       - name: Prove Chrome renders MOOSA tokenized MP4 and HLS via Play
         run: cd MOOSAWeb && node tests/capability-real-browser.e2e.mjs
+      - name: Prove actual MOOSA Node gateway routes decode MP4 and HLS in Chrome
+        run: cd MOOSAWeb && node tests/gateway-real-browser.e2e.mjs
