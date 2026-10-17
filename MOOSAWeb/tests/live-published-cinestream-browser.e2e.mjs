@@ -74,6 +74,15 @@ try{
   const errors=[];
   page.on('pageerror',e=>errors.push(String(e.name||'ScriptError').slice(0,35)));
   const requests=[];
+  const failures=[];
+  page.on('requestfailed',r=>{
+    const path=new URL(r.url()).pathname;
+    if(path.startsWith('/api/media/'))
+      failures.push({resource:'media',error:String(r.failure()?.errorText||'failed').slice(0,75)});
+  });
+  page.on('console',m=>{
+    if(m.type()==='error')errors.push('console:'+String(m.text()||'').replace(/https?:\/\/\S+/g,'[URL]').slice(0,110));
+  });
   page.on('response',r=>{
     try{const u=new URL(r.url());
       if(u.pathname.startsWith('/api/media/'))
@@ -92,17 +101,45 @@ try{
     }));
     const movie=options.find(x=>/CineStream.*Vidlink/i.test(x.label));
     if(!movie)return {found:false,options:options.length};
-    select.value=String(movie.index);
-    select.dispatchEvent(new Event('change',{bubbles:true}));
-    return {found:true,sourceIndex:movie.index,options:options.length};
+    // appendPlayerSources() already selects index zero and starts playback.
+    // Do NOT issue a redundant change that resets the real video pipeline.
+    return {found:true,sourceIndex:movie.index,options:options.length,
+      autoSelected:select.value===String(movie.index)};
   });
   console.log('MOOSA_PUBLISHED_PLAYER_SOURCE_PICKER '+JSON.stringify(picker));
   assert.equal(picker.found,true,'CineStream missing from the standard live site source picker');
-  await page.waitForFunction(()=>{
-    const v=document.querySelector('#video');
-    return !!v && !v.error && !v.paused && v.currentTime>0.6 &&
-      v.videoWidth>0 && v.videoHeight>0 && Number.isFinite(v.duration);
-  },null,{timeout:70000});
+  try{
+    await page.waitForFunction(()=>{
+      const v=document.querySelector('#video');
+      return !!v && !v.error && !v.paused && v.currentTime>0.6 &&
+        v.videoWidth>0 && v.videoHeight>0 && Number.isFinite(v.duration);
+    },null,{timeout:45000});
+  }catch(e){
+    const diagnostic=await page.evaluate(()=>{
+      const v=document.querySelector('#video');
+      const status=document.querySelector('#automatic-source-status');
+      const overlay=document.querySelector('#video-overlay');
+      const source=document.querySelector('#player-source');
+      const message=document.querySelector('#player-message');
+      const maybeNotice=document.querySelector('#player-notice');
+      return {readyState:v?.readyState||0,networkState:v?.networkState||0,
+        videoWidth:v?.videoWidth||0,videoHeight:v?.videoHeight||0,
+        currentTime:Math.round((v?.currentTime||0)*10)/10,
+        duration:Number.isFinite(v?.duration)?Math.round(v.duration):null,
+        errorCode:v?.error?.code||null,paused:v?.paused,
+        sourceSelected:source?.value,
+        overlayVisible:overlay?!overlay.classList.contains('hidden'):null,
+        loadingLabel:String(status?.textContent||'').slice(0,95),
+        videoMessage:String(message?.textContent||maybeNotice?.textContent||'').slice(0,95)
+      };
+    });
+    console.log('MOOSA_PUBLISHED_CINESTREAM_CHROME_FAILURE '+JSON.stringify({
+      ...diagnostic,mediaHTTP:requests.slice(0,12),
+      requestFailures:failures.slice(0,9),
+      pageErrorTypes:errors.slice(0,5)
+    }));
+    throw e;
+  }
   const result=await page.locator('#video').evaluate(v=>({
     videoWidth:v.videoWidth,videoHeight:v.videoHeight,
     durationSeconds:Math.round(v.duration),
