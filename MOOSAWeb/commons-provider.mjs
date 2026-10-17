@@ -28,7 +28,7 @@ const CURATED_EXACT_FILES=new Map([
   ["Cosmos Laundromat: First Cycle|2015","File:Cosmos Laundromat - First Cycle - Official Blender Foundation release.webm"],
   ["Caminandes: Gran Dillama|2013","File:Caminandes, Gran Dillama - Blender Foundation.webm"],
 ]);
-function curatedExactFile(title,year){
+export function curatedExactFile(title,year){
   if(!Number.isInteger(Number(year)))return null;
   return CURATED_EXACT_FILES.get(String(title)+'|'+Number(year))||null;
 }
