@@ -1,0 +1,58 @@
+name: Live Sintel original CineStream identity-only audit
+on:
+  push:
+    branches: [experiment/render-free-cs-jvm-sidecar-20261017]
+    paths:
+      - '.github/workflows/moosa-jvm-sintel-deployed-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-production-safe-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check actual deployed Render JVM without exposing media URLs
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const url='https://moosa-jvm-pilot.onrender.com/healthz';
+          const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+          let last;
+          for(let i=1;i<=18;i++){
+            try{
+              const res=await fetch(url,{redirect:'error',
+                headers:{Accept:'application/json'},
+                signal:AbortSignal.timeout(12000)});
+              assert.equal(res.status,200);
+              const data=await res.json();
+              last={attempt:i,status:data.status,engine:data.engine,
+                distributionEnabled:data.distributionEnabled,
+                extractionState:data.extractionProbe?.state,
+                extractionResult:data.extractionProbe?.result,
+                candidateCount:data.extractionProbe?.candidateCount||0,
+                providerMetadataVerified:data.extractionProbe?.providerMetadataVerified,
+                castleDetailsSeen:data.extractionProbe?.castleDetailsSeen,
+                castleCount:data.extractionProbe?.castleCount,
+                directCount:data.extractionProbe?.castleBrowserDirectCount};
+              console.log('MOOSA_DEPLOYED_REAL_CINESTREAM_IDENTITY '+JSON.stringify(last));
+              if(last.extractionState==='complete')break;
+            }catch(e){
+              console.log('MOOSA_DEPLOYED_WAIT '+JSON.stringify({attempt:i,
+                errorName:String(e.name||'fetch_error').slice(0,65)}));
+            }
+            await wait(7000);
+          }
+          assert.equal(last?.status,'ok');
+          assert.equal(last?.engine,'cinestream_original_jvm');
+          assert.equal(last?.distributionEnabled,false);
+          assert.equal(last?.extractionState,'complete');
+          // A real mismatched film must be reported, not made a valid source.
+          assert.ok(['original_callbacks_returned','no_verified_upstream_identity',
+            'no_callbacks_file','timeout'].includes(last.extractionResult),
+            'Unexpected original provider extraction outcome');
+          console.log('MOOSA_PRODUCTION_REMAINS_UNMODIFIED=true');
+          JS
