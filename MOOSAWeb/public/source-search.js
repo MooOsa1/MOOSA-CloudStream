@@ -8,7 +8,10 @@ function pilotRuntimeReady(){
   if(!runtimeReadiness){
     runtimeReadiness=fetch('/api/cloudstream/pilot-status',{
       headers:{Accept:'application/json'},
-      signal:AbortSignal.timeout(2000)
+      // Site may wait up to 4.5s for the actual Render JVM health result.
+      // A 2s client timeout falsely switched the real JVM film to the
+      // ordinary 16.5s lookup limit before the source could be extracted.
+      signal:AbortSignal.timeout(6200)
     }).then(async r=>{
       if(!r.ok)return false;
       const data=await r.json();
@@ -51,7 +54,9 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
       appendExternalSubtitles(data.subtitles);
     }).catch(()=>{}); // Subtitle network failure must not affect playback.
   try {
-    const longPilot=media==='movie' && await pilotRuntimeReady();
+    const longPilot=media==='movie' &&
+      (String(id)==='45745'||String(id)==='20144') &&
+      await pilotRuntimeReady();
     if(job!==generation)return;
     const response=await fetch('/api/resolve?'+params.toString(),{
       headers:{Accept:'application/json'},
