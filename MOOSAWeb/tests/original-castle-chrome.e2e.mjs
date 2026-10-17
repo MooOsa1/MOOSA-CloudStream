@@ -83,15 +83,17 @@ try{
   },selected.url);
   report.selectedViaMoosaPicker=(await page.locator('#player-source').inputValue())==='0';
   assert.equal(report.selectedViaMoosaPicker,true);
+  let reachedDecodedPlayback=false;
   try{
     await page.waitForFunction(()=>{
       const v=document.querySelector('#video');
       return v && !v.paused && v.readyState>=2 &&
         v.currentTime>0.7 && v.videoWidth>0 && v.videoHeight>0;
     },null,{timeout:85000});
+    reachedDecodedPlayback=true;
   }catch{report.decoderTimedOut=true;}
   const state=await page.locator('#video').evaluate(v=>({
-    elapsedSeconds:Math.round(v.currentTime*10)/10,
+    elapsedSeconds:Math.round(v.currentTime*1000)/1000,
     duration:Number.isFinite(v.duration)?Math.round(v.duration):null,
     width:v.videoWidth,height:v.videoHeight,
     readyState:v.readyState,networkState:v.networkState,
@@ -100,8 +102,12 @@ try{
     hasHlsjs:typeof window.Hls==='function',
     playerMessage:String(document.querySelector('#player-message')?.textContent||'').slice(0,100)
   }));
-  report.actualDecodedFrames=Boolean(!report.decoderTimedOut &&
-    state.elapsedSeconds>0.7&&state.width>0&&state.height>0);
+  // Use the boolean established by real playback observation, not the
+  // rounded timestamp: 0.71 s rounds to 0.7 s and caused a false failure.
+  report.actualDecodedFrames=Boolean(reachedDecodedPlayback &&
+    !report.decoderTimedOut && state.width>0&&state.height>0 &&
+    state.errorCode===null && !state.paused);
+  report.measuredPlaybackSeconds=state.elapsedSeconds;
   report.filmDurationMinutes=state.duration===null?null:Math.round(state.duration/60);
   report.dimensions=[state.width,state.height];
   report.playerMessage=state.playerMessage;
