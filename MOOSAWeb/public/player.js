@@ -4,6 +4,7 @@ import {safeSubtitleFileUrl} from './subtitle-file-url.js';
 import {isDirectVideoUrl} from './direct-media-policy.js';
 import {comparePlaybackSources} from './stream-preferences.js';
 import {hlsPlayerOptions,keepHlsAutoAtLeastHd} from './hls-playback-options.js';
+import {needsIosSoundGesture,audioPlaybackState,resumeWithSound} from './mobile-audio.js';
 const $ = s => document.querySelector(s);
 const video = $('#video');
 let hls = null;
@@ -25,6 +26,25 @@ const HTTPS = /^https:\/\/[^\s]+$/i;
 const extensions = /\.(m3u8|mp4|webm|mov)(?:[?#]|$)/i;
 
 function notice(message){$('#player-message').textContent=message;}
+const iosSoundGesture=needsIosSoundGesture(
+  navigator.userAgent,navigator.platform,navigator.maxTouchPoints
+);
+function updateIosAudioUi(){
+  const controls=$('#ios-audio-controls');
+  const status=$('#ios-audio-state');
+  if(!controls || !status)return;
+  const s=audioPlaybackState(video);
+  const shown=iosSoundGesture && s.sourceLoaded &&
+    !$('#player-panel').classList.contains('hidden');
+  controls.classList.toggle('hidden',!shown);
+  if(!shown)return;
+  $('#ios-audio-unlock').disabled=Boolean(video.error);
+  if(video.error)status.textContent='المصدر لا يعمل في المتصفح. اختَر سيرفرًا آخر.';
+  else if(!s.unmuted)status.textContent='المشغّل مكتوم؛ اضغط لتشغيله بالصوت.';
+  else if(s.trackCount>0)
+    status.textContent='مسار صوتي موجود، لكن سماعه على الجهاز لم يتأكد.';
+  else status.textContent='الصوت غير مكتوم؛ وجود صوت فعلي يحتاج اختبار سماع على الجهاز.';
+}
 function setAttribution(source){
   const box=$('#source-attribution');
   if(!box)return;
@@ -62,6 +82,7 @@ function resetVideo(){
   $('#player-quality').replaceChildren(new Option('تلقائي','-1'));
   $('#player-subtitles').replaceChildren(new Option('بدون ترجمة',''));
   $('#video-overlay').classList.remove('hidden');
+  updateIosAudioUi();
 }
 function showVideo(){ $('#video-overlay').classList.add('hidden'); }
 function updateQuality(){
@@ -183,6 +204,7 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   $('#player-subtitle').textContent=activeSources.length?`${activeSources.length} مصادر مصرّح بها`:'لا يوجد مصدر تلقائي مضاف لهذا العنوان';
   $('#automatic-source-status').textContent='يبدأ البحث تلقائيًا عند اختيار فيلم أو حلقة.';
   $('#overlay').classList.remove('hidden');$('#player-panel').classList.remove('hidden');
+  updateIosAudioUi();
   notice('مشغل MOOSA المباشر لا يعرض إعلانات أو صفحات مشغلات خارجية؛ الإعلان المدمج داخل فيديو المصدر لا يمكن منعه بضمان.');
   $('#close-player').focus();
 }
@@ -190,7 +212,7 @@ export function hidePlayer(){
   document.dispatchEvent(new Event('moosa-player-closed'));
   selectedSourceUrl=null;attemptedSourceUrls.clear();fallbackAttempts=0;
   externalSubtitles=[];
-  resetVideo();$('#player-panel').classList.add('hidden');
+  resetVideo();$('#player-panel').classList.add('hidden');updateIosAudioUi();
   if($('#detail-panel').classList.contains('hidden'))$('#overlay').classList.add('hidden');
   previousFocus?.focus?.();
 }
@@ -384,6 +406,26 @@ async function subtitleSelected(url){
     const label=option?.dataset.label||'Subtitle';const lang=option?.dataset.language||'ar';
     loadSubtitle(body,label,lang,url);
   }catch{if(request===subtitleToken)notice('تعذر قراءة ملف الترجمة. تأكد من CORS وصيغة SRT/VTT وحجم الملف.');}
+}
+// The play() invocation stays synchronous with the physical tap on iOS.
+$('#ios-audio-unlock').addEventListener('click',()=>{
+  const token=playbackToken;
+  const result=resumeWithSound(video);
+  updateIosAudioUi();
+  Promise.resolve(result).then(()=>{
+    if(token!==playbackToken)return;
+    notice('طُلب التشغيل بالصوت. تأكد من سماعه بنفسك؛ فك الكتم وحده لا يثبت وجود صوت.');
+    updateIosAudioUi();
+  },error=>{
+    if(token!==playbackToken)return;
+    notice(error?.name==='NotAllowedError'
+      ?'Safari منع التشغيل التلقائي. اضغط ▶ على الفيديو ثم جرّب تشغيل الصوت.'
+      :'تعذر بدء الفيديو بالصوت؛ قد يكون الترميز غير مدعوم أو السيرفر غير متاح.');
+    updateIosAudioUi();
+  });
+});
+for(const event of ['loadedmetadata','canplay','playing','pause','volumechange','emptied','error']){
+  video.addEventListener(event,updateIosAudioUi);
 }
 $('#player-source').addEventListener('change',e=>sourceSelected(e.target.value));
 $('#player-quality').addEventListener('change',e=>{if(hls){hls.currentLevel=Number(e.target.value);}else if(e.target.value!=='-1')notice('الجودة مرتبطة بمصدر الفيديو نفسه.');});
