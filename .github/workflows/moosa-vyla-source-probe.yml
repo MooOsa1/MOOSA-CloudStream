@@ -25,11 +25,12 @@ jobs:
       - name: Confirm audit syntax and immutable safe media ID
         run: |
           node --check MOOSAWeb/tools/vyla-sintel-source-audit.mjs
-          grep "const ID='45745'" MOOSAWeb/tools/vyla-sintel-source-audit.mjs
+          grep "const LICENSED_MOVIE_TMDB_ID='45745'" MOOSAWeb/tools/vyla-sintel-source-audit.mjs
       - name: Install published Vyla SDK only in temporary GitHub runner
         run: |
           mkdir -p /tmp/moosa-vyla-check
           npm install --prefix /tmp/moosa-vyla-check --ignore-scripts --no-audit --no-fund @vyla-entertainment/sdk
+          npm ls --prefix /tmp/moosa-vyla-check --depth 0 @vyla-entertainment/sdk
           cp MOOSAWeb/tools/vyla-sintel-source-audit.mjs /tmp/moosa-vyla-check/audit.mjs
       - name: Query licensed Blender Sintel direct-no-proxy availability without media download
         run: timeout 115 node /tmp/moosa-vyla-check/audit.mjs
