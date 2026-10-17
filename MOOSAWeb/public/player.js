@@ -159,7 +159,8 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   document.dispatchEvent(new Event('moosa-player-opened'));
   previousFocus=document.activeElement;
   externalSubtitles=[];
-  activeSources=chooseBrowserSources(sources.filter(x=>isDirectVideoUrl(x?.url)),navigator.userAgent);
+  activeSources=chooseBrowserSources((Array.isArray(sources)?sources:[])
+    .filter(x=>isDirectVideoUrl(x?.url)),navigator.userAgent);
   currentMediaTitle=title;
   selectedSourceUrl=null;
   attemptedSourceUrls.clear();
