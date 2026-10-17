@@ -1,0 +1,33 @@
+name: MOOSA compare live free HTTP Stremio source without movie download
+on:
+  push:
+    branches: [experiment/free-flixnest-direct-stremio-20261017]
+    paths:
+      - 'MOOSAWeb/tools/flixnest-free-stremio-compat-audit.mjs'
+      - '.github/workflows/moosa-free-http-source-evaluation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/flixnest-free-stremio-compat-audit.mjs'
+      - '.github/workflows/moosa-free-http-source-evaluation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate syntax and static host
+        run: |
+          node --check tools/flixnest-free-stremio-compat-audit.mjs
+          grep -F "https://free.flixnest.app" tools/flixnest-free-stremio-compat-audit.mjs
+      - name: Read free addon's real manifest and 4 metadata-only movie source responses
+        run: timeout 100 node tools/flixnest-free-stremio-compat-audit.mjs
