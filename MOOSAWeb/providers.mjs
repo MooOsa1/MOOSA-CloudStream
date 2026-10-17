@@ -145,13 +145,17 @@ export function selectStremioStreamId(manifest,meta){
     r==='stream'||(r?.name==='stream'&&
       (!Array.isArray(r.types)||r.types.includes(type))));
   for(const base of [imdb,tmdbId]){
-    if(!base||!matches(base,global))continue;
-    // TMDB is not assumed for addons that do not advertise it.
-    if(base===tmdbId &&
-       ![...(global||[]),...resources.flatMap(r=>r==='stream'?[]:(r.idPrefixes||[]))]
-         .some(p=>typeof p==='string'&&(p==='tmdb'||p.startsWith('tmdb:'))))continue;
+    if(!base)continue;
     for(const resource of resources){
-      if(resource!=='stream'&&!matches(base,resource.idPrefixes))continue;
+      // Per Stremio, the resource's own idPrefixes OVERRIDE the global
+      // manifest prefixes. A plain "stream" resource inherits global.
+      const allowed=resource!=='stream'&&Array.isArray(resource.idPrefixes)
+        ?resource.idPrefixes:global;
+      if(!matches(base,allowed))continue;
+      // Generic/no-prefix addons continue receiving IMDb only. Requiring
+      // an explicit TMDB prefix prevents unadvertised requests.
+      if(base===tmdbId&&!(allowed||[]).some(p=>
+        typeof p==='string'&&(p==='tmdb'||p.startsWith('tmdb:'))))continue;
       return {type,id:type==='movie'?base:
         base+':'+meta.season+':'+meta.episode,
         scheme:base.startsWith('tmdb:')?'tmdb':'imdb'};
