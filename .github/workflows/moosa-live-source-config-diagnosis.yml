@@ -1,0 +1,23 @@
+name: MOOSA actual production HTTP source configuration
+on:
+  push:
+    branches: [experiment/check-live-http-source-config-20261017]
+    paths:
+      - 'MOOSAWeb/tools/live-addon-configuration-check.mjs'
+      - '.github/workflows/moosa-live-source-config-diagnosis.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-configuration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate script syntax
+        run: node --check MOOSAWeb/tools/live-addon-configuration-check.mjs
+      - name: Read actual Render configuration, not manifest or video availability
+        run: timeout 85 node MOOSAWeb/tools/live-addon-configuration-check.mjs
