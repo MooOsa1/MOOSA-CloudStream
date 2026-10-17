@@ -1,0 +1,53 @@
+name: MOOSA LIVE Sita original AAC sound playback
+on:
+  push:
+    branches: [test/sita-audio-live-20261017]
+    paths:
+      - '.github/workflows/moosa-live-sita-audio.yml'
+      - 'MOOSAWeb/tests/sita-original-audio.browser.e2e.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Wait for Render to publish the filmmaker-linked AAC video
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          let ready=false;
+          for(let attempt=1;attempt<=35;attempt++){
+            try{
+              const r=await fetch('https://moosa-web.onrender.com/api/free-film?id=sita-sings-the-blues',{
+                signal:AbortSignal.timeout(14000),redirect:'error'});
+              const d=r.ok?await r.json():null;
+              ready=r.status===200&&d?.sourceEngine==='filmmaker_official_archive_h264_aac'&&
+                d.sources?.[0]?.audioCodec==='aac'&&d.sources?.[0]?.quality===720;
+              console.log('MOOSA_PUBLIC_AUDIO_SOURCE '+JSON.stringify({
+                attempt,status:r.status,ready,sources:d?.sources?.length||0,
+                firstHasAudio:d?.sources?.[0]?.audioCodec==='aac'}));
+              if(ready)break;
+            }catch(e){console.log('MOOSA_PUBLIC_AUDIO_RETRY '+JSON.stringify({
+              attempt,error:String(e.name||'net').slice(0,40)}))}
+            if(attempt<35)await sleep(6500);
+          }
+          assert.equal(ready,true,'Render has not published the real AAC film source yet');
+          JS
+      - name: Install disposable Chrome
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Verify H264 AAC full movie actually plays on the public MOOSA site
+        env:
+          MOOSA_TEST_URL: https://moosa-web.onrender.com
+        run: node tests/sita-original-audio.browser.e2e.mjs

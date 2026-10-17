@@ -7,12 +7,13 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {createServer} from '../server.mjs';
 import {SITA_AUDIO_720,FILMMAKER_LICENSE} from '../sita-filmmaker-sound.mjs';
-const server=createServer();
-await new Promise((resolve,reject)=>{
+const directSite=String(process.env.MOOSA_TEST_URL||'').replace(/\/$/,'');
+const server=directSite?null:createServer();
+if(server)await new Promise((resolve,reject)=>{
   server.once('error',reject);
   server.listen(0,'127.0.0.1',resolve);
 });
-const origin='http://127.0.0.1:'+server.address().port;
+const origin=directSite||'http://127.0.0.1:'+server.address().port;
 const results={
   mediaSource:'filmmaker-archive-h264-aac',
   expectedAudio:'aac-stereo',
@@ -67,5 +68,5 @@ try{
 }finally{
   console.log('MOOSA_SITA_WITH_REAL_AAC_AUDIO '+JSON.stringify(results));
   await browser?.close().catch(()=>{});
-  await new Promise(resolve=>server.close(resolve));
+  if(server)await new Promise(resolve=>server.close(resolve));
 }
