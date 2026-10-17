@@ -1,0 +1,31 @@
+name: MOOSA actual MaxStream worker movie/episode HTTP source audit
+on:
+  push:
+    branches: [experiment/maxstream-worker-direct-movies-20261017]
+    paths:
+      - 'MOOSAWeb/tools/maxstream-worker-readonly-audit.mjs'
+      - '.github/workflows/moosa-maxstream-worker-audit.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/maxstream-worker-readonly-audit.mjs'
+      - '.github/workflows/moosa-maxstream-worker-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safe-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Evaluate genuine MaxStream Worker read-only and classify browser candidates
+        run: |
+          node --check tools/maxstream-worker-readonly-audit.mjs
+          timeout 180 node tools/maxstream-worker-readonly-audit.mjs
