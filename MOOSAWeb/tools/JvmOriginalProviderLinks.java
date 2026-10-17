@@ -109,8 +109,8 @@ public final class JvmOriginalProviderLinks {
                             videoHosts.add(host.toLowerCase());
                             try {
                                 Object label=link.getClass().getMethod("getSource").invoke(link);
-                                String safe=String.valueOf(label).replaceAll("[^a-zA-Z0-9 _.-]","")
-                                    .substring(0,Math.min(36,String.valueOf(label).length()));
+                                String safe=String.valueOf(label).replaceAll("[^a-zA-Z0-9 _.-]","");
+                                safe=safe.substring(0,Math.min(36,safe.length()));
                                 publicSourceGroups.computeIfAbsent(host.toLowerCase(),
                                     key->ConcurrentHashMap.newKeySet()).add(safe);
                             }catch(Throwable ignored){}
