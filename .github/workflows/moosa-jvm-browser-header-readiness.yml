@@ -1,0 +1,65 @@
+name: MOOSA live CineStream browser-header readiness
+on:
+  push:
+    branches: [experiment/render-free-cs-jvm-sidecar-20261017]
+    paths:
+      - '.github/workflows/moosa-jvm-browser-header-readiness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-real-source-capabilities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Wait for actual Render JVM to classify CineStream headers and HLS segments
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          let result;
+          for(let n=1;n<=65;n++){
+            try {
+              const r=await fetch('https://moosa-jvm-pilot.onrender.com/healthz',{
+                signal:AbortSignal.timeout(14000),redirect:'error',
+                headers:{Accept:'application/json'}});
+              assert.equal(r.status,200);
+              const health=await r.json();
+              const p=health.extractionProbe||{};
+              result={
+                attempt:n,health:health.status,
+                extractionState:p.state,extractionResult:p.result,
+                candidateCount:p.candidateCount||0,
+                browserDirectCount:p.browserDirectCount,
+                headerRequiredCount:p.headerRequiredCount,
+                castleCount:p.castleCount,
+                castleBrowserDirectCount:p.castleBrowserDirectCount,
+                httpSegmentsVerified:p.mediaProbe?.firstSegmentHttpVerified,
+                worksWithoutExtractorHeaders:p.mediaProbe?.noCustomHeaderHttpVerified,
+                worksDespiteDeclaredReferer:p.mediaProbe?.declaredHeaderButHeaderlessHttpVerified,
+                distributionEnabled:health.distributionEnabled
+              };
+              console.log('MOOSA_CINESTREAM_REAL_HEADER_AUDIT '+JSON.stringify(result));
+              if(p.state==='complete' &&
+                Number.isInteger(p.headerRequiredCount) &&
+                Number.isInteger(p.castleCount) &&
+                Number.isInteger(p.mediaProbe?.firstSegmentHttpVerified) &&
+                Number.isInteger(p.mediaProbe?.declaredHeaderButHeaderlessHttpVerified)){
+                assert.equal(health.distributionEnabled,false);
+                assert.equal(health.status,'ok');
+                assert.equal(p.result,'original_callbacks_returned');
+                console.log('MOOSA_REAL_CINESTREAM_BROWSER_HEADERS_CLASSIFIED=true');
+                process.exit(0);
+              }
+            }catch(e){
+              console.log('MOOSA_RENDER_ORIGINAL_JVM_WAIT '+JSON.stringify({
+                attempt:n,error:String(e.name||'network').slice(0,50)}));
+            }
+            if(n<65)await sleep(7000);
+          }
+          console.log('MOOSA_CINESTREAM_REAL_HEADER_AUDIT_INCOMPLETE '+JSON.stringify(result));
+          process.exitCode=1;
+          JS
