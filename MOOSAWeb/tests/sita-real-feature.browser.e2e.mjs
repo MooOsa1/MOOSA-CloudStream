@@ -8,8 +8,9 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {createServer} from '../server.mjs';
-const site=createServer();
-const root=await new Promise((resolve,reject)=>{
+const liveRoot=String(process.env.MOOSA_TEST_URL||'').replace(/\/$/,'');
+const site=liveRoot?null:createServer();
+const root=liveRoot||await new Promise((resolve,reject)=>{
   site.once('error',reject);
   site.listen(0,'127.0.0.1',()=>resolve('http://127.0.0.1:'+site.address().port));
 });
@@ -64,5 +65,5 @@ try{
 }finally{
   console.log('MOOSA_REAL_LICENSED_FEATURE_CHROME '+JSON.stringify(report));
   await browser?.close().catch(()=>{});
-  await new Promise(resolve=>site.close(resolve));
+  if(site)await new Promise(resolve=>site.close(resolve));
 }

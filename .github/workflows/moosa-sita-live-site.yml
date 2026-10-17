@@ -1,0 +1,52 @@
+name: MOOSA public Render full-film browser verification
+on:
+  push:
+    branches: [test/sita-live-site-browser-20261017]
+    paths:
+      - 'MOOSAWeb/tests/sita-real-feature.browser.e2e.mjs'
+      - '.github/workflows/moosa-sita-live-site.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-feature:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Wait for the real Render deployment to expose the full feature
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const wait=ms=>new Promise(r=>setTimeout(r,ms));
+          let ready=false;
+          for(let n=1;n<=38;n++){
+            try{
+              const r=await fetch('https://moosa-web.onrender.com/api/free-film?id=sita-sings-the-blues',{
+                signal:AbortSignal.timeout(14000),redirect:'error'});
+              const data=r.ok?await r.json():null;
+              ready=r.status===200&&data?.title==='Sita Sings the Blues'&&
+                data?.sources?.length>0;
+              console.log('MOOSA_LIVE_FULL_FEATURE_READY '+JSON.stringify({
+                attempt:n,status:r.status,ready,sourceCount:data?.sources?.length||0}));
+              if(ready)break;
+            }catch(e){console.log('MOOSA_LIVE_FEATURE_WAIT '+JSON.stringify({
+              attempt:n,error:String(e?.name||'network').slice(0,50)}));}
+            if(n<38)await wait(6500);
+          }
+          assert.equal(ready,true,'The public site has not deployed the full film');
+          JS
+      - name: Install ephemeral Chrome browser
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Decode full film directly on public MOOSA Web site
+        env:
+          MOOSA_TEST_URL: https://moosa-web.onrender.com
+        run: node tests/sita-real-feature.browser.e2e.mjs
