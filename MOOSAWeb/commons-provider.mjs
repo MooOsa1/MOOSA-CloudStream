@@ -40,6 +40,10 @@ function norm(value){
 }
 function fullMovieFile(fileTitle,title,year){
   if(typeof fileTitle!=='string'||!fileTitle.startsWith('File:')||!EXT.test(fileTitle))return false;
+  // A known, explicitly reviewed feature title must not fall back to fuzzy
+  // matching when the catalog supplies a different year for that title.
+  if([...CURATED_EXACT_FILES.keys()].some(key=>key.startsWith(String(title)+'|')) &&
+      !curatedExactFile(title,year))return false;
   // Full films with uploader-added subtitles such as "Blender Open Movie"
   // qualify only by EXACT reviewed file name + exact film year.
   if(fileTitle===curatedExactFile(title,year))return true;

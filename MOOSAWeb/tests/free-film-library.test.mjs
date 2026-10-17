@@ -38,13 +38,13 @@ function fakeCommons({deny}={}){
 test('Free shelf contains 16 independently pre-reviewed complete movie IDs, newest 2026 first',()=>{
   const ids=curatedFilmIds();
   assert.equal(ids.length,16);
-  assert.equal(new Set(ids).size,15,'Never duplicate movie cards');
+  assert.equal(new Set(ids).size,16,'Never duplicate movie cards');
   assert.deepEqual(ids.slice(0,4),[
     'singularity-2026','wing-it','charge','sprite-fright'
   ]);
   assert.ok(ids.includes('sita-sings-the-blues'));
-  assert.deepEqual(ids.slice(-4),[
-    'tears-of-steel','sintel','big-buck-bunny','elephants-dream'
+  assert.deepEqual(ids.slice(-5),[
+    'tears-of-steel','sintel','sita-sings-the-blues','big-buck-bunny','elephants-dream'
   ]);
 });
 test('Unknown or unverified titles do not become playable cards',async()=>{
