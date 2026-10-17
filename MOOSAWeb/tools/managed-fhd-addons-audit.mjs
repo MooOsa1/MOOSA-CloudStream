@@ -8,7 +8,9 @@ const CANDIDATES=[
   {name:'Pipe',manifest:'https://pipe.boringways.workers.dev/manifest.json'},
   {name:'Showbox (account-dependent control)',manifest:'https://showbox.codiv.dpdns.org/manifest.json'},
   {name:'WatchNow',manifest:'https://sword-watch.vercel.app/manifest.json'},
-  {name:'Tenies',manifest:'https://tenies-site-addon.vercel.app/manifest.json'}
+  {name:'Tenies',manifest:'https://tenies-site-addon.vercel.app/manifest.json'},
+  {name:'HdHub (directory-configured FHD)',manifest:'https://hdhub.thevolecitor.qzz.io/eyJ0b3Jib3giOiJ1bnNldCIsInF1YWxpdGllcyI6IjIxNjBwLDEwODBwLDcyMHAiLCJzb3J0IjoiZGVzYyJ9/manifest.json'},
+  {name:'FrostStream',manifest:'https://froststream.cloutteam.com/manifest.json'}
 ];
 const MOVIES=[
   {name:'Sintel (CC licensed)',type:'movie',id:'tt1727587'},
