@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'MOOSAWeb/tests/paperframe-cinestream-relay.live.mjs'
+      - 'MOOSAWeb/tests/paperframe-full-feature-cinestream.live.mjs'
       - '.github/workflows/moosa-paperframe-relay-proof.yml'
   workflow_dispatch:
 permissions:
@@ -46,6 +47,9 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -y ffmpeg
           fi
+      - name: Inspect actual CineStream providers for Night of the Living Dead (1968) movie bytes
+        timeout-minutes: 5
+        run: node MOOSAWeb/tests/paperframe-full-feature-cinestream.live.mjs
       - name: Resolve original CineStream JS and verify licensed film media transport
         timeout-minutes: 7
         run: node MOOSAWeb/tests/paperframe-cinestream-relay.live.mjs
