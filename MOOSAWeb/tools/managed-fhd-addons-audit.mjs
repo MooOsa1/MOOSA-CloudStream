@@ -92,6 +92,18 @@ for(const candidate of CANDIDATES){
     const browserFhd=streams.filter((x,i)=>formats[i]==='browser_candidate_unverified'&&
       qualityHint(x)==='1080p_claimed').length;
     usable+=browserFhd;
+    // Host-only classification: never log complete signed URLs or tokens.
+    // Browser candidates are NOT verified streams until a real browser decodes.
+    if(candidate.name.startsWith('PlavioHD')){
+      for(const item of streams.filter((stream,i)=>
+        formats[i]==='browser_candidate_unverified'&&qualityHint(stream)==='1080p_claimed')){
+        const uri=new URL(item.url);
+        console.log('MANAGED_FHD_CANDIDATE addon='+JSON.stringify(candidate.name)+
+          ' case='+JSON.stringify(movie.name)+' host='+JSON.stringify(uri.hostname)+
+          ' extension='+JSON.stringify(uri.pathname.split('.').at(-1))+
+          ' hints=1080p_claimed urlOmitted=true');
+      }
+    }
     console.log('MANAGED_FHD_QUERY name='+JSON.stringify(candidate.name)+
       ' case='+JSON.stringify(movie.name)+
       ' streamCount='+streams.length+' browserCandidates='+browserCandidates+
