@@ -4,11 +4,13 @@ on:
     branches: [experiment/free-flixnest-direct-stremio-20261017]
     paths:
       - 'MOOSAWeb/tools/flixnest-free-stremio-compat-audit.mjs'
+      - 'MOOSAWeb/tools/flixnest-head-only.mjs'
       - '.github/workflows/moosa-free-http-source-evaluation.yml'
   pull_request:
     branches: [main]
     paths:
       - 'MOOSAWeb/tools/flixnest-free-stremio-compat-audit.mjs'
+      - 'MOOSAWeb/tools/flixnest-head-only.mjs'
       - '.github/workflows/moosa-free-http-source-evaluation.yml'
   workflow_dispatch:
 permissions:
@@ -31,3 +33,7 @@ jobs:
           grep -F "https://free.flixnest.app" tools/flixnest-free-stremio-compat-audit.mjs
       - name: Read free addon's real manifest and 4 metadata-only movie source responses
         run: timeout 100 node tools/flixnest-free-stremio-compat-audit.mjs
+      - name: Probe HTTPS MKV HEAD response only; no movie bytes or DRM/CORS bypass
+        run: |
+          node --check tools/flixnest-head-only.mjs
+          timeout 45 node tools/flixnest-head-only.mjs
