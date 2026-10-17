@@ -25,6 +25,7 @@ export function isExactNight(meta){
 export function vidlinkPilotHosts(raw=process.env.CINESTREAM_MEDIA_HOSTS||''){
   return [...new Set(String(raw).split(',').map(x=>x.trim().toLowerCase())
     .filter(x=>/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(x)&&
+      !/^\d+(?:\.\d+){3}$/.test(x)&&
       !x.endsWith('.local')&&!x.endsWith('.internal')&&x!=='localhost'))]
     .slice(0,4);
 }
