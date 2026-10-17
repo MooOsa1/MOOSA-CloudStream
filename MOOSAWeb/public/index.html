@@ -102,6 +102,7 @@
   <section id="player-panel" class="player-panel hidden" role="dialog" aria-modal="true" aria-label="مشغل الفيديو">
     <div class="player-top"><div><div class="eyebrow">MOOSA PLAYER</div><h2 id="player-title">مشغل الفيديو</h2><div id="player-subtitle" class="muted">مصادر مصرّح بها فقط</div></div><button class="icon-close" id="close-player" aria-label="إغلاق المشغل">×</button></div>
     <div class="video-shell"><video id="video" controls playsinline preload="metadata"></video><div id="video-overlay" class="video-placeholder"><div class="play-glyph">▶</div><strong>جاهز للتشغيل</strong><span>اختر مصدرًا مصرحًا به، أو جرّب الفيديو التجريبي</span></div></div>
+    <div id="ios-audio-controls" class="input-row hidden" role="group" aria-label="تشغيل الصوت على الآيفون"><button class="btn btn-outline" type="button" id="ios-audio-unlock">🔊 تشغيل بالصوت</button><span id="ios-audio-state" class="muted" role="status"></span></div>
     <div id="automatic-source-status" class="player-message server-play-status" role="status">يبدأ البحث تلقائيًا عن السيرفرات عند اختيار الفيلم أو الحلقة.</div>
     <div class="player-settings">
       <div class="player-field"><label for="player-source">المصدر</label><select id="player-source"><option value="">أدخل رابط فيديو أو استخدم التجربة</option></select></div>
