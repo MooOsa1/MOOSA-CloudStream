@@ -1,0 +1,23 @@
+name: MOOSA CineStream multi-film and quality source audit
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tests/cinestream-multi-film-quality.live.mjs'
+      - '.github/workflows/moosa-cinestream-multifilm-quality.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-provider-variants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Probe true CineStream provider variants for four exact classic film IDs
+        run: node MOOSAWeb/tests/cinestream-multi-film-quality.live.mjs
