@@ -52,6 +52,12 @@ public final class ProviderLinksProbe {
     }
     public static void main(String[] args) throws Exception {
         if(args.length!=2)throw new IllegalArgumentException("cloudstreamLibrary.jar cineStreamPlugin.jar");
+        String selector=System.getenv("MOOSA_JVM_SINGLE_PROVIDER");
+        System.out.println("JVM_PROBE_BEGIN requested="+
+            (selector==null?"p_vaplayer":
+              java.util.Set.of("p_vaplayer","p_vidzee","p_videasy","p_vidcore",
+                "p_vidfastpro","p_primesrc","p_cinejoy").contains(selector)
+                ?selector:"rejected") );
         try(URLClassLoader loader=new URLClassLoader(new URL[]{
             Path.of(args[0]).toUri().toURL(),Path.of(args[1]).toUri().toURL()
         },ClassLoader.getSystemClassLoader())){
@@ -145,6 +151,10 @@ public final class ProviderLinksProbe {
                 System.out.println("JVM_REAL_LINKS stage=loadLinks status=error reason="+clean(e)+
                     " sources="+total.get()+" hd720plus="+hd.get()+" subtitles="+captions.get());
             }
+        }catch(Throwable e){
+            // Original plugin linking may fail before load()/loadLinks().
+            // Never report a quiet exit code 0 as success.
+            System.out.println("JVM_REAL_LINKS stage=bootstrap status=error reason="+clean(e));
         }finally{
             System.exit(0); // one-shot CI process; no lingering NiceHTTP/coroutine threads
         }
