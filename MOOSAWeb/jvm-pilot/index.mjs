@@ -162,19 +162,33 @@ export async function executeBootProbe(extract=sharedOriginalExtraction,{
     const rawCandidates=Array.isArray(output?.candidates)?output.candidates:[];
     const browserDirect=rawCandidates.filter(c=>c.requiresHeaders===false);
     if(verifySegment && output?.state==='original_callbacks_returned'){
-      const candidates=approvedUrls(browserDirect.map(c=>c.url),allowedHosts)
+      // A .cs3 plugin may declare Referer while a CDN ALSO serves the same
+      // video directly without it. Probe ALL safe allowlisted candidates
+      // using ordinary browser-like requests with no custom Referer, Cookie,
+      // Authorization, or proxy. No URLs are exposed in diagnostic results.
+      const candidates=approvedUrls(rawCandidates.map(c=>c.url),allowedHosts)
         .filter(url=>new URL(url).pathname.endsWith('.m3u8')).slice(0,4);
+      const declarations=new Map(rawCandidates.map(c=>[c.url,c]));
       const checks=await Promise.allSettled(candidates.map(url=>
         segmentProbe(url,{allowedHosts,timeoutMs:5500,
           origin:'https://moosa-web.onrender.com',
           minWidth:1,verifyEncodedResolution:false})));
-      const successful=checks.filter(result=>
-        result.status==='fulfilled' && result.value?.ok===true).length;
+      let successful=0,successWithoutDeclaredHeaders=0;
+      let successDespiteDeclaredHeaders=0;
+      for(let i=0;i<checks.length;i++){
+        if(checks[i].status!=='fulfilled'||checks[i].value?.ok!==true)continue;
+        successful++;
+        if(declarations.get(candidates[i])?.requiresHeaders)
+          successDespiteDeclaredHeaders++;
+        else successWithoutDeclaredHeaders++;
+      }
       mediaProbe={checked:checks.length,firstSegmentHttpVerified:successful,
+        noCustomHeaderHttpVerified:successWithoutDeclaredHeaders,
+        declaredHeaderButHeaderlessHttpVerified:successDespiteDeclaredHeaders,
         reasons:checks.map(x=>x.status==='fulfilled'?
           String(x.value?.reason|| (x.value?.ok?'verified':'unavailable')).slice(0,42):
           'probe_error'),
-        note:'Video segment bytes verified over HTTP; not Chrome-decoded frames.'};
+        note:'HTTP+CORS byte proof without plugin headers; not Chrome-decoded frames or film-rights verification.'};
     }
     bootProbe={
       state:'complete',

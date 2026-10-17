@@ -97,9 +97,13 @@ test('HTTP first-segment probe sees only approved HLS hosts and reports counts',
       return {ok:true,quality:720};}
   });
   const state=bootProbeStatus();
-  assert.equal(called,1);
-  assert.equal(state.mediaProbe.checked,1);
-  assert.equal(state.mediaProbe.firstSegmentHttpVerified,1);
+  assert.equal(called,2);
+  assert.equal(state.mediaProbe.checked,2);
+  assert.equal(state.mediaProbe.firstSegmentHttpVerified,2);
+  // Both streams served bytes without adding Castle's native Referer,
+  // though one declares it in its original CloudStream extractor link.
+  assert.equal(state.mediaProbe.noCustomHeaderHttpVerified,1);
+  assert.equal(state.mediaProbe.declaredHeaderButHeaderlessHttpVerified,1);
   assert.equal(state.castleCount,2);
   assert.equal(state.castleBrowserDirectCount,1);
   assert.equal(state.headerRequiredCount,1);
