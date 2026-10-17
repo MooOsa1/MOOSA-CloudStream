@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'MOOSAWeb/tests/live-published-cinestream-browser.e2e.mjs'
+      - 'MOOSAWeb/tests/live-published-user-click-to-play.e2e.mjs'
       - '.github/workflows/moosa-published-cinestream-proof.yml'
   workflow_dispatch:
 permissions:
@@ -25,3 +26,6 @@ jobs:
       - name: Confirm genuine full CineStream film decodes through public Render MOOSA Web
         timeout-minutes: 6
         run: cd MOOSAWeb && node tests/live-published-cinestream-browser.e2e.mjs
+      - name: Test normal visitor search movie and Watch click on published Render MOOSA Web
+        timeout-minutes: 5
+        run: cd MOOSAWeb && node tests/live-published-user-click-to-play.e2e.mjs
