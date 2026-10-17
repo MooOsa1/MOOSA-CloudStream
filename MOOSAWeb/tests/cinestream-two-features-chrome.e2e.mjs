@@ -126,8 +126,13 @@ try{
           ...source,name:'CineStream • Vidlink '+film.year,
           provider:'CineStream',quality:0
         }]});
-        return {count:document.querySelector('#player-source').options.length,
-          selected:document.querySelector('#player-source').value};
+        const picker=document.querySelector('#player-source');
+        const count=picker.options.length;
+        // showPlayer() fills the picker but starts from its blank
+        // placeholder. Real user selects the first Vidlink source.
+        picker.value='0';
+        picker.dispatchEvent(new Event('change',{bubbles:true}));
+        return {count,selected:picker.value};
       },{source:tested.source,film});
       console.log('MOOSA_ADDITIONAL_CINESTREAM_PICKER '+JSON.stringify({film:film.title,...chosen}));
       assert.equal(chosen.selected,'0');
