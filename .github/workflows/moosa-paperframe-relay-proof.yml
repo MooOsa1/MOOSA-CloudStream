@@ -40,6 +40,12 @@ jobs:
           done
           echo 'Paperframe service startup failed' >&2
           exit 1
+      - name: Ensure real MKV media inspector is present
+        run: |
+          if ! command -v ffprobe >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
       - name: Resolve original CineStream JS and verify licensed film media transport
         timeout-minutes: 7
         run: node MOOSAWeb/tests/paperframe-cinestream-relay.live.mjs
