@@ -60,7 +60,7 @@ public final class HlsSourceProbe {
         return "*".equals(r.cors)||ORIGIN.equals(r.cors);
     }
     public static void probe(List<String> candidates) {
-        int n=0;
+        int n=0,firstSegmentCandidates=0;
         for(String text:candidates){
             if(n>=3)break;
             n++;
@@ -106,16 +106,35 @@ public final class HlsSourceProbe {
                 byte[] bytes=segment.body.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
                 firstSegmentVideo=(segment.status==200||segment.status==206)
                     &&MediaSegmentSignature.isLikelyVideo(bytes);
-            }catch(Exception e){error=e.getClass().getSimpleName()+":"+e.getMessage();
-                error=error.replaceAll("[^a-zA-Z0-9 _:-]","_");
-                error=error.substring(0,Math.min(error.length(),85));
+            }catch(Exception e){
+                // Exception messages can embed signed URLs or query tokens.
+                // Report only known classifications, never upstream text.
+                if(e instanceof IllegalStateException &&
+                    java.util.Set.of("not_hls","drm_or_encrypted_hls",
+                        "no_child_media","master_not_readable",
+                        "variant_not_readable","not_plain_media_segment").contains(e.getMessage()))
+                    error=e.getMessage();
+                else if(e instanceof java.net.http.HttpTimeoutException)
+                    error="request_timeout";
+                else if(e instanceof IllegalArgumentException)
+                    error="invalid_or_untrusted_media_uri";
+                else error="network_or_probe_failed";
             }
+            boolean firstSegmentCandidate=masterStatus==200&&masterHls&&masterCors&&
+                (childStatus==-1||childStatus==200)&&variantCors&&
+                (segmentStatus==200||segmentStatus==206)&&
+                segmentCors&&firstSegmentVideo;
+            if(firstSegmentCandidate)firstSegmentCandidates++;
             System.out.println("JVM_MEDIA_DIRECT_VERIFY sample="+n+
                 " masterStatus="+masterStatus+" masterHls="+masterHls+" masterCors="+masterCors+
                 " variantStatus="+childStatus+" variantCors="+variantCors+" segmentStatus="+segmentStatus+
                 " segmentType="+segmentType+
                 " segmentVideo="+firstSegmentVideo+" segmentCors="+segmentCors+
-                " error="+error);
+                " firstSegmentCandidate="+firstSegmentCandidate+
+                " decodeVerified=false error="+error);
         }
+        System.out.println("JVM_MEDIA_SUMMARY inspected="+n+
+            " firstSegmentCandidates="+firstSegmentCandidates+
+            " playbackVerified=false native4kVerified=false");
     }
 }
