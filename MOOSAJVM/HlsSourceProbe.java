@@ -11,7 +11,9 @@ import java.util.Locale;
 /**
  * Bound, read-only live media gate for the license-approved Sintel test.
  *
- * Does not send Referer, Cookie, Authorization, DRM data, or secret headers.
+ * Paired test: send only the exact Referer declared by the original,
+ * checksum-verified VaPlayer provider on the freely licensed Sintel sample.
+ * No cookies, Authorization, DRM data, proxying, or redirects.
  * Does not follow redirects or proxy media. Only permits one reviewed public
  * hostname observed from the original CineStream .cs3. Other addresses are
  * rejected BEFORE touching the network. Never logs tokens or complete URLs.
@@ -19,6 +21,7 @@ import java.util.Locale;
 public final class HlsSourceProbe {
     private static final String SAFE_HOST="visionaryfounderslab.site";
     private static final String ORIGIN="https://moosa-web.onrender.com";
+    static final String APPROVED_REFERER="https://nextgencloudfabric.com/";
     private static final int MAX_PLAYLIST=120_000;
     private static final HttpClient HTTP=HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
@@ -32,10 +35,15 @@ public final class HlsSourceProbe {
         return uri;
     }
     private static Result get(URI uri,int limit, boolean range) throws Exception {
+        return get(uri,limit,range,false);
+    }
+    private static Result get(URI uri,int limit,boolean range,boolean nativeReferer)
+        throws Exception {
         checked(uri);
         HttpRequest.Builder builder=HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(8))
             .header("Origin",ORIGIN).header("Accept","application/vnd.apple.mpegurl, */*").GET();
         if(range)builder.header("Range","bytes=0-2047");
+        if(nativeReferer)builder.header("Referer",APPROVED_REFERER);
         HttpResponse<InputStream> response=HTTP.send(builder.build(),HttpResponse.BodyHandlers.ofInputStream());
         try(InputStream stream=response.body()){
             byte[] payload=stream.readNBytes(limit);
@@ -59,13 +67,15 @@ public final class HlsSourceProbe {
     private static boolean hasCors(Result r) {
         return "*".equals(r.cors)||ORIGIN.equals(r.cors);
     }
-    public static void probe(List<String> candidates) {
-        int n=0,firstSegmentCandidates=0;
+    public static void probe(List<String> candidates, java.util.Map<String,String> declaredReferers) {
+        int n=0,firstSegmentCandidates=0,nativeSegmentCandidates=0;
         for(String text:candidates){
             if(n>=3)break;
             n++;
             int masterStatus=0,childStatus=0,segmentStatus=0;
             boolean masterHls=false,firstSegmentVideo=false,segmentCors=false,masterCors=false,variantCors=false;
+            int nativeSegmentStatus=0;
+            boolean nativeSegmentVideo=false,nativeSegmentCors=false;
             String error="none",segmentType="unknown";
             try{
                 URI uri=checked(URI.create(text));
@@ -106,6 +116,18 @@ public final class HlsSourceProbe {
                 byte[] bytes=segment.body.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
                 firstSegmentVideo=(segment.status==200||segment.status==206)
                     &&MediaSegmentSignature.isLikelyVideo(bytes);
+                // One bounded A/B check, restricted to the exact original
+                // VaPlayer-declared Referer for the licensed Sintel smoke test.
+                // This does not grant the browser the ability to set Referer.
+                if(segment.status==403&&declaredReferers!=null&&
+                   APPROVED_REFERER.equals(declaredReferers.get(text))){
+                    Result nativeSegment=get(segmentUrl,2048,true,true);
+                    nativeSegmentStatus=nativeSegment.status;
+                    nativeSegmentCors=hasCors(nativeSegment);
+                    nativeSegmentVideo=(nativeSegment.status==200||nativeSegment.status==206)&&
+                        MediaSegmentSignature.isLikelyVideo(nativeSegment.body.getBytes(
+                            java.nio.charset.StandardCharsets.ISO_8859_1));
+                }
             }catch(Exception e){
                 // Exception messages can embed signed URLs or query tokens.
                 // Report only known classifications, never upstream text.
@@ -125,6 +147,7 @@ public final class HlsSourceProbe {
                 (segmentStatus==200||segmentStatus==206)&&
                 segmentCors&&firstSegmentVideo;
             if(firstSegmentCandidate)firstSegmentCandidates++;
+            if(nativeSegmentVideo)nativeSegmentCandidates++;
             // Distinguish a blocked segment from a parse error, bad CORS,
             // and media that has not yet been browser-decoded.
             String blocker=!error.equals("none")?"probe_"+error:
@@ -142,11 +165,17 @@ public final class HlsSourceProbe {
                 " variantStatus="+childStatus+" variantCors="+variantCors+" segmentStatus="+segmentStatus+
                 " segmentType="+segmentType+
                 " segmentVideo="+firstSegmentVideo+" segmentCors="+segmentCors+
+                " nativeDeclaredReferer="+(declaredReferers!=null&&
+                    APPROVED_REFERER.equals(declaredReferers.get(text)))+
+                " nativeSegmentStatus="+nativeSegmentStatus+
+                " nativeSegmentVideo="+nativeSegmentVideo+
+                " nativeSegmentCors="+nativeSegmentCors+
                 " firstSegmentCandidate="+firstSegmentCandidate+
                 " decodeVerified=false blocker="+blocker);
         }
         System.out.println("JVM_MEDIA_SUMMARY inspected="+n+
             " firstSegmentCandidates="+firstSegmentCandidates+
+            " nativeRefererCandidates="+nativeSegmentCandidates+
             " playbackVerified=false native4kVerified=false");
     }
 }
