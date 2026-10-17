@@ -86,7 +86,7 @@ if(candidateBuffer.length){
   const dir='/tmp/moosa-js-port';
   mkdirSync(dir,{recursive:true,mode:0o700});
   const file=dir+'/sintel-vidlink-candidates.b64';
-  writeFileSync(file,candidateBuffer.join('\\n')+'\\n',{mode:0o600});
+  writeFileSync(file,candidateBuffer.join('\n')+'\n',{mode:0o600});
   chmodSync(file,0o600);
 }
 console.log('MOOSA_VIDLINK_REAL_MP4_FOR_BROWSER='+candidateBuffer.length);
