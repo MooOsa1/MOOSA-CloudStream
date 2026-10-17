@@ -1,0 +1,32 @@
+name: MOOSA experimental CineStream JavaScript port audit
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/check-cinestream-js-port.mjs'
+      - '.github/workflows/moosa-cinestream-js-port-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-source-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check out PINNED untrusted upstream into disposable runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --no-checkout --filter=blob:none https://github.com/itsmeadarsh2008/Streamline.git /tmp/streamline-ci
+          git -C /tmp/streamline-ci checkout --detach 27c2cb2c864a056003241c48a26ede5a7cff037a
+          test "$(git -C /tmp/streamline-ci rev-parse HEAD)" = 27c2cb2c864a056003241c48a26ede5a7cff037a
+      - name: Examine four actual CineStream-port sources without publishing media
+        env:
+          STREAMLINE_DIR: /tmp/streamline-ci
+        run: node MOOSAWeb/tools/check-cinestream-js-port.mjs
