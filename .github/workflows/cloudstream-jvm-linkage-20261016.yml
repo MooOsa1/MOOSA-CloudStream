@@ -197,7 +197,7 @@ jobs:
             status=$?
             set -e
             echo "JVM_NATIVE_PROVIDER_EXIT provider=$provider code=$status"
-            grep -E '^JVM_METADATA_IDENTITY |^JVM_REAL_LINKS |^JVM_SOURCE_CLASSIFICATION |^JVM_MEDIA_SUMMARY ' /tmp/native-provider-private.log || true
+            grep -E '^JVM_PROBE_BEGIN |^JVM_METADATA_IDENTITY |^JVM_REAL_LINKS |^JVM_SOURCE_CLASSIFICATION |^JVM_MEDIA_SUMMARY ' /tmp/native-provider-private.log || true
           done
       - name: Convert SHA256 verified original StreamPlay cs3 to JVM and test provider constructor
         shell: bash
