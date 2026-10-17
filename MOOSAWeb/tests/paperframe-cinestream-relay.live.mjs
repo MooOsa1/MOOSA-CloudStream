@@ -144,6 +144,39 @@ for(let i=0;i<relevant.length;i++){
   }catch(error){
     entry.format=String(error?.name||'probe_failed').slice(0,30);
   }
+  if(/HDHub4u/i.test(entry.provider) && !entry.matroskaContainerVerified){
+    // Range probing gave 400 after a prior video/mkv response. Compare a
+    // no-Range GET against the SAME fresh capability, read only one chunk.
+    const normal={status:null,mime:'unknown',ebml:false,html:false};
+    try{
+      const res=await fetch(BASE+item.url,{
+        redirect:'error',signal:AbortSignal.timeout(12000)
+      });
+      normal.status=res.status;
+      normal.mime=String(res.headers.get('content-type')||'')
+        .split(';')[0].slice(0,55);
+      const reader=res.body?.getReader();
+      const first=reader?await reader.read():{};
+      const bytes=first.value||new Uint8Array();
+      normal.ebml=matroskaSignature(bytes,normal.mime);
+      normal.html=bytes.length>0 && /^\s*(?:<!doctype|<html)/i.test(
+        Buffer.from(bytes.subarray(0,100)).toString('utf8')
+      );
+      await reader?.cancel().catch(()=>{});
+      if(normal.ebml){
+        entry.matroskaContainerVerified=true;
+        mkvContainerValid++;
+      }
+    }catch(error){normal.error=String(error?.name||'network').slice(0,36);}
+    console.log('MOOSA_HDHUB_RANGE_VS_NO_RANGE '+JSON.stringify({
+      rangeStatus:entry.status,
+      normalStatus:normal.status,
+      normalMime:normal.mime,
+      validMatroskaHeader:normal.ebml,
+      htmlInsteadOfVideo:normal.html,
+      errorName:normal.error||null
+    }));
+  }
   console.log('MOOSA_PAPERFRAME_MEDIA_RELAY_PROOF '+JSON.stringify(entry));
   if(entry.matroskaContainerVerified){
     // Do not guess from a .mkv filename: ask a real demuxer for embedded
