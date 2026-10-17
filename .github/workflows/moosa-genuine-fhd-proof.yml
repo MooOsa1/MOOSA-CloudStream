@@ -9,6 +9,7 @@ on:
       - 'MOOSAWeb/tests/commons-provider.test.mjs'
       - 'MOOSAWeb/tests/stream-preferences.test.mjs'
       - 'MOOSAWeb/tests/real-fhd-movie-browser.e2e.mjs'
+      - 'MOOSAWeb/tests/production-real-fhd-browser.e2e.mjs'
       - '.github/workflows/moosa-genuine-fhd-proof.yml'
   pull_request:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - 'MOOSAWeb/tests/commons-provider.test.mjs'
       - 'MOOSAWeb/tests/stream-preferences.test.mjs'
       - 'MOOSAWeb/tests/real-fhd-movie-browser.e2e.mjs'
+      - 'MOOSAWeb/tests/production-real-fhd-browser.e2e.mjs'
       - '.github/workflows/moosa-genuine-fhd-proof.yml'
   workflow_dispatch:
 permissions:
@@ -57,3 +59,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Decode real 1920 by 1080 VP9 video in MOOSA's own HTML5 player
         run: timeout 120 node tests/real-fhd-movie-browser.e2e.mjs
+      - name: Verify deployed Render MOOSA website actually decodes verified full FHD movie
+        run: |
+          node --check tests/production-real-fhd-browser.e2e.mjs
+          timeout 135 node tests/production-real-fhd-browser.e2e.mjs
