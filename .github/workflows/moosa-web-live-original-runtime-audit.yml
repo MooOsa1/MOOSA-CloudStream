@@ -1,0 +1,23 @@
+name: MOOSA Web live original-runtime integration audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/cloudstream-engine.mjs'
+      - 'MOOSAWeb/server.mjs'
+      - 'MOOSAWeb/tools/live-original-runtime-audit.mjs'
+      - '.github/workflows/moosa-web-live-original-runtime-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-runtime-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify actual Render live code without claiming JVM playback
+        run: node MOOSAWeb/tools/live-original-runtime-audit.mjs
