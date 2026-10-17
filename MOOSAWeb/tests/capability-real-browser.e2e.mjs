@@ -15,6 +15,18 @@ const local=await new Promise((resolve,reject)=>{
 const site='https://moosa-web.onrender.com';
 const capability='/api/media/'+('A'.repeat(48));
 const bytes=await readFile(new URL('./playback-fixtures/clip.mp4',import.meta.url));
+const hlsCapability='/api/media/'+('B'.repeat(48));
+const rawPlaylist=await readFile(new URL('./playback-fixtures/playlist.m3u8',import.meta.url),'utf8');
+const segments=[...new Set([...rawPlaylist.matchAll(/clip-\d+\.ts/g)].map(x=>x[0]))];
+assert.ok(segments.length>0,'Actual HLS fixture must include MPEG-TS segments');
+const segmentTokens=new Map(segments.map((name,i)=>[
+  '/api/media/'+String.fromCharCode(67+i).repeat(48),name
+]));
+const tokenBySegment=new Map([...segmentTokens].map(([token,name])=>[name,token]));
+const rewrittenPlaylist=rawPlaylist.replace(/clip-\d+\.ts/g,
+  name=>tokenBySegment.get(name));
+assert.ok(rewrittenPlaylist.startsWith('#EXTM3U'));
+
 let browser;let mediaRequests=0;const errors=[];
 async function fulfillFixture(route){
   mediaRequests++;
@@ -41,6 +53,13 @@ try{
   await page.route(site+'/**',async route=>{
     const uri=new URL(route.request().url());
     if(uri.pathname===capability)return fulfillFixture(route);
+    if(uri.pathname===hlsCapability)return route.fulfill({status:200,
+      contentType:'application/vnd.apple.mpegurl',body:rewrittenPlaylist});
+    const segName=segmentTokens.get(uri.pathname);
+    if(segName)return route.fulfill({status:200,
+      contentType:'video/mp2t',body:await readFile(
+        new URL('./playback-fixtures/'+segName,import.meta.url))});
+
     const response=await fetch(local+uri.pathname+uri.search,
       {redirect:'manual',signal:AbortSignal.timeout(12_000)});
     return route.fulfill({status:response.status,headers:{
@@ -48,6 +67,9 @@ try{
       'content-security-policy':response.headers.get('content-security-policy')||''
     },body:Buffer.from(await response.arrayBuffer())});
   });
+  await page.route('https://cdn.jsdelivr.net/npm/hls.js@1.7.3/dist/hls.min.js',
+    async route=>route.fulfill({status:200,contentType:'text/javascript',
+      body:await readFile(new URL('../node_modules/hls.js/dist/hls.min.js',import.meta.url))}));
   await page.goto(site+'/',{waitUntil:'domcontentloaded',timeout:25_000});
   const accepted=await page.evaluate(async({site,capability})=>{
     const {showPlayer}=await import('/player.js');
@@ -83,6 +105,29 @@ try{
     secondsPlayed:result.seconds,mediaRequests,
     usedOpaqueExtensionlessHttpsCapability:true,
     cineStreamUpstreamProven:false,localFixtureOnly:true
+  }));
+  await page.evaluate(async({site,hlsCapability})=>{
+    const {showPlayer}=await import('/player.js');
+    showPlayer({title:'Tokenized HLS playlist through MOOSA',sources:[
+      {url:site+hlsCapability,format:'m3u8',
+        name:'MOOSA trusted HLS relay test',quality:0,gatewayIssued:true}
+    ]});
+    const picker=document.querySelector('#player-source');
+    picker.value='0';
+    picker.dispatchEvent(new Event('change',{bubbles:true}));
+  },{site,hlsCapability});
+  await page.waitForFunction(()=>{
+    const v=document.querySelector('#video');
+    return v&&!v.error&&!v.paused&&v.currentTime>0.35&&
+      v.videoWidth===320&&v.videoHeight===180;
+  },null,{timeout:30000});
+  assert.equal(await page.locator('#player-source').inputValue(),'0');
+  assert.ok(mediaRequests>0);
+  assert.deepEqual(errors,[]);
+  console.log('MOOSA_CAPABILITY_REAL_HLS_BROWSER_DECODE '+JSON.stringify({
+    actualDecodedVideo:true,format:'hls',sameOrigin:true,
+    rewrittenHlsSegments:segments.length,
+    fallbackTestOnly:true,sourceOriginalCineStream:false
   }));
   await page.evaluate(async({capability})=>{
     const {showPlayer}=await import('/player.js');
