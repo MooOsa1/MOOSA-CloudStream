@@ -189,6 +189,9 @@ export async function queryRemoteEngine(meta,{
   pilotEnabled=singleFilmPilotStatus().enabled
 }={}) {
   if(!engine)return [];
+  // This deployed JVM pilot only accepts one film; do not send unrelated
+  // movies/episodes to a slow, resource-limited sidecar.
+  if(pilotEnabled && !pilotMovie(meta))return [];
   const task=normalizeMediaRequest(meta);
   if(!task)return [];
   try {
