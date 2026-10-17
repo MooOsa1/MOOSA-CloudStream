@@ -8,6 +8,7 @@ on:
       - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
       - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
       - 'MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs'
+      - 'MOOSAWeb/tools/managed-fhd-media-origin-diagnosis.mjs'
       - 'MOOSAWeb/tools/managed-fhd-embed-audit.mjs'
       - '.github/workflows/moosa-managed-fhd-addons.yml'
   pull_request:
@@ -18,6 +19,7 @@ on:
       - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
       - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
       - 'MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs'
+      - 'MOOSAWeb/tools/managed-fhd-media-origin-diagnosis.mjs'
       - '.github/workflows/moosa-managed-fhd-addons.yml'
   workflow_dispatch:
 permissions:
@@ -37,6 +39,10 @@ jobs:
         run: |
           node --check MOOSAWeb/tools/managed-fhd-embed-audit.mjs
           node MOOSAWeb/tools/managed-fhd-embed-audit.mjs
+      - name: Compare real MP4 range GET with HEAD-only false-positive on CC Sintel
+        run: |
+          node --check MOOSAWeb/tools/managed-fhd-media-origin-diagnosis.mjs
+          node MOOSAWeb/tools/managed-fhd-media-origin-diagnosis.mjs
       - name: Verify advertised direct HLS API against licensed Sintel ID (metadata only)
         run: |
           node --check MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs
