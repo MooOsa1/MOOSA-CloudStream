@@ -51,6 +51,34 @@ try{
     args:['--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']});
   const page=await browser.newPage({viewport:{width:1280,height:720},
     serviceWorkers:'block'});
+  // Chrome DevTools exposes the real HTTP status and MIME even when an
+  // opaque media response is blocked before Playwright emits "response".
+  // Never log CDN paths, signed URLs or response bodies.
+  const cdp=await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  const cdnRequests=new Set();
+  cdp.on('Network.requestWillBeSent',event=>{
+    try{if(new URL(event.request.url).hostname===EXPECTED_HOST)
+      cdnRequests.add(event.requestId);}catch{}
+  });
+  cdp.on('Network.responseReceivedExtraInfo',event=>{
+    if(!cdnRequests.has(event.requestId))return;
+    const headers=Object.fromEntries(Object.entries(event.headers||{})
+      .map(([key,val])=>[key.toLowerCase(),String(val)]));
+    observed.cdpResponse={
+      status:event.statusCode,
+      mime:(headers['content-type']||'').split(';')[0].slice(0,55),
+      contentLength:(headers['content-length']||'').slice(0,40),
+      acceptsRanges:(headers['accept-ranges']||'').slice(0,40),
+      cors:(headers['access-control-allow-origin']||'').slice(0,60),
+      redirectHost:(()=>{try{return new URL(headers.location).hostname}catch{return null}})()
+    };
+  });
+  cdp.on('Network.loadingFailed',event=>{
+    if(cdnRequests.has(event.requestId))
+      observed.cdpLoadFailure={errorText:String(event.errorText||'').slice(0,100),
+        blockedReason:String(event.blockedReason||'').slice(0,60)};
+  });
   page.on('response',r=>{
     try{
       if(new URL(r.url()).hostname!==EXPECTED_HOST)return;
@@ -86,13 +114,21 @@ try{
     document.querySelector('#custom-stream').value=realMediaUrl;
     document.querySelector('#play-custom').click();
   },url);
-  try{
-    await page.waitForFunction(()=>{
+  // Stop quickly on a confirmed failed media request, rather than waiting
+  // the whole playback deadline for an already-rejected resource.
+  const result=await Promise.race([
+    page.waitForFunction(()=>{
       const v=document.querySelector('#video');
       return Boolean(v && !v.paused && v.readyState>=2 &&
         v.currentTime>=0.35 && v.videoWidth>0 && v.videoHeight>0);
-    },null,{timeout:26000});
-  }catch{observed.timedOut=true}
+    },null,{timeout:26000}).then(()=> 'decoded',()=> 'timeout'),
+    page.waitForEvent('requestfailed',{
+      predicate:r=>{try{return new URL(r.url()).hostname===EXPECTED_HOST}catch{return false}},
+      timeout:26000
+    }).then(()=> 'blocked',()=> 'timeout')
+  ]);
+  observed.waitResult=result;
+  observed.timedOut=result==='timeout';
   observed.decoder=await page.locator('#video').evaluate(v=>({
     currentTimeSeconds:Math.round(v.currentTime*10)/10,
     width:v.videoWidth,height:v.videoHeight,
