@@ -127,6 +127,30 @@ function normalizeMediaRequest(meta) {
 }
 
 const PILOT_IMDB='tt5719076';
+const SINTEL_IMDB='tt1727587';
+const SINTEL_TMDB=45745;
+/**
+ * A separate, opt-in original CineStream film whose JVM/Chrome route
+ * decoded 852×480 frames. Deliberately does NOT lower global HD rules.
+ * The original .cs3 executor must still exist; this adapter cannot run DEX.
+ */
+export function sintelPilotStatus(env=process.env){
+  const enabled=env.CLOUDSTREAM_SINTEL_PILOT==='1';
+  return {enabled,filmImdbId:SINTEL_IMDB,filmTmdbId:SINTEL_TMDB,
+    readyForQuery:enabled&&!!configuredEngine(env)};
+}
+function sintelMovie(meta){
+  return meta?.media==='movie' && Number(meta.id)===SINTEL_TMDB &&
+    meta.imdbId===SINTEL_IMDB && Number(meta.year)===2010 &&
+    String(meta.originalTitle||meta.title||'').trim().toLowerCase()==='sintel';
+}
+function verifiedSintelSource(source,meta){
+  return sintelMovie(meta) && source?.provider==='CineStream' &&
+    source.resolvedImdbId===SINTEL_IMDB &&
+    String(source.resolvedTitle||'').trim().toLowerCase()==='sintel' &&
+    Number(source.resolvedYear)===2010 &&
+    source.operatorAuthorized===true;
+}
 /** Operator-only isolated first-film trial. Not general copyright clearance. */
 export function singleFilmPilotStatus(env=process.env){
   const enabled=String(env.CLOUDSTREAM_SINGLE_FILM_PILOT||'')==='1';
@@ -151,7 +175,7 @@ function verifiedPilotSource(source,meta){
     source?.operatorAuthorized===true;
 }
 
-function cleanRuntimeResult(source,{pilot=false,meta=null}={}) {
+function cleanRuntimeResult(source,{pilot=false,sintel=false,meta=null}={}) {
   if(!source || typeof source.url!=='string')return null;
   let u;
   try{u=new URL(source.url)}catch{return null;}
@@ -163,7 +187,13 @@ function cleanRuntimeResult(source,{pilot=false,meta=null}={}) {
   if(!/\.(?:m3u8|mp4|webm)(?:$|[?#])/i.test(u.pathname))return null;
   const quality=Number(source.quality);
   const acceptedPilot=pilot && verifiedPilotSource(source,meta);
-  if(!Number.isInteger(quality)||quality<(acceptedPilot?144:720)||quality>4320)return null;
+  const acceptedSintel=sintel && verifiedSintelSource(source,meta);
+  // The original CineStream browser proof is 480p with an UNKNOWN plugin
+  // quality label. Accept quality 0 only for this film + trusted identity,
+  // and never represent it as certified 720p/4K.
+  if(!Number.isInteger(quality)||
+     quality<(acceptedSintel?0:acceptedPilot?144:720)||
+     quality>4320)return null;
   const provider=String(source.provider||'CloudStream').slice(0,70);
   if(!['CineStream','StreamPlay'].includes(provider))return null;
   const name=String(source.name||provider).slice(0,95);
@@ -178,20 +208,25 @@ function cleanRuntimeResult(source,{pilot=false,meta=null}={}) {
     }catch{return [];}
   }):[];
   return {url:u.href,name:provider+' • '+name,quality,subtitles,
-    ...(acceptedPilot?{singleFilmPilot:true,verifiedFilmImdbId:PILOT_IMDB}:{})};
+    ...(acceptedPilot?{singleFilmPilot:true,verifiedFilmImdbId:PILOT_IMDB}:{}),
+    ...(acceptedSintel?{singleFilmPilot:true,verifiedFilmImdbId:SINTEL_IMDB,
+      originalCineStream:true}:{})};
 }
 /** Normal sources keep 12s; exact opt-in original JVM film can wait 65s. */
-export function originalRuntimeTimeoutMs(meta,{pilotEnabled=false}={}){
-  return pilotEnabled && pilotMovie(meta) ? 65000 : 12000;
+export function originalRuntimeTimeoutMs(meta,{pilotEnabled=false,sintelEnabled=false}={}){
+  return (pilotEnabled&&pilotMovie(meta)) || (sintelEnabled&&sintelMovie(meta))
+    ?65000:12000;
 }
 export async function queryRemoteEngine(meta,{
   fetchImpl=fetch,engine=configuredEngine(),
-  pilotEnabled=singleFilmPilotStatus().enabled
+  pilotEnabled=singleFilmPilotStatus().enabled,
+  sintelEnabled=sintelPilotStatus().enabled
 }={}) {
   if(!engine)return [];
   // This deployed JVM pilot only accepts one film; do not send unrelated
   // movies/episodes to a slow, resource-limited sidecar.
-  if(pilotEnabled && !pilotMovie(meta))return [];
+  if((pilotEnabled||sintelEnabled)&&
+    !((pilotEnabled&&pilotMovie(meta))||(sintelEnabled&&sintelMovie(meta))))return [];
   const task=normalizeMediaRequest(meta);
   if(!task)return [];
   try {
@@ -199,7 +234,7 @@ export async function queryRemoteEngine(meta,{
       method:'POST',redirect:'error',
       headers:{Authorization:'Bearer '+engine.token,'Content-Type':'application/json',Accept:'application/json'},
       body:JSON.stringify(task),signal:AbortSignal.timeout(
-        originalRuntimeTimeoutMs(meta,{pilotEnabled}))
+        originalRuntimeTimeoutMs(meta,{pilotEnabled,sintelEnabled}))
     });
     if(!response.ok||Number(response.headers.get('content-length')||0)>MAX_JSON)return [];
     const text=await response.text();
@@ -207,7 +242,7 @@ export async function queryRemoteEngine(meta,{
     const data=JSON.parse(text);
     const seen=new Set();
     return (Array.isArray(data.sources)?data.sources:[]).slice(0,70)
-      .map(source=>cleanRuntimeResult(source,{pilot:pilotEnabled,meta})).filter(x=>{
+      .map(source=>cleanRuntimeResult(source,{pilot:pilotEnabled,sintel:sintelEnabled,meta})).filter(x=>{
         if(!x||seen.has(x.url))return false;
         seen.add(x.url);return true;
       }).sort((a,b)=>b.quality-a.quality).slice(0,30);
