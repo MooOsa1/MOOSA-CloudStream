@@ -17,7 +17,11 @@ assert.equal(checked,SHA,'Refuse moving upstream code revision');
 const origFetch=globalThis.fetch;
 const requestHosts=new Set([
   'api.themoviedb.org','enc-dec.app','vidlink.pro',
-  'streamdata.vaplayer.ru','vidfast.vc','vidcore.io'
+  'streamdata.vaplayer.ru','vidfast.vc','vidcore.io',
+  'h5-api.aoneroom.com','h5.aoneroom.com','fmoviesunblocked.net',
+  'api.shegu.st','cinejoy.to','theemoviedb.hexa.su','hexa.su',
+  'primesrc.me','sub.wyzie.io','opensubtitles.stremio.homes',
+  'subsense.nepiraw.com'
 ]);
 let fetches=0,deniedRequests=0;
 globalThis.fetch=async(url,opts={})=>{
@@ -31,7 +35,7 @@ globalThis.fetch=async(url,opts={})=>{
     signal:AbortSignal.timeout(13000)});
 };
 const require=createRequire(import.meta.url);
-const providers=['vidlink','vidfast','vidcore','vaplayer'];
+const providers=['moviebox','hexa','primesrc','cinejoy'];
 const targets=[
   {name:'Sintel',tmdbId:'45745',kind:'movie',licensed:true},
   {name:'Current feature film metadata',tmdbId:'693134',kind:'movie',licensed:false}
@@ -89,7 +93,7 @@ if(candidateBuffer.length){
   writeFileSync(file,candidateBuffer.join('\n')+'\n',{mode:0o600});
   chmodSync(file,0o600);
 }
-console.log('MOOSA_VIDLINK_REAL_MP4_FOR_BROWSER='+candidateBuffer.length);
+console.log('MOOSA_ALTERNATIVE_CINESTREAM_PORT_AUDITED='+providers.join(','));
 console.log('MOOSA_JS_CINESTREAM_AUDIT_SUMMARY '+JSON.stringify({
   upstreamSha:SHA.slice(0,12),totalPlausibleDirectSources:total,
   allowlistedFetches:fetches,blockedUnreviewedFetches:deniedRequests,
