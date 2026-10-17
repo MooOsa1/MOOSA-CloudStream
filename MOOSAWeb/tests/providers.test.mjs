@@ -261,3 +261,13 @@ test('TMDB ID support does not turn external pages, torrents or protected links 
     fetchImpl,addons:['https://provider.example/manifest.json']});
   assert.deepEqual(streams.map(x=>x.url),['https://cdn.example/approved-full.mp4']);
 });
+
+test('NuvioStreams-style manifest prefix "tmdb" without colon is valid and explicitly declared',()=>{
+  const meta={media:'movie',id:45745,imdbId:null};
+  const m={types:['movie'],resources:['stream'],idPrefixes:['tmdb']};
+  assert.deepEqual(selectStremioStreamId(m,meta),
+    {type:'movie',id:'tmdb:45745',scheme:'tmdb'});
+  assert.equal(selectStremioStreamId({...m,idPrefixes:['tmd']},meta),null,
+    'Partial prefixes never authorize TMDB fallback');
+  assert.equal(selectStremioStreamId({...m,idPrefixes:['IMDb']},meta),null);
+});
