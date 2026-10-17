@@ -33,11 +33,21 @@ function nextHlsChild(manifest){
   if(!next||!/^\/api\/media\/[\w-]+$/.test(next))return null;
   return next;
 }
-function videoSignature(bytes){
-  if(!bytes?.length)return false;
-  if(bytes[0]===0x47)return true;
-  const prefix=bytes.subarray(0,40).toString('latin1');
-  return /(?:ftyp|moof|styp)/.test(prefix);
+function videoSignature(bytes,mime){
+  if(!bytes || bytes.length<8)return false;
+  const type=String(mime||'').split(';')[0].trim().toLowerCase();
+  if(type.includes('html')||type.includes('json')||type.includes('xml'))return false;
+  // ISO-BMFF box type is at EXACTLY bytes 4..7. A loose substring search
+  // falsely accepted a 200 text/html upstream anti-bot page as MP4.
+  const box=Buffer.from(bytes).subarray(4,8).toString('latin1');
+  if(['ftyp','styp','moof'].includes(box) &&
+      ['video/mp4','application/octet-stream','video/quicktime'].includes(type))
+    return true;
+  // MPEG-TS sync packets repeat every 188 bytes; one leading 0x47 is not
+  // sufficient to classify arbitrary HTML or opaque text as video.
+  return bytes.length>=377 && bytes[0]===0x47 &&
+    bytes[188]===0x47 && bytes[376]===0x47 &&
+    ['video/mp2t','application/octet-stream'].includes(type);
 }
 
 const response=await fetch(BASE+'/api/plugins/resolve',{
@@ -67,9 +77,9 @@ console.log('MOOSA_PAPERFRAME_ORIGINAL_PLUGIN_EXECUTION '+JSON.stringify({
 }));
 const relevant=sources.filter(x=>{
   const label=String(x.provider||x.name||'').toLowerCase();
-  return /vidlink|vaplayer/.test(label) &&
+  return /vidlink|vaplayer|hdhub4u/.test(label) &&
     /^\/api\/media\/[A-Za-z0-9_-]+$/.test(String(x.url||''));
-}).slice(0,6);
+}).slice(0,8);
 console.log('MOOSA_PAPERFRAME_APPROVED_CAPABILITIES '+JSON.stringify({
   candidates:relevant.length,
   temporarySameOriginTokenized:relevant.length>0,
@@ -107,7 +117,8 @@ for(let i=0;i<relevant.length;i++){
         const first=reader?await reader.read():{};
         const data=first.value||new Uint8Array();
         entry.format=type.split(';')[0]||'binary';
-        entry.verifiedSegment=videoSignature(data);
+        if(type.includes('text/html')||type.includes('application/json'))entry.format='upstream_returned_non_media';
+        entry.verifiedSegment=videoSignature(data,type);
         if(entry.verifiedSegment)segmentValid++;
         await reader?.cancel().catch(()=>{});
         break;
