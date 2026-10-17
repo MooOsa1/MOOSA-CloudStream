@@ -30,8 +30,13 @@ try{
   server=createServer();
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const addr='http://127.0.0.1:'+server.address().port;
+  // Branded Google Chrome includes the licensed H.264 and AAC decoders
+  // that Playwright's bundled open-source Chromium intentionally omits.
+  // Without Chrome, HTML5 reports MEDIA_ERR_SRC_NOT_SUPPORTED even when
+  // the Archive MPEG-4 file and HTTP 206 response are valid.
   browser=await chromium.launch({
-    headless:true,args:['--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']
+    channel:'chrome',headless:true,
+    args:['--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']
   });
   const page=await browser.newPage({viewport:{width:1280,height:720}});
   const errors=[];page.on('pageerror',e=>errors.push(String(e.message).slice(0,200)));
