@@ -1,0 +1,52 @@
+name: MOOSA verify real third-party Archive.org Stremio playback
+on:
+  push:
+    branches: [feat/web-archive-stremio-verified-streams-20261017]
+    paths:
+      - 'MOOSAWeb/providers.mjs'
+      - 'MOOSAWeb/tests/providers.test.mjs'
+      - 'MOOSAWeb/tests/external-archive-sintel-browser.e2e.mjs'
+      - '.github/workflows/moosa-external-archive-decoding.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/providers.mjs'
+      - 'MOOSAWeb/tests/providers.test.mjs'
+      - 'MOOSAWeb/tests/external-archive-sintel-browser.e2e.mjs'
+      - '.github/workflows/moosa-external-archive-decoding.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Whole web regression test suite
+        run: npm run check
+  external-player:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated test browser (not included in Render)
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Actually decode licensed 818p+ full movie from third-party Stremio addon in MOOSA Web
+        run: |
+          node --check tests/external-archive-sintel-browser.e2e.mjs
+          timeout 145 node tests/external-archive-sintel-browser.e2e.mjs
