@@ -1,0 +1,22 @@
+name: MOOSA Vidlink first-party original source proof
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/vidlink-original-night-pilot.mjs'
+      - 'MOOSAWeb/tests/vidlink-original-night-live.e2e.mjs'
+      - '.github/workflows/moosa-vidlink-first-party-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-videobytes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prove our own Node adapter produces real movie MP4 token
+        run: node MOOSAWeb/tests/vidlink-original-night-live.e2e.mjs

@@ -11,6 +11,8 @@ import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
 import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream-stremio-interop.mjs';
 import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
+import {createMediaGateway} from './verified-media-gateway.mjs';
+import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -153,10 +155,16 @@ async function readSources(media,id,season=null,episode=null) {
   return arr.filter(x=>x && typeof x.url==='string' && /^https:\/\//i.test(x.url))
     .map(x=>({name:String(x.name||'Authorized source').slice(0,80),url:x.url,subtitles:Array.isArray(x.subtitles)?x.subtitles.filter(t=>t && /^https:\/\//i.test(t.url||'')).map(t=>({label:String(t.label||'Subtitle'),language:t.language==='ar'?'ar':'en',source:String(t.source||'Custom'),url:t.url})):[]})).slice(0,12);
 }
-async function handle(req,res) {
+async function handle(req,res,mediaGateway=null) {
   try {
     const earlyUrl = new URL(req.url||'/', 'http://localhost');
     if(earlyUrl.pathname.startsWith('/api/bridge/'))return bridge.handle(req,res,earlyUrl);
+    // Opt-in per server instance; never accepts an anonymous media URL.
+    // A capability can ONLY be minted by the vetted internal operator.
+    if(earlyUrl.pathname.startsWith('/api/media/')){
+      if(!mediaGateway)return err(res,404,'No trusted media gateway configured');
+      return mediaGateway.handle(req,res,earlyUrl);
+    }
     if(req.method !== 'GET' && req.method !== 'HEAD')return err(res,405,'Method not allowed');
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
@@ -361,7 +369,16 @@ async function handle(req,res) {
           imdbId:details.imdb_id||details.external_ids?.imdb_id||null,
           ...(media==='tv'?{season,episode}:{})
         };
-        const sources=await resolveWebSources(meta);
+        // The separately gated Night pilot runs alongside existing web
+        // discovery and returns a FIRST-PARTY, short-lived same-origin media
+        // capability only when a genuine upstream MP4/HLS probe succeeded.
+        // No general CloudStream-provider endpoint or arbitrary URL relay.
+        const [usual,night]=await Promise.all([
+          resolveWebSources(meta),
+          findNightFromCineStream({meta,mediaGateway})
+        ]);
+        const sources=[...night,...usual.filter(x=>
+          !night.some(y=>y.url===x.url))];
         return json(res,200,{sources,providerMode:'server',count:sources.length,cloudstreamEngineConfigured:!!configuredEngine()});
       } catch(e) {
         return err(res,e.status||502,e.message==='TMDB_NOT_CONFIGURED'?
@@ -410,7 +427,20 @@ async function handle(req,res) {
     res.end(req.method==='HEAD'?undefined:data);
   }catch(e){err(res,500,'Server error');}
 }
-export function createServer(){return http.createServer(handle);}
+export function createServer({mediaGateway=null}={}){
+  // The operator must explicitly enable the single film AND pin CDN hosts.
+  // Without those two settings the public site remains entirely unchanged.
+  const approvedHosts=vidlinkPilotHosts();
+  const effectiveGateway=mediaGateway || (
+    process.env.CINESTREAM_NIGHT_PILOT==='1' && approvedHosts.length
+      ?createMediaGateway({
+          origin:'https://moosa-web.onrender.com',
+          allowedHosts:approvedHosts,
+          ttlMs:3*60*60_000
+        }):null
+  );
+  return http.createServer((req,res)=>handle(req,res,effectiveGateway));
+}
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const PORT = Number(process.env.PORT||3000);
   createServer().listen(PORT,'0.0.0.0',()=>console.log(`MOOSA Web on http://localhost:${PORT}`));
