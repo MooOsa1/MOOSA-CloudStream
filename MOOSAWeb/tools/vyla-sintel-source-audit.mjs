@@ -1,89 +1,123 @@
 /**
- * Candidate upstream SDK validation (strictly research, no MOOSA production use).
- * Library docs: https://vyla.cc/sdk/
+ * MOOSA Web read-only audit, version 2:
+ * - Sintel (TMDB movie 45745) is independently released CC-BY.
+ * - NO credentials, privileged Referer spoofing, CDN proxying, media GET
+ *   or player iframe. Do not claim content rights from a TMDB match.
+ * - A missing TMDB key makes lookup-based providers INCONCLUSIVE.
+ * - skipProxy metadata is NOT proof of browser playability.
+ * - Third-party SDK executes only in an isolated GitHub Actions runner.
  *
- * Probe ONLY Blender's Creative Commons movie Sintel (TMDB 45745).
- * We do not replay copyrighted titles, transmit credentials, download
- * video, bypass 403/429, or log complete signed media URLs.
- *
- * A metadata link, 1080p label or CDN HEAD 200 is NEVER playback proof.
+ * No raw URLs, signed query tokens, cookies or credentials in logs.
  */
 import VylaSDK from '@vyla-entertainment/sdk';
 import {setTimeout as sleep} from 'node:timers/promises';
 
-const ID='45745'; // Sintel — Blender CC-BY movie
+const LICENSED_MOVIE_TMDB_ID='45745';
 const sdk=new VylaSDK({tmdbApiKey:''});
-let sources;
-try{sources=await sdk.getSources();}
-catch(e){
-  console.log('VYLA_BOOT result=source_discovery_failed class='+String(e?.name||'unknown'));
-  process.exit(0);
-}
-const raw=Array.isArray(sources)?sources:
-  Array.isArray(sources?.sources)?sources.sources:
-  Object.values(sources||{}).flatMap(x=>Array.isArray(x)?x:[]);
-// Movies, not anime-only extractors. Restrict to source configurations that
-// explicitly claim browser-direct operation without protected CDN headers.
-const MOVIE_DIRECT_PREFERENCE=[
-  '111477','fsonline','movy','movienight','peestream','purstream','flaxmovies',
-  'streamaggregator','vidnest-sub','vixsrc'
+const FAVOR=[
+  '111477','3eyedraven','flaxmovies','fsonline','movy','movienight',
+  'peestream','purstream','streamaggregator','vidnest-sub','vixsrc',
+  'cinemaarmy','dulo','vidgod','vidfast','lookmovie','1embed'
 ];
-const candidates=raw.filter(x=>
-  x&&typeof x.key==='string'&&x.key.length<64&&
-  MOVIE_DIRECT_PREFERENCE.includes(x.key)&&x.disabled!==true&&x.skipProxy===true&&
-  (!Array.isArray(x.cdnHeaders)||x.cdnHeaders.length===0))
-  .sort((a,b)=>MOVIE_DIRECT_PREFERENCE.indexOf(a.key)-
-    MOVIE_DIRECT_PREFERENCE.indexOf(b.key));
-console.log('VYLA_BOOT installed=true total='+raw.length+
-  ' declaredDirectNoProxy='+candidates.length+
-  ' directProviderNames='+JSON.stringify(candidates.map(x=>x.key).slice(0,20))+
-  ' playbackVerified=false');
-if(!candidates.length)process.exit(0);
-const guardUrl=url=>{
-  if(typeof url!=='string'||url.length>2500)return null;
+const sources=sdk.getSources(true);
+const arr=Array.isArray(sources)?sources:[];
+const candidate=arr.filter(x=>x&&FAVOR.includes(x.key)&&x.disabled!==true)
+  .sort((a,b)=>FAVOR.indexOf(a.key)-FAVOR.indexOf(b.key)).slice(0,15);
+console.log('VYLA_AUDIT_SETUP sdkFound='+Boolean(VylaSDK)+
+  ' active='+arr.length+' candidateMovieSources='+candidate.length+
+  ' tmdbKeySupplied=false sourceStatus=untested_not_verified');
+
+function mediaUrl(raw){
+  if(typeof raw!=='string'||raw.length>3500||/\s/.test(raw))return null;
   try{
-    const u=new URL(url);
+    const u=new URL(raw);
     if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash||
-       /^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.)/i.test(u.hostname))
+       !u.hostname.includes('.')||u.hostname.includes(':')||
+       /^(?:localhost|[^.]+\.localhost|[^.]+\.local|127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(?:1[6-9]|2\d|3[01])\.)/i.test(u.hostname))
       return null;
-    if(!/\.(m3u8|mp4|webm)$/i.test(u.pathname))return null;
-    return {host:u.hostname,type:u.pathname.split('.').at(-1)};
+    const isDirect=/\.(?:m3u8|mp4|m4v|webm|mov)$/i.test(u.pathname);
+    return {host:u.hostname,mediaSuffix:isDirect,
+      extension:(u.pathname.match(/\.([a-z0-9]{2,6})$/i)||[])[1]||'none'};
   }catch{return null;}
-};
-for(const candidate of candidates.slice(0,7)){
-  let result;
-  try{
-    result=await Promise.race([
-      sdk.getStream(candidate.key,ID),
-      sleep(7500).then(()=>({timeout:true}))
-    ]);
-  }catch(e){result={error:e?.name||'unknown'}}
-  const streamResults=[
-    ...Array.isArray(result?.allUrls)?result.allUrls:[],
-    ...(result?.url?[result]:[])
-  ];
-  const approved=streamResults.filter(s=>
-    s&&!s.headers&&!result?.headers&&!s.behaviorHints?.proxyHeaders&&guardUrl(s.url));
-  const inspected=streamResults.slice(0,4).map(s=>{
-    let uri=null;
-    try{
-      const u=new URL(s.url);
-      uri={scheme:u.protocol,host:u.hostname,
-        extension:(u.pathname.match(/\.([a-z0-9]{2,6})$/i)||[])[1]||'none'};
-    }catch{}
-    return {
-      uri,quality:String(s.quality||'').slice(0,25),
-      hasPerLinkHeaders:!!s.headers,hasTopHeaders:!!result?.headers,
-      hasProxyHeaders:!!s.behaviorHints?.proxyHeaders,
-      hasUrl:!!s.url
-    };
-  });
-  console.log('VYLA_SINTEL metadataProvider='+JSON.stringify(candidate.key)+
-    ' responseType='+JSON.stringify(result?.timeout?'timeout':result?.error?'error':typeof result)+
-    ' rawStreamCandidates='+streamResults.length+
-    ' noHeadersDirect='+approved.length+
-    ' streams='+JSON.stringify(approved.slice(0,5).map(s=>({
-      ...guardUrl(s.url),claimedQuality:String(s.quality||'').slice(0,25)
-    })))+' candidateRejectionReasons='+JSON.stringify(inspected)+
-    ' decodedFhd=false urlOmitted=true');
 }
+function recordLinks(result){
+  const rows=[];
+  const put=v=>{
+    if(typeof v==='string')rows.push({url:v});
+    else if(v&&typeof v==='object'&&(v.url||v.link||v.file||v.stream_url))
+      rows.push({...v,url:v.url||v.link||v.file||v.stream_url});
+  };
+  if(Array.isArray(result))result.forEach(put);
+  for(const field of [result?.allUrls,result?.streams,result?.sources,
+      result?.urls,result?.data?.sources,result?.data?.streams]){
+    if(Array.isArray(field))field.forEach(put);
+  }
+  put(result);
+  return rows.slice(0,30);
+}
+function providerRules(source,urlHost){
+  const rules=Array.isArray(source.cdnHeaders)?source.cdnHeaders:[];
+  let matches=false,ambiguous=false;
+  for(const rule of rules){
+    try{
+      if(rule.pattern instanceof RegExp && rule.pattern.test(urlHost))matches=true;
+      else if(!(rule.pattern instanceof RegExp))ambiguous=true;
+    }catch{ambiguous=true}
+  }
+  return {matches,ambiguous};
+}
+async function check(source){
+  let outcome,kind='response';
+  try{
+    // SDK getStream may use TMDB metadata, which is deliberately omitted from
+    // this unprivileged research test. No credentials supplied to vendor code.
+    outcome=await Promise.race([
+      sdk.getStream(source.key,LICENSED_MOVIE_TMDB_ID),
+      sleep(8500).then(()=>({__auditTimeout:true}))
+    ]);
+    if(outcome?.__auditTimeout)kind='timeout';
+  }catch(e){
+    kind='sdk_error_'+String(e?.name||'unknown').replace(/[^a-zA-Z]/g,'').slice(0,24);
+  }
+  const links=recordLinks(outcome);
+  const counts={raw:links.length,nonHttps:0,extensionless:0,
+    specialHeaders:0,cdnRules:0,playbackCandidates:0};
+  const samples=[];
+  for(const link of links){
+    const raw=mediaUrl(link.url);
+    if(!raw){counts.nonHttps++;continue;}
+    if(!raw.mediaSuffix)counts.extensionless++;
+    const needsHeaders=!!(link.headers||link.requestHeaders||
+      link.behaviorHints?.proxyHeaders||outcome?.headers||outcome?.proxyHeaders);
+    const rules=providerRules(source,raw.host);
+    if(needsHeaders)counts.specialHeaders++;
+    if(rules.matches||rules.ambiguous)counts.cdnRules++;
+    const candidate=raw.mediaSuffix&&!needsHeaders&&
+      !rules.matches&&!rules.ambiguous;
+    if(candidate)counts.playbackCandidates++;
+    if(samples.length<3)samples.push({
+      // Hostnames are not URL tokens; never fetch host until separately approved.
+      host:raw.host,ext:raw.extension,
+      hasMediaSuffix:raw.mediaSuffix,
+      headersRequired:needsHeaders,
+      metadataCDNRulesApply:rules.matches||rules.ambiguous,
+      candidate
+    });
+  }
+  console.log('VYLA_SINTEL_VERIFICATION '+JSON.stringify({
+    provider:source.key,kind,metadataSkipProxy:source.skipProxy===true,
+    hasMetadataHeaderRules:!!source.cdnHeaders?.length,
+    counts,samples,tmdbMetadataVerified:false,licenseIndependentFromSDK:true,
+    contentMatchVerified:false,httpMediaTested:false,browser1080Decoded:false
+  }));
+  return counts.playbackCandidates;
+}
+let available=0;
+for(let i=0;i<candidate.length;i+=3){
+  const each=await Promise.all(candidate.slice(i,i+3).map(check));
+  available+=each.reduce((a,b)=>a+b,0);
+}
+console.log('VYLA_SINTEL_SUMMARY activeMovieProviderCandidates='+candidate.length+
+  ' candidateDirectUrls='+available+' commercialCatalogSupported=false'+
+  ' successfullyPlayed1080=0'+' noAdStreamGuaranteed=false'+
+  ' verdict='+(available?'requires_allowlist_and_browser_decode':'unverified_unavailable_or_key_dependent'));
