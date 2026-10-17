@@ -33,6 +33,10 @@ jobs:
           node-version: '22'
       - name: Whole web regression test suite
         run: npm run check
+      - name: Install media file header codec inspector
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
       - name: Inspect real independent Archive CC media HTTP range and codec metadata
         run: |
           node --check tools/archive-addon-codec-audit.mjs
@@ -48,10 +52,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install isolated test browser (not included in Render)
+      - name: Install branded Google Chrome for true H.264/AAC media decoding (test runner only)
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chrome
       - name: Actually decode licensed 818p+ full movie from third-party Stremio addon in MOOSA Web
         run: |
           node --check tests/external-archive-sintel-browser.e2e.mjs
