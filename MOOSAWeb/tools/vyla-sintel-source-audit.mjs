@@ -25,7 +25,8 @@ const raw=Array.isArray(sources)?sources:
 // Movies, not anime-only extractors. Restrict to source configurations that
 // explicitly claim browser-direct operation without protected CDN headers.
 const MOVIE_DIRECT_PREFERENCE=[
-  '1embed','fsonline','purstream','vidrift','xpass','vixsrc','vidnest-sub','flaxmovies'
+  '111477','fsonline','movy','movienight','peestream','purstream','flaxmovies',
+  'streamaggregator','vidnest-sub','vixsrc'
 ];
 const candidates=raw.filter(x=>
   x&&typeof x.key==='string'&&x.key.length<64&&
@@ -63,12 +64,26 @@ for(const candidate of candidates.slice(0,7)){
   ];
   const approved=streamResults.filter(s=>
     s&&!s.headers&&!result?.headers&&!s.behaviorHints?.proxyHeaders&&guardUrl(s.url));
+  const inspected=streamResults.slice(0,4).map(s=>{
+    let uri=null;
+    try{
+      const u=new URL(s.url);
+      uri={scheme:u.protocol,host:u.hostname,
+        extension:(u.pathname.match(/\.([a-z0-9]{2,6})$/i)||[])[1]||'none'};
+    }catch{}
+    return {
+      uri,quality:String(s.quality||'').slice(0,25),
+      hasPerLinkHeaders:!!s.headers,hasTopHeaders:!!result?.headers,
+      hasProxyHeaders:!!s.behaviorHints?.proxyHeaders,
+      hasUrl:!!s.url
+    };
+  });
   console.log('VYLA_SINTEL metadataProvider='+JSON.stringify(candidate.key)+
     ' responseType='+JSON.stringify(result?.timeout?'timeout':result?.error?'error':typeof result)+
     ' rawStreamCandidates='+streamResults.length+
     ' noHeadersDirect='+approved.length+
     ' streams='+JSON.stringify(approved.slice(0,5).map(s=>({
       ...guardUrl(s.url),claimedQuality:String(s.quality||'').slice(0,25)
-    })))+
+    })))+' candidateRejectionReasons='+JSON.stringify(inspected)+
     ' decodedFhd=false urlOmitted=true');
 }
