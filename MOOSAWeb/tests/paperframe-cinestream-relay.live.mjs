@@ -5,6 +5,9 @@
  * Signed URLs, source headers and capability tokens are never logged.
  */
 import assert from 'node:assert/strict';
+import {execFile as nativeExecFile} from 'node:child_process';
+import {promisify} from 'node:util';
+const execFile=promisify(nativeExecFile);
 const BASE='http://127.0.0.1:4173';
 const REPO='https://raw.githubusercontent.com/itsmeadarsh2008/Streamline/27c2cb2c864a056003241c48a26ede5a7cff037a/manifest.json';
 const APPROVED_FILM={title:'Sintel',imdb:'tt1727587',tmdb:'45745',year:2010};
@@ -33,6 +36,12 @@ function nextHlsChild(manifest){
   if(!next||!/^\/api\/media\/[\w-]+$/.test(next))return null;
   return next;
 }
+function matroskaSignature(bytes,mime){
+  const type=String(mime||'').split(';')[0].trim().toLowerCase();
+  return ['video/mkv','video/x-matroska','application/x-matroska'].includes(type) &&
+    bytes?.length>=4 && bytes[0]===0x1a && bytes[1]===0x45 &&
+    bytes[2]===0xdf && bytes[3]===0xa3;
+}
 function videoSignature(bytes,mime){
   if(!bytes || bytes.length<8)return false;
   const type=String(mime||'').split(';')[0].trim().toLowerCase();
@@ -52,6 +61,8 @@ function videoSignature(bytes,mime){
 
 // Regression: an HTML anti-bot response containing “ftyp” is NOT video.
 assert.equal(videoSignature(Buffer.from('<html><body>ftyp</body></html>'),'text/html'),false);
+assert.equal(matroskaSignature(Buffer.from([0x1a,0x45,0xdf,0xa3,0x42]),'video/mkv'),true);
+assert.equal(matroskaSignature(Buffer.from('<html>'),'video/mkv'),false);
 assert.equal(videoSignature(Buffer.from([0,0,0,16,102,116,121,112,0,0,0,0]),'video/mp4'),true);
 const response=await fetch(BASE+'/api/plugins/resolve',{
   method:'POST',
@@ -88,12 +99,13 @@ console.log('MOOSA_PAPERFRAME_APPROVED_CAPABILITIES '+JSON.stringify({
   temporarySameOriginTokenized:relevant.length>0,
   noThirdPartyMediaExposed:true
 }));
-let segmentValid=0,manifestValid=0;
+let segmentValid=0,manifestValid=0,mkvContainerValid=0,mkvFilmLengthMatches=0,mkvDecodedFrames=0;
 for(let i=0;i<relevant.length;i++){
   const item=relevant[i];
   let path=String(item.url);
   const entry={attempt:i+1,provider:String(item.provider||item.name||'').slice(0,50),
-    status:null,format:'unknown',verifiedSegment:false,headersRelayedByBackend:true};
+    status:null,format:'unknown',verifiedSegment:false,
+    matroskaContainerVerified:false,headersRelayedByBackend:true};
   try {
     for(let depth=0;depth<3;depth++){
       const r=await fetch(BASE+path,{
@@ -122,7 +134,9 @@ for(let i=0;i<relevant.length;i++){
         entry.format=type.split(';')[0]||'binary';
         if(type.includes('text/html')||type.includes('application/json'))entry.format='upstream_returned_non_media';
         entry.verifiedSegment=videoSignature(data,type);
+        entry.matroskaContainerVerified=matroskaSignature(data,type);
         if(entry.verifiedSegment)segmentValid++;
+        if(entry.matroskaContainerVerified)mkvContainerValid++;
         await reader?.cancel().catch(()=>{});
         break;
       }
@@ -131,11 +145,64 @@ for(let i=0;i<relevant.length;i++){
     entry.format=String(error?.name||'probe_failed').slice(0,30);
   }
   console.log('MOOSA_PAPERFRAME_MEDIA_RELAY_PROOF '+JSON.stringify(entry));
+  if(entry.matroskaContainerVerified){
+    // Do not guess from a .mkv filename: ask a real demuxer for embedded
+    // duration + first video codec of this *exact* approved movie.
+    const source=BASE+item.url;
+    let acceptedDuration=false;
+    try{
+      const {stdout}=await execFile('ffprobe',[
+        '-v','error','-rw_timeout','12000000','-probesize','262144',
+        '-analyzeduration','3000000','-show_entries',
+        'format=duration,format_name:format_tags=title:stream=codec_name,width,height',
+        '-select_streams','v:0','-of','json',source
+      ],{timeout:19_000,maxBuffer:80_000});
+      const doc=JSON.parse(stdout);
+      const duration=Number(doc?.format?.duration);
+      const video=doc?.streams?.[0]||{};
+      acceptedDuration=Number.isFinite(duration)&&duration>=860&&duration<=930;
+      if(acceptedDuration)mkvFilmLengthMatches++;
+      console.log('MOOSA_PAPERFRAME_MKV_REAL_FFPROBE '+JSON.stringify({
+        attempt:i+1,format:String(doc?.format?.format_name||'').slice(0,40),
+        durationSeconds:Number.isFinite(duration)?Math.round(duration):null,
+        filmDurationMatches:acceptedDuration,
+        videoCodec:String(video.codec_name||'unknown').slice(0,30),
+        width:Number(video.width)||null,height:Number(video.height)||null
+      }));
+    }catch(error){
+      console.log('MOOSA_PAPERFRAME_MKV_REAL_FFPROBE '+JSON.stringify({
+        attempt:i+1,result:'unavailable',
+        failureType:String(error?.name||'ffprobe_failed').slice(0,35)
+      }));
+    }
+    if(acceptedDuration){
+      try{
+        await execFile('ffmpeg',[
+          '-hide_banner','-nostdin','-loglevel','error',
+          '-rw_timeout','12000000','-i',source,
+          '-an','-sn','-dn','-frames:v','1','-f','null','-'
+        ],{timeout:25_000,maxBuffer:16_000});
+        mkvDecodedFrames++;
+        console.log('MOOSA_PAPERFRAME_MKV_DECODED_FRAME '+JSON.stringify({
+          attempt:i+1,decodedWithFfmpeg:true,
+          browserPlaybackVerified:false
+        }));
+      }catch(error){
+        console.log('MOOSA_PAPERFRAME_MKV_DECODED_FRAME '+JSON.stringify({
+          attempt:i+1,decodedWithFfmpeg:false,
+          failureType:String(error?.name||'decode_failed').slice(0,35)
+        }));
+      }
+    }
+  }
 }
 console.log('MOOSA_PAPERFRAME_EXPERIMENT_RESULT '+JSON.stringify({
   approvedFilm:'Sintel',providerCount:diagnostics.length,
   mediaCandidates:relevant.length,hlsPlaylistsRead:manifestValid,
   videoByteSignatures:segmentValid,
+  matroskaHeadersVerified:mkvContainerValid,
+  matchingFilmMkvDurations:mkvFilmLengthMatches,
+  matchingFilmDecodedFfmpegFrames:mkvDecodedFrames,
   noMediaURLsLogged:true,
   actualFullMovieNotYetProven:true,
   readyToDeploy:false
@@ -144,5 +211,5 @@ assert.ok(diagnostics.length>0,'Original plugin repository did not load in Quick
 // Do not mark a returned URL as playback success. Real Chrome frames and
 // movie duration verification are necessary before enabling in production.
 assert.ok(relevant.length>0,'No original CineStream plugin produced media capabilities');
-assert.ok(segmentValid>0,
-  'The relay returned media capabilities, but ZERO authentic MPEG-TS/MP4 video byte signatures; browser playback is NOT established');
+assert.ok(segmentValid>0 || (mkvFilmLengthMatches>0 && mkvDecodedFrames>0),
+  'No correctly identified movie video was decoded: HLS/MP4 failed and MKV duration/FFmpeg proof failed; browser playback is NOT established');
