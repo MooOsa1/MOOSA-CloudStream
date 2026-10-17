@@ -28,6 +28,28 @@ const genres = {
   tv: new Set([10759,16,35,80,99,18,10751,10762,9648,10764,10765,10766,10767,10768,37])
 };
 const mime = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.json':'application/json; charset=utf-8'};
+// Strict first-party playback boundary. External media files and TMDB
+// artwork may load, but the site cannot embed hosted ad-player pages,
+// execute marketing scripts, open plugin objects, or submit third-party forms.
+// A source could still contain ads inside the audio/video itself; CSP cannot
+// inspect or remove those bytes.
+export const AD_FREE_WEB_CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self' https://cdn.jsdelivr.net",
+  "style-src 'self'",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https:",
+  "media-src 'self' blob: https:",
+  "worker-src 'self' blob:",
+  "child-src 'self' blob:"
+].join('; ');
+
 
 export function json(res, status, data) {
   res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
@@ -335,7 +357,15 @@ async function handle(req,res) {
     if(!mime[ext])return err(res,404,'Not found');
     let data;
     try{data=await readFile(filePath);}catch{return err(res,404,'Not found');}
-    res.writeHead(200,{'Content-Type':mime[ext],'Cache-Control':ext==='.html'?'no-store':'public, max-age=120','X-Content-Type-Options':'nosniff'});
+    res.writeHead(200,{
+      'Content-Type':mime[ext],
+      'Cache-Control':ext==='.html'?'no-store':'public, max-age=120',
+      'X-Content-Type-Options':'nosniff',
+      ...(ext==='.html'?{
+        'Content-Security-Policy':AD_FREE_WEB_CSP,
+        'Permissions-Policy':'camera=(), microphone=(), geolocation=(), payment=()'
+      }:{})
+    });
     res.end(req.method==='HEAD'?undefined:data);
   }catch(e){err(res,500,'Server error');}
 }
