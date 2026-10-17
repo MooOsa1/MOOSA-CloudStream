@@ -4,6 +4,7 @@ on:
     branches: [experiment/render-free-cs-jvm-sidecar-20261017]
     paths:
       - 'MOOSAWeb/jvm-pilot/**'
+      - 'MOOSAWeb/tests/original-castle-chrome.e2e.mjs'
       - 'MOOSAWeb/tools/JvmOriginalProviderLinks.java'
       - 'MOOSAWeb/headless-jvm-shims/**'
       - '.github/workflows/moosa-jvm-free-docker-pilot.yml'
@@ -64,6 +65,32 @@ jobs:
             console.log('JVM_GATEWAY_ORIGINAL_CINESTREAM_HTTP_EXECUTED=true');
           }finally{clearTimeout(t)}
           JS
+      - name: Extract one Castle candidate only inside disposable CI container
+        run: |
+          docker exec moosa-jvm-pilot node --input-type=module -e '
+            import {extractOriginal} from "/opt/moosa/index.mjs";
+            import {writeFile} from "node:fs/promises";
+            const r=await extractOriginal({timeoutMs:100000});
+            if(r.state!=="original_callbacks_returned")process.exit(1);
+            const castle=(r.candidates||[]).filter(x=>x.provider==="Castle");
+            if(!castle.length)process.exit(2);
+            await writeFile("/tmp/moosa-castle-private.json",JSON.stringify(castle),{mode:0o600});
+            console.log("CASTLE_CALLBACKS_AVAILABLE_FOR_PRIVATE_WEB_TEST="+castle.length);
+          '
+          docker cp moosa-jvm-pilot:/tmp/moosa-castle-private.json \
+            MOOSAWeb/tests/.private-castle-candidates.json
+      - name: Install real browser and local hls.js
+        working-directory: MOOSAWeb
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1 hls.js@1.7.3
+          npx playwright install --with-deps chrome
+      - name: Decode ORIGINAL CineStream Castle feature in MOOSA picker with no custom headers
+        working-directory: MOOSAWeb
+        env:
+          MOOSA_PRIVATE_CASTLE_FILE: tests/.private-castle-candidates.json
+        run: |
+          timeout 140 node tests/original-castle-chrome.e2e.mjs
+          rm -f tests/.private-castle-candidates.json
       - name: Container status if a test fails
         if: failure()
         run: |
