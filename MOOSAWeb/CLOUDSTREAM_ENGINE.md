@@ -298,3 +298,23 @@ Both a genuine FFmpeg 852×480 fixture and 1280×720 fixture exercise this
 gate, including a deliberate false `RESOLUTION=1920x1080` master. The
 original CineStream JVM test also checks the strict gate on its same media
 sample, without mistaking first-segment accessibility for HD.
+
+## Single-film original-JVM pilot (17 October 2026)
+
+An isolated opt-in gate exists for exactly one IMDb identity:
+Dead Night (`tt5719076`; 2017 festival premiere / 2018 release).
+It is OFF without a deployed external executor.
+
+- `CLOUDSTREAM_SINGLE_FILM_PILOT=1` enables accepting a low-resolution
+  (144p+) source for this film only, instead of the normal 720p floor.
+- `CLOUDSTREAM_RUNTIME_URL` and `CLOUDSTREAM_RUNTIME_TOKEN` must point to an
+  independently deployed HTTPS JVM executor implementing POST `/v1/resolve`.
+  Render Node does NOT spawn the original `.cs3` executable.
+- The executor must return `provider: CineStream`, exact
+  `resolvedImdbId: tt5719076`, `resolvedTitle: Dead Night`,
+  `resolvedYear: 2017` (or 2018), and `operatorAuthorized: true`.
+  These checks do NOT establish content identity or distribution rights.
+- `/api/cloudstream/pilot-status` is configuration only, not playback proof.
+- Existing 720p+ sources and other catalog movies are unaffected.
+- GitHub Actions proof is not a persistent web service. Never commit
+  temporary HLS URLs or signed tokens.

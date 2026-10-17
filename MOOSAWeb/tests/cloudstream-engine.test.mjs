@@ -128,12 +128,12 @@ test('public registry API reports index status without claiming the .cs3 engine 
 
 test('single-film pilot disabled by default, and requires both URL and token',()=>{
   assert.equal(singleFilmPilotStatus({}).enabled,false);
-  assert.equal(singleFilmPilotStatus({CLOUDSTREAM_SINGLE_FILM_PILOT:'1'}).operational,false);
+  assert.equal(singleFilmPilotStatus({CLOUDSTREAM_SINGLE_FILM_PILOT:'1'}).readyForQuery,false);
   assert.equal(singleFilmPilotStatus({
     CLOUDSTREAM_SINGLE_FILM_PILOT:'1',
     CLOUDSTREAM_RUNTIME_URL:'https://jvm.example',
     CLOUDSTREAM_RUNTIME_TOKEN:'private'
-  }).operational,true);
+  }).readyForQuery,true);
 });
 test('pilot accepts lower quality ONLY with exact remote identity and explicit authorization',async()=>{
   const meta={media:'movie',id:20144,imdbId:'tt5719076',title:'Dead Night',
@@ -159,4 +159,20 @@ test('pilot accepts lower quality ONLY with exact remote identity and explicit a
   const other=await queryRemoteEngine({...meta,imdbId:'tt1234567'},{
     fetchImpl,engine,pilotEnabled:true});
   assert.deepEqual(other,[]);
+});
+
+test('single-film theatrical release metadata still matches original premiere',async()=>{
+  const meta={media:'movie',id:123,imdbId:'tt5719076',title:'Dead Night',
+    originalTitle:'Dead Night',year:2018};
+  const engine={url:'https://executor.example',token:'private'};
+  const result=await queryRemoteEngine(meta,{
+    engine,pilotEnabled:true,
+    fetchImpl:async()=>response({sources:[{
+      provider:'CineStream',name:'checked 480p',quality:480,
+      url:'https://cdn.example/movie.m3u8',resolvedImdbId:'tt5719076',
+      resolvedTitle:'Dead Night',resolvedYear:2017,operatorAuthorized:true
+    }]})
+  });
+  assert.equal(result.length,1);
+  assert.equal(result[0].singleFilmPilot,true);
 });

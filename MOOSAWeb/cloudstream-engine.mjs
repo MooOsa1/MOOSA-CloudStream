@@ -131,13 +131,13 @@ const PILOT_IMDB='tt5719076';
 export function singleFilmPilotStatus(env=process.env){
   const enabled=String(env.CLOUDSTREAM_SINGLE_FILM_PILOT||'')==='1';
   return {enabled,filmImdbId:PILOT_IMDB,runtimeConfigured:!!configuredEngine(env),
-    operational:enabled&&!!configuredEngine(env),
+    readyForQuery:enabled&&!!configuredEngine(env),
     limitation:'Pilot availability does not establish source identity, rights, or decoded playback.'};
 }
 function pilotMovie(meta){
   return meta?.media==='movie'&&meta.imdbId===PILOT_IMDB&&
     String(meta.originalTitle||meta.title||'').trim().toLowerCase()==='dead night'&&
-    Number(meta.year)===2017;
+    [2017,2018].includes(Number(meta.year));
 }
 function verifiedPilotSource(source,meta){
   // Never accept just a source's own quality label or a fuzzy lookup.
@@ -147,7 +147,7 @@ function verifiedPilotSource(source,meta){
     source?.provider==='CineStream' &&
     source?.resolvedImdbId===meta.imdbId &&
     String(source?.resolvedTitle||'').trim().toLowerCase()==='dead night' &&
-    Number(source?.resolvedYear)===2017 &&
+    [2017,2018].includes(Number(source?.resolvedYear)) &&
     source?.operatorAuthorized===true;
 }
 
