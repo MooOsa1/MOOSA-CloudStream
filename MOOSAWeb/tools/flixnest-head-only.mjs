@@ -36,8 +36,10 @@ if(!stream){
 const candidatesHeaders=[stream.headers,stream.behaviorHints?.proxyHeaders?.request,
   stream.behaviorHints?.headers].filter(x=>x&&typeof x==='object');
 const requestHeadersPresent=candidatesHeaders.some(x=>Object.keys(x).length>0);
+const advertisedHeaderKeys=[...new Set(candidatesHeaders.flatMap(x=>Object.keys(x||{})))].map(
+ k=>String(k).slice(0,40));
 let result={declared1080:true,ext:'mkv',requiresSpecialHeaders:requestHeadersPresent,
-  requestedNoSpecialHeaders:true,followedRedirects:false,
+  advertisedHeaderKeys,requestedNoSpecialHeaders:true,followedRedirects:false,
   downloadedMovieBytes:false,decodedFrames:0};
 try{
  const response=await fetch(stream.url,{method:'HEAD',redirect:'manual',
@@ -58,6 +60,28 @@ try{
  };
 }catch(e){result.error=e?.name||'unknown'}
 console.log('FLIX_MKV_HEAD '+JSON.stringify(result));
+try{
+ const response=await fetch(stream.url,{method:'GET',redirect:'manual',
+   headers:{Range:'bytes=0-0',Accept:'*/*'},
+   signal:AbortSignal.timeout(8500)});
+ // Always cancel without consuming any media body; only response headers are
+ // needed to establish whether browser byte ranges can be requested.
+ await response.body?.cancel().catch(()=>{});
+ const h=response.headers;
+ console.log('FLIX_MKV_ONE_BYTE_RANGE '+JSON.stringify({
+   status:response.status,contentType:h.get('content-type')?.slice(0,95)||null,
+   contentRange:h.get('content-range')||null,
+   contentLength:h.get('content-length')||null,
+   cors:h.get('access-control-allow-origin')?.slice(0,65)||null,
+   corp:h.get('cross-origin-resource-policy')||null,
+   redirectHost:(()=>{try{return new URL(h.get('location')).hostname}catch{return null}})(),
+   bytesRead:0,unverifiedCopyrightStreaming:false,
+   siteNotAddedToProduction:true
+ }));
+}catch(e){console.log('FLIX_MKV_ONE_BYTE_RANGE '+JSON.stringify({
+   error:String(e?.name||'unknown'),bytesRead:0
+ }));}
+
 console.log('FLIX_MKV_VERDICT '+(
   result.status===200&&
   /video\/(?:mp4|webm)/i.test(result.contentType||'')&&
