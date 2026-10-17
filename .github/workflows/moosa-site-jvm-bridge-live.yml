@@ -1,0 +1,77 @@
+name: MOOSA live site to JVM bridge verification
+on:
+  push:
+    branches: [experiment/render-free-cs-jvm-sidecar-20261017]
+    paths:
+      - '.github/workflows/moosa-site-jvm-bridge-live.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-public-bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check both deployed free services without media links or tokens
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          const endpoints=[
+            ['jvm','https://moosa-jvm-pilot.onrender.com/healthz'],
+            ['web','https://moosa-web.onrender.com/api/cloudstream/pilot-status']
+          ];
+          async function safeJson(url) {
+            const response=await fetch(url,{
+              redirect:'error',signal:AbortSignal.timeout(16000),
+              headers:{Accept:'application/json'}});
+            assert.equal(response.status,200);
+            assert.ok((response.headers.get('content-type')||'').includes('json'));
+            const body=await response.text();
+            assert.ok(body.length<16000);
+            return JSON.parse(body);
+          }
+          let status={},completed=false;
+          for(let i=1;i<=32;i++){
+            try{
+              const [jvm,web]=await Promise.all(endpoints.map(x=>safeJson(x[1])));
+              status={
+                attempt:i,
+                jvmHealth:jvm.status,
+                extraction:jvm.extractionProbe?.result||jvm.extractionProbe?.state,
+                jvmCandidates:jvm.extractionProbe?.candidateCount||0,
+                jvmDistributionEnabled:jvm.distributionEnabled,
+                webFilmImdbId:web.filmImdbId,
+                webReadyForQuery:web.readyForQuery,
+                webJVMConnected:web.remote?.connected,
+                webReportedExtraction:web.remote?.extraction,
+                webCandidateCount:web.remote?.candidateCount,
+                webDistributionEnabled:web.remote?.distributionEnabled
+              };
+              console.log('MOOSA_BRIDGE_HEALTH '+JSON.stringify(status));
+              if(status.jvmHealth==='ok' &&
+                 status.extraction==='original_callbacks_returned' &&
+                 status.jvmCandidates>0 &&
+                 status.webFilmImdbId==='tt5719076' &&
+                 status.webReadyForQuery===true &&
+                 status.webJVMConnected===true &&
+                 status.webReportedExtraction==='original_callbacks_returned' &&
+                 status.webCandidateCount>0 &&
+                 status.jvmDistributionEnabled===false &&
+                 status.webDistributionEnabled===false) {
+                completed=true;
+                break;
+              }
+            }catch(e){
+              console.log('MOOSA_BRIDGE_RETRY '+JSON.stringify({
+                attempt:i,error:String(e?.name||'network_issue').slice(0,70)}));
+            }
+            if(i<32)await sleep(6500);
+          }
+          assert.equal(completed,true,
+            'Live site has not yet confirmed both JVM connection and extraction');
+          console.log('MOOSA_LIVE_BRIDGE_CONFIRMED_NO_MEDIA_DISTRIBUTION=true');
+          JS
