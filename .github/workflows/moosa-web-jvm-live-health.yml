@@ -1,0 +1,53 @@
+name: MOOSA Web live original JVM bridge proof
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/moosa-web-jvm-live-health.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  render-to-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify live MOOSA web talks to real JVM sidecar without leaking CDN links
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+          let status=null;
+          for(let i=1;i<=30;i++){
+            try{
+              const res=await fetch('https://moosa-web.onrender.com/api/cloudstream/pilot-status',{
+                headers:{Accept:'application/json'},redirect:'error',
+                signal:AbortSignal.timeout(15000)});
+              if(res.ok){
+                const data=await res.json();
+                status={
+                  attempt:i,readyForQuery:data.readyForQuery,
+                  remoteConnected:data.remote?.connected,
+                  extraction:data.remote?.extraction,
+                  candidates:data.remote?.candidateCount,
+                  distributed:data.remote?.distributionEnabled
+                };
+                console.log('MOOSA_WEB_JVM_BRIDGE_STATUS '+JSON.stringify(status));
+                if(status.readyForQuery && status.remoteConnected &&
+                   status.extraction==='original_callbacks_returned' &&
+                   status.candidates>0)break;
+              }
+            }catch(e){console.log('MOOSA_WEB_JVM_POLL '+i+' '+String(e.name).slice(0,30))}
+            if(i<30)await wait(7500);
+          }
+          assert.equal(status?.readyForQuery,true);
+          assert.equal(status?.remoteConnected,true);
+          assert.equal(status?.extraction,'original_callbacks_returned');
+          assert.ok(status.candidates>0);
+          assert.equal(status.distributed,false);
+          console.log('MOOSA_WEB_ORIGINAL_JVM_CONNECTED=true');
+          console.log('MOOSA_WEB_THIRD_PARTY_PLAYBACK_PUBLISHED=false');
+          JS
