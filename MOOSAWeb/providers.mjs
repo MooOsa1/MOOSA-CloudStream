@@ -195,25 +195,31 @@ export async function fromWebAddons(meta, {fetchImpl=fetch,addons=configuredAddo
       if(stream?.drm || stream?.referer || stream?.cookie ||
          stream?.behaviorHints?.notWebReady===true)continue;
       const label=String(stream.name||'')+' '+String(stream.title||'');
+      const displayName=String(manifest.name||'Source')+' • '+
+        String(stream.name||'').slice(0,70);
+      if(new URL(link).hostname==='archive.org'){
+        // External Archive addon streams frequently omit the quality label.
+        // NEVER reject a potentially valid licensed full film due only to
+        // untrusted missing label, and NEVER trust a fabricated 4K label.
+        // Independently validate the exact file, original title/year,
+        // Creative Commons license, full-file size and measured metadata
+        // height before allowing a source into the player.
+        if(pendingArchive.length>=3 || meta.media!=='movie')continue;
+        pendingArchive.push(validateExternalArchiveStream(link,meta,{fetchImpl})
+          .then(verified=>verified?cleanStream({
+            url:link,quality:verified.quality,
+            name:'Archive verified • '+verified.quality+'p',
+            subtitles:stream.subtitles,licenseUrl:verified.licenseUrl
+          },'Archive verified'):null).catch(()=>null));
+        continue;
+      }
+      // Non-Archive addons have no independent provenance from Archive.org.
+      // Keep requiring a declared >=720p quality for these direct links.
       const quality=declaredQuality(label) || Number(stream?.behaviorHints?.videoHeight) || 0;
       const source=cleanStream({
-        url:link,name:(String(manifest.name||'Source')+' • '+String(stream.name||'').slice(0,70)),
-        quality,subtitles:stream.subtitles
+        url:link,name:displayName,quality,subtitles:stream.subtitles
       },manifest.name);
-      if(!source)continue;
-      if(new URL(source.url).hostname==='archive.org'){
-        // The untrusted Archive Stremio addon was observed returning wrong
-        // movies, unrelated videos and trailers for exact IMDb requests.
-        // A separate Archive metadata lookup must prove the film identity,
-        // original video filename, CC rights and actual >=720p resolution.
-        // Cap to 3 concurrent item lookups; no paid proxy or scraping.
-        if(pendingArchive.length>=3 || meta.media!=='movie')continue;
-        pendingArchive.push(validateExternalArchiveStream(source.url,meta,{fetchImpl})
-          .then(verified=>verified?{
-            ...source,quality:verified.quality,
-            name:'Archive verified • '+verified.quality+'p'
-          }:null));
-      }else output.push(source);
+      if(source)output.push(source);
     }
     const checked=await Promise.all(pendingArchive);
     return [...output,...checked.filter(Boolean)];
