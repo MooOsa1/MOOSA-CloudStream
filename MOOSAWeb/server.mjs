@@ -248,7 +248,36 @@ async function handle(req,res) {
     }
     if(url.pathname==='/api/cloudstream/pilot-status') {
       if(url.search)return err(res,400,'No query arguments accepted');
-      return json(res,200,singleFilmPilotStatus());
+      const pilot=singleFilmPilotStatus();
+      const engine=configuredEngine();
+      // The original JVM process lives on a separately deployed Render
+      // service. Expose only its live safe health and extraction count;
+      // no signed video URLs, request tokens or logs leave this route.
+      let remote={connected:false,extraction:'not_connected',candidateCount:0,
+        distributionEnabled:false};
+      if(engine && pilot.enabled){
+        try{
+          const response=await fetch(engine.url+'/healthz',{
+            redirect:'error',headers:{Accept:'application/json'},
+            signal:AbortSignal.timeout(4500)
+          });
+          if(response.ok && Number(response.headers.get('content-length')||0)<12000){
+            const data=await response.json();
+            if(data?.status==='ok' && data.engine==='cinestream_original_jvm'){
+              const candidateCount=Number(data.extractionProbe?.candidateCount);
+              remote={
+                connected:true,
+                extraction:String(data.extractionProbe?.result||
+                  data.extractionProbe?.state||'not_started').slice(0,50),
+                candidateCount:Number.isInteger(candidateCount)&&candidateCount>=0?
+                  Math.min(candidateCount,100):0,
+                distributionEnabled:data.distributionEnabled===true
+              };
+            }
+          }
+        }catch{/* A sleeping/free JVM service must not break the main site. */}
+      }
+      return json(res,200,{...pilot,remote});
     }
     if(url.pathname==='/api/cloudstream/repositories') {
       const results=await inspectRepositories();

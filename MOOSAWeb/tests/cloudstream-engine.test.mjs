@@ -187,3 +187,16 @@ test('slow original JVM is allowed only for the exact pilot film',()=>{
  assert.equal(originalRuntimeTimeoutMs({...exact,media:'tv',season:1,episode:1},
   {pilotEnabled:true}),12000);
 });
+
+test('pilot never contacts the single-film JVM for unrelated movies or episodes',async()=>{
+  let calls=0;
+  const fetchImpl=async()=>{calls++;return response({sources:[]});};
+  const engine={url:'https://jvm.example',token:'test-secret'};
+  const film={media:'movie',id:123,imdbId:'tt5719076',
+    title:'Dead Night',originalTitle:'Dead Night',year:2018};
+  assert.deepEqual(await queryRemoteEngine({...film,imdbId:'tt1234567'},{
+    engine,pilotEnabled:true,fetchImpl}),[]);
+  assert.deepEqual(await queryRemoteEngine({...film,media:'tv',season:1,episode:1},{
+    engine,pilotEnabled:true,fetchImpl}),[]);
+  assert.equal(calls,0);
+});
