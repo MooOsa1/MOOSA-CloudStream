@@ -13,6 +13,7 @@ import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream
 import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
 import {createMediaGateway} from './verified-media-gateway.mjs';
 import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
+import {findVerifiedMultiFilmVidlink} from './vidlink-multifilm-candidates.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -367,12 +368,14 @@ async function handle(req,res,mediaGateway=null) {
           imdbId:details.imdb_id||details.external_ids?.imdb_id||null,
           ...(media==='tv'?{season,episode}:{})
         };
-        const [usual,cinestream]=await Promise.all([
+        const [usual,cinestream,multifilm]=await Promise.all([
           resolveWebSources(meta),
-          findNightFromCineStream({meta,mediaGateway})
+          findNightFromCineStream({meta,mediaGateway}),
+          findVerifiedMultiFilmVidlink({meta,mediaGateway})
         ]);
-        const sources=[...cinestream,...usual.filter(x=>
-          !cinestream.some(y=>y.url===x.url))];
+        const vetted=[...cinestream,...multifilm];
+        const sources=[...vetted,...usual.filter(x=>
+          !vetted.some(y=>y.url===x.url))];
         return json(res,200,{sources,providerMode:'server',count:sources.length,cloudstreamEngineConfigured:!!configuredEngine()});
       } catch(e) {
         return err(res,e.status||502,e.message==='TMDB_NOT_CONFIGURED'?
@@ -425,7 +428,8 @@ export function createServer({mediaGateway=null}={}){
   const hosts=vidlinkPilotHosts();
   // One-film only, operator controlled, and disabled by default.
   const gateway=mediaGateway || (
-    process.env.CINESTREAM_NIGHT_PILOT==='1' && hosts.length
+    (process.env.CINESTREAM_NIGHT_PILOT==='1' ||
+      process.env.CINESTREAM_MULTIFILM_PILOT==='1') && hosts.length
       ?createMediaGateway({
           origin:'https://moosa-web.onrender.com',
           allowedHosts:hosts,ttlMs:3*60*60_000
