@@ -2,6 +2,7 @@ import {nextPlaybackSource} from './playback-fallback.js';
 import {chooseBrowserSources} from './source-compatibility.js';
 import {safeSubtitleFileUrl} from './subtitle-file-url.js';
 import {isDirectVideoUrl} from './direct-media-policy.js';
+import {playableMediaSource,trustedMediaCapability} from './media-capability-policy.js';
 import {comparePlaybackSources} from './stream-preferences.js';
 import {hlsPlayerOptions,keepHlsAutoAtLeastHd} from './hls-playback-options.js';
 const $ = s => document.querySelector(s);
@@ -95,8 +96,9 @@ function loadHls(){
   }).catch(e=>{scriptPromise=null;throw e});
   return scriptPromise;
 }
-async function playLink(url, label='Video'){
-  if(!isDirectVideoUrl(url)){
+async function playLink(url, label='Video', selected=null){
+  const accepted=playableMediaSource(selected||{url},location.origin);
+  if(!accepted||accepted.url!==url){
     notice('لحمايتك من إعلانات المشغلات الخارجية، نقبل روابط فيديو HTTPS مباشرة بصيغ MP4 أو WebM أو HLS فقط.');
     return;
   }
@@ -104,7 +106,7 @@ async function playLink(url, label='Video'){
   const currentPlayback=playbackToken;
   notice(`جاري تجهيز ${label}...`);
   $('#video-overlay').classList.remove('hidden');
-  const isHls=/\.m3u8(?:[?#]|$)/i.test(url);
+  const isHls=accepted.format==='hls';
   try {
     if(isHls && preferNativeHls()){video.src=url;}
     else if(isHls){
@@ -169,7 +171,7 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   previousFocus=document.activeElement;
   externalSubtitles=[];
   activeSources=chooseBrowserSources((Array.isArray(sources)?sources:[])
-    .filter(x=>isDirectVideoUrl(x?.url)),navigator.userAgent);
+    .filter(x=>playableMediaSource(x,location.origin)),navigator.userAgent);
   currentMediaTitle=title;
   selectedSourceUrl=null;
   attemptedSourceUrls.clear();
@@ -243,14 +245,15 @@ export function appendPlayerSources(items) {
   let added = 0;
   for (const item of items) {
     const advertised=Number(item?.quality);
+    const gateway=trustedMediaCapability(item,location.origin);
     const pilot=item?.singleFilmPilot===true &&
       item?.verifiedFilmImdbId==='tt5719076' &&
       currentMediaTitle.trim().toLowerCase()==='dead night' &&
       /^CineStream/.test(String(item?.name||''));
     // Never accept low / unknown-quality automatic sources, even if an
     // untrusted plugin bypasses the server's source normalization.
-    if (!isDirectVideoUrl(item?.url) || seen.has(item.url) ||
-        !Number.isInteger(advertised) || advertised<(pilot?144:720) || advertised>4320) continue;
+    if (!playableMediaSource(item,location.origin) || seen.has(item.url) ||
+        (!gateway && (!Number.isInteger(advertised) || advertised<(pilot?144:720) || advertised>4320))) continue;
     seen.add(item.url);
     activeSources.push(attachExternalSubtitles(item));
     added++;
@@ -343,7 +346,7 @@ function sourceSelected(value,{fallback=false}={}){
   $('#player-title').textContent=currentMediaTitle||src.name||'مشغل MOOSA';
   // playLink resets the track menu synchronously; repopulate immediately,
   // instead of waiting for a remote video to load or fail.
-  void playLink(src.url,src.name);
+  void playLink(src.url,src.name,src);
   setAttribution(src);
   const list=$('#player-subtitles');
   for(const t of src.subtitles||[])addSubtitleOption(list,t);
@@ -408,7 +411,11 @@ function enforceDecodedHd(){
     source.singleFilmPilot===true &&
     source.verifiedFilmImdbId==='tt5719076' &&
     currentMediaTitle.trim().toLowerCase()==='dead night');
-  if(pilot && video.videoHeight>0 && video.videoWidth>0)return false;
+  const gateway=activeSources.some(source=>source.url===selectedSourceUrl &&
+    trustedMediaCapability(source,location.origin));
+  // First prove the original film can decode from an approved site-issued
+  // capability; quality selection and 4K can be improved separately.
+  if((pilot||gateway) && video.videoHeight>0 && video.videoWidth>0)return false;
   if(video.videoHeight>=720 && video.videoWidth>=1280)return false;
   const measured=video.videoWidth+'×'+video.videoHeight;
   rejectedVideoToken=playbackToken;
@@ -436,7 +443,9 @@ video.addEventListener('error',()=>{
   // Do not let a stale error from an old URL switch the current movie source.
   const reported=video.currentSrc||video.src;
   if(selectedSourceUrl && reported===selectedSourceUrl && tryFallbackSource())return;
-  const isHls=/\.m3u8(?:[?#]|$)/i.test(video.currentSrc||video.src);
+  const current=activeSources.find(source=>source.url===selectedSourceUrl);
+  const isHls=playableMediaSource(current,location.origin)?.format==='hls' ||
+    /\.m3u8(?:[?#]|$)/i.test(video.currentSrc||video.src);
   notice(isHls
     ? 'تعذر تشغيل HLS. قد يكون الرابط محميًا، أو يحتاج Referer أو ترويسات لا يسمح المتصفح بإرسالها.'
     : 'تعذر تشغيل الملف في المتصفح. جرّب رابطًا مباشرًا آخر أو تحقق من الصيغة والصلاحيات.');
