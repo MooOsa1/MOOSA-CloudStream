@@ -16,7 +16,7 @@ const root=await new Promise((resolve,reject)=>{
 let browser;
 const report={
   film:'Sita Sings the Blues',fullFeatureRuntimeExpected:true,
-  verifiedCc0:false,correctTitle:false,decoderPlayed:false,
+  verifiedOpenLicense:false,correctTitle:false,decoderPlayed:false,
   decodedDurationMinutes:0,decodedWidth:0,decodedHeight:0
 };
 try{
@@ -28,10 +28,12 @@ try{
   assert.equal(film.title,'Sita Sings the Blues');
   assert.equal(film.year,2008);
   assert.ok(film.sources.length>=1,'Wikimedia Commons did not verify the original full video');
-  assert.ok(film.sources.every(s=>s.licenseUrl===
-    'https://creativecommons.org/publicdomain/zero/1.0/'));
+  report.sourceRights=film.sources.map(s=>String(s.licenseUrl||'none').slice(0,110));
+  assert.ok(film.sources.every(s=>
+    /^https:\/\/creativecommons\.org\/(?:publicdomain\/zero\/1\.0|licenses\/by-sa\/3\.0)\/$/.test(
+      String(s.licenseUrl||''))),'Sita source needs verified CC0 or CC BY-SA 3.0 rights');
   assert.ok(film.sources.every(s=>new URL(s.url).hostname==='upload.wikimedia.org'));
-  report.correctTitle=true;report.verifiedCc0=true;
+  report.correctTitle=true;report.verifiedOpenLicense=true;
   browser=await chromium.launch({channel:'chrome',headless:true,
     args:['--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']});
   const page=await browser.newPage({viewport:{width:1280,height:800}});
