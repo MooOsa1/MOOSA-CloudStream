@@ -125,7 +125,33 @@ function normalizeMediaRequest(meta) {
     episode:meta.media==='tv'?meta.episode:null,
     plugins:['CineStream','StreamPlay']};
 }
-function cleanRuntimeResult(source) {
+
+const PILOT_IMDB='tt5719076';
+/** Operator-only isolated first-film trial. Not general copyright clearance. */
+export function singleFilmPilotStatus(env=process.env){
+  const enabled=String(env.CLOUDSTREAM_SINGLE_FILM_PILOT||'')==='1';
+  return {enabled,filmImdbId:PILOT_IMDB,runtimeConfigured:!!configuredEngine(env),
+    operational:enabled&&!!configuredEngine(env),
+    limitation:'Pilot availability does not establish source identity, rights, or decoded playback.'};
+}
+function pilotMovie(meta){
+  return meta?.media==='movie'&&meta.imdbId===PILOT_IMDB&&
+    String(meta.originalTitle||meta.title||'').trim().toLowerCase()==='dead night'&&
+    Number(meta.year)===2017;
+}
+function verifiedPilotSource(source,meta){
+  // Never accept just a source's own quality label or a fuzzy lookup.
+  // The trusted remote executor must return the resolved exact identity;
+  // actual video frames must still be checked by the player.
+  return pilotMovie(meta) &&
+    source?.provider==='CineStream' &&
+    source?.resolvedImdbId===meta.imdbId &&
+    String(source?.resolvedTitle||'').trim().toLowerCase()==='dead night' &&
+    Number(source?.resolvedYear)===2017 &&
+    source?.operatorAuthorized===true;
+}
+
+function cleanRuntimeResult(source,{pilot=false,meta=null}={}) {
   if(!source || typeof source.url!=='string')return null;
   let u;
   try{u=new URL(source.url)}catch{return null;}
@@ -136,7 +162,8 @@ function cleanRuntimeResult(source) {
   // a magnet/torrent or an arbitrary web page.
   if(!/\.(?:m3u8|mp4|webm)(?:$|[?#])/i.test(u.pathname))return null;
   const quality=Number(source.quality);
-  if(!Number.isInteger(quality)||quality<720||quality>4320)return null;
+  const acceptedPilot=pilot && verifiedPilotSource(source,meta);
+  if(!Number.isInteger(quality)||quality<(acceptedPilot?144:720)||quality>4320)return null;
   const provider=String(source.provider||'CloudStream').slice(0,70);
   if(!['CineStream','StreamPlay'].includes(provider))return null;
   const name=String(source.name||provider).slice(0,95);
@@ -150,10 +177,12 @@ function cleanRuntimeResult(source) {
       return [{url:u.href,language:lang,label:String(s.label||lang).slice(0,80),source:provider}];
     }catch{return [];}
   }):[];
-  return {url:u.href,name:provider+' • '+name,quality,subtitles};
+  return {url:u.href,name:provider+' • '+name,quality,subtitles,
+    ...(acceptedPilot?{singleFilmPilot:true,verifiedFilmImdbId:PILOT_IMDB}:{})};
 }
 export async function queryRemoteEngine(meta,{
-  fetchImpl=fetch,engine=configuredEngine()
+  fetchImpl=fetch,engine=configuredEngine(),
+  pilotEnabled=singleFilmPilotStatus().enabled
 }={}) {
   if(!engine)return [];
   const task=normalizeMediaRequest(meta);
@@ -170,7 +199,7 @@ export async function queryRemoteEngine(meta,{
     const data=JSON.parse(text);
     const seen=new Set();
     return (Array.isArray(data.sources)?data.sources:[]).slice(0,70)
-      .map(cleanRuntimeResult).filter(x=>{
+      .map(source=>cleanRuntimeResult(source,{pilot:pilotEnabled,meta})).filter(x=>{
         if(!x||seen.has(x.url))return false;
         seen.add(x.url);return true;
       }).sort((a,b)=>b.quality-a.quality).slice(0,30);
