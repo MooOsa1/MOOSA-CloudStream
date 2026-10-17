@@ -164,6 +164,13 @@ jobs:
           for cls,deps in sorted(core.items(),key=lambda x:-len(x[1]))[:17]:
             print('CINESTREAM_MISSING_OWNER '+cls+' count='+str(len(deps))+' dependencies='+','.join(sorted(deps)[:13]))
           PY
+      - name: Verify exact movie TMDB identity repair using fake trusted metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/CinemetaIdentity.java MOOSAJVM/CinemetaIdentityTest.java
+          java -cp "MOOSAJVM:$runtime" CinemetaIdentityTest
       - name: Invoke original CineStreamProvider.loadLinks against licensed Sintel with no video downloads
         shell: bash
         run: |
@@ -173,14 +180,14 @@ jobs:
           javac -d MOOSAJVM MOOSAJVM/shims/com/megix/settings/Settings.java
           javac -cp MOOSAJVM -d MOOSAJVM MOOSAJVM/shims/android/content/Context.java
           javac -cp "MOOSAJVM:$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/CloudStreamApp.java MOOSAJVM/shims/com/lagradost/cloudstream3/utils/DataStore.java
-          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/MediaSegmentSignature.java MOOSAJVM/HlsSourceProbe.java MOOSAJVM/ProviderLinksProbe.java
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/CinemetaIdentity.java MOOSAJVM/MediaSegmentSignature.java MOOSAJVM/HlsSourceProbe.java MOOSAJVM/ProviderLinksProbe.java
           timeout 85 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLinksProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
       - name: Exercise two additional native CineStream providers without Android (licensed test ID)
         shell: bash
         run: |
           set -euo pipefail
           runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
-          for provider in p_vidzee p_videasy; do
+          for provider in p_vidzee p_videasy p_vidcore p_primesrc; do
             echo "JVM_NATIVE_PROVIDER_CHECK provider=$provider"
             set +e
             MOOSA_JVM_SINGLE_PROVIDER="$provider" timeout 55 java -Xmx512m \
@@ -190,7 +197,7 @@ jobs:
             status=$?
             set -e
             echo "JVM_NATIVE_PROVIDER_EXIT provider=$provider code=$status"
-            grep -E '^JVM_REAL_LINKS |^JVM_SOURCE_CLASSIFICATION ' /tmp/native-provider-private.log || true
+            grep -E '^JVM_METADATA_IDENTITY |^JVM_REAL_LINKS |^JVM_SOURCE_CLASSIFICATION |^JVM_MEDIA_SUMMARY ' /tmp/native-provider-private.log || true
           done
       - name: Convert SHA256 verified original StreamPlay cs3 to JVM and test provider constructor
         shell: bash
