@@ -105,7 +105,26 @@ function bearerAuth(value,secret){
   const a=Buffer.from(value.slice(7)),b=Buffer.from(secret);
   return a.length===b.length&&timingSafeEqual(a,b);
 }
-export async function executeBootProbe(extract=extractOriginal,{
+/** Reuse short-lived original JVM callbacks in memory; no signed URLs in logs.
+ * Simultaneous boot and Play requests await one extraction, not two JVMs. */
+export function makeSharedExtraction(extract,{ttlMs=120000,clock=Date.now}={}){
+  let active=null,cached=null;
+  return function sharedExtraction(){
+    if(cached && cached.until>clock())return Promise.resolve(cached.result);
+    if(active)return active;
+    active=Promise.resolve().then(extract).then(result=>{
+      if(result?.state==='original_callbacks_returned' &&
+          Array.isArray(result.urls) && result.urls.length>0)
+        cached={result,until:clock()+ttlMs};
+      return result;
+    }).finally(()=>{active=null});
+    return active;
+  };
+}
+const sharedOriginalExtraction=makeSharedExtraction(
+  ()=>extractOriginal({timeoutMs:170000}),{ttlMs:120000});
+
+export async function executeBootProbe(extract=sharedOriginalExtraction,{
   segmentProbe=probeHlsFirstSegment,
   verifySegment=process.env.MOOSA_JVM_SEGMENT_PROBE==='1',
   allowedHosts=String(process.env.MOOSA_MEDIA_HOSTS||'')
@@ -159,7 +178,7 @@ export function gateway({
   hosts=String(process.env.MOOSA_MEDIA_HOSTS||'').split(',')
     .map(s=>s.trim().toLowerCase()).filter(s=>/^[a-z0-9.-]{5,130}$/.test(s)),
   rightsApproved=process.env.MOOSA_MEDIA_RIGHTS_APPROVED==='1',
-  extract=extractOriginal
+  extract=sharedOriginalExtraction
 }={}){
   if(token.length<32)throw Error('Missing secure MOOSA_JVM_TOKEN');
   let busy=false;
@@ -172,7 +191,9 @@ export function gateway({
       return reply(res,404,{error:'not_found'});
     if(!bearerAuth(req.headers.authorization,token))
       return reply(res,401,{error:'unauthorized'});
-    if(busy||bootProbe.state==='running')return reply(res,429,{error:'busy'});
+    // Authorized Play joins the boot-time extraction through the shared
+    // promise instead of receiving 429 or launching a second JVM process.
+    if(busy)return reply(res,429,{error:'busy'});
     let raw='';
     try{
       for await(const part of req){
@@ -206,6 +227,6 @@ if(process.argv[1]===fileURLToPath(import.meta.url)){
   gateway().listen(port,'0.0.0.0',()=>{
     console.log('MOOSA original JVM pilot service listening');
     if(process.env.MOOSA_JVM_BOOT_PROBE==='1')
-      void executeBootProbe(()=>extractOriginal({timeoutMs:170000}));
+      void executeBootProbe();
   });
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {gateway,exactFilm,approvedUrls,executeBootProbe,bootProbeStatus} from '../jvm-pilot/index.mjs';
+import {gateway,exactFilm,approvedUrls,executeBootProbe,bootProbeStatus,makeSharedExtraction} from '../jvm-pilot/index.mjs';
 const film={media:'movie',tmdbId:100,imdbId:'tt5719076',
   title:'Dead Night',year:2018};
 test('only exact movie is accepted by JVM executor',()=>{
@@ -93,4 +93,34 @@ test('HTTP first-segment probe sees only approved HLS hosts and reports counts',
   assert.equal(state.mediaProbe.checked,1);
   assert.equal(state.mediaProbe.firstSegmentHttpVerified,1);
   assert.equal(JSON.stringify(state).includes('proof.m3u8'),false);
+});
+
+test('cold boot and authenticated Play reuse the same short-lived JVM extraction',async()=>{
+  let calls=0,time=50;
+  const fetcher=makeSharedExtraction(async()=>{
+    calls++;
+    await new Promise(resolve=>setTimeout(resolve,12));
+    return {state:'original_callbacks_returned',
+      urls:['https://licensed.example/feature.m3u8?ephemeral=1']};
+  },{ttlMs:120000,clock:()=>time});
+  const [a,b,c]=await Promise.all([fetcher(),fetcher(),fetcher()]);
+  assert.equal(calls,1);
+  assert.equal(a,b);
+  assert.equal(b,c);
+  const warm=await fetcher();
+  assert.equal(warm.state,'original_callbacks_returned');
+  assert.equal(calls,1);
+  time+=120001;
+  await fetcher();
+  assert.equal(calls,2);
+});
+test('failed extractions are not cached',async()=>{
+  let count=0;
+  const shared=makeSharedExtraction(async()=>{
+    count++;
+    return {state:'no_verified_upstream_identity',urls:[]};
+  });
+  await shared();
+  await shared();
+  assert.equal(count,2);
 });
