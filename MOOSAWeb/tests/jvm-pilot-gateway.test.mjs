@@ -7,7 +7,7 @@ test('original Castle metadata must describe the right CC film',()=>{
   assert.equal(matchesLicensedFilmDetails('DEBUG Castle: details: {"title":"Sintel","duration":888}'),true);
   assert.equal(matchesLicensedFilmDetails('DEBUG Castle: details: {"title":"Chatpati Sister","duration":1756}'),false);
   assert.equal(matchesLicensedFilmDetails(
-    'DEBUG Castle: searchData: {"title":"Sintel","duration":888}\\n'+
+    'DEBUG Castle: searchData: {"title":"Sintel","duration":888}\n'+
     'DEBUG Castle: details: {"title":"Another film","duration":888}'),false);
   assert.equal(matchesLicensedFilmDetails(
     'DEBUG Castle: details: {"title":"Sintel","duration":1756}'),false);
