@@ -1,0 +1,35 @@
+name: MOOSA candidate Vyla SDK direct-source proof (CC film only)
+on:
+  push:
+    branches: [experiment/moosa-vyla-sdk-source-20261017]
+    paths:
+      - 'MOOSAWeb/tools/vyla-sintel-source-audit.mjs'
+      - '.github/workflows/moosa-vyla-source-probe.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/vyla-sintel-source-audit.mjs'
+      - '.github/workflows/moosa-vyla-source-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm audit syntax and immutable safe media ID
+        run: |
+          node --check MOOSAWeb/tools/vyla-sintel-source-audit.mjs
+          grep "const ID='45745'" MOOSAWeb/tools/vyla-sintel-source-audit.mjs
+      - name: Install published Vyla SDK only in temporary GitHub runner
+        run: |
+          mkdir -p /tmp/moosa-vyla-check
+          npm install --prefix /tmp/moosa-vyla-check --ignore-scripts --no-audit --no-fund @vyla-entertainment/sdk
+          cp MOOSAWeb/tools/vyla-sintel-source-audit.mjs /tmp/moosa-vyla-check/audit.mjs
+      - name: Query licensed Blender Sintel direct-no-proxy availability without media download
+        run: timeout 115 node /tmp/moosa-vyla-check/audit.mjs
