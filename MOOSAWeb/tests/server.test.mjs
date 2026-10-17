@@ -86,3 +86,16 @@ test('episode stream URLs never fall back to another episode or generic show lin
     await rm(folder,{recursive:true,force:true});
   }
 });
+
+test('single-film pilot status is truthful and disabled without the external JVM process',async()=>{
+  const srv=createServer();await new Promise(resolve=>srv.listen(0,'127.0.0.1',resolve));
+  try{
+    const url='http://127.0.0.1:'+srv.address().port+'/api/cloudstream/pilot-status';
+    const res=await fetch(url);
+    assert.equal(res.status,200);
+    const data=await res.json();
+    assert.equal(data.readyForQuery,false);
+    assert.equal(data.filmImdbId,'tt5719076');
+    assert.equal((await fetch(url+'?url=https://untrusted.example')).status,400);
+  }finally{await new Promise(resolve=>srv.close(resolve));}
+});

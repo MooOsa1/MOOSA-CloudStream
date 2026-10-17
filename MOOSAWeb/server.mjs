@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createBridge } from './bridge.mjs';
 import { resolveWebSources, configuredAddons } from './providers.mjs';
 import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
-import { inspectRepositories, configuredEngine } from './cloudstream-engine.mjs';
+import { inspectRepositories, configuredEngine, singleFilmPilotStatus } from './cloudstream-engine.mjs';
 import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
 import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream-stremio-interop.mjs';
@@ -245,6 +245,10 @@ async function handle(req,res) {
         note:'Independent open-license sample, not a source for the selected commercial movie.',
         count:sources.length
       });
+    }
+    if(url.pathname==='/api/cloudstream/pilot-status') {
+      if(url.search)return err(res,400,'No query arguments accepted');
+      return json(res,200,singleFilmPilotStatus());
     }
     if(url.pathname==='/api/cloudstream/repositories') {
       const results=await inspectRepositories();

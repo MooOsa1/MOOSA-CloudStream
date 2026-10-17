@@ -62,7 +62,11 @@ function subtitleList(tracks=[]) {
 function cleanStream(value,provider){
   const url=secureHttpUrl(value.url),name=String(value.name||provider||'Web Source').slice(0,95);
   const quality=Number(value.quality);
-  if(!url || !Number.isInteger(quality) || quality<MIN_QUALITY ||
+  const singleFilmPilot=value.singleFilmPilot===true &&
+    value.verifiedFilmImdbId==='tt5719076' &&
+    /CineStream/.test(name) && Number.isInteger(quality)&&quality>=144;
+  if(!url || !Number.isInteger(quality) ||
+      quality<(singleFilmPilot?144:MIN_QUALITY) ||
       quality>4320 || EXCLUDED_NAME.test(name)) return null;
   const extra={};
   if(value.preferred===true)extra.preferred=true;
@@ -88,7 +92,8 @@ function cleanStream(value,provider){
       extra.runtime='web_native_js';
     }
   }
-  return {url,name,quality,subtitles:subtitleList(value.subtitles),...extra};
+  return {url,name,quality,subtitles:subtitleList(value.subtitles),
+    ...(singleFilmPilot?{singleFilmPilot:true,verifiedFilmImdbId:'tt5719076'}:{}),...extra};
 }
 function uniqueSort(values) {
   const seen=new Set();

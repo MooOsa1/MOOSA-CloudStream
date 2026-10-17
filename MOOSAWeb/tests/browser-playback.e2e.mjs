@@ -137,6 +137,36 @@ try {
     'HLS must start a real 720p+ rendition instead of its 180p sibling');
   console.log('PASS mixed 180p/720p master selected actual HD video');
 
+  // A single original-JVM pilot may use any decoded resolution.
+  // The same 180p fixture must still be rejected without this pilot flag.
+  await page.evaluate(async()=>{
+    const {showPlayer,appendPlayerSources}=await import('/player.js');
+    showPlayer({title:'Dead Night',sources:[]});
+    appendPlayerSources([{
+      url:'https://video.moosa-e2e.invalid/playlist.m3u8',
+      name:'CineStream • isolated source picker test',
+      quality:180,
+      singleFilmPilot:true,verifiedFilmImdbId:'tt5719076'
+    }]);
+  });
+  await untilPlaying('single-film pilot accepts low-res HLS from its source selector');
+  assert.equal(await page.locator('#video').evaluate(v=>v.videoHeight),180);
+  assert.equal(await page.locator('#player-source').inputValue(),'0');
+  console.log('PASS isolated original-runtime pilot low-quality selection');
+  // The flag cannot be used for another catalog title.
+  await page.evaluate(async()=>{
+    const {showPlayer,appendPlayerSources}=await import('/player.js');
+    showPlayer({title:'Sintel',sources:[]});
+    appendPlayerSources([{
+      url:'https://video.moosa-e2e.invalid/playlist.m3u8',
+      name:'CineStream • spoofed',
+      quality:180,
+      singleFilmPilot:true,verifiedFilmImdbId:'tt5719076'
+    }]);
+  });
+  assert.equal(await page.locator('#player-source option').count(),1);
+  console.log('PASS pilot exception denied for any unrelated title');
+
   // This SAME real 320x180 H.264 stream is now mislabeled by an automatic
   // source as 1080p. The player must reject it at decoded video metadata,
   // rather than playing a 180p stream while claiming HD.
