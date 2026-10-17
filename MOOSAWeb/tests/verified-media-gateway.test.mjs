@@ -159,3 +159,99 @@ test('encrypted HLS playlists cannot be rewritten through this gateway',async()=
     assert.equal(response.status,502);
   });
 });
+
+test('preflight does not issue Play token for 426 or HTTP 200 HTML instead of video',async()=>{
+  const approval={url:'https://'+host+'/film.mp4',format:'mp4',
+    rightsApproved:true,sourceVerified:true};
+  for(const status of [426,403,400]){
+    const g=gateway({fetchImpl:async()=>new Response('blocked',{
+      status,headers:{'content-type':'text/plain'}
+    })});
+    const result=await g.issueIfBytesVerified(approval);
+    assert.equal(result.source,null);
+    assert.equal(result.reason,'upstream_http_'+status);
+    assert.equal(g.activeTokenCount(),0);
+  }
+  const g=gateway({fetchImpl:async()=>new Response('<html>ftyp</html>',{
+    status:200,headers:{'content-type':'text/html'}
+  })});
+  const result=await g.issueIfBytesVerified(approval);
+  assert.deepEqual(result,{source:null,reason:'upstream_returned_nonvideo_mime'});
+  assert.equal(g.activeTokenCount(),0);
+});
+
+test('verified MP4 magic bytes issue a short-lived capability, fake MIME alone does not',async()=>{
+  const approval={url:'https://'+host+'/film.mp4',format:'mp4',
+    rightsApproved:true,sourceVerified:true};
+  const good=Buffer.from([0,0,0,24,102,116,121,112,105,115,111,109,0,0,0,0]);
+  const g=gateway({fetchImpl:async(url,opts)=>{
+    assert.equal(opts.headers.range,'bytes=0-4095');
+    assert.equal(opts.redirect,'error');
+    return new Response(good,{status:206,
+      headers:{'content-type':'video/mp4'}});
+  }});
+  const result=await g.issueIfBytesVerified(approval);
+  assert.equal(result.reason,'media_bytes_verified');
+  assert.equal(result.source.gatewayIssued,true);
+  assert.equal(g.activeTokenCount(),1);
+  const fake=gateway({fetchImpl:async()=>new Response('not actually a video',{
+    status:200,headers:{'content-type':'video/mp4'}
+  })});
+  assert.deepEqual(await fake.issueIfBytesVerified(approval),
+    {source:null,reason:'wrong_media_bytes'});
+});
+
+test('HLS preflight follows allowlisted playlist to real MPEG TS byte signatures',async()=>{
+  const ts=Buffer.alloc(188*3);
+  ts[0]=0x47;ts[188]=0x47;ts[376]=0x47;
+  const visited=[];
+  const g=gateway({fetchImpl:async(raw,opts)=>{
+    visited.push(new URL(raw).pathname);
+    if(raw.endsWith('master.m3u8'))return new Response(
+      '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=600000\nlow.m3u8\n',{
+      headers:{'content-type':'application/vnd.apple.mpegurl'}
+    });
+    if(raw.endsWith('low.m3u8'))return new Response(
+      '#EXTM3U\n#EXT-X-TARGETDURATION:3\n#EXTINF:3,\nchunk.ts\n',{
+      headers:{'content-type':'application/vnd.apple.mpegurl'}
+    });
+    if(raw.endsWith('chunk.ts')){
+      assert.equal(opts.headers.range,'bytes=0-4095');
+      return new Response(ts,{status:206,
+        headers:{'content-type':'video/mp2t'}});
+    }
+    return new Response('missing',{status:404});
+  }});
+  const proof=await g.issueIfBytesVerified({
+    url:'https://'+host+'/master.m3u8',format:'hls',
+    rightsApproved:true,sourceVerified:true
+  });
+  assert.equal(proof.reason,'media_bytes_verified');
+  assert.equal(proof.source.format,'m3u8');
+  assert.deepEqual(visited,['/master.m3u8','/low.m3u8','/chunk.ts']);
+});
+
+test('preflight rejects links to other hosts, fake TS bytes and encrypted HLS',async()=>{
+  const license={rightsApproved:true,sourceVerified:true};
+  let calls=0;
+  const g=gateway({fetchImpl:async()=>{
+    calls++;return new Response('#EXTM3U\n#EXTINF:3,\nhttps://evil.test/video.ts\n',{
+      headers:{'content-type':'application/vnd.apple.mpegurl'}
+    });
+  }});
+  assert.deepEqual(await g.issueIfBytesVerified({
+    ...license,url:'https://evil.test/master.m3u8',format:'hls'
+  }),{source:null,reason:'not_on_operator_allowlist'});
+  assert.equal(calls,0);
+  assert.deepEqual(await g.issueIfBytesVerified({
+    ...license,url:'https://'+host+'/master.m3u8',format:'hls'
+  }),{source:null,reason:'hls_subresource_not_allowlisted'});
+  const encrypted=gateway({fetchImpl:async()=>new Response(
+    '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXTINF:3,\nchunk.ts\n',
+    {headers:{'content-type':'application/vnd.apple.mpegurl'}}
+  )});
+  assert.deepEqual(await encrypted.issueIfBytesVerified({
+    ...license,url:'https://'+host+'/master.m3u8',format:'hls'
+  }),{source:null,reason:'encrypted_hls_unsupported'});
+  assert.equal(encrypted.activeTokenCount(),0);
+});
