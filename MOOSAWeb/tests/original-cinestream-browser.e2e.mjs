@@ -140,6 +140,62 @@ try{
     playerMessage:String(document.querySelector('#player-message')?.textContent||'').slice(0,200)
   }));
   const played=!timedOut&&state.secondsPlayed>0&&state.width>0;
+  // Browser audioTracks is only container metadata; it does NOT prove PCM.
+  // Measure actual decoded samples from the same original HLS source.
+  // On MSE-backed hls.js this AudioContext attaches to the video's output,
+  // never fetching media separately or sending the signed URL to our server.
+  const audioProof=played?await page.evaluate(async()=>{
+    const v=document.querySelector('#video');
+    const r={status:'inconclusive',trackCount:
+      typeof v?.audioTracks?.length==='number'?v.audioTracks.length:null,
+      unmuted:!v.muted&&v.volume>0,maxRms:0,
+      seekedToThreeMinutes:false,secondsAdvanced:0};
+    const Context=window.AudioContext||window.webkitAudioContext;
+    if(!Context){r.status='audio_context_unsupported';return r;}
+    let ctx;
+    try {
+      ctx=new Context();
+      const source=ctx.createMediaElementSource(v);
+      const analyser=ctx.createAnalyser();
+      analyser.fftSize=2048;
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      await ctx.resume();
+      const samples=new Float32Array(analyser.fftSize);
+      const measure=()=>{
+        analyser.getFloatTimeDomainData(samples);
+        let power=0;
+        for(const sample of samples)power+=sample*sample;
+        r.maxRms=Math.max(r.maxRms,Math.sqrt(power/samples.length));
+      };
+      // Check early soundtrack and again after seeking to minute three.
+      for(let i=0;i<10;i++){
+        await new Promise(resolve=>setTimeout(resolve,200));
+        measure();
+      }
+      if(Number.isFinite(v.duration)&&v.duration>220){
+        v.currentTime=180;
+        await Promise.race([
+          new Promise(resolve=>v.addEventListener('seeked',resolve,{once:true})),
+          new Promise(resolve=>setTimeout(resolve,9000))
+        ]);
+        r.seekedToThreeMinutes=v.currentTime>=179;
+      }
+      const before=v.currentTime;
+      for(let i=0;i<30;i++){
+        await new Promise(resolve=>setTimeout(resolve,200));
+        measure();
+      }
+      r.secondsAdvanced=Math.round(Math.max(0,v.currentTime-before)*10)/10;
+      r.maxRms=Math.round(r.maxRms*100000)/100000;
+      r.status=r.maxRms>0.002?'decoded_non_silent_pcm':'no_pcm_signal_measured';
+    }catch(error){
+      r.status='audio_probe_failed';
+      r.errorName=String(error?.name||'unknown').slice(0,45);
+    }finally{await ctx?.close().catch(()=>{});}
+    return r;
+  }):{status:'video_not_decoded'};
+  console.log('ORIGINAL_CINESTREAM_AUDIO_PROOF '+JSON.stringify(audioProof));
   console.log('ORIGINAL_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
     actuallyDecodedFrames:played,video:state,
     pageErrorTypes:errors.slice(0,5),
