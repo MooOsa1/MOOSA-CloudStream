@@ -1,7 +1,7 @@
 name: Official CloudStream JVM + original CineStream provider compatibility
 on:
   push:
-    branches: [main, experiment/cinestream-one-film-any-quality-20261017]
+    branches: [main, experiment/cinestream-one-film-any-quality-20261017, experiment/one-full-film-original-cs-20261017]
     paths:
       - 'MOOSAWeb/tools/JvmOriginalProviderSmoke.java'
       - 'MOOSAWeb/tools/JvmOriginalProviderLoad.java'
@@ -9,6 +9,7 @@ on:
       - 'MOOSAWeb/tests/original-provider-media-proof.mjs'
       - 'MOOSAWeb/tests/original-cinestream-browser.e2e.mjs'
       - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/real-hls-segment-probe.mjs'
       - 'MOOSAWeb/real-hls-segment-probe.mjs'
       - 'MOOSAWeb/tests/cinestream-vaplayer.test.mjs'
       - 'MOOSAWeb/headless-jvm-shims/**'
@@ -98,7 +99,7 @@ jobs:
           ./gradlew --init-script moosa-export.init.gradle :library:copyMoosaRuntime --no-daemon --max-workers=2 --console=plain --no-configuration-cache
           echo 'JVM dependencies copied:'
           find /tmp/moosa-jvm/deps -name '*.jar' | wc -l
-      - name: Execute original CineStream loadLinks callbacks for verified licensed Sintel
+      - name: Execute original CineStream loadLinks callbacks for a named public-domain feature film
         run: |
           set -euo pipefail
           # Original CineStream references a CloudflareKiller class that is
@@ -109,7 +110,7 @@ jobs:
           jar cf /tmp/moosa-jvm/deps/moosa-jvm-shims.jar -C /tmp/moosa-jvm/shim-classes .
           javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderLinks.java
           LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
-          timeout 62s java -Xmx1500m -cp /tmp/moosa-jvm JvmOriginalProviderLinks "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps
+          timeout 62s java -Xmx1500m -cp /tmp/moosa-jvm JvmOriginalProviderLinks "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps tt0063350 "Night of the Living Dead"
       - name: Probe original callbacks for actual browser-compatible media segments
         run: |
           set -euo pipefail
@@ -129,7 +130,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: original-cinestream-sintel-browser-frame
-          path: MOOSAWeb/browser-artifacts/original-cinestream-sintel-frame.png
+          name: original-cinestream-feature-film-browser-frame
+          path: MOOSAWeb/browser-artifacts/original-cinestream-night-of-the-living-dead-frame.png
           if-no-files-found: ignore
           retention-days: 3

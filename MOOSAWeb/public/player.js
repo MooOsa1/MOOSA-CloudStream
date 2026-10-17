@@ -171,12 +171,12 @@ export function showPlayer({title='مشغل MOOSA',sources=[],experimentalJVMPro
   // The temporary exception is restricted to a single explicit original
   // CineStream JVM proof source; all other automatic streams still require HD.
   originalJVMProofLowResolution=experimentalJVMProof===true &&
-    title==='CineStream original • Sintel request (identity unverified)' &&
+    title==='CineStream original • Night of the Living Dead request (identity unverified)' &&
     Array.isArray(sources) && sources.length===1 &&
     sources[0]?.provider==='CineStream' &&
-    sources[0]?.proofImdbId==='tt1727587' &&
+    sources[0]?.proofImdbId==='tt0063350' &&
     Number.isInteger(Number(sources[0]?.quality)) &&
-    Number(sources[0].quality)>0 &&
+    Number(sources[0].quality)>=0 &&
     isDirectVideoUrl(sources[0]?.url);
   selectedSourceUrl=null;
   attemptedSourceUrls.clear();
@@ -410,7 +410,7 @@ function enforceDecodedHd(){
      !video.videoHeight||!video.videoWidth)return false;
   if(originalJVMProofLowResolution && selectedSourceUrl &&
      activeSources.some(s=>s.url===selectedSourceUrl &&
-       s.provider==='CineStream' && s.proofImdbId==='tt1727587'))return false;
+       s.provider==='CineStream' && s.proofImdbId==='tt0063350'))return false;
   if(video.videoHeight>=720 && video.videoWidth>=1280)return false;
   const measured=video.videoWidth+'×'+video.videoHeight;
   rejectedVideoToken=playbackToken;

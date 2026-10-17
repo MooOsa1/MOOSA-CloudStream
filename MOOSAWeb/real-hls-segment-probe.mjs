@@ -24,7 +24,7 @@ function nextUri(lines,at){
   }
   return null;
 }
-function rankedMasterVariants(raw,origin,hosts,minWidth){
+function rankedMasterVariants(raw,origin,hosts,minWidth,minHeight){
   const lines=raw.split(/\r?\n/);
   const choices=[];
   for(let i=0;i<lines.length;i++){
@@ -32,7 +32,7 @@ function rankedMasterVariants(raw,origin,hosts,minWidth){
     const m=lines[i].match(/RESOLUTION=(\d+)x(\d+)/i);
     const width=Number(m?.[1]),height=Number(m?.[2]);
     if(!Number.isInteger(width)||!Number.isInteger(height) ||
-       width<minWidth||height<720||height>4320)continue;
+       width<minWidth||height<minHeight||height>4320)continue;
     const path=nextUri(lines,i);
     if(!path)continue;
     let candidate;
@@ -97,7 +97,7 @@ function validCors(response,origin){
   const c=String(response.headers.get('access-control-allow-origin')||'').trim();
   return c==='*'||c===origin;
 }
-async function checkSegment(segmentUrl,fetchImpl,timeoutMs,origin,{verifyEncodedResolution=false,minWidth=1280}={}){
+async function checkSegment(segmentUrl,fetchImpl,timeoutMs,origin,{verifyEncodedResolution=false,minWidth=1280,minHeight=720}={}){
   const fetchChunk=range=>fetchImpl(segmentUrl,{
     method:'GET',redirect:'error',signal:AbortSignal.timeout(timeoutMs),
     headers:range
@@ -151,7 +151,7 @@ async function checkSegment(segmentUrl,fetchImpl,timeoutMs,origin,{verifyEncoded
   if(!magicMp4&&!magicTs)return {ok:false,reason:'segment_not_video'};
   if(!verifyEncodedResolution)return {ok:true};
   if(!dimensions)return {ok:false,reason:'segment_resolution_unverified'};
-  if(dimensions.height<720||dimensions.width<minWidth)
+  if(dimensions.height<minHeight||dimensions.width<minWidth)
     return {ok:false,reason:'segment_below_min_quality',
       measuredHeight:dimensions.height,measuredWidth:dimensions.width};
   return {ok:true,measuredHeight:dimensions.height,
@@ -162,7 +162,7 @@ async function checkSegment(segmentUrl,fetchImpl,timeoutMs,origin,{verifyEncoded
  */
 export async function probeHlsFirstSegment(rawUrl,{
   fetchImpl=fetch,allowedHosts=[],origin='https://moosa-web.onrender.com',
-  timeoutMs=3500,minWidth=1280,verifyEncodedResolution=false
+  timeoutMs=3500,minWidth=1280,minHeight=720,verifyEncodedResolution=false
 }={}){
   const hosts=[...new Set(allowedHosts.map(x=>String(x).trim().toLowerCase()))]
     .filter(h=>/^[a-z0-9.-]{4,130}$/.test(h)&&!h.startsWith('.') &&
@@ -175,7 +175,7 @@ export async function probeHlsFirstSegment(rawUrl,{
     if(!playlist)return {ok:false,reason:'invalid_master'};
     const isMaster=playlist.includes('#EXT-X-STREAM-INF:');
     const variants=isMaster
-      ?rankedMasterVariants(playlist,root.href,hosts,minWidth)
+      ?rankedMasterVariants(playlist,root.href,hosts,minWidth,minHeight)
       // A standalone media playlist carries no reliable dimensions. Do NOT
       // invent 720p merely because its first TS packet is playable. A real
       // CineStream candidate advertised as 720 decoded to 852x480 in Chrome.
@@ -202,7 +202,7 @@ export async function probeHlsFirstSegment(rawUrl,{
         // Real HLS segments may use extensionless signed URLs. Require the
         // exact approved HTTPS hostname, valid browser CORS, and actual video
         // magic bytes instead of trusting the filename extension.
-        const verified=await checkSegment(allowed.href,fetchImpl,timeoutMs,origin,{verifyEncodedResolution,minWidth});
+        const verified=await checkSegment(allowed.href,fetchImpl,timeoutMs,origin,{verifyEncodedResolution,minWidth,minHeight});
         if(!verified.ok)return verified;
         return verifyEncodedResolution
           ?{ok:true,quality:verified.measuredHeight,width:verified.measuredWidth,

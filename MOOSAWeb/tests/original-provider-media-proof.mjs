@@ -99,7 +99,7 @@ function firstHlsUri(playlist,type){
     if(type==='segment' && !marker.startsWith('#EXTINF:'))continue;
     if(type==='variant'){
       const m=marker.match(/RESOLUTION=\d+x(\d+)/i);
-      if(m && Number(m[1])<720)continue;
+      if(m && Number(m[1])<1)continue;
     }
     for(let j=i+1;j<rows.length;j++){
       const line=rows[j].trim();
@@ -131,13 +131,13 @@ async function diagnoseCrossHost(root){
   if(host===new URL(root).hostname)return {status:'same_host_but_invalid_path'};
   const safeHosts=[...new Set([new URL(root).hostname,new URL(media).hostname,host])];
   const verified=await probeHlsFirstSegment(root,{
-    allowedHosts:safeHosts,timeoutMs
+    allowedHosts:safeHosts,timeoutMs,minHeight:1,minWidth:1
   });
   // Byte-level minimum-quality gate on the SAME real external segment.
   // Preserve the browser diagnostic for lower quality, but never promote it
   // as an HD source. No signed URL is printed.
   const qualityCheck=verified.ok?await probeHlsFirstSegment(root,{
-    allowedHosts:safeHosts,timeoutMs,verifyEncodedResolution:true
+    allowedHosts:safeHosts,timeoutMs,minHeight:1,minWidth:1,verifyEncodedResolution:true
   }):null;
   if(verified.ok && verified.playableUrl){
     // Signed URL never enters workflow logs or artifacts. Only the next test
@@ -151,7 +151,7 @@ async function diagnoseCrossHost(root){
     segmentHost:host,
     quality:verified.ok?verified.quality:null,
     encodedQuality:qualityCheck?.ok?qualityCheck.quality:null,
-    hdProof:qualityCheck?.ok===true,
+    hdProof:qualityCheck?.ok===true && Number(qualityCheck.quality)>=720,
     hdGateReason:qualityCheck?.ok?'verified_hd':qualityCheck?.reason||null,
     reason:verified.ok?'verified_video_bytes':verified.reason
   };
@@ -170,7 +170,7 @@ for(const url of candidates){
   if(/\.m3u8(?:$|[?#])/i.test(url)){
     row.kind='hls';
     const probe=await probeHlsFirstSegment(url,{
-      allowedHosts:[parsed.hostname],timeoutMs
+      allowedHosts:[parsed.hostname],timeoutMs,minHeight:1,minWidth:1
     });
     row.ok=probe.ok;
     row.reason=probe.ok?'first_hls_segment_proven':probe.reason;

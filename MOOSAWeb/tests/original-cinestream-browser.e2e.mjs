@@ -117,12 +117,12 @@ try{
   await page.evaluate(async url=>{
     const {showPlayer}=await import('/player.js');
     showPlayer({
-      title:'CineStream original • Sintel request (identity unverified)',
+      title:'CineStream original • Night of the Living Dead request (identity unverified)',
       experimentalJVMProof:true,
       sources:[{
         url,name:'CineStream JVM callback • original HLS',
-        provider:'CineStream',proofImdbId:'tt1727587',
-        quality:480
+        provider:'CineStream',proofImdbId:'tt0063350',
+        quality:0
       }]
     });
   },streamUrl);
@@ -165,7 +165,7 @@ try{
   if(played){
     // Screenshot only the video frame — do not capture hidden signed URL input.
     await page.locator('#video').screenshot({
-      path:path.join(out,'original-cinestream-sintel-frame.png')
+      path:path.join(out,'original-cinestream-night-of-the-living-dead-frame.png')
     });
   }
   assert.equal(played,true,

@@ -59,7 +59,7 @@ public final class JvmOriginalProviderLinks {
         return result;
     }
     public static void main(String[] args) throws Exception {
-        if(args.length!=3)throw new IllegalArgumentException("official library jar, original CineStream jar, runtime deps dir");
+        if(args.length!=3 && args.length!=5)throw new IllegalArgumentException("official library jar, original CineStream jar, runtime deps dir, optional IMDB id and expected original title");
         List<URL> jars=new ArrayList<>();
         jars.add(Path.of(args[0]).toUri().toURL());
         jars.add(Path.of(args[1]).toUri().toURL());
@@ -73,13 +73,16 @@ public final class JvmOriginalProviderLinks {
             Object provider=cls.getDeclaredConstructor().newInstance();
             Class<?> cont=Class.forName("kotlin.coroutines.Continuation",false,loader);
             Method load=cls.getMethod("load",String.class,cont);
-            final String id="tt1727587";
-            System.out.println("ORIGINAL_LINKS_EXACT_MOVIE: Sintel ("+id+")");
+            final String id=args.length==5?args[3]:"tt1727587";
+            final String expectedTitle=args.length==5?args[4]:"Sintel";
+            if(!id.matches("tt[0-9]{5,12}")||expectedTitle.isBlank()||expectedTitle.length()>90)
+                throw new IllegalArgumentException("Invalid title identification");
+            System.out.println("ORIGINAL_LINKS_EXACT_MOVIE: "+expectedTitle+" ("+id+")");
             Object details=invokeSuspend(provider,load,new Object[]{"{\"id\":\""+id+"\",\"type\":\"movie\"}"},loader,18);
             if(details==null)throw new IllegalStateException("Original load() returned null");
             String title=String.valueOf(details.getClass().getMethod("getName").invoke(details));
             String originalData=String.valueOf(details.getClass().getMethod("getDataUrl").invoke(details));
-            if(!"Sintel".equalsIgnoreCase(title)||!originalData.contains("\"id\":\""+id+"\""))
+            if(!expectedTitle.equalsIgnoreCase(title)||!originalData.contains("\"id\":\""+id+"\""))
                 throw new IllegalStateException("Rejected title or IMDb mismatch");
             System.out.println("ORIGINAL_LINKS_EXACT_IDENTITY_VERIFIED: true");
             System.out.println("ORIGINAL_LINKS_ORIGINAL_DATA_BYTES: "+originalData.length());
