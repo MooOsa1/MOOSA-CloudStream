@@ -89,7 +89,7 @@ test('adapter passes exact movie and episode metadata and filters non-browser so
     ]});
   };
   const result=await queryRemoteEngine({media:'tv',id:800,title:'Example',imdbId:'tt1234567',season:2,episode:4},{
-    fetchImpl,engine:{url:'https://engine.example',token:'private-secret'}
+    fetchImpl,engine:{url:'https://engine.example',token:'private-secret'},pilotEnabled:false
   });
   assert.deepEqual(result.map(x=>x.quality),[2160,1080]);
   assert.equal(result[0].subtitles[0].language,'ar');
@@ -119,8 +119,10 @@ test('public registry API reports index status without claiming the .cs3 engine 
     const r=await request;
     assert.equal(r.status,200);
     const data=await r.json();
-    assert.equal(data.engine,'not_configured');
-    assert.equal(data.supportsOriginalPlugins,false);
+    // CI defaults and Render's configured production environment both need to pass.
+    const engineIsConfigured=!!configuredEngine();
+    assert.equal(data.engine,engineIsConfigured?'configured':'not_configured');
+    assert.equal(data.supportsOriginalPlugins,engineIsConfigured);
     assert.deepEqual(data.repositories.map(x=>x.id),['cinestream','streamplay']);
     assert.ok(data.repositories.every(x=>['indexed','unavailable'].includes(x.state)));
   }finally{await new Promise(resolve=>server.close(resolve));}
