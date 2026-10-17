@@ -57,9 +57,25 @@ export async function extractOriginal(){
   const upstreamMatched=/(?:DEBUG|ERROR) Castle: details:/.test(logs) &&
     /"title":"Dead Night"/.test(logs) &&
     /"duration":(?:4[6-9]\d{2}|5[0-3]\d{2})/.test(logs);
+  // Only a normalized error class and simple booleans may leave this
+  // process. Never return third-party URLs, raw logs or signed query tokens.
+  const exceptionClasses=[...logs.matchAll(/(?:java\\.lang\\.|java\\.net\\.|kotlin\\.|org\\.json\\.)[A-Za-z0-9.$]*(?:Error|Exception)/g)]
+    .map(x=>x[0]).slice(0,5);
+  const diagnostic={
+    javaExitCode:status,wasTimeout:timedOut,outputBytes:total,
+    callbacksPresent:hasCallback,
+    originalLoadReturned:/ORIGINAL_LINKS_EXACT_IDENTITY_VERIFIED: true/.test(logs),
+    castleDetailsSeen:/(?:DEBUG|ERROR) Castle: details:/.test(logs),
+    castleIdentityMatched:upstreamMatched,
+    javaFailureType:exceptionClasses.at(-1)||(
+      /Could not find or load main class/.test(logs)?'main_class_missing':
+      /No such file or directory/.test(logs)?'missing_file':
+      status===0?'no_matching_link':'unknown')
+  };
   logs=''; // Never expose raw signed CDN URLs / extractor logs.
   if(!returned||!upstreamMatched)
-    return {state:timedOut?'timeout':'no_verified_upstream_identity',urls:[]};
+    return {state:timedOut?'timeout':'no_verified_upstream_identity',
+      urls:[],diagnostic};
   try{
     const raw=await readFile(outputFile,'utf8');
     const urls=raw.trim().split(/\r?\n/).filter(s=>/^[A-Za-z0-9+/=]{12,6000}$/.test(s))
@@ -111,7 +127,8 @@ export function gateway({
           resolvedImdbId:IMDB,resolvedTitle:'Dead Night',
           resolvedYear:2018,operatorAuthorized:true})):[];
       return reply(res,200,{sources,count:sources.length,
-        state:result?.state||'unavailable',sourceIdentityVerified:false,
+        state:result?.state||'unavailable',diagnostic:result?.diagnostic||null,
+        sourceIdentityVerified:false,
         distributionEnabled:rightsApproved});
     }catch{
       busy=false;return reply(res,502,{error:'runtime_execution_failed'});
