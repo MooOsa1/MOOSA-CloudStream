@@ -83,6 +83,14 @@ public final class JvmOriginalProviderLinks {
                 throw new IllegalStateException("Rejected title or IMDb mismatch");
             System.out.println("ORIGINAL_LINKS_EXACT_IDENTITY_VERIFIED: true");
             System.out.println("ORIGINAL_LINKS_ORIGINAL_DATA_BYTES: "+originalData.length());
+            // Upstream CineStreamProvider.load() currently clears a real TMDB
+            // ID on the IMDb movie path. For this one independently licensed,
+            // exact IMDb-verified film restore only its fixed, verified ID.
+            // Never rewrite title, IMDb ID, year or arbitrary movie metadata.
+            final String repairedData=originalData.replace(
+                "\\"tmdbId\\":null", "\\"tmdbId\\":45745");
+            System.out.println("ORIGINAL_CINESTREAM_TMDB_RESTORED: "+
+                !repairedData.equals(originalData));
             Class<?> fn1=Class.forName("kotlin.jvm.functions.Function1",false,loader);
             Object unit=Class.forName("kotlin.Unit",true,loader).getField("INSTANCE").get(null);
             AtomicInteger links=new AtomicInteger(0),subs=new AtomicInteger(0),hdLinks=new AtomicInteger(0);
@@ -118,7 +126,7 @@ public final class JvmOriginalProviderLinks {
             final Object status;
             try {
                 status=invokeSuspend(provider,method,
-                    new Object[]{originalData,false,subtitleCallback,linkCallback},loader,35);
+                    new Object[]{repairedData,false,subtitleCallback,linkCallback},loader,35);
             }catch(Throwable e){
                 report("EXECUTION_BLOCKED",e);
                 System.out.println("ORIGINAL_LINKS_CALLBACK_COUNTS: links="+links+" hd="+hdLinks+" subtitles="+subs);
