@@ -27,3 +27,13 @@ jobs:
       - name: Verify actual Vidlink movie bytes and real 720p/480p pixel dimensions
         timeout-minutes: 6
         run: cd MOOSAWeb && node tests/cinestream-two-features-chrome.e2e.mjs
+      - name: Verify The General's distinct 480p fallback actually decodes
+        env:
+          MOOSA_GENERAL_QUALITY: '480'
+        timeout-minutes: 2
+        run: cd MOOSAWeb && node tests/cinestream-two-features-chrome.e2e.mjs
+      - name: Verify The General's distinct 360p fallback actually decodes
+        env:
+          MOOSA_GENERAL_QUALITY: '360'
+        timeout-minutes: 2
+        run: cd MOOSAWeb && node tests/cinestream-two-features-chrome.e2e.mjs
