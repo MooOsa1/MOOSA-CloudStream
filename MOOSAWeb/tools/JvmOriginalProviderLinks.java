@@ -88,7 +88,7 @@ public final class JvmOriginalProviderLinks {
             // exact IMDb-verified film restore only its fixed, verified ID.
             // Never rewrite title, IMDb ID, year or arbitrary movie metadata.
             final String repairedData=originalData.replace(
-                "\\"tmdbId\\":null", "\\"tmdbId\\":45745");
+                "\"tmdbId\":null", "\"tmdbId\":45745");
             System.out.println("ORIGINAL_CINESTREAM_TMDB_RESTORED: "+
                 !repairedData.equals(originalData));
             Class<?> fn1=Class.forName("kotlin.jvm.functions.Function1",false,loader);
