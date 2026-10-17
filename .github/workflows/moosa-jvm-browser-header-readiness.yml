@@ -40,6 +40,7 @@ jobs:
                 httpSegmentsVerified:p.mediaProbe?.firstSegmentHttpVerified,
                 worksWithoutExtractorHeaders:p.mediaProbe?.noCustomHeaderHttpVerified,
                 worksDespiteDeclaredReferer:p.mediaProbe?.declaredHeaderButHeaderlessHttpVerified,
+                castleWithoutPluginHeaders:p.mediaProbe?.castleHeaderlessHttpVerified,
                 distributionEnabled:health.distributionEnabled
               };
               console.log('MOOSA_CINESTREAM_REAL_HEADER_AUDIT '+JSON.stringify(result));
@@ -47,7 +48,8 @@ jobs:
                 Number.isInteger(p.headerRequiredCount) &&
                 Number.isInteger(p.castleCount) &&
                 Number.isInteger(p.mediaProbe?.firstSegmentHttpVerified) &&
-                Number.isInteger(p.mediaProbe?.declaredHeaderButHeaderlessHttpVerified)){
+                Number.isInteger(p.mediaProbe?.declaredHeaderButHeaderlessHttpVerified) &&
+                Number.isInteger(p.mediaProbe?.castleHeaderlessHttpVerified)){
                 assert.equal(health.distributionEnabled,false);
                 assert.equal(health.status,'ok');
                 assert.equal(p.result,'original_callbacks_returned');
