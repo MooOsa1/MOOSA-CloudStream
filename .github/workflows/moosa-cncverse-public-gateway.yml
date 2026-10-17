@@ -1,0 +1,21 @@
+name: MOOSA hosted CloudStream HTTPS gateway proof
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tests/cncverse-public-gateway.live.mjs'
+      - '.github/workflows/moosa-cncverse-public-gateway.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-manifest-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read actual hosted original CloudStream-to-Stremio manifest and film lookup
+        run: node MOOSAWeb/tests/cncverse-public-gateway.live.mjs
