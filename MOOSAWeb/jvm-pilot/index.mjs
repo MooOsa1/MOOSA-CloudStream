@@ -59,7 +59,7 @@ export async function extractOriginal(){
     /"duration":(?:4[6-9]\d{2}|5[0-3]\d{2})/.test(logs);
   // Only a normalized error class and simple booleans may leave this
   // process. Never return third-party URLs, raw logs or signed query tokens.
-  const exceptionClasses=[...logs.matchAll(/(?:java\\.lang\\.|java\\.net\\.|kotlin\\.|org\\.json\\.)[A-Za-z0-9.$]*(?:Error|Exception)/g)]
+  const exceptionClasses=[...logs.matchAll(/(?:java\.lang\.|java\.net\.|kotlin\.|org\.json\.)[A-Za-z0-9.$]*(?:Error|Exception)/g)]
     .map(x=>x[0]).slice(0,5);
   const diagnostic={
     javaExitCode:status,wasTimeout:timedOut,outputBytes:total,
