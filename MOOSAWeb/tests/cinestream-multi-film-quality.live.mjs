@@ -12,7 +12,16 @@ const FILMS=[
  {title:'Night of the Living Dead',year:1968,tmdbId:10331,imdb:'tt0063350'},
  {title:'Nosferatu',year:1922,tmdbId:653,imdb:'tt0013442'},
  {title:'The General',year:1926,tmdbId:961,imdb:'tt0017925'},
- {title:'His Girl Friday',year:1940,tmdbId:3085,imdb:'tt0032599'}
+ {title:'His Girl Friday',year:1940,tmdbId:3085,imdb:'tt0032599'},
+ // Discovery ONLY. No third-party rights or movie identity asserted.
+ {title:'Charade',year:1963,tmdbId:4808},
+ {title:'House on Haunted Hill',year:1959,tmdbId:15856},
+ {title:'The Little Shop of Horrors',year:1960,tmdbId:24452},
+ {title:'Plan 9 from Outer Space',year:1959,tmdbId:10513},
+ {title:'The Last Man on Earth',year:1964,tmdbId:21159},
+ {title:'Sherlock Jr.',year:1924,tmdbId:992},
+ {title:'The Gold Rush',year:1925,tmdbId:962},
+ {title:'The Kid',year:1921,tmdbId:10098}
 ];
 const APPROVED_HOSTS=new Set(['hcdn3.hakunaymatata.com']);
 const PROVIDER='https://vidlink.pro/api/b/movie/';
@@ -95,7 +104,8 @@ const results=[];
 for(const film of FILMS){
   let result={title:film.title,year:film.year,tmdbId:film.tmdbId,
     imdbId:film.imdb,provider:'CineStream Vidlink',status:'not_attempted',
-    declaredVariants:0,approvedHostVariants:0,probedVariants:[],
+    declaredVariants:0,approvedHostVariants:0,sourceHostCount:0,
+    unapprovedCandidateHosts:[],probedVariants:[],
     byteVerifiedVariants:0,filmIdentityVerified:false,
     actualHeightVerified:false,playbackVerified:false};
   try{
@@ -126,6 +136,11 @@ for(const film of FILMS){
     }).sort((a,b)=>b.claimedQuality-a.claimedQuality);
     result.declaredVariants=alternatives.length;
     result.approvedHostVariants=alternatives.filter(x=>x.approved).length;
+    result.sourceHostCount=new Set(alternatives.map(x=>x.url.hostname)).size;
+    // Discover NEW potential CDNs, but do not issue playback tokens or
+    // send media requests to unreviewed hosts.
+    result.unapprovedCandidateHosts=[...new Set(alternatives
+      .filter(x=>!x.approved).map(x=>x.url.hostname))].slice(0,8);
     const probed=[];
     // Try distinct quality variants, not just the first successful server.
     for(const entry of alternatives.slice(0,5)){
@@ -144,12 +159,14 @@ for(const film of FILMS){
 }
 console.log('MOOSA_CINESTREAM_MULTI_FILM_SUMMARY '+JSON.stringify({
   filmCount:results.length,
+  sourceCDNHostsIdentified:[...new Set(results.flatMap(
+    x=>x.unapprovedCandidateHosts))].slice(0,12),
   filmsWithRealMp4Bytes:results.filter(r=>r.byteVerifiedVariants>0).length,
   totalMp4ByteVerifiedVariants:results.reduce((n,r)=>n+r.byteVerifiedVariants,0),
   userSiteUnchanged:true,actualDecodedQualityUnproven:true,
   exactMovieIdentityUnprovenForNewFilms:true,
   nextStep:'Browser duration + frame verify each promising exact film'
 }));
-assert.equal(results.length,4);
+assert.equal(results.length,FILMS.length);
 assert.ok(results.some(x=>x.byteVerifiedVariants>0),
   'No source returned real media bytes; do not assume any multi-film support');
