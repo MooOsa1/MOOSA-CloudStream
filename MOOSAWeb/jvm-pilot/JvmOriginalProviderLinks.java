@@ -90,7 +90,9 @@ public final class JvmOriginalProviderLinks {
             Object unit=Class.forName("kotlin.Unit",true,loader).getField("INSTANCE").get(null);
             AtomicInteger links=new AtomicInteger(0),subs=new AtomicInteger(0),hdLinks=new AtomicInteger(0);
             Set<String> videoHosts=ConcurrentHashMap.newKeySet();
-            Set<String> candidateUrls=ConcurrentHashMap.newKeySet();
+            // URL/metadata stay local to the container; no signed stream URL is logged.
+            ConcurrentHashMap<String,String> candidateRecords=new ConcurrentHashMap<>();
+            AtomicInteger headersRequired=new AtomicInteger(0);
             Object linkCallback=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{fn1},(proxy,method,a)->{
                 if("invoke".equals(method.getName())&&a!=null&&a.length==1&&a[0]!=null){
                     links.incrementAndGet();
@@ -101,8 +103,33 @@ public final class JvmOriginalProviderLinks {
                         String host=uri.getHost();
                         if(host!=null&&uri.getScheme().equalsIgnoreCase("https")){
                             videoHosts.add(host.toLowerCase());
-                            if(uri.getPort()==-1 && uri.getUserInfo()==null && candidateUrls.size()<24)
-                                candidateUrls.add(uri.toString());
+                            if(uri.getPort()==-1 && uri.getUserInfo()==null && candidateRecords.size()<24){
+                                boolean needsHeaders=true;
+                                String source="Unclassified";
+                                try{
+                                    Object providerName=link.getClass().getMethod("getSource").invoke(link);
+                                    source=String.valueOf(providerName);
+                                    Object referer=link.getClass().getMethod("getReferer").invoke(link);
+                                    Object headers=link.getClass().getMethod("getHeaders").invoke(link);
+                                    needsHeaders=(referer!=null&&!String.valueOf(referer).isBlank()) ||
+                                        (headers instanceof Map&&!((Map<?,?>)headers).isEmpty());
+                                }catch(Throwable ignore){
+                                    // An extractor with unknown metadata must never be
+                                    // incorrectly described as browser-direct.
+                                    needsHeaders=true;
+                                }
+                                if(needsHeaders)headersRequired.incrementAndGet();
+                                String url64=Base64.getEncoder().encodeToString(
+                                    uri.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                                String source64=Base64.getEncoder().encodeToString(
+                                    source.substring(0,Math.min(source.length(),70)).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                                String record=url64+"\t"+source64+"\t"+(needsHeaders?"1":"0");
+                                // If any callback for a shared URL needs headers, keep
+                                // the conservative (header-required) classification.
+                                candidateRecords.merge(uri.toString(),record,
+                                    (oldRec,newRec)->oldRec.endsWith("\t1")?oldRec:
+                                        newRec.endsWith("\t1")?newRec:oldRec);
+                            }
                         }
                     }catch(Throwable ignored){}
                     try{
@@ -140,10 +167,9 @@ public final class JvmOriginalProviderLinks {
             // Deterministic reporting across concurrent invoker callbacks.
             // Previous 12-link cap could arbitrarily omit the only working
             // cross-CDN candidate among the original 13 links.
-            for(String url:new TreeSet<>(candidateUrls)){
+            for(String url:new TreeSet<>(candidateRecords.keySet())){
                 if(encoded.size()>=24)break;
-                encoded.add(java.util.Base64.getEncoder().encodeToString(
-                    url.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                encoded.add(candidateRecords.get(url));
             }
             Files.write(candidateFile,encoded,java.nio.charset.StandardCharsets.UTF_8);
             try{
@@ -153,6 +179,7 @@ public final class JvmOriginalProviderLinks {
             }catch(UnsupportedOperationException ignored){}
             System.out.println("ORIGINAL_LINKS_CANDIDATES_NOT_BROWSER_VERIFIED");
             System.out.println("ORIGINAL_LINKS_PRIVATE_PROBE_INPUT_COUNT: "+encoded.size());
+            System.out.println("ORIGINAL_LINKS_HEADER_REQUIRED_CALLBACKS: "+headersRequired.get());
             // HTTP client/coroutines create non-daemon threads. End this
             // isolated JVM only after truthful callback results are recorded.
             System.exit(0);

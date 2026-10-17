@@ -36,6 +36,27 @@ export function approvedUrls(input,allowedHosts){
     }catch{return []}
   }).slice(0,4);
 }
+/** Parse only private v2 candidate records. Neither names nor headers nor
+ * signed URLs are exposed by the public health endpoint. */
+export function parsePrivateCandidates(text){
+  if(typeof text!=='string')return [];
+  const seen=new Map();
+  for(const row of text.trim().split(/\r?\n/).slice(0,24)){
+    const fields=row.split('\t');
+    if(fields.length!==3 || !['0','1'].includes(fields[2]) ||
+      !fields.slice(0,2).every(s=>/^[A-Za-z0-9+/=]{4,6000}$/.test(s)))continue;
+    try{
+      const url=Buffer.from(fields[0],'base64').toString('utf8');
+      const source=Buffer.from(fields[1],'base64').toString('utf8');
+      if(url.length>3000||source.length>70||!source || !url.startsWith('https://'))continue;
+      const next={url,provider:source,requiresHeaders:fields[2]==='1'};
+      const old=seen.get(url);
+      if(!old || (!old.requiresHeaders && next.requiresHeaders))
+        seen.set(url,next);
+    }catch{}
+  }
+  return [...seen.values()];
+}
 export async function extractOriginal({timeoutMs=54000}={}){
   await mkdir(OUTPUT_DIR,{recursive:true});
   const outputFile=OUTPUT_DIR+'/cinestream-candidates.b64';
@@ -94,9 +115,9 @@ export async function extractOriginal({timeoutMs=54000}={}){
       urls:[],diagnostic};
   try{
     const raw=await readFile(outputFile,'utf8');
-    const urls=raw.trim().split(/\r?\n/).filter(s=>/^[A-Za-z0-9+/=]{12,6000}$/.test(s))
-      .slice(0,24).map(s=>Buffer.from(s,'base64').toString('utf8'));
-    return {state:'original_callbacks_returned',urls};
+    const candidates=parsePrivateCandidates(raw);
+    return {state:'original_callbacks_returned',
+      urls:candidates.map(candidate=>candidate.url),candidates};
   }catch{return {state:'no_callbacks_file',urls:[]}}
   finally{await rm(outputFile,{force:true});}
 }
@@ -138,8 +159,10 @@ export async function executeBootProbe(extract=sharedOriginalExtraction,{
     const output=await extract();
     let mediaProbe={checked:0,firstSegmentHttpVerified:0,
       note:'Segment validation is HTTP-only, not actual Chrome playback.'};
+    const rawCandidates=Array.isArray(output?.candidates)?output.candidates:[];
+    const browserDirect=rawCandidates.filter(c=>c.requiresHeaders===false);
     if(verifySegment && output?.state==='original_callbacks_returned'){
-      const candidates=approvedUrls(output.urls,allowedHosts)
+      const candidates=approvedUrls(browserDirect.map(c=>c.url),allowedHosts)
         .filter(url=>new URL(url).pathname.endsWith('.m3u8')).slice(0,4);
       const checks=await Promise.allSettled(candidates.map(url=>
         segmentProbe(url,{allowedHosts,timeoutMs:5500,
@@ -157,6 +180,11 @@ export async function executeBootProbe(extract=sharedOriginalExtraction,{
       state:'complete',
       result:String(output?.state||'unavailable').slice(0,50),
       candidateCount:Array.isArray(output?.urls)?output.urls.length:0,
+      browserDirectCount:browserDirect.length,
+      headerRequiredCount:rawCandidates.filter(c=>c.requiresHeaders===true).length,
+      castleCount:rawCandidates.filter(c=>c.provider==='Castle').length,
+      castleBrowserDirectCount:rawCandidates.filter(c=>
+        c.provider==='Castle'&&!c.requiresHeaders).length,
       mediaProbe,
       elapsedMs:Date.now()-started,
       failureType:output?.diagnostic?.javaFailureType||null,
@@ -205,7 +233,14 @@ export function gateway({
       busy=true;
       const result=await extract();
       busy=false;
-      const urls=approvedUrls(result?.urls,hosts);
+      // A correct movie in Castle's detail response cannot establish
+      // correctness for every OTHER extractor callback. Do not promote
+      // sources from unrelated providers, or links requiring custom Referer.
+      const exactDirect=Array.isArray(result?.candidates)?
+        result.candidates.filter(candidate=>
+          candidate.provider==='Castle' && candidate.requiresHeaders===false)
+          .map(candidate=>candidate.url):[];
+      const urls=approvedUrls(exactDirect,hosts);
       // Rights approval is deliberately opt-in; matching an upstream title
       // and decoding frames is not permission to distribute a commercial film.
       const sources=rightsApproved && result.state==='original_callbacks_returned'

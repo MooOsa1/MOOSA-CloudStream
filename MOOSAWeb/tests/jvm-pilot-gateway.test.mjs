@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {gateway,exactFilm,approvedUrls,executeBootProbe,bootProbeStatus,makeSharedExtraction} from '../jvm-pilot/index.mjs';
+import {gateway,exactFilm,approvedUrls,executeBootProbe,bootProbeStatus,makeSharedExtraction,parsePrivateCandidates} from '../jvm-pilot/index.mjs';
 const film={media:'movie',tmdbId:100,imdbId:'tt5719076',
   title:'Dead Night',year:2018};
 test('only exact movie is accepted by JVM executor',()=>{
@@ -123,4 +123,44 @@ test('failed extractions are not cached',async()=>{
   await shared();
   await shared();
   assert.equal(count,2);
+});
+
+test('original .cs3 callback metadata marks Referer/Cookie links as not browser direct',()=>{
+  const record=(url,source,restricted)=>
+    Buffer.from(url).toString('base64')+'\t'+
+    Buffer.from(source).toString('base64')+'\t'+(restricted?'1':'0');
+  const items=parsePrivateCandidates([
+    record('https://cinema.example/movie.m3u8','Castle',true),
+    record('https://cinema.example/public.mp4','Castle',false),
+    record('https://cinema.example/other.m3u8','Other provider',false),
+    record('https://cinema.example/public.mp4','Castle',true)
+  ].join('\n'));
+  assert.equal(items.length,3);
+  assert.equal(items.filter(x=>x.provider==='Castle'&&!x.requiresHeaders).length,0);
+  assert.ok(items.some(x=>x.provider==='Other provider'&&!x.requiresHeaders));
+  assert.deepEqual(parsePrivateCandidates('invalid-data'),[]);
+});
+test('unlicensed callbacks cannot be published even when an extractor asserts browser compatibility',async()=>{
+  let called=false;
+  const server=gateway({token:'unit-test-private-token-keep-long-enough-12',
+    hosts:['cinema.example'],
+    extract:async()=>{
+      called=true;
+      return {state:'original_callbacks_returned',
+        urls:['https://cinema.example/movie.m3u8'],
+        candidates:[{url:'https://cinema.example/movie.m3u8',provider:'Castle',requiresHeaders:false}]};
+    }});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const response=await fetch('http://127.0.0.1:'+server.address().port+'/v1/resolve',{
+      method:'POST',headers:{Authorization:'Bearer unit-test-private-token-keep-long-enough-12'},
+      body:JSON.stringify({media:'movie',title:'Dead Night',year:2018,
+        imdbId:'tt5719076',tmdbId:123})
+    });
+    assert.equal(response.status,200);
+    const d=await response.json();
+    assert.ok(called);
+    assert.deepEqual(d.sources,[]);
+    assert.equal(d.distributionEnabled,false);
+  }finally{await new Promise(resolve=>server.close(resolve));}
 });
