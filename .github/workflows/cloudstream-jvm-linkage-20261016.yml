@@ -1,0 +1,255 @@
+name: Original CineStream DEX -> JVM linkage proof
+on:
+  push:
+    branches: [experiment/cloudstream-jvm-engine-20261016]
+    paths:
+      - 'MOOSAJVM/**'
+      - '.github/workflows/cloudstream-jvm-linkage-20261016.yml'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAJVM/**'
+      - '.github/workflows/cloudstream-jvm-linkage-20261016.yml'
+permissions:
+  contents: read
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify media signature fail-closed logic without network
+        shell: bash
+        run: |
+          set -euo pipefail
+          javac MOOSAJVM/MediaSegmentSignature.java MOOSAJVM/MediaSegmentSignatureTest.java
+          java -cp MOOSAJVM MediaSegmentSignatureTest
+      - name: Compile real CloudStream JVM library (not Android)
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/recloudstream/cloudstream.git /tmp/cloudstream-upstream
+          cd /tmp/cloudstream-upstream
+          chmod +x ./gradlew
+          cat >> library/build.gradle.kts <<'GRADLE'
+          
+          tasks.register("moosaJvmClasspath") {
+              doLast {
+                  val path = configurations.getByName("jvmRuntimeClasspath")
+                      .files.joinToString(":") { it.absolutePath }
+                  file("build/moosa-jvm-runtime-classpath.txt").writeText(path)
+                  println("MOOSA_JVM_RUNTIME_CLASSPATH_READY")
+              }
+          }
+          GRADLE
+          ./gradlew :library:jvmJar :library:moosaJvmClasspath --no-daemon --no-configuration-cache --console plain
+          test -s library/build/libs/library-jvm-1.0.1.jar
+          test -s library/build/moosa-jvm-runtime-classpath.txt
+      - name: Download SHA256-verified original CineStream cs3, convert to Java class files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/converted
+          curl -fLsS --retry 2 https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip -o /tmp/dex-tools.zip
+          unzip -q /tmp/dex-tools.zip -d /tmp/dex-tools
+          converter="$(find /tmp/dex-tools -name d2j-dex2jar.sh -print -quit)"
+          chmod +x "$converter"
+          echo 'DEX2JAR_MEMORY_SETTINGS:'
+          grep -nE 'Xmx|JAVA_OPTS|java ' "$converter" | head -n 12 || true
+          node MOOSAJVM/stage-cloudstream-plugin.mjs \
+            https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/plugins.json \
+            SaurabhKaperwan/CSX CineStream > /tmp/moosa-cinestream-stage.log
+          staged="$(sed -n 's/.*"stagedFile":"\([^"]*\)".*/\1/p' /tmp/moosa-cinestream-stage.log)"
+          test -s "$staged"
+          cp "$staged" /tmp/CineStream.cs3
+          echo "GENERIC_REPOSITORY_PIPELINE=CineStream_SHA256_VERIFIED"
+          unzip -p /tmp/CineStream.cs3 classes.dex >/tmp/CineStream.dex
+          "$converter" --force --output /tmp/converted/CineStream.jar /tmp/CineStream.dex
+          test -s /tmp/converted/CineStream.jar
+          echo "CINESTREAM_JVM_BYTECODE_CLASSES=$(jar tf /tmp/converted/CineStream.jar|grep -c '\.class$')"
+          javap -classpath /tmp/converted/CineStream.jar -public com.megix.CineStream | head -n 24
+          javap -classpath /tmp/converted/CineStream.jar -public com.megix.CineStreamProvider | head -n 27
+      - name: Discover main provider classes automatically from original CineStream cs3
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac MOOSAJVM/PluginProviderDiscovery.java
+          timeout 30 java -Xmx768m -cp "MOOSAJVM:$runtime" PluginProviderDiscovery \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/CineStream.jar CineStream | tee /tmp/cinestream-discovery.log
+          grep -F 'name=com.megix.CineStreamProvider' /tmp/cinestream-discovery.log
+      - name: Prove loopback HTTP bridge from MOOSA-style Node request to exact original CineStream JVM metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          # The HTTP bridge launches this Java class in a child process; compile it first.
+          javac -cp "$runtime" MOOSAJVM/GenericProviderProbe.java
+          test -s MOOSAJVM/GenericProviderProbe.class
+          node --check MOOSAJVM/headless-http.mjs
+          node --check MOOSAJVM/headless-bridge-ci.mjs
+          javac -cp "$runtime" MOOSAJVM/GenericProviderProbe.java
+          timeout 45 node MOOSAJVM/headless-bridge-ci.mjs "$runtime" \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/CineStream.jar
+      - name: End-to-end local HTTP integration Node to original CineStream JVM metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "$runtime" MOOSAJVM/GenericProviderProbe.java
+          node MOOSAJVM/test-headless-http.mjs \
+            "$runtime" \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/CineStream.jar
+      - name: Observe real linking blockers on unmodified original CineStream provider
+        shell: bash
+        run: |
+          javac MOOSAJVM/ClassProbe.java
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          java -cp "MOOSAJVM:$runtime" ClassProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar com.megix.CineStreamProvider com.megix.CineStream
+          javac MOOSAJVM/ProviderInstanceProbe.java
+          timeout 25 java -Xmx512m -cp "MOOSAJVM:$runtime" ProviderInstanceProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+      - name: Run actual CineStream original provider search on JVM (licensed catalog metadata only)
+        shell: bash
+        run: |
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "$runtime" MOOSAJVM/ProviderSearchProbe.java
+          timeout 44 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderSearchProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+      - name: Invoke original CineStreamProvider.load for licensed Sintel catalog metadata
+        shell: bash
+        run: |
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "$runtime" MOOSAJVM/ProviderLoadProbe.java
+          timeout 34 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLoadProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+      - name: Inventory missing Android and application classes across CineStream bytecode
+        shell: bash
+        run: |
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          official=/tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar
+          timeout 90 jdeps --missing-deps --multi-release 21 -q -cp "$runtime:$official:MOOSAJVM" /tmp/converted/CineStream.jar > /tmp/cinestream-jdeps.txt 2>&1
+          if grep -q '^Error:' /tmp/cinestream-jdeps.txt; then
+            cat /tmp/cinestream-jdeps.txt
+            exit 1
+          fi
+          echo "JDEPS_DIAGNOSTIC_LINES=$(wc -l < /tmp/cinestream-jdeps.txt)"
+          sed -n '1,15p' /tmp/cinestream-jdeps.txt
+          python3 - <<'PY'
+          import re,collections
+          missing=set()
+          for row in open('/tmp/cinestream-jdeps.txt',errors='replace'):
+            m=re.search(r'\s+->\s+(\S+)\s+not found\s*$',row)
+            if m: missing.add(m.group(1))
+          counts=collections.Counter(
+            'android' if x.startswith('android.') else
+            'androidx' if x.startswith('androidx.') else
+            'cloudstream_application' if x.startswith('com.lagradost.cloudstream3.') else
+            'other' for x in missing
+          )
+          print('CINESTREAM_JVM_UNRESOLVED total='+str(len(missing))+' groups='+repr(dict(counts)))
+          print('CINESTREAM_JVM_UNRESOLVED_SAMPLES '+', '.join(sorted(missing)[:45]))
+          core=collections.defaultdict(set)
+          with open('/tmp/cinestream-jdeps.txt',errors='replace') as source:
+            for row in source:
+              if '->' not in row or 'not found' not in row: continue
+              left,right=row.split('->',1)
+              owner=left.strip().split()[-1]
+              dep=right.strip().split()[0]
+              if owner.startswith('com.megix.'): core[owner].add(dep)
+          for cls,deps in sorted(core.items(),key=lambda x:-len(x[1]))[:17]:
+            print('CINESTREAM_MISSING_OWNER '+cls+' count='+str(len(deps))+' dependencies='+','.join(sorted(deps)[:13]))
+          PY
+      - name: Verify exact movie TMDB identity repair using fake trusted metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/CinemetaIdentity.java MOOSAJVM/CinemetaIdentityTest.java
+          java -cp "MOOSAJVM:$runtime" CinemetaIdentityTest
+      - name: Invoke original CineStreamProvider.loadLinks against licensed Sintel with no video downloads
+        shell: bash
+        run: |
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/network/CloudflareKiller.java
+          javac -d MOOSAJVM MOOSAJVM/shims/android/content/SharedPreferences.java
+          javac -d MOOSAJVM MOOSAJVM/shims/com/megix/settings/Settings.java
+          javac -cp MOOSAJVM -d MOOSAJVM MOOSAJVM/shims/android/content/Context.java
+          javac -cp "MOOSAJVM:$runtime" -d MOOSAJVM MOOSAJVM/shims/com/lagradost/cloudstream3/CloudStreamApp.java MOOSAJVM/shims/com/lagradost/cloudstream3/utils/DataStore.java
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/CinemetaIdentity.java MOOSAJVM/MediaSegmentSignature.java MOOSAJVM/HlsSourceProbe.java MOOSAJVM/ProviderLinksProbe.java
+          timeout 85 java -Xmx768m -cp "MOOSAJVM:$runtime" ProviderLinksProbe /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar /tmp/converted/CineStream.jar
+      - name: Exercise two additional native CineStream providers without Android (licensed test ID)
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          for provider in p_vidzee p_videasy p_vidcore p_primesrc; do
+            echo "JVM_NATIVE_PROVIDER_CHECK provider=$provider"
+            set +e
+            MOOSA_JVM_SINGLE_PROVIDER="$provider" timeout 55 java -Xmx512m \
+              -cp "MOOSAJVM:$runtime" ProviderLinksProbe \
+              /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+              /tmp/converted/CineStream.jar > /tmp/native-provider-private.log 2>&1
+            status=$?
+            set -e
+            echo "JVM_NATIVE_PROVIDER_EXIT provider=$provider code=$status"
+            grep -E '^JVM_PROBE_BEGIN |^JVM_METADATA_IDENTITY |^JVM_REAL_LINKS |^JVM_SOURCE_CLASSIFICATION |^JVM_MEDIA_SUMMARY ' /tmp/native-provider-private.log || true
+          done
+      - name: Convert SHA256 verified original StreamPlay cs3 to JVM and test provider constructor
+        shell: bash
+        run: |
+          set -euo pipefail
+          node MOOSAJVM/stage-cloudstream-plugin.mjs \
+            https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/repo.json \
+            phisher98/cloudstream-extensions-phisher StreamPlay > /tmp/moosa-streamplay-stage.log
+          staged="$(sed -n 's/.*"stagedFile":"\([^"]*\)".*/\1/p' /tmp/moosa-streamplay-stage.log)"
+          test -s "$staged"
+          cp "$staged" /tmp/StreamPlay.cs3
+          echo "GENERIC_REPOSITORY_PIPELINE=StreamPlay_SHA256_VERIFIED"
+          unzip -p /tmp/StreamPlay.cs3 classes.dex > /tmp/StreamPlay.dex
+          converter="$(find /tmp/dex-tools -name d2j-dex2jar.sh -print -quit)"
+          sed -i 's/-Xmx2048m/-Xmx4096m/g' "$converter"
+          "$converter" --force --output /tmp/converted/StreamPlay.jar /tmp/StreamPlay.dex
+          test -s /tmp/converted/StreamPlay.jar
+          echo "JVM_STREAMPLAY_CLASS_COUNT=$(jar tf /tmp/converted/StreamPlay.jar | grep -c '\.class$')"
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac MOOSAJVM/PluginProviderDiscovery.java
+          timeout 30 java -Xmx768m -cp "MOOSAJVM:$runtime" PluginProviderDiscovery \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/StreamPlay.jar StreamPlay | tee /tmp/streamplay-discovery.log
+          grep -F 'name=com.phisher98.StreamPlay' /tmp/streamplay-discovery.log
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/StreamPlayClassProbe.java
+          timeout 30 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayClassProbe \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/StreamPlay.jar
+      - name: Reuse generic JVM runner on automatically discovered original StreamPlay provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/GenericProviderProbe.java
+          provider="$(grep -F 'CS3_JVM_PROVIDER label=StreamPlay name=com.phisher98.StreamPlay' /tmp/streamplay-discovery.log | grep -v 'StreamPlayAnime' | sed -n 's/^.* name=//p' | grep -x 'com.phisher98.StreamPlay' | head -n 1)"
+          test "$provider" = 'com.phisher98.StreamPlay'
+          timeout 25 java -Xmx512m -cp "MOOSAJVM:$runtime" GenericProviderProbe \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/StreamPlay.jar "$provider" inspect \
+            | tee /tmp/streamplay-generic-inspect.log
+          grep -F 'phase=instantiate result=success class=com.phisher98.StreamPlay' /tmp/streamplay-generic-inspect.log
+      - name: Test original StreamPlay loadLinks on licensed Sintel with no streaming
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$(cat /tmp/cloudstream-upstream/library/build/moosa-jvm-runtime-classpath.txt)"
+          javac -cp "MOOSAJVM:$runtime" MOOSAJVM/StreamPlayLiteProbe.java
+          set +e
+          timeout 55 java -Xmx512m -cp "MOOSAJVM:$runtime" StreamPlayLiteProbe \
+            /tmp/cloudstream-upstream/library/build/libs/library-jvm-1.0.1.jar \
+            /tmp/converted/StreamPlay.jar > /tmp/streamplay-lite-private.log 2>&1
+          status=$?
+          set -e
+          echo "JVM_STREAMPLAY_PROBE_PROCESS_EXIT=$status"
+          grep -E '^JVM_STREAMPLAY_LITE stage=' /tmp/streamplay-lite-private.log || true
