@@ -117,11 +117,11 @@ try{
   await page.evaluate(async url=>{
     const {showPlayer}=await import('/player.js');
     showPlayer({
-      title:'CineStream original • Night of the Living Dead request (identity unverified)',
+      title:'CineStream original • Dead Night request (identity unverified)',
       experimentalJVMProof:true,
       sources:[{
         url,name:'CineStream JVM callback • original HLS',
-        provider:'CineStream',proofImdbId:'tt0063350',
+        provider:'CineStream',proofImdbId:'tt5719076',
         quality:0
       }]
     });
@@ -190,12 +190,12 @@ try{
       }
     }
     console.log('ORIGINAL_CINESTREAM_FILM_SEEK_EVIDENCE '+JSON.stringify({
-      claimedTitle:'Night of the Living Dead',
-      expectedNominalRuntimeMinutes:96,
+      claimedTitle:'Dead Night',
+      expectedNominalRuntimeMinutes:82,
       durationSeconds:state.durationSeconds,
       firstFrameDecoded:played,
       durationMatchesNominal:Number.isFinite(state.durationSeconds)&&
-        state.durationSeconds>=87*60&&state.durationSeconds<=101*60,
+        state.durationSeconds>=78*60&&state.durationSeconds<=88*60,
       scenes:shots,
       contentIdentityVerified:false
     }));

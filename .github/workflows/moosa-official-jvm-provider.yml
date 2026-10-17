@@ -110,7 +110,7 @@ jobs:
           jar cf /tmp/moosa-jvm/deps/moosa-jvm-shims.jar -C /tmp/moosa-jvm/shim-classes .
           javac -d /tmp/moosa-jvm MOOSAWeb/tools/JvmOriginalProviderLinks.java
           LIBJAR=$(find /tmp/cloudstream-official/library/build/libs -maxdepth 1 -name '*jvm*.jar' -print -quit)
-          timeout 62s java -Xmx1500m -cp /tmp/moosa-jvm JvmOriginalProviderLinks "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps tt0063350 "Night of the Living Dead"
+          timeout 62s java -Xmx1500m -cp /tmp/moosa-jvm JvmOriginalProviderLinks "$LIBJAR" /tmp/moosa-jvm/original-cinestream.jar /tmp/moosa-jvm/deps tt5719076 "Dead Night"
       - name: Probe original callbacks for actual browser-compatible media segments
         run: |
           set -euo pipefail
@@ -131,6 +131,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: original-cinestream-feature-film-browser-frame
-          path: MOOSAWeb/browser-artifacts/original-cinestream-night-of-the-living-dead-frame.png
+          path: MOOSAWeb/browser-artifacts/original-cinestream-dead-night-frame.png
           if-no-files-found: ignore
           retention-days: 3
