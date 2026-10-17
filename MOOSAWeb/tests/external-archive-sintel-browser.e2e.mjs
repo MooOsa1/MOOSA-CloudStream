@@ -35,6 +35,25 @@ try{
   });
   const page=await browser.newPage({viewport:{width:1280,height:720}});
   const errors=[];page.on('pageerror',e=>errors.push(String(e.message).slice(0,200)));
+  const http=[];
+  const failures=[];
+  page.on('response',response=>{
+    let host;
+    try{host=new URL(response.url()).hostname;}catch{return}
+    if(!host.includes('archive.org')||http.length>=14)return;
+    const headers=response.headers();
+    http.push({host,status:response.status(),
+      mime:headers['content-type']||'',
+      length:headers['content-length']||'',
+      range:headers['content-range']||'',
+      corp:headers['cross-origin-resource-policy']||''});
+  });
+  page.on('requestfailed',request=>{
+    let host;
+    try{host=new URL(request.url()).hostname;}catch{return}
+    if(!host.includes('archive.org')||failures.length>=10)return;
+    failures.push({host,error:request.failure()?.errorText||'unknown'});
+  });
   const response=await page.goto(addr+'/',{waitUntil:'domcontentloaded',timeout:18000});
   assert.equal(response.status(),200);
   assert.ok(response.headers()['content-security-policy'].includes("frame-src 'none'"));
@@ -43,11 +62,32 @@ try{
       showPlayer({title:'Sintel — 2010 CC-BY full licensed film',sources:[]});
       appendPlayerSources([source]);
     }),selected);
-  await page.waitForFunction(()=>{
-    const v=document.querySelector('#video');
-    return v&&!v.paused&&v.readyState>=2&&
-      v.videoHeight>=720&&v.videoWidth>=1000&&!v.error;
-  },null,{timeout:45000});
+  try{
+    await page.waitForFunction(()=>{
+      const v=document.querySelector('#video');
+      return v&&!v.paused&&v.readyState>=2&&
+        v.videoHeight>=720&&v.videoWidth>=1000&&!v.error;
+    },null,{timeout:45000});
+  }catch(e){
+    const player=await page.evaluate(()=>{
+      const v=document.querySelector('#video');
+      return {
+        paused:v?.paused,readyState:v?.readyState,
+        networkState:v?.networkState,
+        mediaErrorCode:v?.error?.code||0,
+        mediaErrorMessage:v?.error?.message?.slice(0,200)||'',
+        width:v?.videoWidth||0,height:v?.videoHeight||0,
+        selectedSource:document.querySelector('#player-source')?.value||'none',
+        playerHidden:document.querySelector('#player-panel')?.classList.contains('hidden'),
+        status:document.querySelector('#player-subtitle')?.textContent?.slice(0,150)||''
+      };
+    }).catch(()=>({pageClosed:true}));
+    console.log('MOOSA_EXTERNAL_ARCHIVE_BROWSER_DIAG '+JSON.stringify({
+      player,http,failures,pageErrors:errors,reason:e.name,
+      rawStreamUrlOmitted:true
+    }));
+    throw e;
+  }
   const result=await page.evaluate(()=>new Promise(resolve=>{
     const v=document.querySelector('#video'),timer=setTimeout(()=>resolve({decoded:false}),15000);
     v.requestVideoFrameCallback((_now,metadata)=>{
