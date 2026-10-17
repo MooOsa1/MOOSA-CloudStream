@@ -96,6 +96,7 @@ public final class JvmOriginalProviderLinks {
             AtomicInteger links=new AtomicInteger(0),subs=new AtomicInteger(0),hdLinks=new AtomicInteger(0);
             Set<String> videoHosts=ConcurrentHashMap.newKeySet();
             Set<String> candidateUrls=ConcurrentHashMap.newKeySet();
+            ConcurrentHashMap<String,Set<String>> publicSourceGroups=new ConcurrentHashMap<>();
             Object linkCallback=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{fn1},(proxy,method,a)->{
                 if("invoke".equals(method.getName())&&a!=null&&a.length==1&&a[0]!=null){
                     links.incrementAndGet();
@@ -106,6 +107,13 @@ public final class JvmOriginalProviderLinks {
                         String host=uri.getHost();
                         if(host!=null&&uri.getScheme().equalsIgnoreCase("https")){
                             videoHosts.add(host.toLowerCase());
+                            try {
+                                Object label=link.getClass().getMethod("getSource").invoke(link);
+                                String safe=String.valueOf(label).replaceAll("[^a-zA-Z0-9 _.-]","")
+                                    .substring(0,Math.min(36,String.valueOf(label).length()));
+                                publicSourceGroups.computeIfAbsent(host.toLowerCase(),
+                                    key->ConcurrentHashMap.newKeySet()).add(safe);
+                            }catch(Throwable ignored){}
                             if(uri.getPort()==-1 && uri.getUserInfo()==null && candidateUrls.size()<24)
                                 candidateUrls.add(uri.toString());
                         }
@@ -135,6 +143,12 @@ public final class JvmOriginalProviderLinks {
             System.out.println("ORIGINAL_LINKS_FUNCTION_RETURN: "+status);
             System.out.println("ORIGINAL_LINKS_CALLBACK_COUNTS: links="+links+" hd="+hdLinks+" subtitles="+subs);
             System.out.println("ORIGINAL_LINKS_RETURNED_PUBLIC_HOST_COUNT: "+videoHosts.size());
+            // Provider name and public CDN hostname ONLY, no stream paths or
+            // signed query parameters. Helps identify incorrect-film callbacks.
+            for(String host:new TreeSet<>(publicSourceGroups.keySet())){
+                System.out.println("ORIGINAL_CINESTREAM_PROVIDER_HOST: "+
+                    host+" names="+new TreeSet<>(publicSourceGroups.get(host)));
+            }
             // Do not equate callback URLs with media playback. We deliberately do
             // not print, store or proxy the signed candidate URLs here.
             if(links.get()==0){System.out.println("ORIGINAL_LINKS_NO_CANDIDATES");System.exit(15);return;}
