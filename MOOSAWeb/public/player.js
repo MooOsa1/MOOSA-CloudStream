@@ -248,7 +248,7 @@ export function appendPlayerSources(items) {
   // only that specific original on iOS when the same-file transcode exists.
   activeSources=chooseBrowserSources(activeSources,navigator.userAgent);
   picker.disabled=false;
-  // Native FHD first, larger variants as fallback, then 720p minimum.
+  // Native 4K first, then the next available >=720p source on failure.
   activeSources.sort(comparePlaybackSources);
   picker.replaceChildren(new Option('اختر السيرفر',''));
   for (let i=0;i<activeSources.length;i++) {
