@@ -23,6 +23,32 @@ const MOVIES=[
   {name:'Game of Thrones S1E1 (metadata only)',type:'series',id:'tt0944947:1:1'}
 ];
 const TIMEOUT=6500;
+async function inspectApprovedMp4Head(raw) {
+  let url;
+  try { url=new URL(raw); }catch{return {head:'invalid_url'};}
+  // Explicit hostname gate. Do not allow the provider to redirect our CI
+  // into arbitrary untrusted origins or private cloud addresses.
+  if(url.protocol!=='https:'||url.hostname!=='bcdn.hakunaymatata.com'||
+     url.port||url.username||url.password||!url.pathname.endsWith('.mp4'))
+    return {head:'not_allowlisted'};
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),4000);
+  try {
+    const response=await fetch(url.href,{method:'HEAD',redirect:'error',
+      headers:{Origin:'https://moosa-web.onrender.com'},
+      signal:controller.signal});
+    const type=String(response.headers.get('content-type')||'')
+      .toLowerCase().split(';')[0].slice(0,50);
+    const cors=response.headers.get('access-control-allow-origin')||'';
+    const length=Number(response.headers.get('content-length')||0);
+    return {head:'HTTP_'+response.status,mime:type,
+      cors: cors==='*'||cors==='https://moosa-web.onrender.com',
+      range:/bytes/i.test(response.headers.get('accept-ranges')||''),
+      sizeMB: length>0?Math.round(length/1048576):null,
+      videoDecoded:false};
+  }catch(error){return {head:error?.name==='AbortError'?'timeout':'unavailable',videoDecoded:false}}
+  finally{clearTimeout(timeout);}
+}
 async function json(url){
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),TIMEOUT);
@@ -98,10 +124,12 @@ for(const candidate of CANDIDATES){
       for(const item of streams.filter((stream,i)=>
         formats[i]==='browser_candidate_unverified'&&qualityHint(stream)==='1080p_claimed')){
         const uri=new URL(item.url);
+        const head=await inspectApprovedMp4Head(item.url);
         console.log('MANAGED_FHD_CANDIDATE addon='+JSON.stringify(candidate.name)+
           ' case='+JSON.stringify(movie.name)+' host='+JSON.stringify(uri.hostname)+
           ' extension='+JSON.stringify(uri.pathname.split('.').at(-1))+
-          ' hints=1080p_claimed urlOmitted=true');
+          ' hints=1080p_claimed head='+JSON.stringify(head)+
+          ' urlOmitted=true');
       }
     }
     console.log('MANAGED_FHD_QUERY name='+JSON.stringify(candidate.name)+
