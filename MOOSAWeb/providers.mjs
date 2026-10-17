@@ -149,7 +149,7 @@ export function selectStremioStreamId(manifest,meta){
     // TMDB is not assumed for addons that do not advertise it.
     if(base===tmdbId &&
        ![...(global||[]),...resources.flatMap(r=>r==='stream'?[]:(r.idPrefixes||[]))]
-         .some(p=>typeof p==='string'&&p.startsWith('tmdb:')))continue;
+         .some(p=>typeof p==='string'&&(p==='tmdb'||p.startsWith('tmdb:'))))continue;
     for(const resource of resources){
       if(resource!=='stream'&&!matches(base,resource.idPrefixes))continue;
       return {type,id:type==='movie'?base:
