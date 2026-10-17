@@ -30,3 +30,10 @@ jobs:
         env:
           STREAMLINE_DIR: /tmp/streamline-ci
         run: node MOOSAWeb/tools/check-cinestream-js-port.mjs
+      - name: Install browser test dependencies on disposable runner
+        run: |
+          cd MOOSAWeb
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Try real Vidlink movie inside normal MOOSA video player
+        run: node MOOSAWeb/tests/streamline-vidlink-sintel-browser.e2e.mjs
