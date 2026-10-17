@@ -5,6 +5,8 @@ on:
     paths:
       - 'MOOSAWeb/tools/managed-fhd-addons-audit.mjs'
       - 'MOOSAWeb/tools/managed-fhd-browser-sintel.mjs'
+      - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
+      - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
       - 'MOOSAWeb/tools/managed-fhd-embed-audit.mjs'
       - '.github/workflows/moosa-managed-fhd-addons.yml'
   pull_request:
@@ -12,6 +14,8 @@ on:
     paths:
       - 'MOOSAWeb/tools/managed-fhd-addons-audit.mjs'
       - 'MOOSAWeb/tools/managed-fhd-browser-sintel.mjs'
+      - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
+      - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
       - '.github/workflows/moosa-managed-fhd-addons.yml'
   workflow_dispatch:
 permissions:
@@ -31,6 +35,10 @@ jobs:
         run: |
           node --check MOOSAWeb/tools/managed-fhd-embed-audit.mjs
           node MOOSAWeb/tools/managed-fhd-embed-audit.mjs
+      - name: Read-only zero-ad provider markup and iframe policy check
+        run: |
+          node --check MOOSAWeb/tools/managed-noads-embed-audit.mjs
+          node MOOSAWeb/tools/managed-noads-embed-audit.mjs
       - name: Query current third-party manifests and stream metadata (no video downloaded)
         run: node MOOSAWeb/tools/managed-fhd-addons-audit.mjs
 
@@ -50,3 +58,7 @@ jobs:
         run: npm install --no-audit --no-fund --prefix /tmp/moosa-browser puppeteer-core@24.24.0
       - name: Check decoded frame of freely licensed Sintel in real Chrome
         run: timeout 65 node MOOSAWeb/tools/managed-fhd-browser-sintel.mjs
+      - name: Inspect fixed licensed Sintel hosted embed in sandboxed Chrome
+        run: |
+          node --check MOOSAWeb/tools/managed-noads-browser-audit.mjs
+          timeout 75 node MOOSAWeb/tools/managed-noads-browser-audit.mjs
