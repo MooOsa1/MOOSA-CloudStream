@@ -47,8 +47,8 @@ public final class ProviderLinksProbe {
     }
     static String clean(Throwable t){
         Throwable c=t instanceof InvocationTargetException i?i.getTargetException():t;
-        String reason=String.valueOf(c.getMessage()).replaceAll("[^a-zA-Z0-9 _./:-]","_");
-        return c.getClass().getSimpleName()+"/"+reason.substring(0,Math.min(95,reason.length()));
+        // Plugin exceptions may contain signed media URLs or bearer tokens.
+        return c.getClass().getSimpleName();
     }
     public static void main(String[] args) throws Exception {
         if(args.length!=2)throw new IllegalArgumentException("cloudstreamLibrary.jar cineStreamPlugin.jar");
@@ -74,6 +74,18 @@ public final class ProviderLinksProbe {
                     System.out.println("JVM_REAL_LINKS stage=payload status=missing_or_untrusted");return;
                 }
             }catch(Throwable e){System.out.println("JVM_REAL_LINKS stage=payload status=error reason="+clean(e));return;}
+            String chosen=System.getenv("MOOSA_JVM_SINGLE_PROVIDER");
+            String providerKey=java.util.Set.of("p_vaplayer","p_vidzee","p_videasy",
+                "p_vidcore","p_vidfastpro","p_primesrc","p_cinejoy").contains(chosen==null?"":chosen)
+                ?chosen:"p_vaplayer";
+            // Original provider metadata can erase its TMDB ID on IMDb movie
+            // loads. Restore it only from matching trusted Cinemeta metadata.
+            int before=CinemetaIdentity.tmdbId(payload);
+            final String approvedPayload=CinemetaIdentity.enrichLicensedSintel(payload);
+            int after=CinemetaIdentity.tmdbId(approvedPayload);
+            System.out.println("JVM_METADATA_IDENTITY provider="+providerKey+
+                " imdbVerified=true tmdbBefore="+(before>0)+
+                " tmdbAfter="+(after>0)+" restored="+(before==0&&after>0));
             AtomicInteger total=new AtomicInteger(), hd=new AtomicInteger(), captions=new AtomicInteger();
             Map<String,AtomicInteger> sourceGroups=new ConcurrentHashMap<>();
             List<String> approvedHttpsHls=java.util.Collections.synchronizedList(new ArrayList<>());
@@ -118,7 +130,7 @@ public final class ProviderLinksProbe {
             try{
                 Object returned=runSuspend(c->type.getMethod(
                     "loadLinks",String.class,boolean.class,Function1.class,Function1.class,Continuation.class
-                ).invoke(provider,payload,false,onSub,onVideo,c),55);
+                ).invoke(provider,approvedPayload,false,onSub,onVideo,c),55);
                 System.out.println("JVM_REAL_LINKS stage=loadLinks status=returned result="+String.valueOf(returned)+
                     " sources="+total.get()+" hd720plus="+hd.get()+" subtitles="+captions.get()+
                     " durationMs="+(System.nanoTime()-begin)/1_000_000);
