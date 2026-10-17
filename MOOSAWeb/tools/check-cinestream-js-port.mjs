@@ -59,8 +59,8 @@ for(const target of targets){
         const u=new URL(String(item?.url||''));
         if(u.protocol!=='https:'||u.username||u.password||u.port||
           u.hostname==='localhost'||u.hostname.endsWith('.local')||
-          /^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(u.hostname))throw Error('invalid');
-        const ext=u.pathname.toLowerCase().match(/\\.(m3u8|mp4|webm|mkv)(?:$)/)?.[1]||'other';
+          /^\d+\.\d+\.\d+\.\d+$/.test(u.hostname))throw Error('invalid');
+        const ext=u.pathname.toLowerCase().match(/\.(m3u8|mp4|webm|mkv)(?:$)/)?.[1]||'other';
         if(!['m3u8','mp4','webm'].includes(ext))continue;
         summary.httpsPlayable++;
         hosts.add(u.hostname.toLowerCase());
