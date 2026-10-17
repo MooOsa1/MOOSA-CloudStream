@@ -72,7 +72,10 @@ function cleanLicense(value){
   let u;try{u=new URL(value)}catch{return null;}
   // Require the actual CC deed URL in the imageinfo licensing metadata.
   if(!LICENSE.test(u.origin+u.pathname))return null;
-  return u.origin+u.pathname;
+  // Commons legitimately supplies CC0 deeds as HTTP /deed.en.
+  // Normalize the known Creative Commons host to HTTPS so the player's
+  // safe attribution control links the official deed, not a dead label.
+  return 'https://creativecommons.org'+u.pathname;
 }
 function humanCredit(meta){
   // Artist/Credit are often HTML fragments; never render as HTML.

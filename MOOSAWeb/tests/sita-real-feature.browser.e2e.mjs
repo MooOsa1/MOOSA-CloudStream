@@ -30,7 +30,7 @@ try{
   assert.ok(film.sources.length>=1,'Wikimedia Commons did not verify the original full video');
   report.sourceRights=film.sources.map(s=>String(s.licenseUrl||'none').slice(0,110));
   assert.ok(film.sources.every(s=>
-    /^https:\/\/creativecommons\.org\/(?:publicdomain\/zero\/1\.0|licenses\/by-sa\/3\.0)\/$/.test(
+    /^https:\/\/creativecommons\.org\/(?:publicdomain\/zero\/1\.0\/(?:deed\.en)?|licenses\/by-sa\/3\.0\/)$/.test(
       String(s.licenseUrl||''))),'Sita source needs verified CC0 or CC BY-SA 3.0 rights');
   assert.ok(film.sources.every(s=>new URL(s.url).hostname==='upload.wikimedia.org'));
   report.correctTitle=true;report.verifiedOpenLicense=true;
