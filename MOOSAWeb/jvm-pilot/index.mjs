@@ -47,10 +47,14 @@ export async function extractOriginal(){
     if(total<=2_000_000)logs+=bytes.toString('utf8');
   };
   process.stdout.on('data',collect);process.stderr.on('data',collect);
-  let timedOut=false;
+  let timedOut=false,spawnErrorCode=null;
   const status=await new Promise(resolve=>{
     const timeout=setTimeout(()=>{timedOut=true;process.kill('SIGKILL');},54000);
-    process.once('error',()=>{clearTimeout(timeout);resolve(-1)});
+    process.once('error',error=>{
+      spawnErrorCode=['ENOENT','EACCES','EMFILE','ENOMEM'].includes(error?.code)
+        ?error.code:'OTHER';
+      clearTimeout(timeout);resolve(-1);
+    });
     process.once('close',code=>{clearTimeout(timeout);resolve(code)});
   });
   const returned=status===0 && !timedOut &&
@@ -65,8 +69,14 @@ export async function extractOriginal(){
   const exceptionClasses=[...logs.matchAll(/(?:java\.lang\.|java\.net\.|kotlin\.|org\.json\.)[A-Za-z0-9.$]*(?:Error|Exception)/g)]
     .map(x=>x[0]).slice(0,5);
   const diagnostic={
-    javaExitCode:status,wasTimeout:timedOut,outputBytes:total,
+    javaExitCode:status,spawnErrorCode,wasTimeout:timedOut,outputBytes:total,
     callbacksPresent:returned,
+    javaStartupIssues:{
+      heapReservationFailed:/Could not reserve enough space|Could not allocate|Native memory allocation|There is insufficient memory/i.test(logs),
+      invalidJvmArgument:/Unrecognized (?:VM )?option|Unrecognized VM option/i.test(logs),
+      missingRuntimeClass:/ClassNotFoundException|NoClassDefFoundError|Could not find or load main class/i.test(logs),
+      rejectedMethodArguments:/IllegalArgumentException|Invalid title identification/i.test(logs)
+    },
     originalLoadReturned:/ORIGINAL_LINKS_EXACT_IDENTITY_VERIFIED: true/.test(logs),
     castleDetailsSeen:/(?:DEBUG|ERROR) Castle: details:/.test(logs),
     castleIdentityMatched:upstreamMatched,
@@ -103,7 +113,11 @@ export async function executeBootProbe(extract=extractOriginal){
       result:String(output?.state||'unavailable').slice(0,50),
       candidateCount:Array.isArray(output?.urls)?output.urls.length:0,
       elapsedMs:Date.now()-started,
-      failureType:output?.diagnostic?.javaFailureType||null
+      failureType:output?.diagnostic?.javaFailureType||null,
+      javaExitCode:output?.diagnostic?.javaExitCode??null,
+      spawnErrorCode:output?.diagnostic?.spawnErrorCode??null,
+      outputBytes:output?.diagnostic?.outputBytes??null,
+      startupIssues:output?.diagnostic?.javaStartupIssues||null
     };
   }catch{
     bootProbe={state:'failed',result:'runtime_exception',
