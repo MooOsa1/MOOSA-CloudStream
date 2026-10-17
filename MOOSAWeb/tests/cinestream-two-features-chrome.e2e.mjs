@@ -18,6 +18,8 @@ const FILMS=[
  {title:'His Girl Friday',year:1940,tmdbId:3085,preferred:480,minDuration:5200,maxDuration:6150}
 ];
 const HOST='hcdn3.hakunaymatata.com';
+const overrideQuality=Number(process.env.MOOSA_GENERAL_QUALITY||720);
+const filmsToTest=overrideQuality===720?FILMS:FILMS.slice(0,1);
 const SITE='https://moosa-web.onrender.com';
 const agent='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
 const browserErrors=[];
@@ -57,7 +59,7 @@ const LOCAL='http://127.0.0.1:'+server.address().port;
 try{
   browser=await chromium.launch({headless:true,channel:'chrome',args:[
     '--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']});
-  for(const film of FILMS){
+  for(const film of filmsToTest){
     let page;
     let phase='provider_lookup';
     try{
@@ -76,7 +78,9 @@ try{
         apiVariants:variants.length,
         advertisedQualities:variants.map(x=>x.quality)
       }));
-      const target=variants.find(x=>x.quality===film.preferred)||variants[0];
+      const target=variants.find(x=>x.quality===
+        (film.title==='The General'?overrideQuality:film.preferred));
+      assert.ok(target,'Requested CineStream quality not returned for '+film.title);
       assert.ok(target,'No actual CineStream source for '+film.title);
       phase='media_byte_preflight';
       const tested=await gateway.issueIfBytesVerified({
@@ -178,10 +182,11 @@ try{
     }finally{await page?.close();}
   }
   console.log('MOOSA_ADDITIONAL_FILMS_PROVEN '+JSON.stringify({
-    tested:FILMS.length,actuallyPlayedWithPlausibleDuration:acceptedFilms,
+    tested:filmsToTest.length,requestedGeneralQuality:overrideQuality,
+    actuallyPlayedWithPlausibleDuration:acceptedFilms,
     browserErrorCount:browserErrors.length,siteProductionUnchanged:true
   }));
-  assert.equal(acceptedFilms,FILMS.length,
+  assert.equal(acceptedFilms,filmsToTest.length,
     'Do not claim both new original CineStream films playable if any failed');
 }finally{
   await browser?.close().catch(()=>{});
