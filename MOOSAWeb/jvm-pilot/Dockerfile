@@ -46,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /tmp/moosa-jvm /opt/moosa/jvm
 COPY MOOSAWeb/jvm-pilot/index.mjs /opt/moosa/jvm-pilot/index.mjs
 COPY MOOSAWeb/real-hls-segment-probe.mjs /opt/moosa/real-hls-segment-probe.mjs
+COPY MOOSAWeb/h264-mpegts-resolution.mjs /opt/moosa/h264-mpegts-resolution.mjs
 RUN chmod -R a+rX /opt/moosa/jvm
 ENV PORT=10000 NODE_ENV=production NODE_OPTIONS=--max-old-space-size=64
 WORKDIR /opt/moosa
