@@ -3,6 +3,7 @@ import {chooseBrowserSources} from './source-compatibility.js';
 import {safeSubtitleFileUrl} from './subtitle-file-url.js';
 import {isDirectVideoUrl} from './direct-media-policy.js';
 import {comparePlaybackSources} from './stream-preferences.js';
+import {hlsPlayerOptions} from './hls-playback-options.js';
 const $ = s => document.querySelector(s);
 const video = $('#video');
 let hls = null;
@@ -105,7 +106,7 @@ async function playLink(url, label='Video'){
       const Hls=await loadHls();
       if(currentPlayback!==playbackToken)return;
       if(!Hls.isSupported())throw new Error('هذا المتصفح لا يدعم تشغيل HLS');
-      const active=new Hls({enableWorker:true,capLevelToPlayerSize:true,backBufferLength:40});
+      const active=new Hls(hlsPlayerOptions());
       hls=active;
       // Attach MediaSource before requesting the manifest and playing.
       // Calling video.play before attachment can produce NotSupportedError
