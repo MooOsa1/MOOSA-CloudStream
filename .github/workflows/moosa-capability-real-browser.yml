@@ -1,0 +1,36 @@
+name: MOOSA Chrome decoded capability playback
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/public/media-capability-policy.js'
+      - 'MOOSAWeb/public/player.js'
+      - 'MOOSAWeb/tests/capability-real-browser.e2e.mjs'
+      - '.github/workflows/moosa-capability-real-browser.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chrome:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chrome without production dependencies
+        run: |
+          cd MOOSAWeb
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Generate local synthetic MP4 fixture for relay codec proof
+        run: |
+          if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq; sudo apt-get install -y ffmpeg; fi
+          mkdir -p MOOSAWeb/tests/playback-fixtures
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=size=320x180:rate=24 \
+            -t 4 -c:v libx264 -preset ultrafast -pix_fmt yuv420p \
+            -movflags +faststart MOOSAWeb/tests/playback-fixtures/clip.mp4
+      - name: Prove Chrome renders MOOSA tokenized MP4 via Play
+        run: cd MOOSAWeb && node tests/capability-real-browser.e2e.mjs
