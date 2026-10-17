@@ -49,7 +49,10 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
       appendExternalSubtitles(data.subtitles);
     }).catch(()=>{}); // Subtitle network failure must not affect playback.
   try {
-    const longPilot=media==='movie' && await pilotRuntimeReady();
+    // Allow one independently vetted movie source an appropriate startup
+    // window on free hosting. All other titles retain normal deadlines.
+    const longPilot=media==='movie' &&
+      (String(id)==='10331' || await pilotRuntimeReady());
     if(job!==generation)return;
     const response=await fetch('/api/resolve?'+params.toString(),{
       headers:{Accept:'application/json'},
