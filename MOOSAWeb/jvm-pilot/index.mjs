@@ -63,7 +63,7 @@ export async function extractOriginal(){
     .map(x=>x[0]).slice(0,5);
   const diagnostic={
     javaExitCode:status,wasTimeout:timedOut,outputBytes:total,
-    callbacksPresent:hasCallback,
+    callbacksPresent:returned,
     originalLoadReturned:/ORIGINAL_LINKS_EXACT_IDENTITY_VERIFIED: true/.test(logs),
     castleDetailsSeen:/(?:DEBUG|ERROR) Castle: details:/.test(logs),
     castleIdentityMatched:upstreamMatched,

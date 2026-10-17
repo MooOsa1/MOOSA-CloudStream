@@ -3,7 +3,7 @@ FROM eclipse-temurin:17-jdk-jammy AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
   curl git python3 unzip ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY MOOSAWeb/tools/JvmOriginalProviderLinks.java /build/JvmOriginalProviderLinks.java
+COPY MOOSAWeb/jvm-pilot/JvmOriginalProviderLinks.java /build/JvmOriginalProviderLinks.java
 COPY MOOSAWeb/headless-jvm-shims /build/shims
 COPY MOOSAWeb/jvm-pilot/copy-runtime.init.gradle /build/runtime.init.gradle
 RUN set -eux; \
