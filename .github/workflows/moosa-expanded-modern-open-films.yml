@@ -1,0 +1,57 @@
+name: MOOSA modern licensed full movies actually play
+on:
+  push:
+    branches: [feat/moosa-verified-modern-open-movies-20261017]
+    paths:
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/free-film-library.mjs'
+      - 'MOOSAWeb/tests/free-film-library.test.mjs'
+      - 'MOOSAWeb/tests/commons-provider.test.mjs'
+      - 'MOOSAWeb/tests/recent-open-movies-live-browser.e2e.mjs'
+      - '.github/workflows/moosa-expanded-modern-open-films.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/commons-provider.mjs'
+      - 'MOOSAWeb/free-film-library.mjs'
+      - 'MOOSAWeb/tests/free-film-library.test.mjs'
+      - 'MOOSAWeb/tests/commons-provider.test.mjs'
+      - 'MOOSAWeb/tests/recent-open-movies-live-browser.e2e.mjs'
+      - '.github/workflows/moosa-expanded-modern-open-films.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  web-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate all production paths and complete Node suite
+        run: |
+          node --check commons-provider.mjs
+          node --check free-film-library.mjs
+          npm run check
+  genuine-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    defaults:
+      run:
+        working-directory: MOOSAWeb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chrome including VP9 and H264 decoding on CI only
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Verify 2026 open film exists and actually decode 2023 open movie
+        run: timeout 115 node tests/recent-open-movies-live-browser.e2e.mjs
