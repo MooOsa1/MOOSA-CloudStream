@@ -1,0 +1,22 @@
+name: MOOSA official Sita film audio proof
+on:
+  push:
+    branches: [experiment/sita-official-audio-20261017]
+    paths:
+      - '.github/workflows/moosa-official-sita-audio-probe.yml'
+      - 'MOOSAWeb/tools/sita-audio-probe.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audio-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check ffprobe/ffmpeg
+        run: |
+          ffprobe -version | head -1
+          ffmpeg -version | head -1
+      - name: Inspect original director-approved Sita MP4 audio streams without saving video
+        run: node MOOSAWeb/tools/sita-audio-probe.mjs
