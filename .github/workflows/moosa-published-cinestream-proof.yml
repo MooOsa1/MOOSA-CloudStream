@@ -1,0 +1,27 @@
+name: MOOSA published CineStream movie real Chrome proof
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tests/live-published-cinestream-browser.e2e.mjs'
+      - '.github/workflows/moosa-published-cinestream-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-play:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install real Chrome without adding production dependencies
+        run: |
+          cd MOOSAWeb
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Confirm genuine full CineStream film decodes through public Render MOOSA Web
+        timeout-minutes: 6
+        run: cd MOOSAWeb && node tests/live-published-cinestream-browser.e2e.mjs
