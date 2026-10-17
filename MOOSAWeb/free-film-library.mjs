@@ -8,9 +8,20 @@
 import {fromCommons} from './commons-provider.mjs';
 
 const FILMS=Object.freeze([
-  Object.freeze({id:'big-buck-bunny',title:'Big Buck Bunny',year:2008,creator:'Blender Foundation',genre:'أنيميشن • كوميديا'}),
-  Object.freeze({id:'sintel',title:'Sintel',year:2010,creator:'Blender Foundation',genre:'فانتازيا • مغامرة'}),
+  Object.freeze({id:'singularity-2026',title:'Singularity',year:2026,creator:'Blender Studio',genre:'خيال علمي • مغامرة فضائية'}),
+  Object.freeze({id:'wing-it',title:'Wing It!',year:2023,creator:'Blender Studio',genre:'أنيميشن • مغامرة'}),
+  Object.freeze({id:'charge',title:'Charge',year:2022,creator:'Blender Studio',genre:'خيال علمي • أكشن'}),
+  Object.freeze({id:'sprite-fright',title:'Sprite Fright',year:2021,creator:'Blender Studio',genre:'رعب • أنيميشن'}),
+  Object.freeze({id:'coffee-run',title:'Coffee Run',year:2020,creator:'Blender Studio',genre:'دراما • أنيميشن'}),
+  Object.freeze({id:'spring',title:'Spring',year:2019,creator:'Blender Studio',genre:'فانتازيا • أنيميشن'}),
+  Object.freeze({id:'hero',title:'Hero',year:2018,creator:'Blender Studio',genre:'أنيميشن • فني'}),
+  Object.freeze({id:'daily-dweebs',title:'The Daily Dweebs',year:2017,creator:'Blender Studio',genre:'أنيميشن • كوميديا'}),
+  Object.freeze({id:'glass-half',title:'Glass Half',year:2015,creator:'Blender Studio',genre:'أنيميشن • كوميديا'}),
+  Object.freeze({id:'cosmos-laundromat',title:'Cosmos Laundromat: First Cycle',year:2015,creator:'Blender Studio',genre:'فانتازيا • دراما'}),
+  Object.freeze({id:'caminandes-gran-dillama',title:'Caminandes: Gran Dillama',year:2013,creator:'Blender Studio',genre:'أنيميشن • كوميديا'}),
   Object.freeze({id:'tears-of-steel',title:'Tears of Steel',year:2012,creator:'Blender Foundation',genre:'خيال علمي • أكشن'}),
+  Object.freeze({id:'sintel',title:'Sintel',year:2010,creator:'Blender Foundation',genre:'فانتازيا • مغامرة'}),
+  Object.freeze({id:'big-buck-bunny',title:'Big Buck Bunny',year:2008,creator:'Blender Foundation',genre:'أنيميشن • كوميديا'}),
   Object.freeze({id:'elephants-dream',title:'Elephants Dream',year:2006,creator:'Orange Open Movie Project',genre:'أنيميشن • خيال'})
 ]);
 const cache=new Map();
