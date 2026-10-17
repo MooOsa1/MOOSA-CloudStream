@@ -82,6 +82,14 @@ test('HTTP first-segment probe sees only approved HLS hosts and reports counts',
     urls:[
       'https://img1.hscow.com/proof.m3u8',
       'https://unknown.example/blocked.m3u8'
+    ],
+    candidates:[
+      {url:'https://img1.hscow.com/proof.m3u8',
+        provider:'Castle',requiresHeaders:false},
+      {url:'https://unknown.example/blocked.m3u8',
+        provider:'Other provider',requiresHeaders:false},
+      {url:'https://img1.hscow.com/protected.m3u8',
+        provider:'Castle',requiresHeaders:true}
     ]
   }),{
     verifySegment:true,allowedHosts:['img1.hscow.com'],
@@ -92,6 +100,9 @@ test('HTTP first-segment probe sees only approved HLS hosts and reports counts',
   assert.equal(called,1);
   assert.equal(state.mediaProbe.checked,1);
   assert.equal(state.mediaProbe.firstSegmentHttpVerified,1);
+  assert.equal(state.castleCount,2);
+  assert.equal(state.castleBrowserDirectCount,1);
+  assert.equal(state.headerRequiredCount,1);
   assert.equal(JSON.stringify(state).includes('proof.m3u8'),false);
 });
 
