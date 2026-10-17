@@ -111,12 +111,21 @@ try{
   await page.goto('https://moosa-web.onrender.com/',{
     waitUntil:'domcontentloaded',timeout:25000
   });
+  // Exercise the SAME production source picker and quality policy that users
+  // reach by pressing Play. The old test pasted the HLS into a custom field,
+  // bypassing the automatic source pipeline and its 720p guard.
   await page.evaluate(async(url)=>{
-    const {showPlayer}=await import('/player.js');
-    showPlayer({title:'Sintel — licensed original CineStream stream',sources:[]});
-    document.querySelector('#custom-stream').value=url;
-    document.querySelector('#play-custom').click();
+    const {showPlayer,appendPlayerSources}=await import('/player.js');
+    showPlayer({title:'Sintel',sources:[]});
+    appendPlayerSources([{
+      provider:'CineStream',
+      name:'CineStream • original JVM test',
+      url,quality:0,singleFilmPilot:true,
+      originalCineStream:true,verifiedFilmImdbId:'tt1727587'
+    }]);
   },streamUrl);
+  const accepted=await page.locator('#player-source').inputValue();
+  assert.equal(accepted,'0','Original CineStream stream must survive player source filtering');
   let timedOut=false;
   try{
     await page.waitForFunction(()=>{
@@ -133,6 +142,7 @@ try{
     errorCode:v.error?.code||null,
     errorMessage:String(v.error?.message||'').slice(0,140),
     nativeHls:v.canPlayType('application/vnd.apple.mpegurl'),
+    durationSeconds:Number.isFinite(v.duration)?Math.round(v.duration):null,
     hasHlsjs:typeof window.Hls==='function',
     hlsjsSupported:typeof window.Hls==='function'&&window.Hls.isSupported(),
     hlsEvents:window.__moosaHlsDiagnostics||[],
@@ -140,6 +150,16 @@ try{
     playerMessage:String(document.querySelector('#player-message')?.textContent||'').slice(0,200)
   }));
   const played=!timedOut&&state.secondsPlayed>0&&state.width>0;
+  // The previous CI proved VIDEO FRAMES, not correct movie identity.
+  // For the CC-BY original Sintel feature, independently require its known
+  // approximately 14m48s runtime (888s); a random Castle episode must fail.
+  const identityDurationMatches=Number.isFinite(state.durationSeconds) &&
+    state.durationSeconds>=860 && state.durationSeconds<=930;
+  console.log('ORIGINAL_CINESTREAM_EXPECTED_MOVIE_DURATION '+
+    JSON.stringify({expectedFilm:'Sintel',expectedSeconds:888,
+      actualSeconds:state.durationSeconds,identityDurationMatches}));
+  assert.equal(identityDurationMatches,true,
+    'Reject generic video decode if the decoded source is not Sintel-length');
   console.log('ORIGINAL_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
     actuallyDecodedFrames:played,video:state,
     pageErrorTypes:errors.slice(0,5),

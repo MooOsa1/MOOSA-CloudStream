@@ -247,10 +247,15 @@ export function appendPlayerSources(items) {
       item?.verifiedFilmImdbId==='tt5719076' &&
       currentMediaTitle.trim().toLowerCase()==='dead night' &&
       /^CineStream/.test(String(item?.name||''));
-    // Never accept low / unknown-quality automatic sources, even if an
-    // untrusted plugin bypasses the server's source normalization.
+    const originalSintel=item?.singleFilmPilot===true &&
+      item?.originalCineStream===true &&
+      item?.verifiedFilmImdbId==='tt1727587' &&
+      currentMediaTitle.trim().toLowerCase()==='sintel' &&
+      /^CineStream/.test(String(item?.name||''));
+    // Unknown / lower quality is allowed ONLY for the exact original-film
+    // CineStream pilot. No change to ordinary film playback policy.
     if (!isDirectVideoUrl(item?.url) || seen.has(item.url) ||
-        !Number.isInteger(advertised) || advertised<(pilot?144:720) || advertised>4320) continue;
+        !Number.isInteger(advertised) || advertised<(originalSintel?0:pilot?144:720) || advertised>4320) continue;
     seen.add(item.url);
     activeSources.push(attachExternalSubtitles(item));
     added++;
@@ -408,7 +413,11 @@ function enforceDecodedHd(){
     source.singleFilmPilot===true &&
     source.verifiedFilmImdbId==='tt5719076' &&
     currentMediaTitle.trim().toLowerCase()==='dead night');
-  if(pilot && video.videoHeight>0 && video.videoWidth>0)return false;
+  const originalSintel=activeSources.some(source=>source.url===selectedSourceUrl &&
+    source.singleFilmPilot===true && source.originalCineStream===true &&
+    source.verifiedFilmImdbId==='tt1727587' &&
+    currentMediaTitle.trim().toLowerCase()==='sintel');
+  if((pilot||originalSintel) && video.videoHeight>0 && video.videoWidth>0)return false;
   if(video.videoHeight>=720 && video.videoWidth>=1280)return false;
   const measured=video.videoWidth+'×'+video.videoHeight;
   rejectedVideoToken=playbackToken;

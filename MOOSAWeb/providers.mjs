@@ -65,8 +65,12 @@ function cleanStream(value,provider){
   const singleFilmPilot=value.singleFilmPilot===true &&
     value.verifiedFilmImdbId==='tt5719076' &&
     /CineStream/.test(name) && Number.isInteger(quality)&&quality>=144;
+  const originalSintel=value.singleFilmPilot===true &&
+    value.originalCineStream===true &&
+    value.verifiedFilmImdbId==='tt1727587' &&
+    /CineStream/.test(name) && Number.isInteger(quality)&&quality>=0;
   if(!url || !Number.isInteger(quality) ||
-      quality<(singleFilmPilot?144:MIN_QUALITY) ||
+      quality<(originalSintel?0:singleFilmPilot?144:MIN_QUALITY) ||
       quality>4320 || EXCLUDED_NAME.test(name)) return null;
   const extra={};
   if(value.preferred===true)extra.preferred=true;
@@ -93,7 +97,9 @@ function cleanStream(value,provider){
     }
   }
   return {url,name,quality,subtitles:subtitleList(value.subtitles),
-    ...(singleFilmPilot?{singleFilmPilot:true,verifiedFilmImdbId:'tt5719076'}:{}),...extra};
+    ...(singleFilmPilot?{singleFilmPilot:true,verifiedFilmImdbId:'tt5719076'}:{}),
+    ...(originalSintel?{singleFilmPilot:true,originalCineStream:true,
+      verifiedFilmImdbId:'tt1727587'}:{}),...extra};
 }
 function uniqueSort(values) {
   const seen=new Set();

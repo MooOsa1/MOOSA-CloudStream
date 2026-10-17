@@ -6,7 +6,7 @@ import { createBridge } from './bridge.mjs';
 import { resolveWebSources, configuredAddons } from './providers.mjs';
 import { getCuratedFilm, listCuratedFilms } from './free-film-library.mjs';
 import {filmmakerSoundSources,FILMMAKER_LICENSE} from './sita-filmmaker-sound.mjs';
-import { inspectRepositories, configuredEngine, singleFilmPilotStatus } from './cloudstream-engine.mjs';
+import { inspectRepositories, configuredEngine, singleFilmPilotStatus, sintelPilotStatus } from './cloudstream-engine.mjs';
 import { matchVerifiedJsMedia, supportedJsFilmIds } from './js-engine-demo.mjs';
 import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream-stremio-interop.mjs';
@@ -257,13 +257,14 @@ async function handle(req,res) {
     if(url.pathname==='/api/cloudstream/pilot-status') {
       if(url.search)return err(res,400,'No query arguments accepted');
       const pilot=singleFilmPilotStatus();
+      const sintel=sintelPilotStatus();
       const engine=configuredEngine();
       // The original JVM process lives on a separately deployed Render
       // service. Expose only its live safe health and extraction count;
       // no signed video URLs, request tokens or logs leave this route.
       let remote={connected:false,extraction:'not_connected',candidateCount:0,
         distributionEnabled:false};
-      if(engine && pilot.enabled){
+      if(engine && (pilot.enabled||sintel.enabled)){
         try{
           const response=await fetch(engine.url+'/healthz',{
             redirect:'error',headers:{Accept:'application/json'},
@@ -285,7 +286,7 @@ async function handle(req,res) {
           }
         }catch{/* A sleeping/free JVM service must not break the main site. */}
       }
-      return json(res,200,{...pilot,remote});
+      return json(res,200,{...pilot,sintel,remote});
     }
     if(url.pathname==='/api/cloudstream/repositories') {
       const results=await inspectRepositories();
