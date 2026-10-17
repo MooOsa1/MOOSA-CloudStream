@@ -1,0 +1,45 @@
+name: MOOSA Paperframe sandbox + real CineStream tokenized relay
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tests/paperframe-cinestream-relay.live.mjs'
+      - '.github/workflows/moosa-paperframe-relay-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  licensed-video-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pin untrusted GPLv3 Paperframe source to reviewed revision
+        run: |
+          set -euo pipefail
+          git clone --no-checkout --filter=blob:none https://github.com/vossgraves/nuvio-paper.git /tmp/paperframe
+          git -C /tmp/paperframe checkout --detach d4748b55cde660a4a3301adf5134ec3c4bd926ed
+          test "$(git -C /tmp/paperframe rev-parse HEAD)" = d4748b55cde660a4a3301adf5134ec3c4bd926ed
+      - name: Install independent sandbox/relay in temporary runner
+        run: |
+          cd /tmp/paperframe
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Launch independent QuickJS + same-origin media capability service
+        run: |
+          cd /tmp/paperframe
+          NODE_ENV=production PORT=4173 ./node_modules/.bin/tsx server/index.ts >/tmp/paperframe-ci.log 2>&1 &
+          for attempt in $(seq 1 50); do
+            http_code=$(curl --max-time 3 -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:4173/api/plugins/resolve || true)
+            if [ "$http_code" = "400" ]; then exit 0; fi
+            sleep 1
+          done
+          echo 'Paperframe service startup failed' >&2
+          exit 1
+      - name: Resolve original CineStream JS and verify licensed film media transport
+        timeout-minutes: 7
+        run: node MOOSAWeb/tests/paperframe-cinestream-relay.live.mjs
