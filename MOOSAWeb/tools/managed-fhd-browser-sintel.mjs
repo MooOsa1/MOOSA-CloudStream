@@ -42,17 +42,38 @@ async function go(){
     browser=await puppeteer.launch({executablePath:chrome,headless:true,
       args:['--no-sandbox','--disable-dev-shm-usage','--autoplay-policy=no-user-gesture-required']});
     const page=await browser.newPage();
+    const networkCodes=[],failed=[];
+    page.on('response',response=>{
+      try{
+        if(new URL(response.url()).hostname!==APPROVED_HOST)return;
+        if(networkCodes.length<8)networkCodes.push({
+          status:response.status(),
+          type:String(response.headers()['content-type']||'').split(';')[0].slice(0,45)
+        });
+      }catch{}
+    });
+    page.on('requestfailed',req=>{
+      try{
+        if(new URL(req.url()).hostname!==APPROVED_HOST)return;
+        if(failed.length<8)failed.push(
+          String(req.failure()?.errorText||'unknown').replace(/[^a-zA-Z0-9_:]/g,'_').slice(0,80)
+        );
+      }catch{}
+    });
     await page.setRequestInterception(true);
     page.on('request',request=>{
       let permitted=false;
       try{
         const u=new URL(request.url());
-        permitted=u.protocol==='https:'&&u.hostname===APPROVED_HOST;
+        permitted=u.protocol==='https:'&&
+          (u.hostname===APPROVED_HOST||u.hostname==='moosa-web.onrender.com');
       }catch{}
       if(permitted)void request.continue().catch(()=>{});
       else void request.abort().catch(()=>{});
     });
-    await page.goto('about:blank');
+    await page.goto('https://moosa-web.onrender.com/',{
+      waitUntil:'domcontentloaded',timeout:15000
+    });
     const result=await page.evaluate(url=>new Promise(resolve=>{
       const v=document.createElement('video');
       v.muted=true;v.preload='metadata';v.playsInline=true;v.autoplay=false;
@@ -62,7 +83,10 @@ async function go(){
         if(ended)return;ended=true;
         clearTimeout(watch);
         v.pause();v.removeAttribute('src');v.load();v.remove();
-        resolve({status,width,height,seenMetadata});
+        resolve({status,width,height,seenMetadata,
+          mediaErrorCode:v.error?.code||0,
+          mediaNetworkState:v.networkState,
+          readyState:v.readyState});
       };
       const watch=setTimeout(()=>stop('timeout'),18000);
       v.addEventListener('error',()=>stop('media_error'),{once:true});
@@ -81,6 +105,10 @@ async function go(){
       ' width='+result.width+' height='+result.height+
       ' metadata='+result.seenMetadata+' decodedFhd='+(
         result.status==='decoded_frame'&&result.width>=1920&&result.height>=1080)+
+      ' errorCode='+result.mediaErrorCode+
+      ' networkState='+result.mediaNetworkState+
+      ' network='+JSON.stringify(networkCodes)+
+      ' failed='+JSON.stringify(failed)+
       ' titleIdentityVerified=false sourceUrlOmitted=true');
   }catch(e){
     console.log('MOOSA_FHD_BROWSER result=browser_probe_failed reason='+String(e?.name||'unknown')
