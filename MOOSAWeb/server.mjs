@@ -153,10 +153,16 @@ async function readSources(media,id,season=null,episode=null) {
   return arr.filter(x=>x && typeof x.url==='string' && /^https:\/\//i.test(x.url))
     .map(x=>({name:String(x.name||'Authorized source').slice(0,80),url:x.url,subtitles:Array.isArray(x.subtitles)?x.subtitles.filter(t=>t && /^https:\/\//i.test(t.url||'')).map(t=>({label:String(t.label||'Subtitle'),language:t.language==='ar'?'ar':'en',source:String(t.source||'Custom'),url:t.url})):[]})).slice(0,12);
 }
-async function handle(req,res) {
+async function handle(req,res,mediaGateway=null) {
   try {
     const earlyUrl = new URL(req.url||'/', 'http://localhost');
     if(earlyUrl.pathname.startsWith('/api/bridge/'))return bridge.handle(req,res,earlyUrl);
+    // Opt-in per server instance; never accepts an anonymous media URL.
+    // A capability can ONLY be minted by the vetted internal operator.
+    if(earlyUrl.pathname.startsWith('/api/media/')){
+      if(!mediaGateway)return err(res,404,'No trusted media gateway configured');
+      return mediaGateway.handle(req,res,earlyUrl);
+    }
     if(req.method !== 'GET' && req.method !== 'HEAD')return err(res,405,'Method not allowed');
     const url=new URL(req.url||'/', 'http://localhost');
     if(url.pathname==='/healthz')return json(res,200,{status:'ok'});
@@ -410,7 +416,9 @@ async function handle(req,res) {
     res.end(req.method==='HEAD'?undefined:data);
   }catch(e){err(res,500,'Server error');}
 }
-export function createServer(){return http.createServer(handle);}
+export function createServer({mediaGateway=null}={}){
+  return http.createServer((req,res)=>handle(req,res,mediaGateway));
+}
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const PORT = Number(process.env.PORT||3000);
   createServer().listen(PORT,'0.0.0.0',()=>console.log(`MOOSA Web on http://localhost:${PORT}`));
