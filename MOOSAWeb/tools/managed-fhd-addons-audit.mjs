@@ -10,12 +10,17 @@ const CANDIDATES=[
   {name:'WatchNow',manifest:'https://sword-watch.vercel.app/manifest.json'},
   {name:'Tenies',manifest:'https://tenies-site-addon.vercel.app/manifest.json'},
   {name:'HdHub (directory-configured FHD)',manifest:'https://hdhub.thevolecitor.qzz.io/eyJ0b3Jib3giOiJ1bnNldCIsInF1YWxpdGllcyI6IjIxNjBwLDEwODBwLDcyMHAiLCJzb3J0IjoiZGVzYyJ9/manifest.json'},
-  {name:'FrostStream',manifest:'https://froststream.cloutteam.com/manifest.json'}
+  {name:'FrostStream',manifest:'https://froststream.cloutteam.com/manifest.json'},
+  {name:'Stremify Hayduk',manifest:'https://stremify.hayd.uk/manifest.json'},
+  {name:'Nuvio Streams public',manifest:'https://nuviostreams.hayd.uk/manifest.json'},
+  {name:'NoDebrid',manifest:'https://nodebrid.fly.dev/manifest.json'},
+  {name:'PlavioHD (October active)',manifest:'https://plaviohd.vercel.app/manifest.json'},
+  {name:'Hyper',manifest:'https://hyper.stravo.site/manifest.json'}
 ];
 const MOVIES=[
   {name:'Sintel (CC licensed)',type:'movie',id:'tt1727587'},
   {name:'Inception (metadata only)',type:'movie',id:'tt1375666'},
-  {name:'Sintel does not provide TV coverage',type:'series',id:'tt0944947:1:1'}
+  {name:'Game of Thrones S1E1 (metadata only)',type:'series',id:'tt0944947:1:1'}
 ];
 const TIMEOUT=6500;
 async function json(url){
