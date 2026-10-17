@@ -1,8 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {gateway,exactFilm,approvedUrls,executeBootProbe,bootProbeStatus,makeSharedExtraction,parsePrivateCandidates} from '../jvm-pilot/index.mjs';
-const film={media:'movie',tmdbId:100,imdbId:'tt5719076',
-  title:'Dead Night',year:2018};
+import {gateway,exactFilm,approvedUrls,executeBootProbe,bootProbeStatus,makeSharedExtraction,parsePrivateCandidates,matchesLicensedFilmDetails} from '../jvm-pilot/index.mjs';
+const film={media:'movie',tmdbId:45745,imdbId:'tt1727587',
+  title:'Sintel',year:2010};
+test('original Castle metadata must describe the right CC film',()=>{
+  assert.equal(matchesLicensedFilmDetails('DEBUG Castle: details: {"title":"Sintel","duration":888}'),true);
+  assert.equal(matchesLicensedFilmDetails('DEBUG Castle: details: {"title":"Chatpati Sister","duration":1756}'),false);
+  assert.equal(matchesLicensedFilmDetails(
+    'DEBUG Castle: searchData: {"title":"Sintel","duration":888}\\n'+
+    'DEBUG Castle: details: {"title":"Another film","duration":888}'),false);
+  assert.equal(matchesLicensedFilmDetails(
+    'DEBUG Castle: details: {"title":"Sintel","duration":1756}'),false);
+});
 test('only exact movie is accepted by JVM executor',()=>{
   assert.equal(exactFilm(film),true);
   assert.equal(exactFilm({...film,title:'Wrong movie'}),false);
@@ -170,8 +179,8 @@ test('unlicensed callbacks cannot be published even when an extractor asserts br
   try{
     const response=await fetch('http://127.0.0.1:'+server.address().port+'/v1/resolve',{
       method:'POST',headers:{Authorization:'Bearer unit-test-private-token-keep-long-enough-12'},
-      body:JSON.stringify({media:'movie',title:'Dead Night',year:2018,
-        imdbId:'tt5719076',tmdbId:123})
+      body:JSON.stringify({media:'movie',title:'Sintel',year:2010,
+        imdbId:'tt1727587',tmdbId:45745})
     });
     assert.equal(response.status,200);
     const d=await response.json();
