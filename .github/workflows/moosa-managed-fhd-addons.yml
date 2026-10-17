@@ -4,6 +4,7 @@ on:
     branches: [experiment/fhd-managed-addon-audit-20261017]
     paths:
       - 'MOOSAWeb/tools/managed-fhd-addons-audit.mjs'
+      - 'MOOSAWeb/tools/managed-fhd-embed-audit.mjs'
       - '.github/workflows/moosa-managed-fhd-addons.yml'
   pull_request:
     branches: [main]
@@ -24,5 +25,9 @@ jobs:
           node-version: '22'
       - name: Validate independent Node audit syntax
         run: node --check MOOSAWeb/tools/managed-fhd-addons-audit.mjs
+      - name: Audit auto-updated hosted iframe playback metadata (no video downloaded)
+        run: |
+          node --check MOOSAWeb/tools/managed-fhd-embed-audit.mjs
+          node MOOSAWeb/tools/managed-fhd-embed-audit.mjs
       - name: Query current third-party manifests and stream metadata (no video downloaded)
         run: node MOOSAWeb/tools/managed-fhd-addons-audit.mjs
