@@ -116,28 +116,62 @@ export function configuredAddons(value=process.env.WEB_SOURCE_ADDONS||'[]') {
     return [...new Set(parsed.map(secureHttpUrl).filter(u=>u && u.endsWith('/manifest.json')))].slice(0,6);
   }catch{return [];}
 }
-export async function fromWebAddons(meta, {fetchImpl=fetch,addons=configuredAddons()}={}) {
-  if(!/^tt\d{5,12}$/.test(meta.imdbId||''))return [];
+/**
+ * Stremio Web/Nuvio-style manifest capability negotiation.
+ * Prefer IMDb to preserve legacy HTTP addons; use TMDB IDs ONLY when
+ * explicitly advertised by a global or resource-specific "tmdb:" prefix.
+ * This does not establish source rights, quality, CORS or playback success.
+ */
+export function selectStremioStreamId(manifest,meta){
+  if(!manifest || !['movie','tv'].includes(meta?.media))return null;
   const type=meta.media==='movie'?'movie':'series';
-  const queryId=type==='movie'?meta.imdbId:
-    meta.imdbId+':'+meta.season+':'+meta.episode;
+  if(!Array.isArray(manifest.types)||!manifest.types.includes(type)||
+     !Array.isArray(manifest.resources))return null;
+  const imdb=/^tt\d{5,12}$/.test(String(meta.imdbId||''))?String(meta.imdbId):null;
+  const tmdb=Number(meta.id);
+  const tmdbId=Number.isSafeInteger(tmdb)&&tmdb>=1&&tmdb<=9999999999
+    ?'tmdb:'+tmdb:null;
+  if(!imdb&&!tmdbId)return null;
+  if(type==='series' && (!Number.isInteger(meta.season)||meta.season<0||
+     meta.season>100 || !Number.isInteger(meta.episode)||meta.episode<1||
+     meta.episode>1000))return null;
+  const global=Array.isArray(manifest.idPrefixes)?manifest.idPrefixes:null;
+  const matches=(base,prefixes)=>{
+    if(!Array.isArray(prefixes)||!prefixes.length)return true;
+    return prefixes.some(p=>typeof p==='string'&&p.length>0&&
+      p.length<=30&&base.startsWith(p));
+  };
+  const resources=manifest.resources.filter(r=>
+    r==='stream'||(r?.name==='stream'&&
+      (!Array.isArray(r.types)||r.types.includes(type))));
+  for(const base of [imdb,tmdbId]){
+    if(!base)continue;
+    for(const resource of resources){
+      // Per Stremio, the resource's own idPrefixes OVERRIDE the global
+      // manifest prefixes. A plain "stream" resource inherits global.
+      const allowed=resource!=='stream'&&Array.isArray(resource.idPrefixes)
+        ?resource.idPrefixes:global;
+      if(!matches(base,allowed))continue;
+      // Generic/no-prefix addons continue receiving IMDb only. Requiring
+      // an explicit TMDB prefix prevents unadvertised requests.
+      if(base===tmdbId&&!(allowed||[]).some(p=>
+        typeof p==='string'&&(p==='tmdb'||p.startsWith('tmdb:'))))continue;
+      return {type,id:type==='movie'?base:
+        base+':'+meta.season+':'+meta.episode,
+        scheme:base.startsWith('tmdb:')?'tmdb':'imdb'};
+    }
+  }
+  return null;
+}
+export async function fromWebAddons(meta, {fetchImpl=fetch,addons=configuredAddons()}={}) {
+  if(!meta||!['movie','tv'].includes(meta.media))return [];
   const all=await Promise.allSettled(addons.map(async manifestUrl=>{
     if(!secureHttpUrl(manifestUrl))return [];
     const manifest=await getJson(manifestUrl,fetchImpl,3200);
-    const compatible=Array.isArray(manifest.types)&&manifest.types.includes(type)&&
-      Array.isArray(manifest.resources)&&manifest.resources.some(r=>{
-        if(r==='stream')return true;
-        if(r?.name!=='stream')return false;
-        // CineStream custom HTTPS addons may expose only movie OR series
-        // streams through an object resource. Never query a disallowed type.
-        return (!Array.isArray(r.types)||r.types.includes(type)) &&
-          (!Array.isArray(r.idPrefixes)||r.idPrefixes.some(p=>
-            typeof p==='string'&&meta.imdbId.startsWith(p)));
-      });
-    if(!compatible || (Array.isArray(manifest.idPrefixes) &&
-       manifest.idPrefixes.length && !manifest.idPrefixes.some(p=>meta.imdbId.startsWith(p))))return [];
+    const selection=selectStremioStreamId(manifest,meta);
+    if(!selection)return [];
     const path=manifestUrl.slice(0,-'manifest.json'.length);
-    const url=path+'stream/'+type+'/'+encodeURIComponent(queryId)+'.json';
+    const url=path+'stream/'+selection.type+'/'+encodeURIComponent(selection.id)+'.json';
     const data=await getJson(url,fetchImpl,5200);
     const output=[];
     const pendingArchive=[];
