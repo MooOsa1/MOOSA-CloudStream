@@ -30,6 +30,20 @@ Alternatively export `TMDB_API_KEY` in your environment and run `npm start`.
 - HLS quality selector where provided by source; Arabic/English subtitle dropdown; local/remote SRT-to-VTT; offset control ±15 seconds; local video and subtitle files.
 - Optional CC0 sample video from MDN to verify the player is working without associating it with any catalog movie.
 
+## HTTPS Stremio add-ons (Nuvio-style protocol compatibility)
+
+MOOSA uses the Stremio HTTP addon protocol (not Android CloudStream `.cs3` plugins). The **server operator** can configure up to six trusted HTTPS addon manifests with:
+
+```bash
+WEB_SOURCE_ADDONS='["https://your-authorized-addon.example/manifest.json"]'
+```
+
+- Each addon must advertise a `stream` resource for the exact movie/series type.
+- IMDb IDs take priority. `tmdb:<TMDB ID>` is used only if the effective stream resource/manifest explicitly advertises a `tmdb` or `tmdb:` ID prefix. TV requests always specify exact season and episode.
+- Untrusted site visitors cannot submit arbitrary addon URLs to the server. HTTPS-only direct video, >=720p, rejection of protected headers/torrents/DRM/external pages and Arabic/English subtitles stay enforced.
+- An addon response containing `1080p` or HTTP `200` is **not** proof of browser playback, no ads inside the media, title identity or legal distribution rights.
+- NuvioWeb is a web **client**, not an ad-free film source. MediaFusion relies on P2P, Debrid or configured streaming infrastructure. This interoperability work does not create commercial content.
+
 ## Adding videos you have rights to show
 
 Edit `data/streams.json` (or point `STREAMS_FILE` to a JSON file). Example:
