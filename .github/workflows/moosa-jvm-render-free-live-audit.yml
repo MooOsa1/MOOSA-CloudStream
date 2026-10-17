@@ -48,5 +48,11 @@ jobs:
             'Original provider did not successfully extract on Render Free');
           assert.ok(last.extractionProbe.candidateCount>0,
             'No original CineStream URLs extracted in Render container');
+          console.log('MOOSA_RENDER_JVM_SEGMENT_CHECK '+JSON.stringify(
+            last.extractionProbe?.mediaProbe||null));
+          assert.ok((last.extractionProbe?.mediaProbe?.checked||0)>=1,
+            'No HLS candidates from original provider were checked on Render');
+          assert.ok((last.extractionProbe?.mediaProbe?.firstSegmentHttpVerified||0)>=1,
+            'The Render CDN refused or did not return browser-compatible video bytes');
           console.log('MOOSA_RENDER_ORIGINAL_JVM_RESOLVE_PROVEN=true');
           JS
