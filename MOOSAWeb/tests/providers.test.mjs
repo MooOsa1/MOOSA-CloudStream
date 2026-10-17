@@ -210,7 +210,7 @@ test('A generic Stremio addon cannot silently receive a TMDB ID it never adverti
     media:'movie',id:45745,imdbId:'tt1727587'
   }),{type:'movie',id:'tt1727587',scheme:'imdb'});
 });
-test('Resource prefixes, type restrictions and manifest prefixes must BOTH authorize an ID',()=>{
+test('Stremio resource prefixes override manifest defaults without overriding allowed movie/series types',()=>{
   const m={types:['movie','series'],idPrefixes:['tt','tmdb:'],
     resources:[{name:'stream',types:['movie'],idPrefixes:['tmdb:']}]};
   assert.deepEqual(selectStremioStreamId(m,{
@@ -219,9 +219,16 @@ test('Resource prefixes, type restrictions and manifest prefixes must BOTH autho
   assert.equal(selectStremioStreamId(m,{
     media:'tv',id:777,imdbId:'tt0000777',season:1,episode:3
   }),null);
-  assert.equal(selectStremioStreamId({...m,idPrefixes:['tt']},{
+  assert.deepEqual(selectStremioStreamId({...m,idPrefixes:['tt']},{
     media:'movie',id:45745,imdbId:'tt1727587'
-  }),null);
+  }),{type:'movie',id:'tmdb:45745',scheme:'tmdb'},
+  'Specific stream resource prefix overrides global tt-only default');
+  assert.deepEqual(selectStremioStreamId({
+    ...m,idPrefixes:['tmdb:'],
+    resources:[{name:'stream',types:['movie'],idPrefixes:['tt']}]
+  },{media:'movie',id:45745,imdbId:'tt1727587'}),
+  {type:'movie',id:'tt1727587',scheme:'imdb'},
+  'Specific resource tt prefix overrides global TMDB-only default');
 });
 test('Stremio TMDB series requires exact valid season and episode, not a generic show link',async()=>{
   const manifest={name:'Licensed episodes',types:['series'],
