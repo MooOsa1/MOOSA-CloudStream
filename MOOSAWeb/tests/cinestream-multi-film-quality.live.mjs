@@ -23,7 +23,10 @@ const FILMS=[
  {title:'The Gold Rush',year:1925,tmdbId:962},
  {title:'The Kid',year:1921,tmdbId:10098}
 ];
-const APPROVED_HOSTS=new Set(['hcdn3.hakunaymatata.com']);
+// CI-only bounded test allowlist: newly observed Vidlink CDN domain is
+// included ONLY for media-prefix probing, not in public Render settings.
+const APPROVED_HOSTS=new Set(['hcdn3.hakunaymatata.com',
+  'bcdn.hakunaymatata.com']);
 const PROVIDER='https://vidlink.pro/api/b/movie/';
 const LOOKUP='https://enc-dec.app/api/enc-vidlink';
 const AGENT='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/124.0.0.0 Mobile Safari/537.36';
