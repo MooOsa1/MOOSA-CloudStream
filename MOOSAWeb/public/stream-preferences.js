@@ -6,7 +6,11 @@
  */
 export function comparePlaybackSources(a,b){
   const quality=x=>{
-    const n=Number(x?.quality);
+    const raw=x?.quality;
+    // Reject noncanonical strings (exponents, hex, whitespace, padded labels).
+    // Quality remains only a ranking hint, never decoded-resolution proof.
+    if(typeof raw!=='number' && !(typeof raw==='string' && /^(?:[1-9][0-9]*)$/.test(raw)))return 0;
+    const n=Number(raw);
     return Number.isInteger(n)&&n>=720&&n<=4320?n:0;
   };
   return quality(b)-quality(a) ||
