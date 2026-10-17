@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {realpathSync} from 'node:fs';
+import {realpathSync,mkdirSync,writeFileSync,chmodSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 
@@ -37,6 +37,7 @@ const targets=[
   {name:'Current feature film metadata',tmdbId:'693134',kind:'movie',licensed:false}
 ];
 let total=0;
+const candidateBuffer=[];
 for(const target of targets){
   for(const provider of providers){
     const codePath=path.join(root,'providers',provider+'.js');
@@ -63,6 +64,11 @@ for(const target of targets){
         const ext=u.pathname.toLowerCase().match(/\.(m3u8|mp4|webm|mkv)(?:$)/)?.[1]||'other';
         if(!['m3u8','mp4','webm'].includes(ext))continue;
         summary.httpsPlayable++;
+        if(target.licensed && provider==='vidlink' &&
+          u.hostname==='bcdnxw.hakunaymatata.com' && ext==='mp4' &&
+          candidateBuffer.length<3){
+          candidateBuffer.push(Buffer.from(u.href).toString('base64'));
+        }
         hosts.add(u.hostname.toLowerCase());
         formats.add(ext);
         if(item?.headers && Object.keys(item.headers).some(k=>
@@ -76,6 +82,14 @@ for(const target of targets){
     console.log('MOOSA_JS_CINESTREAM_SOURCE_AUDIT '+JSON.stringify(summary));
   }
 }
+if(candidateBuffer.length){
+  const dir='/tmp/moosa-js-port';
+  mkdirSync(dir,{recursive:true,mode:0o700});
+  const file=dir+'/sintel-vidlink-candidates.b64';
+  writeFileSync(file,candidateBuffer.join('\\n')+'\\n',{mode:0o600});
+  chmodSync(file,0o600);
+}
+console.log('MOOSA_VIDLINK_REAL_MP4_FOR_BROWSER='+candidateBuffer.length);
 console.log('MOOSA_JS_CINESTREAM_AUDIT_SUMMARY '+JSON.stringify({
   upstreamSha:SHA.slice(0,12),totalPlausibleDirectSources:total,
   allowlistedFetches:fetches,blockedUnreviewedFetches:deniedRequests,
