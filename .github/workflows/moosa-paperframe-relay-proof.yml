@@ -5,6 +5,7 @@ on:
     paths:
       - 'MOOSAWeb/tests/paperframe-cinestream-relay.live.mjs'
       - 'MOOSAWeb/tests/paperframe-full-feature-cinestream.live.mjs'
+      - 'MOOSAWeb/tests/paperframe-original-feature-browser.e2e.mjs'
       - '.github/workflows/moosa-paperframe-relay-proof.yml'
   workflow_dispatch:
 permissions:
@@ -50,6 +51,11 @@ jobs:
       - name: Inspect actual CineStream providers for Night of the Living Dead (1968) movie bytes
         timeout-minutes: 5
         run: node MOOSAWeb/tests/paperframe-full-feature-cinestream.live.mjs
-      - name: Resolve original CineStream JS and verify licensed film media transport
-        timeout-minutes: 7
-        run: node MOOSAWeb/tests/paperframe-cinestream-relay.live.mjs
+      - name: Install temporary Google Chrome for real movie playback
+        run: |
+          cd MOOSAWeb
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Attempt ORIGINAL CineStream Night of the Living Dead in MOOSA player
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/paperframe-original-feature-browser.e2e.mjs
