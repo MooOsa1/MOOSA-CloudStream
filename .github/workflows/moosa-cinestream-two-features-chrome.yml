@@ -1,0 +1,39 @@
+name: MOOSA real Chrome two additional CineStream films
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tests/cinestream-two-features-chrome.e2e.mjs'
+      - '.github/workflows/moosa-cinestream-two-features-chrome.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser for real feature playback evidence
+        run: |
+          cd MOOSAWeb
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Verify actual Vidlink movie bytes and real 720p/480p pixel dimensions
+        timeout-minutes: 6
+        run: cd MOOSAWeb && node tests/cinestream-two-features-chrome.e2e.mjs
+      - name: Verify The General's distinct 480p fallback actually decodes
+        env:
+          MOOSA_GENERAL_QUALITY: '480'
+        timeout-minutes: 2
+        run: cd MOOSAWeb && node tests/cinestream-two-features-chrome.e2e.mjs
+      - name: Verify The General's distinct 360p fallback actually decodes
+        env:
+          MOOSA_GENERAL_QUALITY: '360'
+        timeout-minutes: 2
+        run: cd MOOSAWeb && node tests/cinestream-two-features-chrome.e2e.mjs

@@ -52,7 +52,7 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
     // Allow one independently vetted movie source an appropriate startup
     // window on free hosting. All other titles retain normal deadlines.
     const longPilot=media==='movie' &&
-      (String(id)==='10331' || await pilotRuntimeReady());
+      (['10331','961','3085'].includes(String(id)) || await pilotRuntimeReady());
     if(job!==generation)return;
     const response=await fetch('/api/resolve?'+params.toString(),{
       headers:{Accept:'application/json'},
