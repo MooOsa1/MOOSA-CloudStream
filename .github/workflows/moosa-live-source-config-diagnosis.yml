@@ -5,6 +5,11 @@ on:
     paths:
       - 'MOOSAWeb/tools/live-addon-configuration-check.mjs'
       - '.github/workflows/moosa-live-source-config-diagnosis.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/live-addon-configuration-check.mjs'
+      - '.github/workflows/moosa-live-source-config-diagnosis.yml'
   workflow_dispatch:
 permissions:
   contents: read
