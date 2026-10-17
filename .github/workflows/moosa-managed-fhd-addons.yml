@@ -5,6 +5,7 @@ on:
     paths:
       - 'MOOSAWeb/tools/managed-fhd-addons-audit.mjs'
       - 'MOOSAWeb/tools/managed-fhd-browser-sintel.mjs'
+      - 'MOOSAWeb/tools/fhd-browser-ab-diagnostic.mjs'
       - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
       - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
       - 'MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs'
@@ -17,6 +18,7 @@ on:
     paths:
       - 'MOOSAWeb/tools/managed-fhd-addons-audit.mjs'
       - 'MOOSAWeb/tools/managed-fhd-browser-sintel.mjs'
+      - 'MOOSAWeb/tools/fhd-browser-ab-diagnostic.mjs'
       - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
       - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
       - 'MOOSAWeb/tools/ezvidapi-direct-fhd-audit.mjs'
@@ -70,6 +72,10 @@ jobs:
           command -v google-chrome || command -v google-chrome-stable
       - name: Install small Chrome control client (Chrome is preinstalled on runner)
         run: npm install --no-audit --no-fund --prefix /tmp/moosa-browser puppeteer-core@24.24.0
+      - name: Compare actual browser ORB diagnostics to independently licensed FHD and CC0 video controls
+        run: |
+          node --check MOOSAWeb/tools/fhd-browser-ab-diagnostic.mjs
+          timeout 95 node MOOSAWeb/tools/fhd-browser-ab-diagnostic.mjs
       - name: Check decoded frame of freely licensed Sintel in real Chrome
         run: timeout 65 node MOOSAWeb/tools/managed-fhd-browser-sintel.mjs
       - name: Compare approved CC0 browser video with managed CC licensed claimed FHD
