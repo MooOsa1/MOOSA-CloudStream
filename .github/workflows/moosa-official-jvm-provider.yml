@@ -12,6 +12,13 @@ on:
       - 'MOOSAWeb/tests/cinestream-vaplayer.test.mjs'
       - 'MOOSAWeb/headless-jvm-shims/**'
       - '.github/workflows/moosa-official-jvm-provider.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tests/original-cinestream-browser.e2e.mjs'
+      - 'MOOSAWeb/public/mobile-audio.js'
+      - 'MOOSAWeb/public/player.js'
+      - '.github/workflows/moosa-official-jvm-provider.yml'
   workflow_dispatch:
 permissions:
   contents: read
