@@ -8,7 +8,12 @@ import {probeHlsFirstSegment} from '../real-hls-segment-probe.mjs';
 /** Isolated original CloudStream/CineStream JVM bridge; no user-selected code. */
 const ROOT='/opt/moosa/jvm';
 const OUTPUT_DIR='/tmp/moosa-jvm';
-const IMDB='tt5719076';
+// Temporary licensed CineStream integration film, NOT a replacement catalog.
+const IMDB='tt1727587';
+const TMDB=45745;
+const FILM='Sintel';
+const YEAR=2010;
+const FILM_LICENSE='https://creativecommons.org/licenses/by/3.0/';
 // Read-only status of one controlled startup extraction in the FREE container.
 // No media URLs, signatures, request headers or raw JVM logs reach healthz.
 let bootProbe={state:'not_requested'};
@@ -19,8 +24,8 @@ function reply(res,status,obj){
 }
 export function exactFilm(x){
   return !!x && x.media==='movie' && x.imdbId===IMDB &&
-    String(x.title||'').trim().toLowerCase()==='dead night' &&
-    [2017,2018].includes(Number(x.year)) && Number(x.tmdbId)>0;
+    String(x.title||'').trim().toLowerCase()==='sintel' &&
+    Number(x.year)===YEAR && Number(x.tmdbId)===TMDB;
 }
 export function approvedUrls(input,allowedHosts){
   const seen=new Set();
@@ -63,7 +68,7 @@ export async function extractOriginal({timeoutMs=54000}={}){
   await rm(outputFile,{force:true});
   const args=['-Xmx250m','-cp',ROOT,'JvmOriginalProviderLinks',
     ROOT+'/official-cloudstream-jvm.jar',ROOT+'/original-cinestream.jar',
-    ROOT+'/deps',IMDB,'Dead Night'];
+    ROOT+'/deps',IMDB,FILM];
   const process=spawn('/usr/bin/java',args,{cwd:ROOT,stdio:['ignore','pipe','pipe']});
   let logs='',total=0;
   const collect=bytes=>{
@@ -86,8 +91,8 @@ export async function extractOriginal({timeoutMs=54000}={}){
   // The film identity must come from the underlying Castle detail payload,
   // not just the requested title passed to CineStream.load().
   const upstreamMatched=/(?:DEBUG|ERROR) Castle: details:/.test(logs) &&
-    /"title":"Dead Night"/.test(logs) &&
-    /"duration":(?:4[6-9]\d{2}|5[0-3]\d{2})/.test(logs);
+    /"title":"Sintel"/i.test(logs) &&
+    /"duration":(?:8[6-9]\d|9[0-3]\d)(?:\D|$)/.test(logs);
   // Only a normalized error class and simple booleans may leave this
   // process. Never return third-party URLs, raw logs or signed query tokens.
   const exceptionClasses=[...logs.matchAll(/(?:java\.lang\.|java\.net\.|kotlin\.|org\.json\.)[A-Za-z0-9.$]*(?:Error|Exception)/g)]
@@ -95,6 +100,7 @@ export async function extractOriginal({timeoutMs=54000}={}){
   const diagnostic={
     javaExitCode:status,spawnErrorCode,wasTimeout:timedOut,outputBytes:total,
     callbacksPresent:returned,
+    selectedFilm:IMDB,
     javaStartupIssues:{
       heapReservationFailed:/Could not reserve enough space|Could not allocate|Native memory allocation|There is insufficient memory/i.test(logs),
       invalidJvmArgument:/Unrecognized (?:VM )?option|Unrecognized VM option/i.test(logs),
@@ -262,11 +268,14 @@ export function gateway({
       const urls=approvedUrls(exactDirect,hosts);
       // Rights approval is deliberately opt-in; matching an upstream title
       // and decoding frames is not permission to distribute a commercial film.
+      // ONLY share a licensed film when the original upstream identity
+      // matched; callbacks from an unrelated Castle search are never enough.
       const sources=rightsApproved && result.state==='original_callbacks_returned'
         ?urls.map((url,i)=>({url,name:'CineStream • JVM '+(i+1),
-          provider:'CineStream',quality:480,
-          resolvedImdbId:IMDB,resolvedTitle:'Dead Night',
-          resolvedYear:2018,operatorAuthorized:true})):[];
+          provider:'CineStream',quality:0,
+          resolvedImdbId:IMDB,resolvedTitle:FILM,
+          resolvedYear:YEAR,operatorAuthorized:true,
+          licenseUrl:FILM_LICENSE})):[];
       return reply(res,200,{sources,count:sources.length,
         state:result?.state||'unavailable',diagnostic:result?.diagnostic||null,
         sourceIdentityVerified:false,
