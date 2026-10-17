@@ -111,12 +111,26 @@ try{
   await page.goto('https://moosa-web.onrender.com/',{
     waitUntil:'domcontentloaded',timeout:25000
   });
-  await page.evaluate(async(url)=>{
+  // Actual link came from the original Kotlin CineStream loadLinks() in
+  // THIS SAME runner, not an invented example, manual URL or fixed fixture.
+  // Source identity is not claimed until the film content itself is checked.
+  await page.evaluate(async url=>{
     const {showPlayer}=await import('/player.js');
-    showPlayer({title:'Sintel — licensed original CineStream stream',sources:[]});
-    document.querySelector('#custom-stream').value=url;
-    document.querySelector('#play-custom').click();
+    showPlayer({
+      title:'CineStream original • Sintel request (identity unverified)',
+      experimentalJVMProof:true,
+      sources:[{
+        url,name:'CineStream JVM callback • original HLS',
+        provider:'CineStream',proofImdbId:'tt1727587',
+        quality:480
+      }]
+    });
   },streamUrl);
+  const picker=page.locator('#player-source');
+  await picker.selectOption('0');
+  const selected=await picker.inputValue();
+  assert.equal(selected,'0','One original stream must be chosen from the normal source picker');
+
   let timedOut=false;
   try{
     await page.waitForFunction(()=>{
@@ -140,8 +154,10 @@ try{
     playerMessage:String(document.querySelector('#player-message')?.textContent||'').slice(0,200)
   }));
   const played=!timedOut&&state.secondsPlayed>0&&state.width>0;
+  const chosenByAutomaticPicker=selected==='0';
   console.log('ORIGINAL_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
-    actuallyDecodedFrames:played,video:state,
+    actuallyDecodedFrames:played,chosenByAutomaticPicker,
+    exactFilmIdentityVerified:false,video:state,
     pageErrorTypes:errors.slice(0,5),
     networkFailures:failed.slice(0,7),
     mediaResponses:responses.slice(-18)
@@ -153,7 +169,7 @@ try{
     });
   }
   assert.equal(played,true,
-    'Original CineStream first segment did not produce frames in real Chrome');
+    'Original CineStream low-resolution link did not decode via the MOOSA source picker');
 }finally{
   await browser?.close().catch(()=>{});
   await new Promise(resolve=>server.close(resolve));

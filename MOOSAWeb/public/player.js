@@ -20,6 +20,8 @@ let customSubtitle = null;
 let selectedSourceUrl = null;
 let attemptedSourceUrls = new Set();
 let fallbackAttempts = 0;
+// Non-production one-film experiment: never enabled by ordinary catalog routes.
+let originalJVMProofLowResolution=false;
 const DEMO = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
 const HTTPS = /^https:\/\/[^\s]+$/i;
 const extensions = /\.(m3u8|mp4|webm|mov)(?:[?#]|$)/i;
@@ -157,7 +159,7 @@ async function playLink(url, label='Video'){
     if(currentPlayback===playbackToken && !video.paused)notice(`يُشغّل الآن: ${label}`);
   }catch(e){if(currentPlayback===playbackToken)notice(e.message||'تعذر تشغيل الفيديو');}
 }
-export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
+export function showPlayer({title='مشغل MOOSA',sources=[],experimentalJVMProof=false}={}){
   // A newly opened title supersedes every prior source/subtitle lookup,
   // including standalone licensed films that do not call the catalog search.
   document.dispatchEvent(new Event('moosa-player-opened'));
@@ -166,6 +168,16 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   activeSources=chooseBrowserSources((Array.isArray(sources)?sources:[])
     .filter(x=>isDirectVideoUrl(x?.url)),navigator.userAgent);
   currentMediaTitle=title;
+  // The temporary exception is restricted to a single explicit original
+  // CineStream JVM proof source; all other automatic streams still require HD.
+  originalJVMProofLowResolution=experimentalJVMProof===true &&
+    title==='CineStream original • Sintel request (identity unverified)' &&
+    Array.isArray(sources) && sources.length===1 &&
+    sources[0]?.provider==='CineStream' &&
+    sources[0]?.proofImdbId==='tt1727587' &&
+    Number.isInteger(Number(sources[0]?.quality)) &&
+    Number(sources[0].quality)>0 &&
+    isDirectVideoUrl(sources[0]?.url);
   selectedSourceUrl=null;
   attemptedSourceUrls.clear();
   fallbackAttempts=0;
@@ -185,6 +197,7 @@ export function hidePlayer(){
   document.dispatchEvent(new Event('moosa-player-closed'));
   selectedSourceUrl=null;attemptedSourceUrls.clear();fallbackAttempts=0;
   externalSubtitles=[];
+  originalJVMProofLowResolution=false;
   resetVideo();$('#player-panel').classList.add('hidden');
   if($('#detail-panel').classList.contains('hidden'))$('#overlay').classList.add('hidden');
   previousFocus?.focus?.();
@@ -395,6 +408,9 @@ let rejectedVideoToken=-1;
 function enforceDecodedHd(){
   if(!selectedSourceUrl || rejectedVideoToken===playbackToken ||
      !video.videoHeight||!video.videoWidth)return false;
+  if(originalJVMProofLowResolution && selectedSourceUrl &&
+     activeSources.some(s=>s.url===selectedSourceUrl &&
+       s.provider==='CineStream' && s.proofImdbId==='tt1727587'))return false;
   if(video.videoHeight>=720 && video.videoWidth>=1280)return false;
   const measured=video.videoWidth+'×'+video.videoHeight;
   rejectedVideoToken=playbackToken;

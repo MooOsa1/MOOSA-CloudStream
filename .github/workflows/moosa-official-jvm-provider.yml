@@ -1,13 +1,14 @@
 name: Official CloudStream JVM + original CineStream provider compatibility
 on:
   push:
-    branches: [main]
+    branches: [main, experiment/cinestream-one-film-any-quality-20261017]
     paths:
       - 'MOOSAWeb/tools/JvmOriginalProviderSmoke.java'
       - 'MOOSAWeb/tools/JvmOriginalProviderLoad.java'
       - 'MOOSAWeb/tools/JvmOriginalProviderLinks.java'
       - 'MOOSAWeb/tests/original-provider-media-proof.mjs'
       - 'MOOSAWeb/tests/original-cinestream-browser.e2e.mjs'
+      - 'MOOSAWeb/public/player.js'
       - 'MOOSAWeb/real-hls-segment-probe.mjs'
       - 'MOOSAWeb/tests/cinestream-vaplayer.test.mjs'
       - 'MOOSAWeb/headless-jvm-shims/**'
