@@ -23,15 +23,12 @@ test('never accept a bare extensionless plugin URL or untrusted capability',()=>
     {url:path,format:'hls'},
     {gatewayIssued:true,url:path,format:'mkv'},
     {gatewayIssued:true,url:path,format:'html'},
-    {gatewayIssued:true,url:path,format:'hls',plugin:3},
     {gatewayIssued:true,url:path+'?url=https://evil.example/media.mp4',format:'hls'},
     {gatewayIssued:true,url:path+'/anything',format:'hls'},
     {gatewayIssued:true,url:'https://somewhere.example/api/media/'+token,format:'hls'},
     {gatewayIssued:true,url:host+'/api/media/tiny',format:'hls'},
     {gatewayIssued:true,url:host.replace('https','http')+'/api/media/'+token,format:'hls'},
   ]){
-    // Additional irrelevant metadata does not affect a valid token.
-    if(source.plugin===3)continue;
     assert.equal(trustedMediaCapability(source,host),null,JSON.stringify(source));
   }
   assert.equal(playableMediaSource({url:path,format:'hls'},host),null);
