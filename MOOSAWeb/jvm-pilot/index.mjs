@@ -30,9 +30,17 @@ function reply(res,status,obj){
 export function matchesLicensedFilmDetails(logs){
   if(typeof logs!=='string')return false;
   const rows=logs.split(/\r?\n/);
-  return rows.some(row=>row.includes('Castle: details:') &&
-    /"title"\s*:\s*"Sintel"/i.test(row) &&
-    /"duration"\s*:\s*(?:8[6-9]\d|9[0-3]\d)(?:\D|$)/.test(row));
+  return rows.some(row=>{
+    const marker='Castle: details:';
+    const position=row.indexOf(marker);
+    if(position<0)return false;
+    try{
+      const detail=JSON.parse(row.slice(position+marker.length).trim());
+      const d=Number(detail?.duration);
+      return String(detail?.title||'').trim().toLowerCase()==='sintel' &&
+        Number.isInteger(d)&&d>=860&&d<=930;
+    }catch{return false;}
+  });
 }
 export function exactFilm(x){
   return !!x && x.media==='movie' && x.imdbId===IMDB &&
@@ -228,12 +236,21 @@ export async function executeBootProbe(extract=sharedOriginalExtraction,{
       outputBytes:output?.diagnostic?.outputBytes??null,
       startupIssues:output?.diagnostic?.javaStartupIssues||null,
       providerMetadataVerified:output?.diagnostic?.originalLoadReturned??null,
-      castleDetailsSeen:output?.diagnostic?.castleDetailsSeen??null
+      castleDetailsSeen:output?.diagnostic?.castleDetailsSeen??null,
+      castleIdentityMatched:output?.diagnostic?.castleIdentityMatched??null
     };
   }catch{
     bootProbe={state:'failed',result:'runtime_exception',
       candidateCount:0,elapsedMs:Date.now()-started};
   }
+  // Publicly safe diagnostic ONLY; never include HLS URLs, signatures,
+  // individual request paths or original plugin logs.
+  console.log('MOOSA_JVM_EXACT_MOVIE_AUDIT '+JSON.stringify({
+    state:bootProbe.state,result:bootProbe.result,
+    castleIdentityMatched:bootProbe.castleIdentityMatched??null,
+    providerMetadataVerified:bootProbe.providerMetadataVerified??null,
+    candidateCount:bootProbe.candidateCount??0
+  }));
 }
 export function bootProbeStatus(){return {...bootProbe};}
 export function gateway({
