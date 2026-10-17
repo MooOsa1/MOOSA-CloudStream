@@ -68,3 +68,8 @@ test('JVM runtime files are not stored under Render temporary filesystem',async(
   const m=await import('../jvm-pilot/index.mjs');
   assert.equal(typeof m.extractOriginal,'function');
 });
+
+test('separate slow Render extraction probe function exists for free CPU tier',async()=>{
+  const {extractOriginal}=await import('../jvm-pilot/index.mjs');
+  assert.equal(typeof extractOriginal,'function');
+});

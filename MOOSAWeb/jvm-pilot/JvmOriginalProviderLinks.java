@@ -78,7 +78,7 @@ public final class JvmOriginalProviderLinks {
             if(!id.matches("tt[0-9]{5,12}")||expectedTitle.isBlank()||expectedTitle.length()>90)
                 throw new IllegalArgumentException("Invalid title identification");
             System.out.println("ORIGINAL_LINKS_EXACT_MOVIE: "+expectedTitle+" ("+id+")");
-            Object details=invokeSuspend(provider,load,new Object[]{"{\"id\":\""+id+"\",\"type\":\"movie\"}"},loader,18);
+            Object details=invokeSuspend(provider,load,new Object[]{"{\"id\":\""+id+"\",\"type\":\"movie\"}"},loader,55);
             if(details==null)throw new IllegalStateException("Original load() returned null");
             String title=String.valueOf(details.getClass().getMethod("getName").invoke(details));
             String originalData=String.valueOf(details.getClass().getMethod("getDataUrl").invoke(details));
@@ -121,7 +121,7 @@ public final class JvmOriginalProviderLinks {
             final Object status;
             try {
                 status=invokeSuspend(provider,method,
-                    new Object[]{originalData,false,subtitleCallback,linkCallback},loader,35);
+                    new Object[]{originalData,false,subtitleCallback,linkCallback},loader,110);
             }catch(Throwable e){
                 report("EXECUTION_BLOCKED",e);
                 System.out.println("ORIGINAL_LINKS_CALLBACK_COUNTS: links="+links+" hd="+hdLinks+" subtitles="+subs);

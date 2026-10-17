@@ -35,7 +35,7 @@ export function approvedUrls(input,allowedHosts){
     }catch{return []}
   }).slice(0,4);
 }
-export async function extractOriginal(){
+export async function extractOriginal({timeoutMs=54000}={}){
   await mkdir(OUTPUT_DIR,{recursive:true});
   const outputFile=OUTPUT_DIR+'/cinestream-candidates.b64';
   await rm(outputFile,{force:true});
@@ -51,7 +51,7 @@ export async function extractOriginal(){
   process.stdout.on('data',collect);process.stderr.on('data',collect);
   let timedOut=false,spawnErrorCode=null;
   const status=await new Promise(resolve=>{
-    const timeout=setTimeout(()=>{timedOut=true;process.kill('SIGKILL');},54000);
+    const timeout=setTimeout(()=>{timedOut=true;process.kill('SIGKILL');},Math.min(180000,Math.max(5000,timeoutMs)));
     process.once('error',error=>{
       spawnErrorCode=['ENOENT','EACCES','EMFILE','ENOMEM'].includes(error?.code)
         ?error.code:'OTHER';
@@ -119,7 +119,9 @@ export async function executeBootProbe(extract=extractOriginal){
       javaExitCode:output?.diagnostic?.javaExitCode??null,
       spawnErrorCode:output?.diagnostic?.spawnErrorCode??null,
       outputBytes:output?.diagnostic?.outputBytes??null,
-      startupIssues:output?.diagnostic?.javaStartupIssues||null
+      startupIssues:output?.diagnostic?.javaStartupIssues||null,
+      providerMetadataVerified:output?.diagnostic?.originalLoadReturned??null,
+      castleDetailsSeen:output?.diagnostic?.castleDetailsSeen??null
     };
   }catch{
     bootProbe={state:'failed',result:'runtime_exception',
@@ -178,6 +180,7 @@ if(process.argv[1]===fileURLToPath(import.meta.url)){
   const port=Number(process.env.PORT||10000);
   gateway().listen(port,'0.0.0.0',()=>{
     console.log('MOOSA original JVM pilot service listening');
-    if(process.env.MOOSA_JVM_BOOT_PROBE==='1')void executeBootProbe();
+    if(process.env.MOOSA_JVM_BOOT_PROBE==='1')
+      void executeBootProbe(()=>extractOriginal({timeoutMs:170000}));
   });
 }
