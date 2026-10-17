@@ -1,0 +1,29 @@
+name: MOOSA five high-resolution CineStream video probes
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tests/cinestream-high-res-five-films.e2e.mjs'
+      - '.github/workflows/moosa-cinestream-high-res-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser-high-res:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chrome test dependencies
+        run: |
+          cd MOOSAWeb
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Verify candidate 1080p and 720p sources decode real film video
+        timeout-minutes: 8
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
