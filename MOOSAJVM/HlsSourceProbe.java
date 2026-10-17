@@ -65,7 +65,7 @@ public final class HlsSourceProbe {
             if(n>=3)break;
             n++;
             int masterStatus=0,childStatus=0,segmentStatus=0;
-            boolean masterHls=false,firstSegmentVideo=false,segmentCors=false,encrypted=false;
+            boolean masterHls=false,firstSegmentVideo=false,segmentCors=false,masterCors=false,variantCors=false;
             String error="none",segmentType="unknown";
             try{
                 URI uri=checked(URI.create(text));
@@ -74,6 +74,7 @@ public final class HlsSourceProbe {
                 Result master=get(uri,MAX_PLAYLIST,false);
                 masterStatus=master.status;
                 masterHls=master.body.startsWith("#EXTM3U");
+                masterCors=hasCors(master);
                 if(master.status!=200||!masterHls)throw new IllegalStateException("master_not_readable");
                 URI child=nextMedia(master,uri);
                 Result rendition;
@@ -81,11 +82,13 @@ public final class HlsSourceProbe {
                 if(child.getPath().toLowerCase(Locale.ROOT).endsWith(".m3u8")){
                     rendition=get(child,MAX_PLAYLIST,false);
                     childStatus=rendition.status;
+                    variantCors=hasCors(rendition);
                     if(rendition.status!=200)throw new IllegalStateException("variant_not_readable");
                     segmentUrl=nextMedia(rendition,child);
                 }else{
                     segmentUrl=child;
                     childStatus=-1;
+                    variantCors=masterCors;
                 }
                 // HLS fragments can have extensionless URLs. Only trust the
                 // exact observed public host, HTTPS, no redirects, no encrypted HLS,
@@ -110,8 +113,8 @@ public final class HlsSourceProbe {
                 error=error.substring(0,Math.min(error.length(),85));
             }
             System.out.println("JVM_MEDIA_DIRECT_VERIFY sample="+n+
-                " masterStatus="+masterStatus+" masterHls="+masterHls+
-                " variantStatus="+childStatus+" segmentStatus="+segmentStatus+
+                " masterStatus="+masterStatus+" masterHls="+masterHls+" masterCors="+masterCors+
+                " variantStatus="+childStatus+" variantCors="+variantCors+" segmentStatus="+segmentStatus+
                 " segmentType="+segmentType+
                 " segmentVideo="+firstSegmentVideo+" segmentCors="+segmentCors+
                 " error="+error);
