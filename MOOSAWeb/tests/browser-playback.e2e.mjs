@@ -80,6 +80,20 @@ try {
       body:await readFile(path.resolve('node_modules/hls.js/dist/hls.min.js'))}));
   await page.route(/^https:\/\/video\.moosa-e2e\.invalid\/.*/,async route=>{
     const pathname=new URL(route.request().url()).pathname;
+    if(pathname==='/master.m3u8'){
+      return route.fulfill({status:200,
+        headers:{'Content-Type':'application/vnd.apple.mpegurl',
+          'Access-Control-Allow-Origin':'*'},
+        body:'#EXTM3U\n'+
+          '#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=320x180,CODECS="avc1.42E01E,mp4a.40.2"\n'+
+          'playlist.m3u8\n'+
+          '#EXT-X-STREAM-INF:BANDWIDTH=3500000,RESOLUTION=1280x720,CODECS="avc1.42E01E,mp4a.40.2"\n'+
+          'playlist-hd.m3u8\n'});
+    }
+    if(pathname==='/playlist-hd.m3u8')
+      return serveMedia(route,'playlist-hd.m3u8','application/vnd.apple.mpegurl');
+    if(/^\/hd-\d+\.ts$/.test(pathname))
+      return serveMedia(route,pathname.slice(1),'video/mp2t');
     if(pathname==='/playlist.m3u8'){
       // Valid but delayed playlist must not trigger false playback errors.
       await new Promise(resolve=>setTimeout(resolve,500));
@@ -110,6 +124,19 @@ try {
   assert.match(await page.locator('#player-message').textContent(),/يُشغّل الآن/,
     'Indicator reflects video actually playing');
   await page.screenshot({path:path.join(artifacts,'hls-playing.png')});
+  // A genuine HLS master contains SD and HD levels. On a tiny player
+  // hls.js must not begin in 180p and cause MOOSA to reject an available
+  // 720p stream before adaptive selection stabilizes.
+  await page.locator('#custom-stream').fill('https://video.moosa-e2e.invalid/master.m3u8');
+  await page.locator('#play-custom').click();
+  await untilPlaying('mixed-resolution HLS master starts in HD');
+  const measuredHd=await page.locator('#video').evaluate(v=>({
+    width:v.videoWidth,height:v.videoHeight
+  }));
+  assert.ok(measuredHd.width>=1280 && measuredHd.height>=720,
+    'HLS must start a real 720p+ rendition instead of its 180p sibling');
+  console.log('PASS mixed 180p/720p master selected actual HD video');
+
   // This SAME real 320x180 H.264 stream is now mislabeled by an automatic
   // source as 1080p. The player must reject it at decoded video metadata,
   // rather than playing a 180p stream while claiming HD.
