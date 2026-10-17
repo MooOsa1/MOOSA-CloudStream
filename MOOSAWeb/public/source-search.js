@@ -12,7 +12,9 @@ function pilotRuntimeReady(){
     }).then(async r=>{
       if(!r.ok)return false;
       const data=await r.json();
-      return data?.readyForQuery===true && data?.filmImdbId==='tt5719076';
+      return (data?.readyForQuery===true && data?.filmImdbId==='tt5719076') ||
+        (data?.sintel?.readyForQuery===true &&
+         data?.sintel?.filmImdbId==='tt1727587');
     }).catch(()=>false);
   }
   return runtimeReadiness;
