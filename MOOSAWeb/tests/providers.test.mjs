@@ -278,3 +278,96 @@ test('NuvioStreams-style manifest prefix "tmdb" without colon is valid and expli
     'Partial prefixes never authorize TMDB fallback');
   assert.equal(selectStremioStreamId({...m,idPrefixes:['IMDb']},meta),null);
 });
+
+test('Real Archive Stremio add-on can return an authentic unlabeled Sintel 818p MP4 verified from item metadata',async()=>{
+  const endpoint='https://archive-source.example/manifest.json';
+  const path='/stream/movie/tt1727587.json';
+  const file='https://archive.org/download/sintel-open-film/Sintel_full_movie.mp4';
+  const seen=[];
+  const fetchImpl=mockFetch(u=>{
+    seen.push(u.href);
+    if(u.pathname==='/manifest.json')return {
+      id:'org.archive.clean',name:'Archive.org',types:['movie'],
+      resources:['stream'],idPrefixes:['tt']
+    };
+    if(u.pathname===path)return {streams:[
+      {url:file,title:'Archive.org',name:'Full movie',subtitles:[
+        {url:'https://example.org/subs/sintel-ar.vtt',lang:'ar',label:'Arabic'},
+        {url:'https://example.org/subs/sintel-en.vtt',lang:'en',label:'English'}
+      ]},
+      {name:'1080p',url:'https://archive.org/download/sintel-open-film/trailer_1080p.mp4'},
+      {name:'2160p',url:'https://cdn.example/hosted/movie.html'}
+    ]};
+    if(u.pathname==='/metadata/sintel-open-film')return {
+      metadata:{
+        title:'Sintel',year:'2010',
+        licenseurl:'https://creativecommons.org/licenses/by/3.0/'
+      },
+      files:[
+        {name:'Sintel_full_movie.mp4',height:'818',size:'310000000'},
+        {name:'trailer_1080p.mp4',height:'1080',size:'12500000'}
+      ]
+    };
+  });
+  const sources=await fromWebAddons({
+    media:'movie',id:45745,title:'Sintel',originalTitle:'Sintel',year:2010,
+    imdbId:'tt1727587'
+  },{fetchImpl,addons:[endpoint]});
+  assert.equal(sources.length,1);
+  assert.equal(sources[0].url,file);
+  assert.equal(sources[0].quality,818);
+  assert.equal(sources[0].subtitles.length,2);
+  assert.deepEqual(sources[0].subtitles.map(t=>t.language),['ar','en']);
+  assert.match(sources[0].name,/Archive verified/);
+  assert.deepEqual(seen.map(x=>new URL(x).pathname),[
+    '/manifest.json','/stream/movie/tt1727587.json',
+    '/metadata/sintel-open-film'
+  ]);
+});
+
+test('A mislabeled 2160p source cannot override wrong-film, unlicensed or 480p Archive metadata',async()=>{
+  const file='https://archive.org/download/random-film/full_4k.mp4';
+  const original={
+    media:'movie',id:45745,title:'Sintel',originalTitle:'Sintel',year:2010,
+    imdbId:'tt1727587'
+  };
+  const doc={metadata:{
+    title:'Sintel',year:'2010',
+    licenseurl:'https://creativecommons.org/licenses/by/3.0/'
+  },files:[{name:'full_4k.mp4',height:'1080',size:'50000000'}]};
+  for(const changed of [
+    {metadata:{...doc.metadata,title:'Some other movie'}},
+    {metadata:{...doc.metadata,year:'2012'}},
+    {metadata:{...doc.metadata,licenseurl:'https://not-authorized.example/license'}},
+    {files:[{...doc.files[0],height:'480'}]},
+    {files:[{...doc.files[0],name:'different-film.mp4'}]}
+  ]){
+    const fetchImpl=mockFetch(u=>{
+      if(u.pathname==='/manifest.json')return {
+        name:'Untrusted Archive Addon',types:['movie'],resources:['stream'],idPrefixes:['tt']
+      };
+      if(u.pathname.includes('/stream/'))return {
+        streams:[{name:'2160p BEST',url:file}]
+      };
+      if(u.pathname==='/metadata/random-film')return {...doc,...changed};
+    });
+    const sources=await fromWebAddons(original,{fetchImpl,addons:[
+      'https://another-addon.example/manifest.json'
+    ]});
+    assert.deepEqual(sources,[],JSON.stringify(changed));
+  }
+  const goodFetch=mockFetch(u=>{
+    if(u.pathname==='/manifest.json')return {
+      name:'Verified',types:['movie'],resources:['stream'],idPrefixes:['tt']
+    };
+    if(u.pathname.includes('/stream/'))return {
+      streams:[{name:'2160p allegedly',url:file}]
+    };
+    if(u.pathname==='/metadata/random-film')return doc;
+  });
+  const verified=await fromWebAddons(original,{
+    fetchImpl:goodFetch,addons:['https://another-addon.example/manifest.json']
+  });
+  assert.equal(verified.length,1);
+  assert.equal(verified[0].quality,1080,'Archive video file height overrides deceptive source label');
+});
