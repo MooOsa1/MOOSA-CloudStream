@@ -6,6 +6,7 @@ on:
       - 'MOOSAWeb/providers.mjs'
       - 'MOOSAWeb/tests/providers.test.mjs'
       - 'MOOSAWeb/tests/external-archive-sintel-browser.e2e.mjs'
+      - 'MOOSAWeb/tools/archive-addon-codec-audit.mjs'
       - '.github/workflows/moosa-external-archive-decoding.yml'
   pull_request:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - 'MOOSAWeb/providers.mjs'
       - 'MOOSAWeb/tests/providers.test.mjs'
       - 'MOOSAWeb/tests/external-archive-sintel-browser.e2e.mjs'
+      - 'MOOSAWeb/tools/archive-addon-codec-audit.mjs'
       - '.github/workflows/moosa-external-archive-decoding.yml'
   workflow_dispatch:
 permissions:
@@ -31,6 +33,10 @@ jobs:
           node-version: '22'
       - name: Whole web regression test suite
         run: npm run check
+      - name: Inspect real independent Archive CC media HTTP range and codec metadata
+        run: |
+          node --check tools/archive-addon-codec-audit.mjs
+          timeout 70 node tools/archive-addon-codec-audit.mjs
   external-player:
     runs-on: ubuntu-latest
     timeout-minutes: 8
