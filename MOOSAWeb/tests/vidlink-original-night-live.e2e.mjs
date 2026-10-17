@@ -12,8 +12,7 @@ const meta={media:'movie',id:10331,year:1968,
   imdbId:'tt0063350',title:'Night of the Living Dead',
   originalTitle:'Night of the Living Dead'};
 const preferredHosts=[
-  'bcdnxw.hakunaymatata.com',
-  'bcdnxw.hakunaymatata.net'
+  'hcdn3.hakunaymatata.com'
 ];
 const gateway=createMediaGateway({
   origin:'https://moosa-web.onrender.com',
