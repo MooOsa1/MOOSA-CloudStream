@@ -18,6 +18,7 @@ import {findVerifiedMultiFilmVidlink,discoverVidlinkInventory} from './vidlink-m
 import {movieBoxInventory} from './moviebox-inventory.mjs';
 import {probeBingeBangMovie} from './bingebang-inventory.mjs';
 import {inspectHubCloudHandoff} from './hubcloud-handoff.mjs';
+import {probe4khdhubHandoff} from './4khdhub-handoff.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -93,7 +94,20 @@ function cachedHubCloudHandoff(title,year){
   if(current&&current.until>Date.now())return current.promise;
   if(focusedHubCloudCache.size>=30)
     focusedHubCloudCache.delete(focusedHubCloudCache.keys().next().value);
-  const promise=inspectHubCloudHandoff({title,year:Number(year),timeoutMs:7500});
+  const promise=(async()=>{
+    const primary=await inspectHubCloudHandoff({title,year:Number(year),timeoutMs:7500});
+    if(primary.hubcloudEntryPages>0)return primary;
+    const alternative=await probe4khdhubHandoff({
+      title,year:Number(year),timeoutMs:7500
+    });
+    if(alternative.hubcloudEntryPages>0)return {
+      ...alternative,
+      primaryStatus:primary.state,alternateStatus:alternative.state
+    };
+    return {...primary,alternateStatus:alternative.state,
+      alternateMoviePosts:alternative.exactMoviePosts,
+      alternateHubcloudEntryPages:alternative.hubcloudEntryPages};
+  })();
   focusedHubCloudCache.set(key,{until:Date.now()+180000,promise});
   return promise;
 }
@@ -334,6 +348,7 @@ async function handle(req,res,mediaGateway=null) {
             exactMoviePosts:hubCloud.exactMoviePosts,
             indexHits:hubCloud.indexHits,
             hubcloudEntryPages:hubCloud.hubcloudEntryPages,
+            alternateStatus:hubCloud.alternateStatus,
             explanation:hubCloud.state==='hubcloud_entry_found'?
               'Found HubCloud entry pages linked from a matching movie post; no video URL has been validated.':
               hubCloud.state==='index_unavailable'?
@@ -764,6 +779,10 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
       }).then(result=>console.log('MOOSA_HUBCLOUD_LIVE_HANDOFF '+
         JSON.stringify(result)))
         .catch(()=>console.log('MOOSA_HUBCLOUD_LIVE_HANDOFF_UNAVAILABLE'));
+      void probe4khdhubHandoff({title:'Inception',year:2010,timeoutMs:7500})
+        .then(result=>console.log('MOOSA_4KHDHUB_HANDOFF '+
+          JSON.stringify(result)))
+        .catch(()=>console.log('MOOSA_4KHDHUB_HANDOFF_UNAVAILABLE'));
       void movieBoxInventory({title:'Inception',year:2010,timeoutMs:6500})
         .then(result=>console.log('MOOSA_MOVIEBOX_LIVE_DISCOVERY '+
           JSON.stringify(result)))
