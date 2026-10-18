@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {timingSafeEqual} from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +19,55 @@ import {findVerifiedMultiFilmVidlink} from './vidlink-multifilm-candidates.mjs';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
 const API_BASE = 'https://api.themoviedb.org/3';
+// Render-only, password-gated preview. No user-facing production effect.
+const PRIVATE_LAB=process.env.MOOSA_TWO_FILM_PRIVATE_LAB==='1';
+const PRIVATE_FILMS=[
+  {id:19,title:'Metropolis',original_title:'Metropolis',
+    release_date:'1927-01-10',imdb_id:'tt0017136',
+    media_type:'movie',vote_average:8.0,vote_count:1,
+    overview:'Private test of the original film player. Edition and source rights unverified.'},
+  {id:832,title:'M',original_title:'M',
+    release_date:'1931-05-11',imdb_id:'tt0022100',
+    media_type:'movie',vote_average:8.0,vote_count:1,
+    overview:'Private test of the original film player. Edition and source rights unverified.'}
+];
+function privateCatalog(route){
+  if(!PRIVATE_LAB)return null;
+  if(route.endpoint==='/search/multi'){
+    const search=String(route.params?.query||'').toLowerCase().trim();
+    const match=PRIVATE_FILMS.filter(x=>
+      search===x.title.toLowerCase() ||
+      search===x.title.toLowerCase()+' '+x.release_date.slice(0,4));
+    return {page:1,total_pages:1,total_results:match.length,results:match};
+  }
+  const detail=route.endpoint.match(/^\/movie\/(19|832)$/);
+  if(detail){
+    const film=PRIVATE_FILMS.find(x=>String(x.id)===detail[1]);
+    return {...film,external_ids:{imdb_id:film.imdb_id},runtime:null};
+  }
+  if(route.endpoint==='/trending/movie/week'||
+     route.endpoint==='/movie/top_rated' ||
+     route.endpoint==='/discover/movie'){
+    return {page:1,total_pages:1,total_results:2,results:PRIVATE_FILMS};
+  }
+  return {page:1,total_pages:1,total_results:0,results:[]};
+}
+function authenticatePrivateLab(req,res,pathname){
+  if(!PRIVATE_LAB||pathname==='/healthz')return true;
+  const secret=process.env.MOOSA_LAB_PASSWORD||'';
+  const expected=secret&&'Basic '+Buffer.from('moosa:'+secret).toString('base64');
+  const got=String(req.headers.authorization||'');
+  const a=Buffer.from(got),b=Buffer.from(expected||'');
+  if(secret.length>=16&&a.length===b.length&&timingSafeEqual(a,b))return true;
+  res.writeHead(401,{
+    'WWW-Authenticate':'Basic realm="MOOSA two-film private lab", charset="UTF-8"',
+    'Cache-Control':'no-store',
+    'Content-Type':'text/plain; charset=utf-8',
+    'X-Content-Type-Options':'nosniff'
+  });
+  res.end('Private two-film test. Authentication required.');
+  return false;
+}
 const CONFIG_PATH = process.env.STREAMS_FILE || 'data/streams.json';
 const CACHE = new Map();
 const bridge = createBridge();
@@ -127,6 +177,7 @@ export function tmdbRoute(url) {
   return null;
 }
 async function tmdbGet(route) {
+  if(PRIVATE_LAB)return privateCatalog(route);
   const key = apiKey();
   if(!key) throw Object.assign(new Error('TMDB_NOT_CONFIGURED'),{status:503});
   const u = new URL(API_BASE+route.endpoint);
@@ -159,6 +210,7 @@ async function readSources(media,id,season=null,episode=null) {
 async function handle(req,res,mediaGateway=null) {
   try {
     const earlyUrl = new URL(req.url||'/', 'http://localhost');
+    if(!authenticatePrivateLab(req,res,earlyUrl.pathname))return;
     if(earlyUrl.pathname.startsWith('/api/bridge/'))return bridge.handle(req,res,earlyUrl);
     if(earlyUrl.pathname.startsWith('/api/media/')){
       if(!mediaGateway)return err(res,404,'No operator-approved media gateway configured');
@@ -182,7 +234,7 @@ async function handle(req,res,mediaGateway=null) {
       return json(res,200,await resolveStremioProtocolMovie(match[1]));
     }
     if(url.pathname==='/api/config')return json(res,200,{
-      catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',
+      catalogReady:PRIVATE_LAB||!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',
       automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine(),
       // Inform the browser about a strictly operator-reviewed source pilot
       // so only those catalog titles receive a longer Play lookup window.
@@ -464,7 +516,8 @@ export function createServer({mediaGateway=null}={}){
     (process.env.CINESTREAM_NIGHT_PILOT==='1' ||
       process.env.CINESTREAM_MULTIFILM_PILOT==='1') && hosts.length
       ?createMediaGateway({
-          origin:'https://moosa-web.onrender.com',
+          origin:PRIVATE_LAB?'https://moosa-two-film-lab.onrender.com':
+            'https://moosa-web.onrender.com',
           allowedHosts:hosts,ttlMs:3*60*60_000
         }):null
   );
