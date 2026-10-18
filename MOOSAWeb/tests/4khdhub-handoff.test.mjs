@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {probe4khdhubHandoff,extract4khdhubCards,classifyCineStreamAnchors} from '../4khdhub-handoff.mjs';
+import {probe4khdhubHandoff,extract4khdhubCards,classifyCineStreamAnchors,countStreamPlayDownloadAnchors} from '../4khdhub-handoff.mjs';
 
 test('Alternate HubCloud path follows exact Inception movie-card and never requests off-site media',async()=>{
   const card='<div class="card-grid"><a href="/inception-2010/">'+
@@ -63,4 +63,16 @@ test('real CineStream selector recognizes intermediate links without direct HubC
   assert.equal(result.videoLinksVerified,0);
   assert.equal(seen.length,2,'must not open the discovered intermediate links');
   assert.doesNotMatch(JSON.stringify(result),/greenmountmotors|hubcdn\.example|\/re\?id/);
+});
+
+test('StreamPlay selector detects download-item anchors without requesting or returning media',()=>{
+  const html='<div class="download-item"><a href="https://gateway.example/link1">FHD</a></div>';
+  const x=countStreamPlayDownloadAnchors(html);
+  assert.equal(x.downloadItems,1);
+  assert.equal(x.downloadLinks,1);
+  assert.deepEqual(countStreamPlayDownloadAnchors('<div class="download-item">No links</div>'),
+    {downloadItems:1,downloadLinks:0});
+  assert.deepEqual(countStreamPlayDownloadAnchors('<a href="https://x.example/">Ad</a>'),
+    {downloadItems:0,downloadLinks:0});
+  assert.doesNotMatch(JSON.stringify(x),/https:|gateway/);
 });
