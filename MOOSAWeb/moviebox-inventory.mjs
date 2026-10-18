@@ -33,7 +33,7 @@ export async function movieBoxInventory({
   title,year,fetchImpl=fetch,timeoutMs=11000
 }={}){
   const want=normalized(title),release=Number(year);
-  if(want.length<2||want.length>110||!Number.isInteger(release)||
+  if(want.length<1||want.length>110||!Number.isInteger(release)||
      release<1888||release>2100)return status('invalid_title_or_year');
   const send=async(path,init={})=>{
     const url=new URL(path,BASE);
