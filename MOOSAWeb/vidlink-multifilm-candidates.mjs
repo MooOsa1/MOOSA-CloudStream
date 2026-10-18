@@ -39,7 +39,9 @@ export function offeredVidlinkVariants(response,{
       /\.mp4$/i.test(url.pathname)||item.type==='mp4'?'mp4':null;
     if(!format)continue;
     const quality=Number(String(label).match(/([0-9]{3,4})/)?.[1]||0);
-    if(!Number.isInteger(quality)||quality<144||quality>4320)continue;
+    // 4K is intentionally out of scope: spend gateway checks on 1080p
+    // and lower fallback variants until multi-film playback is reliable.
+    if(!Number.isInteger(quality)||quality<144||quality>1080)continue;
     visited.add(url.href);
     found.push({url:url.href,format,advertisedQuality:quality,
       headers:item.headers&&typeof item.headers==='object'?item.headers:{
