@@ -107,7 +107,8 @@ function cachedHubCloudHandoff(title,year){
     };
     return {...primary,alternateStatus:alternative.state,
       alternateMoviePosts:alternative.exactMoviePosts,
-      alternateHubcloudEntryPages:alternative.hubcloudEntryPages};
+      alternateHubcloudEntryPages:alternative.hubcloudEntryPages,
+      alternateIntermediateLinks:alternative.streamPlayAnchors?.downloadLinks||0};
   })();
   focusedHubCloudCache.set(key,{until:Date.now()+180000,promise});
   return promise;
@@ -350,6 +351,7 @@ async function handle(req,res,mediaGateway=null) {
             indexHits:hubCloud.indexHits,
             hubcloudEntryPages:hubCloud.hubcloudEntryPages,
             alternateStatus:hubCloud.alternateStatus,
+            intermediateLinkCount:hubCloud.alternateIntermediateLinks||0,
             explanation:hubCloud.state==='hubcloud_entry_found'?
               'Found HubCloud entry pages linked from a matching movie post; no video URL has been validated.':
               hubCloud.state==='index_unavailable'?
