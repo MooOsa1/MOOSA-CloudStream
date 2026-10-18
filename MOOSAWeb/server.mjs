@@ -787,7 +787,9 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
       }).then(result=>console.log('MOOSA_DIRECT_CINESTREAM_HUB '+
         JSON.stringify(result)))
         .catch(()=>console.log('MOOSA_DIRECT_CINESTREAM_HUB_UNAVAILABLE'));
-      void probe4khdhubHandoff({title:'Inception',year:2010,timeoutMs:7500})
+      void probe4khdhubHandoff({
+        title:'Inception',year:2010,timeoutMs:7500,diagnoseRedirects:true
+      })
         .then(result=>console.log('MOOSA_4KHDHUB_HANDOFF '+
           JSON.stringify(result)))
         .catch(()=>console.log('MOOSA_4KHDHUB_HANDOFF_UNAVAILABLE'));
