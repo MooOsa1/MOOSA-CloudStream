@@ -21,13 +21,21 @@ const FILMS=[
  {title:'Sherlock Jr.',year:1924,tmdbId:992,preferred:720,minDuration:2200,maxDuration:3500}
 ];
 // Test-only CDN allowlist. Public MOOSA server configuration is untouched.
+// Additional titles are exercised only by an opt-in CI step. Neither the
+// sources nor the CDN host approval escapes this local browser test.
+const EXTRAS=[
+ {title:'Charade',year:1963,tmdbId:4808,preferred:480,minDuration:6300,maxDuration:7300},
+ {title:'House on Haunted Hill',year:1959,tmdbId:15856,preferred:720,minDuration:4000,maxDuration:5100}
+];
 const HOSTS=new Set(['hcdn3.hakunaymatata.com','bcdn.hakunaymatata.com']);
 // Explicit fallback scans target only the two titles with verified 1080p.
 // No production film or source is enabled by these test-only probes.
 const fallbackQuality=Number(process.env.MOOSA_HIGH_RES_FALLBACK||0);
-if(fallbackQuality && ![480,720].includes(fallbackQuality))
+if(fallbackQuality && ![360,480,720].includes(fallbackQuality))
   throw Error('Invalid test fallback quality');
-const filmsToTest=fallbackQuality?FILMS.slice(0,2):FILMS;
+const extraOnly=process.env.MOOSA_EXTRA_CINESTREAM==='1';
+if(extraOnly && fallbackQuality)throw Error('Extra-only and fallback modes are exclusive');
+const filmsToTest=extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS);
 const SITE='https://moosa-web.onrender.com';
 const agent='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
 const browserErrors=[];
