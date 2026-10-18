@@ -33,3 +33,17 @@ jobs:
 
       - name: Verify latest official iPhone IPA on Stremio CDN (HEAD only)
         run: node AIOStreamsHost/check-ios.mjs
+  live-ui-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated test browser
+        run: |
+          npm install --prefix AIOStreamsHost --no-save --ignore-scripts playwright@1.55.1
+          ./AIOStreamsHost/node_modules/.bin/playwright install chromium
+      - name: Open real AIOStreams page and load MOOSA template in Chromium
+        run: node AIOStreamsHost/import-ui-smoke.cjs
