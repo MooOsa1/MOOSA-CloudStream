@@ -84,6 +84,17 @@ function authenticatePrivateLab(req,res,pathname){
   return false;
 }
 const CONFIG_PATH = process.env.STREAMS_FILE || 'data/streams.json';
+const focusedMovieBoxCache=new Map();
+async function cachedMovieBoxInventory(title,year){
+  const key=title.normalize('NFKC').toLowerCase()+'|'+year;
+  const entry=focusedMovieBoxCache.get(key),now=Date.now();
+  if(entry&&entry.until>now)return entry.promise;
+  if(focusedMovieBoxCache.size>=30)
+    focusedMovieBoxCache.delete(focusedMovieBoxCache.keys().next().value);
+  const promise=movieBoxInventory({title,year:Number(year),timeoutMs:6500});
+  focusedMovieBoxCache.set(key,{until:now+120000,promise});
+  return promise;
+}
 const sourceInventoryCache=new Map();
 async function memoizedSourceInventory(id){
   const key=String(id),now=Date.now();
@@ -274,7 +285,7 @@ async function handle(req,res,mediaGateway=null) {
       if(!/^[A-Za-z0-9][\p{L}\p{N} \-'.:,&()]{0,109}$/u.test(title)||
         !/^(?:18[89]\d|19\d\d|20\d\d|2100)$/.test(year))
         return err(res,400,'Invalid film identity');
-      const movieBox=await movieBoxInventory({title,year:Number(year),timeoutMs:6500});
+      const movieBox=await cachedMovieBoxInventory(title,year);
       return json(res,200,{
         title,year:Number(year),
         sources:[
@@ -289,7 +300,9 @@ async function handle(req,res,mediaGateway=null) {
             qualities:movieBox.offeredQualities,
             formats:movieBox.formats,
             verifiedPlayable:false,
-            explanation:'Candidate inventory only; exact edition, CDN bytes and playback not yet confirmed.'}
+            explanation:movieBox.state==='provider_access_denied'?
+              'MovieBox returned HTTP 403 for both play and download from Render; no stream can be issued.':
+              'Candidate inventory only; exact edition, CDN bytes and playback not yet confirmed.'}
         ]
       });
     }
