@@ -37,7 +37,8 @@ globalThis.fetch=async(input,init)=>{
     tmdbCount++;
     if(url.pathname==='/3/search/multi'){
       const q=(url.searchParams.get('query')||'').toLowerCase().trim();
-      const results=FILMS.filter(x=>x.title.toLowerCase()===q)
+      const results=FILMS.filter(x=>q===x.title.toLowerCase() ||
+          q===x.title.toLowerCase()+' '+x.year)
         .map(x=>({id:x.id,title:x.title,media_type:'movie',
           release_date:x.year+'-01-01',vote_average:7.5,
           vote_count:300,overview:'Test catalog metadata'}));
@@ -151,7 +152,11 @@ try{
       await page.goto(SITE+'/',{waitUntil:'domcontentloaded',timeout:35000});
       phase='real_search_card';
       // User-level UI interactions only; do NOT import player functions.
-      await page.locator('#search-input').fill(film.title);
+      // The site intentionally requires 2+ search characters. A one-letter
+      // classic such as M must be searched with its release year as well.
+      const searchQuery=film.title.length>=2?
+        film.title:film.title+' '+film.year;
+      await page.locator('#search-input').fill(searchQuery);
       await page.locator('#browse-grid .poster-card').first().waitFor({
         state:'visible',timeout:15000
       });
