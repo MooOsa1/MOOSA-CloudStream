@@ -40,7 +40,7 @@ export function reviewedFilmRegistry(input=process.env.CINESTREAM_REVIEWED_FILMS
     const title=standardTitle(item.title);
     if(!Number.isSafeInteger(tmdbId)||tmdbId<1||tmdbId>9999999999||
        !Number.isInteger(year)||year<1888||year>2100||
-       !/^tt\\d{5,12}$/.test(imdb)||title.length<1||title.length>140||
+       !/^tt\d{5,12}$/.test(imdb)||title.length<1||title.length>140||
        allowed.has(tmdbId)||EXPECTED.has(tmdbId))continue;
     allowed.set(tmdbId,{tmdbId,imdb,year,title});
   }
