@@ -1,0 +1,27 @@
+name: MOOSA AIOStreams real-browser template import (no user account)
+on:
+  push:
+    branches:
+      - experiment/moosa-hub-aiostreams-20261018
+    paths:
+      - '.github/workflows/moosa-aiostreams-ui-import.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test-only browser
+        run: |
+          npm install --prefix AIOStreamsHost --no-save playwright@1.55.1
+          ./AIOStreamsHost/node_modules/.bin/playwright install --with-deps chromium
+      - name: Open live community instance and verify MOOSA template appears
+        run: node AIOStreamsHost/import-ui-smoke.cjs
