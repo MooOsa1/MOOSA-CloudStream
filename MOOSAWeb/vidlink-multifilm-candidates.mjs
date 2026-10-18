@@ -291,6 +291,7 @@ export async function probeVidlinkContainerBytes({
   });
   if(!Number.isSafeInteger(id)||id<1||id>9999999999)
     return state('invalid_movie_id');
+  let stage='encoding_lookup';
   try{
     const keyUrl=new URL('https://enc-dec.app/api/enc-vidlink');
     keyUrl.searchParams.set('text',String(id));
@@ -301,12 +302,15 @@ export async function probeVidlinkContainerBytes({
     const code=key?.result;
     if(typeof code!=='string'||!/^[a-zA-Z0-9+/_=-]{3,320}$/.test(code))
       return state('no_provider_id');
+    stage='source_list_lookup';
     const data=await smallProviderJson(await fetchImpl(
       'https://vidlink.pro/api/b/movie/'+encodeURIComponent(code),{
       redirect:'error',signal:AbortSignal.timeout(12000),
       headers:{Accept:'application/json',Referer:'https://vidlink.pro/',
-        Origin:'https://vidlink.pro/'}
+        Origin:'https://vidlink.pro/',
+        'User-Agent':'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36'}
     }));
+    stage='mp4_byte_probe';
     const found=offeredVidlinkVariants(data,{maxVariants:3})
       .filter(x=>x.format==='mp4')
       .slice(0,Math.max(1,Math.min(3,Number(maxVariants)||2)));
@@ -359,5 +363,5 @@ export async function probeVidlinkContainerBytes({
       checked:found.length,mp4ContainersVerified:confirmed,
       verifiedQualityLabels:labels,statuses
     });
-  }catch{return state('provider_unavailable');}
+  }catch{return state('provider_unavailable',{stage});}
 }
