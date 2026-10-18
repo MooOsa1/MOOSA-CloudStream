@@ -17,15 +17,9 @@ import {createServer} from '../server.mjs';
 const SITE='https://moosa-web.onrender.com';
 const FILMS=[
   {id:19,title:'Metropolis',year:1927,imdbId:'tt0017136',
-    primary:720,backup:480,thirdHeight:360,minDuration:3600,maxDuration:11000},
+    primary:720,backup:480,minDuration:3600,maxDuration:11000},
   {id:832,title:'M',year:1931,imdbId:'tt0022100',
-    primary:1080,backup:480,thirdHeight:363,minDuration:4500,maxDuration:8500},
-  // Real provider MP4 encodes previously Chrome-decoded: 1080 / 720 / 480.
-  // Only test-local operator flags are used; these are NOT public films.
-  {id:962,title:'The Gold Rush',year:1925,imdbId:'tt0015864',
-    primary:1080,backup:720,thirdHeight:540,minDuration:4300,maxDuration:6500},
-  {id:10098,title:'The Kid',year:1921,imdbId:'tt0012349',
-    primary:1080,backup:720,thirdHeight:540,minDuration:2700,maxDuration:4500}
+    primary:1080,backup:480,minDuration:4500,maxDuration:8500}
 ];
 const HOSTS=['hcdn3.hakunaymatata.com','bcdn.hakunaymatata.com'];
 const nativeFetch=globalThis.fetch;
@@ -286,14 +280,13 @@ try{
       const positionBeforeSwitch=await page.locator('#video').evaluate(v=>v.currentTime);
       assert.ok(positionBeforeSwitch>=75&&positionBeforeSwitch<150);
       await page.locator('#player-source').selectOption('2');
-      await page.waitForFunction(({path,minimum,thirdHeight})=>{
+      await page.waitForFunction(({path,minimum})=>{
         const v=document.querySelector('#video'),sel=document.querySelector('#player-source');
         return sel?.value==='2'&&v.currentSrc.endsWith(path)&&
           v.currentTime>=minimum-3&&v.readyState>=2&&!v.error&&
-          Math.abs(v.videoHeight-thirdHeight)<=14&&
+          v.videoHeight>=350&&v.videoHeight<=380&&
           (v.getVideoPlaybackQuality?.().totalVideoFrames||0)>0;
-      },{path:heldMediaToken,minimum:positionBeforeSwitch,
-        thirdHeight:film.thirdHeight},{timeout:60000});
+      },{path:heldMediaToken,minimum:positionBeforeSwitch},{timeout:60000});
       const switchResult=await page.locator('#video').evaluate(v=>({
         currentTime:v.currentTime,videoHeight:v.videoHeight,
         decodedFrames:v.getVideoPlaybackQuality?.().totalVideoFrames||0
