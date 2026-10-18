@@ -468,3 +468,52 @@ test('second reviewed worker option accepts MP4 bytes but never publishes the so
   assert.equal(r.videoVerified,false);
   assert.doesNotMatch(JSON.stringify(r),/secret=1|\/entry|\/path|\/film/);
 });
+
+test('2025 Sinners alternative R2 and GPDL options are probed once each with Range',async()=>{
+  const packed=b64(b64(rot13(b64(JSON.stringify({
+    o:b64('https://hubcloud.ist/sinners')
+  })))));
+  const seen=[];
+  const res=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/sinners">Sinners</a>',
+    fetchImpl:async (url,opts)=>{
+      const host=new URL(url).hostname;
+      seen.push(host);
+      if(host==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/sinners'}});
+      if(host==='greenmotors.cc')
+        return new Response("<script>s('o','"+packed+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(host==='hubcloud.ist')
+        return new Response('<a id="download" href="https://gamerxyt.com/sinners">Options</a>',{
+          headers:{'content-type':'text/html'}});
+      if(host==='gamerxyt.com')
+        return new Response('<a class="btn" href="https://gpdl.hubcloud.ist/video?token=secret">GPDL</a>'+
+          '<a class="btn" href="https://297de52426dc9b4d861466cc51253577.r2.cloudflarestorage.com/film?token=hidden">R2</a>',{
+          headers:{'content-type':'text/html'}});
+      assert.equal(opts.headers.Range,'bytes=0-4095');
+      if(host==='gpdl.hubcloud.ist')
+        return new Response(Buffer.concat([
+          Buffer.from([0x1a,0x45,0xdf,0xa3]),Buffer.alloc(20)
+        ]),{status:206,headers:{
+          'content-type':'video/x-matroska',
+          'content-range':'bytes 0-4095/100000'
+        }});
+      if(host.endsWith('.r2.cloudflarestorage.com'))
+        return new Response(Buffer.concat([
+          Buffer.from([0,0,0,24]),Buffer.from('ftypisom'),Buffer.alloc(20)
+        ]),{status:206,headers:{
+          'content-type':'video/mp4','content-range':'bytes 0-4095/200000'
+        }});
+      throw Error('unexpected source host');
+    }
+  });
+  assert.equal(res.landings[0].gatewayPage.gpdlAudit.status,'ebml_bytes_verified');
+  assert.equal(res.landings[0].gatewayPage.r2Audit.status,'mp4_bytes_verified');
+  assert.equal(res.videoVerified,false);
+  assert.deepEqual(seen.slice(-2).sort(),[
+    '297de52426dc9b4d861466cc51253577.r2.cloudflarestorage.com',
+    'gpdl.hubcloud.ist'
+  ]);
+  assert.doesNotMatch(JSON.stringify(res),/token=|secret|hidden|\/film|\/sinners/);
+});
