@@ -3,9 +3,13 @@
  * Do not publish candidates until EACH film's runtime and decoded frames
  * have been checked on Chrome and the specific edition's rights reviewed.
  */
+// Strict catalog identity matching ONLY. This never authenticates the edition
+// returned by the upstream CDN, and never bypasses the rightsReviewed flag.
 const EXPECTED=new Map([
   [961,{tmdbId:961,imdb:'tt0017925',year:1926,title:'the general'}],
-  [3085,{tmdbId:3085,imdb:'tt0032599',year:1940,title:'his girl friday'}]
+  [3085,{tmdbId:3085,imdb:'tt0032599',year:1940,title:'his girl friday'}],
+  [19,{tmdbId:19,imdb:'tt0017136',year:1927,title:'metropolis'}],
+  [832,{tmdbId:832,imdb:'tt0022100',year:1931,title:'m'}]
 ]);
 function standardTitle(value){
   return String(value||'').normalize('NFKD').toLowerCase()
@@ -104,7 +108,7 @@ async function smallProviderJson(response,max=180000){
 }
 
 /**
- * Experimental two-film operator adapter. All external calls are pinned to
+ * Experimental catalog-allowlisted film operator adapter. All external calls are pinned to
  * the existing known protocol hosts; unapproved titles can NEVER contact it.
  * No HTML to scrape, no downloading feature movies, and no source URLs in logs.
  */
