@@ -36,17 +36,20 @@ if(fallbackQuality && ![360,480,720].includes(fallbackQuality))
 const extraOnly=process.env.MOOSA_EXTRA_CINESTREAM==='1';
 const seekOnly=process.env.MOOSA_SEEK_STRESS==='1';
 const midpointSeek=process.env.MOOSA_MIDPOINT_SEEK==='1';
+const failoverOnly=process.env.MOOSA_FAILOVER_TEST==='1';
 const otherQuality=Number(process.env.MOOSA_OTHER_QUALITY||0);
 if(otherQuality&&![360,480].includes(otherQuality))
   throw Error('Other-quality test must be 360 or 480');
-if([extraOnly,seekOnly,midpointSeek,Boolean(fallbackQuality),Boolean(otherQuality)]
+if([extraOnly,seekOnly,midpointSeek,failoverOnly,
+  Boolean(fallbackQuality),Boolean(otherQuality)]
   .filter(Boolean).length>1)
   throw Error('Choose only one experimental browser probe mode');
 const otherFilms=otherQuality===360?[FILMS[4]]:
   [...FILMS.slice(2),EXTRAS[1]];
-const filmsToTest=otherQuality?otherFilms:
-  (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
-    (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS)));
+const filmsToTest=failoverOnly?FILMS.slice(0,2):
+  (otherQuality?otherFilms:
+    (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
+      (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS))));
 const SITE='https://moosa-web.onrender.com';
 const agent='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
 const browserErrors=[];
@@ -115,17 +118,40 @@ try{
       });
       console.log('MOOSA_HIGH_RES_CINESTREAM_PREFLIGHT '+JSON.stringify({film:film.title,year:film.year,quality:target.quality,result:tested.reason||'unknown',mediaSourceIssued:!!tested.source}));
       assert.ok(tested.source,'Media byte check rejected '+film.title);
+      // Simulate a 1080p server dropping out after a successful preflight.
+      // This validates the actual automatic retry logic, not a manual pick.
+      let fallbackSource=null;
+      if(failoverOnly){
+        phase='verify_same_film_fallback';
+        const spare=variants.find(x=>x.quality===720);
+        assert.ok(spare,'No 720p fallback offered for '+film.title);
+        const verified=await gateway.issueIfBytesVerified({
+          url:spare.url,format:'mp4',headers:spare.headers,
+          rightsApproved:true,sourceVerified:true
+        });
+        assert.ok(verified.source,'720p fallback bytes not verified');
+        fallbackSource=verified.source;
+      }
       phase='browser_new_page';
       page=await browser.newPage({viewport:{width:1200,height:760}});
       page.on('pageerror',err=>browserErrors.push(String(err.name||'script_error')));
       const urlToken=new URL(tested.source.url).pathname;
+      const fallbackToken=fallbackSource?new URL(fallbackSource.url).pathname:null;
+      const allowedTokens=new Set([urlToken,...(fallbackToken?[fallbackToken]:[])]);
+      let outageCount=0;
       let rangeRequestCount=0;let rangeTotalBytes=0;
       await page.route(SITE+'/**',async route=>{
         const parsed=new URL(route.request().url());
         const range=route.request().headers().range||'';
         const headers={};
         if(parsed.pathname.startsWith('/api/media/')){
-          if(parsed.pathname!==urlToken)throw Error('Unknown media token');
+          if(!allowedTokens.has(parsed.pathname))throw Error('Unknown media token');
+          if(failoverOnly&&parsed.pathname===urlToken){
+            outageCount++;
+            await route.fulfill({status:502,contentType:'text/plain',
+              body:'Simulated post-preflight CDN outage'});
+            return;
+          }
           rangeRequestCount++;
           if(rangeRequestCount>130)throw Error('Too many media range requests');
           const hit=range.match(/^bytes=(\d+)-(\d*)$/);
@@ -155,7 +181,10 @@ try{
         showPlayer({title:film.title,sources:[{
           ...source,name:'CineStream • Vidlink '+film.year,
           provider:'CineStream',quality:0
-        }]});
+        },...(fallbackSource?[{
+          ...fallbackSource,name:'CineStream • alternate 720 test',
+          provider:'CineStream',quality:0
+        }]:[])]});
         const picker=document.querySelector('#player-source');
         const count=picker.options.length;
         // showPlayer() fills the picker but starts from its blank
@@ -163,7 +192,7 @@ try{
         picker.value='0';
         picker.dispatchEvent(new Event('change',{bubbles:true}));
         return {count,selected:picker.value};
-      },{source:tested.source,film});
+      },{source:tested.source,film,fallbackSource});
       console.log('MOOSA_HIGH_RES_CINESTREAM_PICKER '+JSON.stringify({film:film.title,...chosen}));
       assert.equal(chosen.selected,'0');
       phase='video_frames';
@@ -203,6 +232,20 @@ try{
       phase='assert_movie_identity';
       assert.ok(durationPlausible,film.title+' source likely wrong film by duration');
       assert.ok(actual.decodedFrames>0,'Chrome decoded no video frames');
+      if(failoverOnly){
+        phase='assert_automatic_failover';
+        const picked=await page.locator('#player-source').inputValue();
+        assert.equal(picked,'1','Player never selected fallback 720p');
+        assert.ok(outageCount>0,'Failed 1080p capability was not exercised');
+        assert.equal(actual.height,720,'Fallback did not decode 720 vertical pixels');
+        console.log('MOOSA_CINESTREAM_AUTOMATIC_FAILOVER_OK '+JSON.stringify({
+          film:film.title,year:film.year,failedSourceAdvertised:1080,
+          fallbackAdvertised:720,actualVideoWidth:actual.width,
+          actualVideoHeight:actual.height,decodedFrames:actual.decodedFrames,
+          outageRequests:outageCount,rangeRequestCount,
+          publicWebsiteUnchanged:true
+        }));
+      }
       if(seekOnly||midpointSeek){
         phase='seek_into_feature';
         // A midpoint seek tests browser Range requests far beyond initial startup.
