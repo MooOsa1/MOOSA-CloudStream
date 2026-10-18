@@ -20,7 +20,9 @@ export function exactExperimentalFilm(meta){
   return {...item};
 }
 export function offeredVidlinkVariants(response,{
-  approvedHosts=['hcdn3.hakunaymatata.com'],
+  // Both domains independently returned real MP4 bytes and Chrome frames
+  // in opt-in tests; neither is globally exposed for anonymous proxying.
+  approvedHosts=['hcdn3.hakunaymatata.com','bcdn.hakunaymatata.com'],
   maxVariants=4
 }={}){
   const allowed=new Set(approvedHosts);
