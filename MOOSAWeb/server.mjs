@@ -266,7 +266,7 @@ async function handle(req,res,mediaGateway=null) {
          url.searchParams.get('media')!=='movie')
         return err(res,400,'Require only media=movie and id=TMDB number');
       const raw=url.searchParams.get('id');
-      if(!/^[1-9]\\d{0,9}$/.test(raw||''))
+      if(!/^[1-9]\d{0,9}$/.test(raw||''))
         return err(res,400,'Invalid movie ID');
       const result=await memoizedSourceInventory(Number(raw));
       return json(res,200,result);
