@@ -35,6 +35,14 @@ globalThis.fetch=async(input,init)=>{
     typeof input==='string'?input:input.url);
   if(url.hostname==='api.themoviedb.org'){
     tmdbCount++;
+    if(url.pathname==='/3/search/multi'){
+      const q=(url.searchParams.get('query')||'').toLowerCase().trim();
+      const results=FILMS.filter(x=>x.title.toLowerCase()===q)
+        .map(x=>({id:x.id,title:x.title,media_type:'movie',
+          release_date:x.year+'-01-01',vote_average:7.5,
+          vote_count:300,overview:'Test catalog metadata'}));
+      return Response.json({page:1,total_pages:1,results});
+    }
     const film=FILMS.find(x=>url.pathname.endsWith('/movie/'+x.id));
     return film?Response.json({id:film.id,title:film.title,
       original_title:film.title,release_date:film.year+'-01-01',
@@ -66,6 +74,7 @@ try{
     let page;let phase='start';
     let resolveCount=0,extraStarted=0,outageCount=0,firstToken=null;
     let issuedCount=0,selectOptions=0;
+    let clickStarted=0,firstFrameMs=0;
     try{
       phase='new_page';
       page=await browser.newPage({viewport:{width:1152,height:768}});
@@ -76,6 +85,11 @@ try{
         const parsed=new URL(route.request().url());
         if(parsed.pathname==='/api/resolve' &&
            parsed.searchParams.get('phase')==='extras')extraStarted++;
+        if(parsed.pathname==='/api/catalog'){
+          await route.fulfill({status:200,contentType:'application/json',
+            body:JSON.stringify({page:1,total_pages:1,results:[]})});
+          return;
+        }
         if(parsed.pathname==='/api/stremio-subtitles'){
           await route.fulfill({status:200,contentType:'application/json',
             body:JSON.stringify({subtitles:[],active:false,count:0})});
@@ -135,16 +149,21 @@ try{
       });
       phase='load_live_ui';
       await page.goto(SITE+'/',{waitUntil:'domcontentloaded',timeout:35000});
-      phase='search_real_backend';
-      await page.evaluate(({title,id})=>{
-        // This is the real browser path used when Play opens a title:
-        // start empty, resolve via /api/resolve, append auto-picked sources.
-        import('/player.js').then(async({showPlayer})=>{
-          showPlayer({title,sources:[]});
-          const {searchAutomaticSources}=await import('/source-search.js');
-          await searchAutomaticSources('movie',id);
-        });
-      },{title:film.title,id:film.id});
+      phase='real_search_card';
+      // User-level UI interactions only; do NOT import player functions.
+      await page.locator('#search-input').fill(film.title);
+      await page.locator('#browse-grid .poster-card').first().waitFor({
+        state:'visible',timeout:15000
+      });
+      await page.locator('#browse-grid .poster-card').first().click();
+      phase='actual_watch_button';
+      await page.locator('#watch-title').waitFor({
+        state:'visible',timeout:15000
+      });
+      assert.equal((await page.locator('#details-name').textContent())?.trim(),
+        film.title,'Catalog search navigated to the wrong film');
+      clickStarted=Date.now();
+      await page.locator('#watch-title').click();
       phase='wait_decoded_fallback';
       await page.waitForFunction(({id})=>{
         const video=document.querySelector('#video');
@@ -156,6 +175,7 @@ try{
             video.webkitDecodedFrameCount||0)>0;
       },{id:film.id},{timeout:100000});
       phase='verify_user_playback';
+      firstFrameMs=Date.now()-clickStarted;
       const actual=await page.evaluate(()=>{
         const video=document.querySelector('#video');
         const picker=document.querySelector('#player-source');
@@ -175,6 +195,8 @@ try{
       assert.equal(actual.selected,'1','Automatic fallback did not select the next source');
       assert.ok(outageCount>=1,'Initial verified source was not tried');
       assert.equal(resolveCount,1,'Play must make just one fast resolve request');
+      assert.ok(firstFrameMs>0&&firstFrameMs<95000,
+        'Real UI Play to decoded fallback was not bounded');
       assert.ok(extraStarted>=1,
         'Fast CineStream source picker must also start extra provider search');
       assert.ok(issuedCount>=2&&selectOptions>=3,'Source picker did not list returned sources');
@@ -189,6 +211,7 @@ try{
       console.log('MOOSA_REAL_AUTO_PLAY_BACKEND_TO_BROWSER_PASS '+JSON.stringify({
         title:film.title,tmdbId:film.id,
         backendResolveRequests:resolveCount,backgroundSearchRequests:extraStarted,
+        realCardAndWatchButtonClicked:true,playToFrameMilliseconds:firstFrameMs,
         offeredServerCount:issuedCount,sourcePickerEntries:selectOptions,
         firstServerFailureCount:outageCount,automaticallySelectedSourceIndex:1,
         fallbackActualWidth:actual.width,fallbackActualHeight:actual.height,
