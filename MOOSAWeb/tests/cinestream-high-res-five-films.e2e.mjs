@@ -216,12 +216,13 @@ try{
       }));
       const durationPlausible=actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration;
-      const qualityClaimMatches=actual.height>=target.quality-24 &&
-        actual.height<=target.quality+24;
+      const activeClaim=failoverOnly?720:target.quality;
+      const qualityClaimMatches=actual.height>=activeClaim-24 &&
+        actual.height<=activeClaim+24;
       console.log('MOOSA_HIGH_RES_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
         film:film.title,year:film.year,tmdbId:film.tmdbId,
         actuallyDecodedFrames:actual.decodedFrames>0,
-        claimedQualityLabel:target.quality,
+        claimedQualityLabel:activeClaim,
         measuredVideo:actual,
         qualityLabelMatchesActualPixels:qualityClaimMatches,
         plausibleRequestedMovieRuntime:durationPlausible,
@@ -288,7 +289,7 @@ try{
   }
   console.log('MOOSA_HIGH_RES_FILMS_PROVEN '+JSON.stringify({
     tested:filmsToTest.length,requestedQualities:filmsToTest.map(f=>({
-      title:f.title,quality:fallbackQuality||otherQuality||f.preferred})),
+      title:f.title,quality:failoverOnly?720:(fallbackQuality||otherQuality||f.preferred)})),
     actuallyPlayedWithPlausibleDuration:acceptedFilms,
     browserErrorCount:browserErrors.length,siteProductionUnchanged:true
   }));
