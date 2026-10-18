@@ -37,11 +37,11 @@ export function remuxCli(input,outputDir,{binary='ffmpeg',headers={}}={}){
   for(const name of ['referer','origin','user-agent']){
     const value=headers?.[name];
     if(typeof value==='string'&&value.length>0&&value.length<=512&&
-       !/[\\r\\n]/.test(value))
+       !/[\r\n]/.test(value))
       requestHeaders.push(name+': '+value);
   }
   const ffHeaders=requestHeaders.length?[
-    '-headers',requestHeaders.join('\\r\\n')+'\\r\\n'
+    '-headers',requestHeaders.join('\r\n')+'\r\n'
   ]:[];
   const args=[
     '-nostdin','-hide_banner','-loglevel','error',
