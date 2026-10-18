@@ -233,6 +233,9 @@ async function handle(req,res,mediaGateway=null) {
       if(!match)return err(res,404,'Unsupported Stremio stream route');
       return json(res,200,await resolveStremioProtocolMovie(match[1]));
     }
+    if(PRIVATE_LAB&&url.pathname==='/api/lab-status')
+      return json(res,200,{films:twoFilmLabStatus,privateLab:true,
+        note:'Backend token checks only; use the player to validate video decoding.'});
     if(url.pathname==='/api/config')return json(res,200,{
       catalogReady:PRIVATE_LAB||!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',
       automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine(),
@@ -523,7 +526,39 @@ export function createServer({mediaGateway=null}={}){
   );
   return http.createServer((req,res)=>handle(req,res,gateway));
 }
+// Check actual live Render backend once per boot, without recording any
+// third-party video URL, signed source token, cookie or request credential.
+// A verified source response is NOT proof of browser video frame decoding.
+const twoFilmLabStatus={};
+async function probePrivateFilmSources(port){
+  const auth='Basic '+Buffer.from('moosa:'+process.env.MOOSA_LAB_PASSWORD)
+    .toString('base64');
+  for(const id of [19,832]){
+    const result={tmdbId:id,checkedAt:new Date().toISOString(),
+      backendResponsive:false,verifiedSources:0,playbackNotYetVerified:true};
+    try{
+      const response=await fetch('http://127.0.0.1:'+port+
+        '/api/resolve?media=movie&id='+id,{
+        headers:{Authorization:auth,Accept:'application/json'},
+        signal:AbortSignal.timeout(55000)
+      });
+      result.backendResponsive=response.ok;
+      const body=await response.json();
+      result.verifiedSources=Array.isArray(body.sources)?
+        body.sources.filter(x=>x.gatewayIssued===true).length:0;
+      result.httpStatus=response.status;
+      result.result=result.verifiedSources>0?'verified_capabilities_ready':
+        'no_verified_capabilities';
+    }catch(e){result.result='network_or_timeout';}
+    twoFilmLabStatus[id]=result;
+    console.log('MOOSA_PRIVATE_TWO_FILM_BACKEND_PROBE '+JSON.stringify(result));
+  }
+}
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const PORT = Number(process.env.PORT||3000);
-  createServer().listen(PORT,'0.0.0.0',()=>console.log(`MOOSA Web on http://localhost:${PORT}`));
+  createServer().listen(PORT,'0.0.0.0',()=>{
+    console.log(`MOOSA Web on http://localhost:${PORT}`);
+    if(PRIVATE_LAB)void probePrivateFilmSources(PORT).catch(()=>
+      console.log('MOOSA_PRIVATE_TWO_FILM_PROBE_UNAVAILABLE'));
+  });
 }
