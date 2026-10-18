@@ -53,17 +53,20 @@ const chainOnly=process.env.MOOSA_FAILOVER_CHAIN==='1';
 const newOnly=process.env.MOOSA_NEW_CINESTREAM==='1';
 const newSeekOnly=process.env.MOOSA_NEW_CINESTREAM_SEEK==='1';
 const rejectShortOnly=process.env.MOOSA_SHORT_CLIP_REJECTION==='1';
+const newVariantQuality=Number(process.env.MOOSA_NEW_VARIANT_QUALITY||0);
+if(newVariantQuality && ![360,480].includes(newVariantQuality))
+  throw Error('New-film quality check only supports 360p and 480p');
 const otherQuality=Number(process.env.MOOSA_OTHER_QUALITY||0);
 if(otherQuality&&![360,480].includes(otherQuality))
   throw Error('Other-quality test must be 360 or 480');
 if([extraOnly,seekOnly,midpointSeek,failoverOnly,chainOnly,newOnly,
-  newSeekOnly,rejectShortOnly,Boolean(fallbackQuality),Boolean(otherQuality)]
+  newSeekOnly,rejectShortOnly,Boolean(newVariantQuality),Boolean(fallbackQuality),Boolean(otherQuality)]
   .filter(Boolean).length>1)
   throw Error('Choose only one experimental browser probe mode');
 const otherFilms=otherQuality===360?[FILMS[4]]:
   [...FILMS.slice(2),EXTRAS[1]];
 const filmsToTest=rejectShortOnly?SHORT_CLIPS:
-  ((newOnly||newSeekOnly)?NEW_FILMS:
+  ((newOnly||newSeekOnly||newVariantQuality)?NEW_FILMS:
     ((failoverOnly||chainOnly)?FILMS.slice(0,2):
     (otherQuality?otherFilms:
       (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
@@ -126,7 +129,7 @@ try{
         apiVariants:variants.length,
         advertisedQualities:variants.map(x=>x.quality)
       }));
-      const target=variants.find(x=>x.quality===(fallbackQuality||otherQuality||film.preferred));
+      const target=variants.find(x=>x.quality===(fallbackQuality||otherQuality||newVariantQuality||film.preferred));
       assert.ok(target,'Requested CineStream quality not returned for '+film.title);
       assert.ok(target,'No actual CineStream source for '+film.title);
       phase='media_byte_preflight';
@@ -339,7 +342,7 @@ try{
   console.log('MOOSA_HIGH_RES_FILMS_PROVEN '+JSON.stringify({
     tested:filmsToTest.length,requestedQualities:filmsToTest.map(f=>({
       title:f.title,quality:chainOnly?480:(failoverOnly?720:
-        (fallbackQuality||otherQuality||f.preferred))})),
+        (fallbackQuality||otherQuality||newVariantQuality||f.preferred))})),
     actuallyPlayedWithPlausibleDuration:acceptedFilms,
     browserErrorCount:browserErrors.length,siteProductionUnchanged:true
   }));
