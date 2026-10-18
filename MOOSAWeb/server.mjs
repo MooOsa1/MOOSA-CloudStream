@@ -720,6 +720,10 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
       // 27205 returns candidates; 157336 returned none in Safari.
       // One live MovieBox source lookup from the deployed server, not a
       // test fixture. Log only the safe summary, never any media/session URL.
+      void probeBingeBangMovie({tmdbId:27205,timeoutMs:6500})
+        .then(result=>console.log('MOOSA_BINGEBANG_LIVE_PAGE '+
+          JSON.stringify(result)))
+        .catch(()=>console.log('MOOSA_BINGEBANG_LIVE_PAGE_UNAVAILABLE'));
       void movieBoxInventory({title:'Inception',year:2010,timeoutMs:6500})
         .then(result=>console.log('MOOSA_MOVIEBOX_LIVE_DISCOVERY '+
           JSON.stringify(result)))
