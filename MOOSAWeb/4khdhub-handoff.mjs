@@ -88,6 +88,31 @@ export function classifyCineStreamAnchors(markup,base=SITE){
   return {moduleFound:true,externalSourceAnchors:count,
     directHubHints:hubHints,redirectorHints:redirectHints};
 }
+/**
+ * Community StreamPlay invoke4khdhub() inspects div.download-item a.
+ * Only identifies anchor presence; never follows shortlinks or visits media.
+ */
+export function countStreamPlayDownloadAnchors(markup){
+  const src=String(markup||'');
+  const begins=[...src.matchAll(/<div\b[^>]*class\s*=\s*["'][^"']*\bdownload-item\b[^"']*["'][^>]*>/gi)]
+    .slice(0,30);
+  let links=0;
+  for(const begin of begins){
+    const fragment=src.slice(begin.index,begin.index+8000);
+    // Count likely links within the download item window but stop when
+    // the next top-level download-item starts; this is a diagnostic count.
+    const following=fragment.search(/<div\b[^>]*class\s*=\s*["'][^"']*\bdownload-item\b/i);
+    const chunk=following>begin[0].length?fragment.slice(0,following):fragment;
+    for(const m of chunk.matchAll(/<a\b[^>]*href\s*=\s*(["'])([^"'<>]{1,800})\1/gi)){
+      const raw=m[2];
+      let u;
+      try{u=new URL(raw,SITE);}catch{continue;}
+      if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash)continue;
+      links++;if(links>=35)break;
+    }
+  }
+  return {downloadItems:begins.length,downloadLinks:links};
+}
 export async function probe4khdhubHandoff({
   title,year,fetchImpl=fetch,timeoutMs=8500
 }={}){
@@ -103,6 +128,7 @@ export async function probe4khdhubHandoff({
     const index=await html(search),cards=extract4khdhubCards(index,title,yr);
     if(!cards.length)return status('no_exact_movie_card');
     let posts=0,entries=0,externalLinks=0,downloadRowLinks=0;
+    const streamPlay={downloadItems:0,downloadLinks:0};
     const cine={moduleFound:false,externalSourceAnchors:0,directHubHints:0,redirectorHints:0};
     const hostGroups={hubLike:0,fileHost:0,shortener:0,other:0};
     for(const href of cards){
@@ -112,6 +138,9 @@ export async function probe4khdhubHandoff({
           signal:AbortSignal.timeout(timeoutMs)
         });
         const body=await html(response);posts++;
+        const playAnchors=countStreamPlayDownloadAnchors(body);
+        streamPlay.downloadItems+=playAnchors.downloadItems;
+        streamPlay.downloadLinks+=playAnchors.downloadLinks;
         const inspected=classifyCineStreamAnchors(body,href);
         cine.moduleFound||=inspected.moduleFound;
         cine.externalSourceAnchors+=inspected.externalSourceAnchors;
@@ -144,11 +173,12 @@ export async function probe4khdhubHandoff({
     }
     return status(entries?'hubcloud_entry_found':
       cine.externalSourceAnchors?'cinestream_source_anchors':
+      streamPlay.downloadLinks?'streamplay_download_anchors':
       downloadRowLinks?'intermediate_download_links':
       posts?'no_hubcloud_entry':'post_unavailable',{
       exactMoviePosts:cards.length,postPagesAccessible:posts,
       hubcloudEntryPages:entries,externalLinks,downloadRowLinks,hostGroups,
-      cineStreamAnchors:cine
+      cineStreamAnchors:cine,streamPlayAnchors:streamPlay
     });
   }catch(e){
     const reason=String(e?.message||'');
