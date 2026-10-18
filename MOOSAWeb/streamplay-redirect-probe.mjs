@@ -146,20 +146,33 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
   // promotion, no full video download, no URL or signed token in output.
   let response;
   try{
+    const rangeHeaders={Accept:'video/mp4,application/octet-stream',
+      Range:'bytes=0-4095'};
     response=await fetchImpl(url,{
-      method:'GET',redirect:'manual',
-      headers:{Accept:'video/mp4,application/octet-stream',
-        Range:'bytes=0-4095'},
+      method:'GET',redirect:'manual',headers:rangeHeaders,
       signal:AbortSignal.timeout(Math.min(timeoutMs,6000))
     });
     if([301,302,303,307,308].includes(response.status)){
-      let redirectHost=null;
+      let redirectHost=null,redirectUrl=null;
       try{
         const u=new URL(response.headers.get('location')||'',url);
-        if(u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&!u.hash)
+        if(u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&!u.hash &&
+           u.href.length<=1800){
           redirectHost=u.hostname.toLowerCase();
+          if(redirectHost==='pixel.rohitkiskk.workers.dev')
+            redirectUrl=u.href;
+        }
       }catch{}
-      return {status:'redirect_not_followed',redirectHost};
+      if(!redirectUrl)return {status:'redirect_not_followed',redirectHost};
+      await response.body?.cancel?.().catch(()=>{});
+      response=await fetchImpl(redirectUrl,{
+        method:'GET',redirect:'manual',headers:rangeHeaders,
+        signal:AbortSignal.timeout(Math.min(timeoutMs,6000))
+      });
+      if([301,302,303,307,308].includes(response.status))
+        return {status:'second_redirect_blocked',redirectHost};
+      // A normal same-source HTTP redirect is not a bypass of site access
+      // controls. HTTP 403/429 still fail closed below.
     }
     if(response.status===429)return {status:'rate_limited'};
     if(response.status!==206)return {status:'http_'+response.status};
