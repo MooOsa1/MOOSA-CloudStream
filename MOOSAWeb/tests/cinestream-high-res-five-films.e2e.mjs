@@ -35,10 +35,18 @@ if(fallbackQuality && ![360,480,720].includes(fallbackQuality))
   throw Error('Invalid test fallback quality');
 const extraOnly=process.env.MOOSA_EXTRA_CINESTREAM==='1';
 const seekOnly=process.env.MOOSA_SEEK_STRESS==='1';
-if((extraOnly&&fallbackQuality)||(seekOnly&&(extraOnly||fallbackQuality)))
-  throw Error('Extra-only, seek-only, and fallback modes are exclusive');
-const filmsToTest=seekOnly?[...FILMS.slice(0,2),...EXTRAS]:
-  (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS));
+const midpointSeek=process.env.MOOSA_MIDPOINT_SEEK==='1';
+const otherQuality=Number(process.env.MOOSA_OTHER_QUALITY||0);
+if(otherQuality&&![360,480].includes(otherQuality))
+  throw Error('Other-quality test must be 360 or 480');
+if([extraOnly,seekOnly,midpointSeek,Boolean(fallbackQuality),Boolean(otherQuality)]
+  .filter(Boolean).length>1)
+  throw Error('Choose only one experimental browser probe mode');
+const otherFilms=otherQuality===360?[FILMS[4]]:
+  [...FILMS.slice(2),EXTRAS[1]];
+const filmsToTest=otherQuality?otherFilms:
+  (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
+    (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS)));
 const SITE='https://moosa-web.onrender.com';
 const agent='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
 const browserErrors=[];
@@ -97,7 +105,7 @@ try{
         apiVariants:variants.length,
         advertisedQualities:variants.map(x=>x.quality)
       }));
-      const target=variants.find(x=>x.quality===(fallbackQuality||film.preferred));
+      const target=variants.find(x=>x.quality===(fallbackQuality||otherQuality||film.preferred));
       assert.ok(target,'Requested CineStream quality not returned for '+film.title);
       assert.ok(target,'No actual CineStream source for '+film.title);
       phase='media_byte_preflight';
@@ -195,9 +203,12 @@ try{
       phase='assert_movie_identity';
       assert.ok(durationPlausible,film.title+' source likely wrong film by duration');
       assert.ok(actual.decodedFrames>0,'Chrome decoded no video frames');
-      if(seekOnly){
+      if(seekOnly||midpointSeek){
         phase='seek_into_feature';
-        const seekTo=90;
+        // A midpoint seek tests browser Range requests far beyond initial startup.
+        // Still bounded by the existing per-range cap and finite duration.
+        const seekTo=midpointSeek?Math.min(Math.floor(actual.duration/2),
+          actual.duration-30):90;
         await page.locator('#video').evaluate((video,t)=>{
           video.currentTime=t;
           if(video.paused)video.play().catch(()=>{});
@@ -233,7 +244,8 @@ try{
     }finally{await page?.close();}
   }
   console.log('MOOSA_HIGH_RES_FILMS_PROVEN '+JSON.stringify({
-    tested:filmsToTest.length,requestedQualities:filmsToTest.map(f=>({title:f.title,quality:fallbackQuality||f.preferred})),
+    tested:filmsToTest.length,requestedQualities:filmsToTest.map(f=>({
+      title:f.title,quality:fallbackQuality||otherQuality||f.preferred})),
     actuallyPlayedWithPlausibleDuration:acceptedFilms,
     browserErrorCount:browserErrors.length,siteProductionUnchanged:true
   }));
