@@ -149,7 +149,8 @@ test('inspect approved HubCloud landing HTML selector without following buttons'
   assert.equal(r.landings[0].finalServerButtons,1);
   assert.equal(r.decodedIntermediateLinks,1);
   assert.equal(r.videoVerified,false);
-  assert.doesNotMatch(JSON.stringify(r),/\/drive\/|\/file\/|cdn\.example|secret\.mp4/);
+  assert.equal(r.landings[0].buttonHosts[0],'cdn.example');
+  assert.doesNotMatch(JSON.stringify(r),/\/drive\/|\/file\/|secret\.mp4/);
 });
 test('approved HubDrive buttons are recognized, but no URLs are opened',async()=>{
   const payload=JSON.stringify({o:b64('https://hubdrive.pics/s/hidden')});
