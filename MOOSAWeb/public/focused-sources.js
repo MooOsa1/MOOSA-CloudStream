@@ -9,6 +9,7 @@ const friendlyStatus={
   non_html_search:'Alternative directory returned no HTML',
   no_exact_movie_card:'No exact title/year card found in alternate directory',
   intermediate_download_links:'Movie post has intermediate download links, but no verified HubCloud URL',
+  streamplay_download_anchors:'StreamPlay source-page links found; final video not yet verified',
   no_hubcloud_entry:'Movie post opens, but no HubCloud handoff was exposed',
   search_unavailable:'Alternative directory search unavailable',
   provider_access_restricted:'BingeBang blocked access from Render',
@@ -66,6 +67,8 @@ form.addEventListener('submit',async(e)=>{
         if(source.name==='HubCloud'){
           panel.append(make('p','Matching movie posts: '+Number(source.exactMoviePosts||0)));
           panel.append(make('p','HubCloud handoff pages: '+Number(source.hubcloudEntryPages||0)));
+          if(source.intermediateLinkCount)
+            panel.append(make('p','StreamPlay intermediate links: '+Number(source.intermediateLinkCount)));
           if(source.alternateStatus)
             panel.append(make('p','Alternate directory: '+
               (friendlyStatus[source.alternateStatus]||source.alternateStatus)));
