@@ -2,9 +2,9 @@
   "metadata": {
     "id": "moosa.hub.iphone-pc",
     "name": "MOOSA Hub — iPhone & PC",
-    "description": "Free iPhone full Stremio IPA and Windows Stremio setup with automatic P2P/HTTP source lookup. HTTP playback candidates are prioritised when available; torrent source listings do not imply working playback. No paid debrid service required.",
+    "description": "Free Stremio iPhone full IPA and Windows source aggregator. Active tested discovery sources: Torrentio and Comet (P2P); HTTP prioritized if found. No debrid subscription. Listings do NOT prove playback.",
     "author": "MOOSA",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "category": "Streaming",
     "source": "external",
     "serviceRequired": false,
@@ -58,17 +58,17 @@
         }
       },
       {
-        "type": "mediafusion",
-        "instanceId": "mmf1",
+        "type": "comet",
+        "instanceId": "mco1",
         "enabled": true,
         "options": {
-          "name": "MediaFusion — updated stream index",
+          "name": "Comet — P2P index (checked live)",
           "timeout": 7000,
           "resources": [
             "stream"
           ],
-          "useCachedResultsOnly": true,
-          "enableWatchlistCatalogs": false,
+          "includeP2P": true,
+          "removeTrash": true,
           "mediaTypes": [],
           "useMultipleInstances": false
         }
