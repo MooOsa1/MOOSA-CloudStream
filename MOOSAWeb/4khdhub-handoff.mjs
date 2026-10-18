@@ -139,7 +139,7 @@ export async function probe4khdhubHandoff({
     const index=await html(search),cards=extract4khdhubCards(index,title,yr);
     if(!cards.length)return status('no_exact_movie_card');
     let posts=0,entries=0,externalLinks=0,downloadRowLinks=0;
-    const streamPlay={downloadItems:0,downloadLinks:0};
+    const streamPlay={downloadItems:0,downloadLinks:0,linkHosts:[]};
     const cine={moduleFound:false,externalSourceAnchors:0,directHubHints:0,redirectorHints:0};
     const hostGroups={hubLike:0,fileHost:0,shortener:0,other:0};
     for(const href of cards){
@@ -152,6 +152,9 @@ export async function probe4khdhubHandoff({
         const playAnchors=countStreamPlayDownloadAnchors(body);
         streamPlay.downloadItems+=playAnchors.downloadItems;
         streamPlay.downloadLinks+=playAnchors.downloadLinks;
+        streamPlay.linkHosts=[...new Set([
+          ...streamPlay.linkHosts,...playAnchors.linkHosts
+        ])].sort().slice(0,15);
         const inspected=classifyCineStreamAnchors(body,href);
         cine.moduleFound||=inspected.moduleFound;
         cine.externalSourceAnchors+=inspected.externalSourceAnchors;
