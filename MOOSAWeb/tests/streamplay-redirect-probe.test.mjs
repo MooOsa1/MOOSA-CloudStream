@@ -130,6 +130,9 @@ test('inspect approved HubCloud landing HTML selector without following buttons'
       if(u.hostname==='greenmotors.cc')
         return new Response("<script>s('o','"+encoded+"')</script>",{
           headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist'&&u.pathname==='/file/go')
+        return new Response('<a class="btn" href="https://cdn.example/secret.mp4">FSLv2</a>',{
+          headers:{'content-type':'text/html'}});
       if(u.hostname==='hubcloud.ist')
         return new Response('<html><a id="download" href="/file/go">Download</a>'+
           '<a class="btn" href="https://cdn.example/secret.mp4">FSL</a></html>',{
@@ -137,10 +140,13 @@ test('inspect approved HubCloud landing HTML selector without following buttons'
       throw Error('unexpected host');
     }
   });
-  assert.deepEqual(urls,['greenmotors.club','greenmotors.cc','hubcloud.ist']);
+  assert.deepEqual(urls,['greenmotors.club','greenmotors.cc',
+    'hubcloud.ist','hubcloud.ist']);
   assert.equal(r.landings[0].status,'page_accessible');
   assert.equal(r.landings[0].downloadButtons,1);
   assert.equal(r.landings[0].serverButtons,1);
+  assert.equal(r.landings[0].nextPageStatus,'page_accessible');
+  assert.equal(r.landings[0].finalServerButtons,1);
   assert.equal(r.decodedIntermediateLinks,1);
   assert.equal(r.videoVerified,false);
   assert.doesNotMatch(JSON.stringify(r),/\/drive\/|\/file\/|cdn\.example|secret\.mp4/);
@@ -167,5 +173,29 @@ test('approved HubDrive buttons are recognized, but no URLs are opened',async()=
   });
   assert.equal(requests,3);
   assert.equal(r.landings[0].hubdriveButtons,1);
+  assert.equal(r.videoVerified,false);
+});
+
+test('HubCloud download link to another host is not requested',async()=>{
+  const payload=JSON.stringify({o:b64('https://hubcloud.ist/p/hidden')});
+  const encoded=b64(b64(rot13(b64(payload))));
+  const hosts=[];
+  const r=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/a">source</a>',
+    fetchImpl:async url=>{
+      const u=new URL(url);hosts.push(u.hostname);
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/a'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+encoded+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist')
+        return new Response('<a id="download" href="https://evil.example/film">Download</a>',{
+          headers:{'content-type':'text/html'}});
+      throw Error('unexpected host');
+    }
+  });
+  assert.deepEqual(hosts,['greenmotors.club','greenmotors.cc','hubcloud.ist']);
+  assert.equal(r.landings[0].nextPageStatus,undefined);
   assert.equal(r.videoVerified,false);
 });
