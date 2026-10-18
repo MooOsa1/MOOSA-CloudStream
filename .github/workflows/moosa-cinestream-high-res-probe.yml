@@ -11,7 +11,7 @@ permissions:
 jobs:
   browser-high-res:
     runs-on: ubuntu-latest
-    timeout-minutes: 21
+    timeout-minutes: 26
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,4 +76,14 @@ jobs:
         env:
           MOOSA_FAILOVER_CHAIN: '1'
         timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Browser-decode Metropolis Caligari and M after real byte preflight
+        env:
+          MOOSA_NEW_CINESTREAM: '1'
+        timeout-minutes: 5
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Validate midpoint seek and frame advance for three new films
+        env:
+          MOOSA_NEW_CINESTREAM_SEEK: '1'
+        timeout-minutes: 5
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
