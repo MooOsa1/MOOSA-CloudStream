@@ -1,5 +1,5 @@
 import http from 'node:http';
-import {timingSafeEqual} from 'node:crypto';
+import {createHmac,timingSafeEqual} from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,13 +52,27 @@ function privateCatalog(route){
   }
   return {page:1,total_pages:1,total_results:0,results:[]};
 }
+function sameSecret(a,b){
+  const left=Buffer.from(String(a||'')),right=Buffer.from(String(b||''));
+  return left.length===right.length && timingSafeEqual(left,right);
+}
 function authenticatePrivateLab(req,res,pathname){
   if(!PRIVATE_LAB||pathname==='/healthz')return true;
   const secret=process.env.MOOSA_LAB_PASSWORD||'';
-  const expected=secret&&'Basic '+Buffer.from('moosa:'+secret).toString('base64');
-  const got=String(req.headers.authorization||'');
-  const a=Buffer.from(got),b=Buffer.from(expected||'');
-  if(secret.length>=16&&a.length===b.length&&timingSafeEqual(a,b))return true;
+  const session=secret.length>=16?createHmac('sha256',secret)
+    .update('moosa-private-video-session-v1').digest('base64url'):'';
+  // Safari AVFoundation media Range requests can rely on same-site cookies
+  // instead of separately caching the browser's HTTP Basic credentials.
+  const cookies=String(req.headers.cookie||'').split(';').map(x=>x.trim());
+  const cookie=cookies.find(x=>x.startsWith('__Host-moosa_lab='))||'';
+  if(session && sameSecret(cookie.slice('__Host-moosa_lab='.length),session))
+    return true;
+  const basic=secret&&'Basic '+Buffer.from('moosa:'+secret).toString('base64');
+  if(secret.length>=16&&sameSecret(req.headers.authorization,basic)){
+    res.setHeader('Set-Cookie','__Host-moosa_lab='+session+
+      '; Path=/; Max-Age=43200; Secure; HttpOnly; SameSite=Lax');
+    return true;
+  }
   res.writeHead(401,{
     'WWW-Authenticate':'Basic realm="MOOSA two-film private lab", charset="UTF-8"',
     'Cache-Control':'no-store',
