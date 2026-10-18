@@ -21,6 +21,35 @@ let customSubtitle = null;
 let selectedSourceUrl = null;
 let attemptedSourceUrls = new Set();
 let fallbackAttempts = 0;
+// Do not leave users trapped on a source that never returns a video frame.
+// The 20/25 second thresholds are conservative and reset on real progress.
+let playbackWatchdog=null;
+function stopPlaybackWatchdog(){
+  if(playbackWatchdog!==null){
+    clearTimeout(playbackWatchdog);
+    playbackWatchdog=null;
+  }
+}
+function armPlaybackWatchdog(reason='startup'){
+  stopPlaybackWatchdog();
+  if(!selectedSourceUrl)return;
+  const ticket=playbackToken;
+  const url=selectedSourceUrl;
+  const duration=reason==='startup'?20000:25000;
+  playbackWatchdog=setTimeout(()=>{
+    playbackWatchdog=null;
+    if(ticket!==playbackToken || selectedSourceUrl!==url ||
+       $('#player-panel').classList.contains('hidden') ||
+       video.error || video.ended ||
+       (reason==='startup' && video.readyState>=2) ||
+       (reason!=='startup' && (video.paused || video.readyState>=3)))return;
+    if(tryFallbackSource()){
+      notice('تأخر مصدر الفيديو دون عرض إطارات؛ جاري التحويل إلى سيرفر آخر لنفس الفيلم.');
+    }else{
+      notice('تأخر المصدر في تحميل الفيديو، ولا يوجد سيرفر آخر قابل للتجربة.');
+    }
+  },duration);
+}
 const DEMO = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
 const HTTPS = /^https:\/\/[^\s]+$/i;
 const extensions = /\.(m3u8|mp4|webm|mov)(?:[?#]|$)/i;
@@ -53,6 +82,7 @@ function clearSubtitle(resetMenu=true){
   if(resetMenu)$('#player-subtitles').replaceChildren(new Option('بدون ترجمة',''));
 }
 function resetVideo(){
+  stopPlaybackWatchdog();
   setAttribution(null);
   playbackToken++;
   customSubtitle=null;
@@ -156,12 +186,14 @@ async function playLink(url, label='Video', selected=null){
       });
       active.attachMedia(video);
       if(currentPlayback!==playbackToken)return;
+      armPlaybackWatchdog('startup');
       showVideo();
       return;
     }else{
       video.src=url;
     }
     if(currentPlayback!==playbackToken)return;
+    armPlaybackWatchdog('startup');
     showVideo();
     await video.play().catch(error=>{
       if(currentPlayback!==playbackToken)return;
@@ -445,6 +477,19 @@ function enforceDecodedHd(){
   notice('رفضنا سيرفرًا بدقة فعلية '+measured+'. الحد الأدنى 720p.');
   return true;
 }
+// A stream can hang forever without a fatal HTML5 error. Retry only verified
+// alternatives already attached to the currently selected title.
+video.addEventListener('playing',stopPlaybackWatchdog);
+video.addEventListener('timeupdate',()=>{
+  if(video.readyState>=2&&video.currentTime>0)stopPlaybackWatchdog();
+});
+video.addEventListener('waiting',()=>{
+  if(selectedSourceUrl&&!video.paused)armPlaybackWatchdog('buffering');
+});
+video.addEventListener('stalled',()=>{
+  if(selectedSourceUrl&&!video.paused)armPlaybackWatchdog('buffering');
+});
+video.addEventListener('pause',stopPlaybackWatchdog);
 video.addEventListener('loadedmetadata',enforceDecodedHd);
 video.addEventListener('resize',enforceDecodedHd);
 video.addEventListener('loadedmetadata',showDecodedResolution);
