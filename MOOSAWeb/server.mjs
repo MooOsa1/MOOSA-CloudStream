@@ -271,9 +271,10 @@ async function handle(req,res,mediaGateway=null) {
       return json(res,200,await resolveStremioProtocolMovie(match[1]));
     }
     if(PRIVATE_LAB&&url.pathname==='/api/focused-sources'){
-      // Three providers requested by operator. Only MovieBox has a current
-      // title-search protocol; HubCloud needs a reviewed upstream page URL,
-      // and BingeBang needs a provider-authorized play session.
+      // Four operator-priority sources. Only MovieBox currently supports
+      // title-search here. Vidy has Miami/Boise instances observed in the
+      // BingeBang player but no independently verified search endpoint.
+      // HubCloud needs an upstream title page and BingeBang a player session.
       // Never accept an arbitrary URL or a provider-supplied auth token.
       const keys=functionalParams(url.searchParams).sort();
       if(keys.join(',')!=='title,year'||
@@ -295,6 +296,10 @@ async function handle(req,res,mediaGateway=null) {
           {name:'HubCloud',status:'requires_upstream_page',
             candidateCount:0,verifiedPlayable:false,
             explanation:'Terminal link resolver, not an independent movie catalog.'},
+          {name:'Vidy',status:'requires_player_source_details',
+            instances:['Miami','Boise'],
+            candidateCount:0,verifiedPlayable:false,
+            explanation:'Vidy Miami/Boise appeared in the BingeBang player. Their actual stream endpoints are not verified; these may be BingeBang-hosted alternatives rather than a separate catalog.'},
           {name:'MovieBox',status:movieBox.state,
             candidateCount:movieBox.sourceVariants,
             qualities:movieBox.offeredQualities,
