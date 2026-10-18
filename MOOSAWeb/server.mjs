@@ -623,7 +623,14 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
   const PORT = Number(process.env.PORT||3000);
   createServer().listen(PORT,'0.0.0.0',()=>{
     console.log(`MOOSA Web on http://localhost:${PORT}`);
-    if(PRIVATE_LAB)void probePrivateFilmSources(PORT).catch(()=>
-      console.log('MOOSA_PRIVATE_TWO_FILM_PROBE_UNAVAILABLE'));
+    if(PRIVATE_LAB){
+      // One focused real-provider check outside the old four-ID allowlist.
+      // Output only availability counts, never film/media URLs.
+      void probePrivateFilmSources(PORT).catch(()=>
+        console.log('MOOSA_PRIVATE_TWO_FILM_PROBE_UNAVAILABLE'));
+      void memoizedSourceInventory(27205).then(result=>
+        console.log('MOOSA_GENERIC_MOVIE_ID_DISCOVERY '+JSON.stringify(result))
+      ).catch(()=>console.log('MOOSA_GENERIC_MOVIE_ID_DISCOVERY_UNAVAILABLE'));
+    }
   });
 }
