@@ -16,6 +16,7 @@ import {createMediaGateway} from './verified-media-gateway.mjs';
 import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
 import {findVerifiedMultiFilmVidlink,discoverVidlinkInventory} from './vidlink-multifilm-candidates.mjs';
 import {movieBoxInventory} from './moviebox-inventory.mjs';
+import {probeBingeBangMovie} from './bingebang-inventory.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -94,6 +95,17 @@ async function cachedMovieBoxInventory(title,year){
   const promise=movieBoxInventory({title,year:Number(year),timeoutMs:6500});
   focusedMovieBoxCache.set(key,{until:now+120000,promise});
   return promise;
+}
+const bingeBangCache=new Map();
+async function cachedBingeBangPage(id){
+  const key=String(id),now=Date.now();
+  const entry=bingeBangCache.get(key);
+  if(entry&&entry.until>now)return entry.value;
+  if(bingeBangCache.size>40)
+    bingeBangCache.delete(bingeBangCache.keys().next().value);
+  const value=probeBingeBangMovie({tmdbId:id,timeoutMs:6500});
+  bingeBangCache.set(key,{until:now+180000,value});
+  return value;
 }
 const sourceInventoryCache=new Map();
 async function memoizedSourceInventory(id){
@@ -323,6 +335,16 @@ async function handle(req,res,mediaGateway=null) {
               'Candidate inventory only, not verified playback.'}
         ]
       });
+    }
+    if(PRIVATE_LAB&&url.pathname==='/api/bingebang-discovery'){
+      const keys=functionalParams(url.searchParams);
+      if(keys.length!==2||keys[0]!=='media'||keys[1]!=='id'||
+         url.searchParams.get('media')!=='movie')
+        return err(res,400,'Expected media=movie and id');
+      const raw=url.searchParams.get('id')||'';
+      if(!/^[1-9][0-9]{0,9}$/.test(raw))
+        return err(res,400,'Invalid TMDB movie id');
+      return json(res,200,await cachedBingeBangPage(Number(raw)));
     }
     if(PRIVATE_LAB&&url.pathname==='/api/source-discovery'){
       // Authenticated private inventory for any numeric TMDB movie ID.
