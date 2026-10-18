@@ -3,6 +3,7 @@
  * No redirects, JavaScript, captcha/session bypass, media fetch, or second-
  * stage blog_url requests. No URL, token, or signed path appears in output.
  */
+import {inspectMatroskaCodecs} from './matroska-header-classifier.mjs';
 const HOST='greenmotors.club',MAX_HTML=85000;
 const result=(state,x={})=>({provider:'StreamPlay Greenmotors',state,
   decodedIntermediateLinks:0,hubcloudHints:0,videoVerified:false,...x});
@@ -155,8 +156,10 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
      entry.href.length>1800)return {status:'unapproved_host'};
   let response;
   try{
+    const matroskaProbe=entry.hostname.endsWith('.r2.cloudflarestorage.com');
+    const byteLimit=matroskaProbe?65536:512;
     const rangeHeaders={Accept:'video/mp4,application/octet-stream',
-      Range:'bytes=0-4095'};
+      Range:matroskaProbe?'bytes=0-65535':'bytes=0-4095'};
     response=await fetchImpl(url,{
       method:'GET',redirect:'manual',headers:rangeHeaders,
       signal:AbortSignal.timeout(Math.min(timeoutMs,6000))
@@ -203,10 +206,10 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
     if(!reader)return {status:'empty_body'};
     let bytes=Buffer.alloc(0);
     try{
-      while(bytes.length<512){
+      while(bytes.length<byteLimit){
         const part=await reader.read();
         if(part.done)break;
-        bytes=Buffer.concat([bytes,Buffer.from(part.value).subarray(0,512-bytes.length)]);
+        bytes=Buffer.concat([bytes,Buffer.from(part.value).subarray(0,byteLimit-bytes.length)]);
       }
     }finally{await reader.cancel().catch(()=>{});}
     const mp4=bytes.length>=12 &&
@@ -217,9 +220,15 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
     const container=mp4?'mp4':ebml&&header.includes('matroska')?
       'matroska':ebml&&header.includes('webm')?'webm':
       ebml?'ebml_unknown':null;
+    const codecDetails=container==='matroska'?
+      inspectMatroskaCodecs(bytes):null;
     return {status:mp4?'mp4_bytes_verified':
       ebml?'ebml_bytes_verified':'wrong_media_bytes',
-      ...(container?{container}:{})};
+      ...(container?{container}:{}),
+      ...(codecDetails?.codecMetadataPresent?{
+        codecIds:codecDetails.codecIds,
+        mp4RemuxCandidate:codecDetails.mp4RemuxCandidate
+      }:{})};
   }catch(e){
     return {status:e?.name==='TimeoutError'?'timeout':'request_unavailable'};
   }finally{
