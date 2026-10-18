@@ -19,6 +19,7 @@ import {movieBoxInventory} from './moviebox-inventory.mjs';
 import {probeBingeBangMovie} from './bingebang-inventory.mjs';
 import {inspectHubCloudHandoff} from './hubcloud-handoff.mjs';
 import {probe4khdhubHandoff} from './4khdhub-handoff.mjs';
+import {probeDirectCineStreamHub} from './cinestream-direct-hub-probe.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -779,6 +780,11 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
       }).then(result=>console.log('MOOSA_HUBCLOUD_LIVE_HANDOFF '+
         JSON.stringify(result)))
         .catch(()=>console.log('MOOSA_HUBCLOUD_LIVE_HANDOFF_UNAVAILABLE'));
+      void probeDirectCineStreamHub({
+        title:'Inception',year:2010,timeoutMs:7000
+      }).then(result=>console.log('MOOSA_DIRECT_CINESTREAM_HUB '+
+        JSON.stringify(result)))
+        .catch(()=>console.log('MOOSA_DIRECT_CINESTREAM_HUB_UNAVAILABLE'));
       void probe4khdhubHandoff({title:'Inception',year:2010,timeoutMs:7500})
         .then(result=>console.log('MOOSA_4KHDHUB_HANDOFF '+
           JSON.stringify(result)))
