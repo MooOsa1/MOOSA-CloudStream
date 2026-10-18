@@ -37,16 +37,17 @@ const extraOnly=process.env.MOOSA_EXTRA_CINESTREAM==='1';
 const seekOnly=process.env.MOOSA_SEEK_STRESS==='1';
 const midpointSeek=process.env.MOOSA_MIDPOINT_SEEK==='1';
 const failoverOnly=process.env.MOOSA_FAILOVER_TEST==='1';
+const chainOnly=process.env.MOOSA_FAILOVER_CHAIN==='1';
 const otherQuality=Number(process.env.MOOSA_OTHER_QUALITY||0);
 if(otherQuality&&![360,480].includes(otherQuality))
   throw Error('Other-quality test must be 360 or 480');
-if([extraOnly,seekOnly,midpointSeek,failoverOnly,
+if([extraOnly,seekOnly,midpointSeek,failoverOnly,chainOnly,
   Boolean(fallbackQuality),Boolean(otherQuality)]
   .filter(Boolean).length>1)
   throw Error('Choose only one experimental browser probe mode');
 const otherFilms=otherQuality===360?[FILMS[4]]:
   [...FILMS.slice(2),EXTRAS[1]];
-const filmsToTest=failoverOnly?FILMS.slice(0,2):
+const filmsToTest=(failoverOnly||chainOnly)?FILMS.slice(0,2):
   (otherQuality?otherFilms:
     (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
       (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS))));
@@ -120,24 +121,28 @@ try{
       assert.ok(tested.source,'Media byte check rejected '+film.title);
       // Simulate a 1080p server dropping out after a successful preflight.
       // This validates the actual automatic retry logic, not a manual pick.
-      let fallbackSource=null;
-      if(failoverOnly){
+      const fallbackSources=[];
+      if(failoverOnly||chainOnly){
         phase='verify_same_film_fallback';
-        const spare=variants.find(x=>x.quality===720);
-        assert.ok(spare,'No 720p fallback offered for '+film.title);
-        const verified=await gateway.issueIfBytesVerified({
-          url:spare.url,format:'mp4',headers:spare.headers,
-          rightsApproved:true,sourceVerified:true
-        });
-        assert.ok(verified.source,'720p fallback bytes not verified');
-        fallbackSource=verified.source;
+        for(const q of (chainOnly?[720,480]:[720])){
+          const spare=variants.find(x=>x.quality===q);
+          assert.ok(spare,'No '+q+'p fallback offered for '+film.title);
+          const verified=await gateway.issueIfBytesVerified({
+            url:spare.url,format:'mp4',headers:spare.headers,
+            rightsApproved:true,sourceVerified:true
+          });
+          assert.ok(verified.source,q+'p fallback bytes not verified');
+          fallbackSources.push({quality:q,source:verified.source});
+        }
       }
       phase='browser_new_page';
       page=await browser.newPage({viewport:{width:1200,height:760}});
       page.on('pageerror',err=>browserErrors.push(String(err.name||'script_error')));
       const urlToken=new URL(tested.source.url).pathname;
-      const fallbackToken=fallbackSource?new URL(fallbackSource.url).pathname:null;
-      const allowedTokens=new Set([urlToken,...(fallbackToken?[fallbackToken]:[])]);
+      const fallbackTokens=fallbackSources.map(x=>new URL(x.source.url).pathname);
+      const allowedTokens=new Set([urlToken,...fallbackTokens]);
+      const brokenTokens=new Set((chainOnly?[urlToken,fallbackTokens[0]]:
+        (failoverOnly?[urlToken]:[])).filter(Boolean));
       let outageCount=0;
       let rangeRequestCount=0;let rangeTotalBytes=0;
       await page.route(SITE+'/**',async route=>{
@@ -146,7 +151,7 @@ try{
         const headers={};
         if(parsed.pathname.startsWith('/api/media/')){
           if(!allowedTokens.has(parsed.pathname))throw Error('Unknown media token');
-          if(failoverOnly&&parsed.pathname===urlToken){
+          if(brokenTokens.has(parsed.pathname)){
             outageCount++;
             await route.fulfill({status:502,contentType:'text/plain',
               body:'Simulated post-preflight CDN outage'});
@@ -176,15 +181,15 @@ try{
       phase='browse_MOOSA_static_site';
       await page.goto(SITE+'/',{waitUntil:'domcontentloaded',timeout:35000});
       phase='player_source_picker';
-      const chosen=await page.evaluate(async({source,film,fallbackSource})=>{
+      const chosen=await page.evaluate(async({source,film,fallbackSources})=>{
         const {showPlayer}=await import('/player.js');
         showPlayer({title:film.title,sources:[{
           ...source,name:'CineStream • Vidlink '+film.year,
           provider:'CineStream',quality:0
-        },...(fallbackSource?[{
-          ...fallbackSource,name:'CineStream • alternate 720 test',
+        },...fallbackSources.map(entry=>({
+          ...entry.source,name:'CineStream • alternate '+entry.quality+' test',
           provider:'CineStream',quality:0
-        }]:[])]});
+        }))]});
         const picker=document.querySelector('#player-source');
         const count=picker.options.length;
         // showPlayer() fills the picker but starts from its blank
@@ -192,7 +197,7 @@ try{
         picker.value='0';
         picker.dispatchEvent(new Event('change',{bubbles:true}));
         return {count,selected:picker.value};
-      },{source:tested.source,film,fallbackSource});
+      },{source:tested.source,film,fallbackSources});
       console.log('MOOSA_HIGH_RES_CINESTREAM_PICKER '+JSON.stringify({film:film.title,...chosen}));
       assert.equal(chosen.selected,'0');
       phase='video_frames';
@@ -216,7 +221,7 @@ try{
       }));
       const durationPlausible=actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration;
-      const activeClaim=failoverOnly?720:target.quality;
+      const activeClaim=chainOnly?540:(failoverOnly?720:target.quality);
       const qualityClaimMatches=actual.height>=activeClaim-24 &&
         actual.height<=activeClaim+24;
       console.log('MOOSA_HIGH_RES_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
@@ -233,15 +238,18 @@ try{
       phase='assert_movie_identity';
       assert.ok(durationPlausible,film.title+' source likely wrong film by duration');
       assert.ok(actual.decodedFrames>0,'Chrome decoded no video frames');
-      if(failoverOnly){
+      if(failoverOnly||chainOnly){
         phase='assert_automatic_failover';
         const picked=await page.locator('#player-source').inputValue();
-        assert.equal(picked,'1','Player never selected fallback 720p');
-        assert.ok(outageCount>0,'Failed 1080p capability was not exercised');
-        assert.equal(actual.height,720,'Fallback did not decode 720 vertical pixels');
+        const expectedIndex=chainOnly?'2':'1';
+        assert.equal(picked,expectedIndex,'Player did not select intended fallback');
+        assert.ok(outageCount>=(chainOnly?2:1),'Not all failed variants attempted');
+        assert.equal(actual.height,chainOnly?540:720,'Wrong decoded fallback height');
         console.log('MOOSA_CINESTREAM_AUTOMATIC_FAILOVER_OK '+JSON.stringify({
-          film:film.title,year:film.year,failedSourceAdvertised:1080,
-          fallbackAdvertised:720,actualVideoWidth:actual.width,
+          film:film.title,year:film.year,
+          failedAdvertised:chainOnly?[1080,720]:[1080],
+          fallbackAdvertised:chainOnly?480:720,
+          actualVideoWidth:actual.width,
           actualVideoHeight:actual.height,decodedFrames:actual.decodedFrames,
           outageRequests:outageCount,rangeRequestCount,
           publicWebsiteUnchanged:true
@@ -289,7 +297,8 @@ try{
   }
   console.log('MOOSA_HIGH_RES_FILMS_PROVEN '+JSON.stringify({
     tested:filmsToTest.length,requestedQualities:filmsToTest.map(f=>({
-      title:f.title,quality:failoverOnly?720:(fallbackQuality||otherQuality||f.preferred)})),
+      title:f.title,quality:chainOnly?480:(failoverOnly?720:
+        (fallbackQuality||otherQuality||f.preferred))})),
     actuallyPlayedWithPlausibleDuration:acceptedFilms,
     browserErrorCount:browserErrors.length,siteProductionUnchanged:true
   }));
