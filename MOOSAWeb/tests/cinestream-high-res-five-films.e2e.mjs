@@ -292,8 +292,11 @@ try{
         const expectedIndex=(chainOnly||newChainOnly)?'2':'1';
         assert.equal(picked,expectedIndex,'Player did not select intended fallback');
         assert.ok(outageCount>=((chainOnly||newChainOnly)?2:1),'Not all failed variants attempted');
-        assert.equal(actual.height,newChainOnly?360:(chainOnly?540:720),
-          'Wrong decoded fallback height');
+        const expectedHeight=newChainOnly?360:(chainOnly?540:720);
+        // Some encoders pad 360p (M is 363 vertical pixels). Require a
+        // close measured resolution, never blindly trust upstream labels.
+        assert.ok(Math.abs(actual.height-expectedHeight)<=8,
+          'Wrong decoded fallback height: '+actual.height+' vs '+expectedHeight);
         console.log('MOOSA_CINESTREAM_AUTOMATIC_FAILOVER_OK '+JSON.stringify({
           film:film.title,year:film.year,
           failedAdvertised:newChainOnly?[film.preferred,480]:
