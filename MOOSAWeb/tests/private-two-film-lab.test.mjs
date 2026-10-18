@@ -42,6 +42,21 @@ try{
     assert.deepEqual((await unknown.json()).results,[]);
     const cfg=await fetch(base+'/api/config',{headers:auth});
     assert.equal((await cfg.json()).catalogReady,true);
+    const cookie=cfg.headers.get('set-cookie')||'';
+    assert.match(cookie,/__Host-moosa_lab=/);
+    assert.match(cookie,/Secure; HttpOnly; SameSite=Lax/);
+    const sessionCookie=cookie.split(';')[0];
+    const cookieOnly=await fetch(base+'/api/config',{
+      headers:{Cookie:sessionCookie}
+    });
+    assert.equal(cookieOnly.status,200,
+      'Safari media requests may carry the session cookie without Basic Auth');
+    const protectedMedia=await fetch(base+'/api/media/'+('A'.repeat(43)),{
+      headers:{Cookie:sessionCookie}
+    });
+    assert.equal(protectedMedia.status,404,
+      'Cookie-authenticated media must reach gateway routing, not 401');
+
   });
   await test('Exact IMDb is present in each private movie details route',async()=>{
     for(const [id,imdb] of [[19,'tt0017136'],[832,'tt0022100']]){
