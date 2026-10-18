@@ -75,3 +75,22 @@ test('MovieBox fails closed for bad metadata, guest sessions and missing provide
     new Response('{}',{headers:{'content-type':'application/json'}})});
   assert.equal(noToken.state,'guest_session_unavailable');
 });
+
+test('actual HTTP 403 on both MovieBox routes is reported as denied, not missing movie',async()=>{
+  const fetchImpl=async raw=>{
+    const url=new URL(raw);
+    if(url.pathname.includes('get-latest-app-pkgs'))
+      return new Response('{}',{headers:{'content-type':'application/json',
+        'x-user':'{"token":"test_guest_123456789"}'}});
+    if(url.pathname.endsWith('/subject/search'))
+      return Response.json({data:{items:[{subjectId:'abc',title:'Inception',year:2010}]}});
+    if(url.hostname==='h5.aoneroom.com')
+      return Response.json({data:{items:[{subject:{detailPath:'inception'}}]}});
+    return new Response('Denied',{status:403});
+  };
+  const out=await movieBoxInventory({title:'Inception',year:2010,fetchImpl});
+  assert.equal(out.state,'provider_access_denied');
+  assert.equal(out.sourceVariants,0);
+  assert.equal(out.diagnostics.plays.reason,'http_403');
+  assert.equal(out.diagnostics.downloads.reason,'http_403');
+});
