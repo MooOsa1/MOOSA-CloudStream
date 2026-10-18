@@ -27,6 +27,45 @@ test('verify identity is strict and cannot map the other 1926 film',()=>{
     {...general,title:'Other film',originalTitle:'Other movie'}
   ])assert.equal(exactExperimentalFilm(candidate),null);
 });
+test('catalog identity only: Metropolis and M require matching TMDB IMDb title and year',()=>{
+  const films=[
+    {id:19,imdbId:'tt0017136',year:1927,title:'Metropolis'},
+    {id:832,imdbId:'tt0022100',year:1931,title:'M'}
+  ];
+  for(const record of films){
+    const good={...record,media:'movie'};
+    assert.equal(exactExperimentalFilm(good)?.tmdbId,record.id);
+    for(const incorrect of [
+      {...good,year:2026},
+      {...good,media:'tv'},
+      {...good,imdbId:'tt9999999'},
+      {...good,title:'Different film',originalTitle:'Different film'}
+    ])assert.equal(exactExperimentalFilm(incorrect),null);
+  }
+  const unrelated={id:234,imdbId:'tt0010323',year:1920,
+    media:'movie',title:'The Cabinet of Dr. Caligari'};
+  assert.equal(exactExperimentalFilm(unrelated),null,
+    'Do not promote the 440-second Caligari clip to a verified full feature');
+});
+test('Metropolis and M cannot initiate provider requests without rights review',async()=>{
+  let requests=0;
+  const fetchImpl=async()=>{requests++;throw Error('Provider request must be blocked');};
+  const mediaGateway={issueIfBytesVerified:async()=>{requests++;throw Error('Media request blocked')}};
+  for(const [id,imdbId,year,title] of [
+    [19,'tt0017136',1927,'Metropolis'],
+    [832,'tt0022100',1931,'M']
+  ]){
+    const meta={id,imdbId,year,title,media:'movie'};
+    assert.deepEqual(await findVerifiedMultiFilmVidlink({
+      meta,mediaGateway,enabled:true,rightsReviewed:false,fetchImpl
+    }),[]);
+    assert.deepEqual(await findVerifiedMultiFilmVidlink({
+      meta,mediaGateway,enabled:false,rightsReviewed:true,fetchImpl
+    }),[]);
+  }
+  assert.equal(requests,0);
+});
+
 test('only operator allowlisted source, dedupe and sort multiple quality labels',()=>{
   const out=offeredVidlinkVariants(provider);
   assert.deepEqual(out.map(x=>x.advertisedQuality),[720,480,360]);
