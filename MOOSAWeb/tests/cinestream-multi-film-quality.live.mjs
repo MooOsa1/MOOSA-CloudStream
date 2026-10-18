@@ -21,7 +21,12 @@ const FILMS=[
  {title:'The Last Man on Earth',year:1964,tmdbId:21159},
  {title:'Sherlock Jr.',year:1924,tmdbId:992},
  {title:'The Gold Rush',year:1925,tmdbId:962},
- {title:'The Kid',year:1921,tmdbId:10098}
+ {title:'The Kid',year:1921,tmdbId:10098},
+ // Verified TMDB IDs; discovery only. Rights, identity and pixel quality
+ // must be independently checked before a title can ever reach a viewer.
+ {title:'Metropolis',year:1927,tmdbId:19},
+ {title:'The Cabinet of Dr. Caligari',year:1920,tmdbId:234},
+ {title:'M',year:1931,tmdbId:832}
 ];
 // CI-only bounded test allowlist: newly observed Vidlink CDN domain is
 // included ONLY for media-prefix probing, not in public Render settings.
