@@ -256,7 +256,8 @@ export function createMediaGateway({
     if(!item)return respond(res,404,'Expired or invalid media token');
     if(item.mime==='video/x-matroska'){
       if(!match[2])return respond(res,404,'Use the HLS manifest capability');
-      return remux.handle({token:match[1],file:match[2],url:item.url,req,res});
+      return remux.handle({token:match[1],file:match[2],url:item.url,
+        headers:item.headers,req,res});
     }
     if(match[2])return respond(res,404);
     const headers={...item.headers};
