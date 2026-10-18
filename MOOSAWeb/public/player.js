@@ -1,4 +1,5 @@
 import {nextPlaybackSource} from './playback-fallback.js';
+import {compatibleResumeTime} from './resume-position-policy.js';
 import {chooseBrowserSources} from './source-compatibility.js';
 import {safeSubtitleFileUrl} from './subtitle-file-url.js';
 import {isDirectVideoUrl} from './direct-media-policy.js';
@@ -21,6 +22,61 @@ let customSubtitle = null;
 let selectedSourceUrl = null;
 let attemptedSourceUrls = new Set();
 let fallbackAttempts = 0;
+// Only a source already listed under the same open film may inherit
+// playback position, and only after comparing both verified video runtimes.
+let pendingResume=null;
+function restoreCompatiblePlaybackPosition(){
+  const request=pendingResume;
+  if(!request || request.url!==selectedSourceUrl ||
+     request.ticket!==playbackToken)return;
+  pendingResume=null;
+  const target=compatibleResumeTime({
+    position:request.position,oldDuration:request.duration,
+    newDuration:video.duration
+  });
+  if(target===null)return;
+  try{
+    video.currentTime=target;
+    notice('متابعة المشاهدة من '+Math.floor(target/60)+
+      ':'+String(Math.floor(target%60)).padStart(2,'0')+
+      ' على السيرفر البديل.');
+  }catch{
+    // Browser media may not support Range seeking; retain new playback
+    // rather than retrying an incompatible or unseekable time.
+  }
+}
+// Do not leave users trapped on a source that never returns a video frame.
+// The 20/25 second thresholds are conservative and reset on real progress.
+let playbackWatchdog=null;
+function stopPlaybackWatchdog(){
+  if(playbackWatchdog!==null){
+    clearTimeout(playbackWatchdog);
+    playbackWatchdog=null;
+  }
+}
+function armPlaybackWatchdog(reason='startup'){
+  // Repeated waiting/stalled events must NOT keep postponing the deadline:
+  // once a source is stuck, preserve the original buffer timeout.
+  if(reason==='buffering' && playbackWatchdog!==null)return;
+  stopPlaybackWatchdog();
+  if(!selectedSourceUrl)return;
+  const ticket=playbackToken;
+  const url=selectedSourceUrl;
+  const duration=reason==='startup'?20000:25000;
+  playbackWatchdog=setTimeout(()=>{
+    playbackWatchdog=null;
+    if(ticket!==playbackToken || selectedSourceUrl!==url ||
+       $('#player-panel').classList.contains('hidden') ||
+       video.error || video.ended ||
+       (reason==='startup' && video.readyState>=2) ||
+       (reason!=='startup' && (video.paused || video.readyState>=3)))return;
+    if(tryFallbackSource()){
+      notice('تأخر مصدر الفيديو دون عرض إطارات؛ جاري التحويل إلى سيرفر آخر لنفس الفيلم.');
+    }else{
+      notice('تأخر المصدر في تحميل الفيديو، ولا يوجد سيرفر آخر قابل للتجربة.');
+    }
+  },duration);
+}
 const DEMO = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
 const HTTPS = /^https:\/\/[^\s]+$/i;
 const extensions = /\.(m3u8|mp4|webm|mov)(?:[?#]|$)/i;
@@ -53,6 +109,7 @@ function clearSubtitle(resetMenu=true){
   if(resetMenu)$('#player-subtitles').replaceChildren(new Option('بدون ترجمة',''));
 }
 function resetVideo(){
+  stopPlaybackWatchdog();
   setAttribution(null);
   playbackToken++;
   customSubtitle=null;
@@ -61,14 +118,29 @@ function resetVideo(){
   video.removeAttribute('src');video.load();
   if(mediaUrl){URL.revokeObjectURL(mediaUrl);mediaUrl=null;}
   $('#player-quality').replaceChildren(new Option('تلقائي','-1'));
+  $('#player-quality').disabled=false;
   $('#player-subtitles').replaceChildren(new Option('بدون ترجمة',''));
   $('#video-overlay').classList.remove('hidden');
 }
 function showVideo(){ $('#video-overlay').classList.add('hidden'); }
 function updateQuality(){
   const el=$('#player-quality');el.replaceChildren(new Option('تلقائي','-1'));
+  el.disabled=false;
   if(hls?.levels?.length){hls.levels.forEach((level,i)=>el.add(new Option(level.height?`${level.height}p`:`مستوى ${i+1}`,String(i))));}
   else el.add(new Option('حسب مصدر الفيديو','-2'));
+}
+// Progressive MP4 sources have a single fixed encoding. Display pixels that
+// Chrome actually decoded rather than an unverified provider quality label.
+// Leave adaptive hls.js quality selection untouched.
+function showDecodedResolution(){
+  if(hls || !video.videoWidth || !video.videoHeight ||
+      $('#player-panel').classList.contains('hidden'))return;
+  const quality=$('#player-quality');
+  const label='Actual resolution: '+video.videoWidth+'×'+video.videoHeight;
+  if(quality.options.length!==1 || quality.options[0]?.textContent!==label)
+    quality.replaceChildren(new Option(label,'-2'));
+  quality.value='-2';
+  quality.disabled=true;
 }
 let scriptPromise=null;
 function preferNativeHls(){
@@ -141,12 +213,14 @@ async function playLink(url, label='Video', selected=null){
       });
       active.attachMedia(video);
       if(currentPlayback!==playbackToken)return;
+      armPlaybackWatchdog('startup');
       showVideo();
       return;
     }else{
       video.src=url;
     }
     if(currentPlayback!==playbackToken)return;
+    armPlaybackWatchdog('startup');
     showVideo();
     await video.play().catch(error=>{
       if(currentPlayback!==playbackToken)return;
@@ -169,6 +243,7 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   // including standalone licensed films that do not call the catalog search.
   document.dispatchEvent(new Event('moosa-player-opened'));
   previousFocus=document.activeElement;
+  pendingResume=null;
   externalSubtitles=[];
   activeSources=chooseBrowserSources((Array.isArray(sources)?sources:[])
     .filter(x=>playableMediaSource(x,location.origin)),navigator.userAgent);
@@ -192,6 +267,7 @@ export function hidePlayer(){
   document.dispatchEvent(new Event('moosa-player-closed'));
   selectedSourceUrl=null;attemptedSourceUrls.clear();fallbackAttempts=0;
   externalSubtitles=[];
+  pendingResume=null;
   resetVideo();$('#player-panel').classList.add('hidden');
   if($('#detail-panel').classList.contains('hidden'))$('#overlay').classList.add('hidden');
   previousFocus?.focus?.();
@@ -294,6 +370,7 @@ export function markNoAutomaticSources(){
 export function startDemo(){
   document.dispatchEvent(new Event('moosa-player-opened'));
   externalSubtitles=[];
+  pendingResume=null;
   selectedSourceUrl=null;
   $('#player-source').value='';
   currentMediaTitle='فيديو تجريبي حر — MDN Flower (CC0)';
@@ -336,12 +413,24 @@ function adjustCues(value){
 function sourceSelected(value,{fallback=false}={}){
   if(!fallback){attemptedSourceUrls.clear();fallbackAttempts=0;}
   if(value===''){
-    selectedSourceUrl=null;resetVideo();
+    selectedSourceUrl=null;pendingResume=null;resetVideo();
     notice('اختر مصدرًا للتشغيل أو افتح فيديو من جهازك.');return;
   }
   const src=activeSources[Number(value)];
   if(!src)return;
+  // Capture before playLink() resets HTML5 playback state. If a fallback
+  // itself fails before metadata arrives, carry an earlier resume request
+  // forward only within the same open title/source chain.
+  const position=Number(video.currentTime),duration=Number(video.duration);
+  const snapshot=selectedSourceUrl && Number.isFinite(position) &&
+    Number.isFinite(duration) && position>=30 && duration>=1200
+      ?{position,duration}:null;
+  const inherited=!snapshot && fallback && pendingResume?.url===selectedSourceUrl
+    ?{position:pendingResume.position,duration:pendingResume.duration}:null;
   selectedSourceUrl=src.url;
+  const toResume=snapshot||inherited;
+  pendingResume=toResume?
+    {...toResume,url:src.url,ticket:playbackToken+1}:null;
   attemptedSourceUrls.add(src.url);
   $('#player-title').textContent=currentMediaTitle||src.name||'مشغل MOOSA';
   // playLink resets the track menu synchronously; repopulate immediately,
@@ -358,7 +447,7 @@ function tryFallbackSource(){
   if(!selectedSourceUrl || fallbackAttempts>=3 ||
       $('#player-panel').classList.contains('hidden'))return false;
   const next=nextPlaybackSource(activeSources,attemptedSourceUrls,
-    mime=>video.canPlayType(mime),4);
+    mime=>video.canPlayType(mime),4,location.origin);
   if(!next)return false;
   fallbackAttempts++;
   const picker=$('#player-source');
@@ -396,12 +485,13 @@ $('#close-player').addEventListener('click',hidePlayer);
 $('#play-demo').addEventListener('click',startDemo);
 $('#play-custom').addEventListener('click',()=>{
   selectedSourceUrl=null;
+  pendingResume=null;
   const url=$('#custom-stream').value.trim();
   if(!extensions.test(url))notice('ملاحظة: يفضل رابط MP4 أو HLS بصيغة m3u8 قابل للتشغيل بالمتصفح.');
   playLink(url,'رابط الفيديو الخاص بك');
 });
 $('#custom-stream').addEventListener('keydown',e=>{if(e.key==='Enter')$('#play-custom').click();});
-$('#local-video').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;selectedSourceUrl=null;resetVideo();mediaUrl=URL.createObjectURL(file);video.src=mediaUrl;showVideo();$('#player-title').textContent=file.name;video.play().catch(()=>{});notice('تشغيل ملف محلي من جهازك');e.target.value='';});
+$('#local-video').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;selectedSourceUrl=null;pendingResume=null;resetVideo();mediaUrl=URL.createObjectURL(file);video.src=mediaUrl;showVideo();$('#player-title').textContent=file.name;video.play().catch(()=>{});notice('تشغيل ملف محلي من جهازك');e.target.value='';});
 $('#local-subtitle').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>3*1024*1024)throw new Error('ملف الترجمة كبير جدًا');const ticket=subtitleToken;const raw=await file.text();if(ticket===subtitleToken)loadSubtitle(raw,file.name,/\bar\b|arabic/i.test(file.name)?'ar':'en')}catch(error){notice(error.message)}e.target.value='';});
 let rejectedVideoToken=-1;
 function enforceDecodedHd(){
@@ -430,8 +520,24 @@ function enforceDecodedHd(){
   notice('رفضنا سيرفرًا بدقة فعلية '+measured+'. الحد الأدنى 720p.');
   return true;
 }
+// A stream can hang forever without a fatal HTML5 error. Retry only verified
+// alternatives already attached to the currently selected title.
+video.addEventListener('playing',stopPlaybackWatchdog);
+video.addEventListener('timeupdate',()=>{
+  if(video.readyState>=2&&video.currentTime>0)stopPlaybackWatchdog();
+});
+video.addEventListener('waiting',()=>{
+  if(selectedSourceUrl&&!video.paused)armPlaybackWatchdog('buffering');
+});
+video.addEventListener('stalled',()=>{
+  if(selectedSourceUrl&&!video.paused)armPlaybackWatchdog('buffering');
+});
+video.addEventListener('pause',stopPlaybackWatchdog);
 video.addEventListener('loadedmetadata',enforceDecodedHd);
+video.addEventListener('loadedmetadata',restoreCompatiblePlaybackPosition);
 video.addEventListener('resize',enforceDecodedHd);
+video.addEventListener('loadedmetadata',showDecodedResolution);
+video.addEventListener('resize',showDecodedResolution);
 video.addEventListener('playing',()=>{
   if(enforceDecodedHd())return;
   if(!$('#player-panel').classList.contains('hidden'))
