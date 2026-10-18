@@ -155,6 +155,39 @@ async function smallProviderJson(response,max=180000){
  * the existing known protocol hosts; unapproved titles can NEVER contact it.
  * No HTML to scrape, no downloading feature movies, and no source URLs in logs.
  */
+// Account for candidates filtered out by the existing source rules, without
+// exposing private CDN hosts, media URLs or any upstream response body.
+function inventoryFilterCounts(response,allowedHosts){
+  const values=response?.stream?.qualities||response?.qualities;
+  const results={providerEntries:0,blockedHosts:0,invalidUrls:0,
+    unsupportedFormats:0,excludedQualities:0,duplicates:0};
+  if(!values||typeof values!=='object'||Array.isArray(values))return results;
+  const seen=new Set(),allowed=new Set(allowedHosts);
+  const rows=Object.entries(values).slice(0,18);
+  results.providerEntries=rows.length;
+  for(const [label,item] of rows){
+    if(typeof item?.url!=='string'){results.invalidUrls++;continue;}
+    let u;
+    try{u=new URL(item.url);}catch{results.invalidUrls++;continue;}
+    if(u.protocol!=='https:'||u.port||u.username||u.password||u.hash){
+      results.invalidUrls++;continue;
+    }
+    if(!allowed.has(u.hostname.toLowerCase())){
+      results.blockedHosts++;continue;
+    }
+    const validFormat=/\.m3u8$/i.test(u.pathname)||item.type==='m3u8'||
+      /\.mp4$/i.test(u.pathname)||item.type==='mp4';
+    if(!validFormat){results.unsupportedFormats++;continue;}
+    const q=Number(String(label).match(/([0-9]{3,4})/)?.[1]||0);
+    if(!Number.isInteger(q)||q<144||q>1080){
+      results.excludedQualities++;continue;
+    }
+    if(seen.has(u.href)){results.duplicates++;continue;}
+    seen.add(u.href);
+  }
+  return results;
+}
+
 // One reusable Vidlink lookup for arbitrary positive TMDB movie IDs.
 // This stage discovers provider availability ONLY. It never returns a
 // media URL, auth header, signed capability or playable stream to a viewer.
@@ -168,6 +201,8 @@ export async function discoverVidlinkInventory({
     tmdbId:Number.isSafeInteger(id)&&id>0?id:null,
     provider:'CineStream • Vidlink',status,availableVariants:0,
     advertisedQualities:[],formatCounts:{mp4:0,hls:0},
+    filterCounts:{providerEntries:0,blockedHosts:0,invalidUrls:0,
+      unsupportedFormats:0,excludedQualities:0,duplicates:0},
     playableVerified:false,rightsVerified:false
   });
   if(!Number.isSafeInteger(id)||id<1||id>9999999999)
@@ -191,8 +226,12 @@ export async function discoverVidlinkInventory({
     }));
     const variants=offeredVidlinkVariants(providerResponse,{
       approvedHosts:allowedHosts,maxVariants:4});
+    const filterCounts=inventoryFilterCounts(providerResponse,allowedHosts);
     return {
-      ...empty(variants.length?'candidates_found':'no_compatible_candidates'),
+      ...empty(variants.length?'candidates_found':
+        filterCounts.providerEntries===0?'provider_no_quality_list':
+        'all_candidates_filtered'),
+      filterCounts,
       availableVariants:variants.length,
       advertisedQualities:variants.map(x=>x.advertisedQuality),
       formatCounts:{
