@@ -148,7 +148,9 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
   try{entry=new URL(url);}catch{return {status:'invalid_url'};}
   if(entry.protocol!=='https:'||
      !['pixel.hubcloud.ist',
-       'little-hat-b47b.legalo74863004.workers.dev'].includes(entry.hostname)||
+       'little-hat-b47b.legalo74863004.workers.dev',
+       'gpdl.hubcloud.ist',
+       '297de52426dc9b4d861466cc51253577.r2.cloudflarestorage.com'].includes(entry.hostname)||
      entry.username||entry.password||entry.port||entry.hash||
      entry.href.length>1800)return {status:'unapproved_host'};
   let response;
@@ -193,7 +195,7 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
     if(response.status===429)return {status:'rate_limited'};
     if(response.status!==206)return {status:'http_'+response.status};
     const type=String(response.headers.get('content-type')||'').toLowerCase();
-    if(!/(?:video\/mp4|application\/octet-stream)/.test(type))
+    if(!/(?:video\/(?:mp4|x-matroska|webm)|application\/(?:octet-stream|x-matroska))/.test(type))
       return {status:'not_video_mime'};
     if(!response.headers.get('content-range')?.startsWith('bytes 0-'))
       return {status:'missing_content_range'};
@@ -207,9 +209,12 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
         bytes=Buffer.concat([bytes,Buffer.from(part.value).subarray(0,16-bytes.length)]);
       }
     }finally{await reader.cancel().catch(()=>{});}
-    return {status:bytes.length>=12 &&
-      ['ftyp','styp'].includes(bytes.subarray(4,8).toString('ascii'))?
-      'mp4_bytes_verified':'wrong_media_bytes'};
+    const mp4=bytes.length>=12 &&
+      ['ftyp','styp'].includes(bytes.subarray(4,8).toString('ascii'));
+    const ebml=bytes.length>=4&&bytes.subarray(0,4).equals(
+      Buffer.from([0x1a,0x45,0xdf,0xa3]));
+    return {status:mp4?'mp4_bytes_verified':
+      ebml?'ebml_bytes_verified':'wrong_media_bytes'};
   }catch(e){
     return {status:e?.name==='TimeoutError'?'timeout':'request_unavailable'};
   }finally{
@@ -241,16 +246,23 @@ async function inspectGamerxyt(url,fetchImpl,timeoutMs){
     const pixel=trustedPixelHubcloud(content,target.href);
     const worker=trustedPixelHubcloud(content,target.href,
       'little-hat-b47b.legalo74863004.workers.dev');
-    const [pixelAudit,workerAudit]=await Promise.all([
+    const gpdl=trustedPixelHubcloud(content,target.href,'gpdl.hubcloud.ist');
+    const r2=trustedPixelHubcloud(content,target.href,
+      '297de52426dc9b4d861466cc51253577.r2.cloudflarestorage.com');
+    const [pixelAudit,workerAudit,gpdlAudit,r2Audit]=await Promise.all([
       pixel.length?inspectPixelHubcloud(pixel[0],fetchImpl,timeoutMs):null,
-      worker.length?inspectPixelHubcloud(worker[0],fetchImpl,timeoutMs):null
+      worker.length?inspectPixelHubcloud(worker[0],fetchImpl,timeoutMs):null,
+      gpdl.length?inspectPixelHubcloud(gpdl[0],fetchImpl,timeoutMs):null,
+      r2.length?inspectPixelHubcloud(r2[0],fetchImpl,timeoutMs):null
     ]);
     return {
       status:'page_accessible',serverButtons:metadata.serverButtons,
       buttonHosts:metadata.buttonHosts,
       downloadButtons:metadata.downloadButtons,
       ...(pixelAudit?{pixelAudit}:{}),
-      ...(workerAudit?{workerAudit}:{})
+      ...(workerAudit?{workerAudit}:{}),
+      ...(gpdlAudit?{gpdlAudit}:{}),
+      ...(r2Audit?{r2Audit}:{})
     };
   }catch(e){
     const reason=String(e?.message||'');
