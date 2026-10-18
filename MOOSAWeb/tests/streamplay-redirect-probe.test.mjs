@@ -115,3 +115,57 @@ test('second HTTP redirect is deliberately blocked, never contacts a third-party
   assert.equal(output.state,'second_redirect_blocked');
   assert.equal(output.decodedIntermediateLinks,0);
 });
+
+test('inspect approved HubCloud landing HTML selector without following buttons',async()=>{
+  const payload=JSON.stringify({o:b64('https://hubcloud.ist/drive/secret')});
+  const encoded=b64(b64(rot13(b64(payload))));
+  const urls=[];
+  const r=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/go">Source</a>',
+    fetchImpl:async(url,options)=>{
+      const u=new URL(url);urls.push(u.hostname);
+      assert.equal(options.redirect,'manual');
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/go'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+encoded+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist')
+        return new Response('<html><a id="download" href="/file/go">Download</a>'+
+          '<a class="btn" href="https://cdn.example/secret.mp4">FSL</a></html>',{
+          headers:{'content-type':'text/html'}});
+      throw Error('unexpected host');
+    }
+  });
+  assert.deepEqual(urls,['greenmotors.club','greenmotors.cc','hubcloud.ist']);
+  assert.equal(r.landings[0].status,'page_accessible');
+  assert.equal(r.landings[0].downloadButtons,1);
+  assert.equal(r.landings[0].serverButtons,1);
+  assert.equal(r.decodedIntermediateLinks,1);
+  assert.equal(r.videoVerified,false);
+  assert.doesNotMatch(JSON.stringify(r),/\/drive\/|\/file\/|cdn\.example|secret\.mp4/);
+});
+test('approved HubDrive buttons are recognized, but no URLs are opened',async()=>{
+  const payload=JSON.stringify({o:b64('https://hubdrive.pics/s/hidden')});
+  const encoded=b64(b64(rot13(b64(payload))));
+  let requests=0;
+  const r=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/start">Source</a>',
+    fetchImpl:async(url)=>{
+      requests++;
+      const host=new URL(url).hostname;
+      if(host==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/start'}});
+      if(host==='greenmotors.cc')
+        return new Response("<script>s('o','"+encoded+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(host==='hubdrive.pics')
+        return new Response('<a class="btn btn-primary btn-user btn-success1 m-1" href="https://evil.example/media">View</a>',{
+          headers:{'content-type':'text/html'}});
+      throw Error('unexpected');
+    }
+  });
+  assert.equal(requests,3);
+  assert.equal(r.landings[0].hubdriveButtons,1);
+  assert.equal(r.videoVerified,false);
+});
