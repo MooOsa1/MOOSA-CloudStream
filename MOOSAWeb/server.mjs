@@ -271,7 +271,7 @@ async function handle(req,res,mediaGateway=null) {
         return err(res,400,'Expected exactly title and year');
       const title=url.searchParams.get('title')||'';
       const year=url.searchParams.get('year')||'';
-      if(!/^[A-Za-z0-9][\p{L}\p{N} \-'.:,&()]{1,109}$/u.test(title)||
+      if(!/^[A-Za-z0-9][\p{L}\p{N} \-'.:,&()]{0,109}$/u.test(title)||
         !/^(?:18[89]\d|19\d\d|20\d\d|2100)$/.test(year))
         return err(res,400,'Invalid film identity');
       const movieBox=await movieBoxInventory({title,year:Number(year),timeoutMs:6500});
