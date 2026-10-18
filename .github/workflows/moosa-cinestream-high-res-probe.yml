@@ -37,3 +37,13 @@ jobs:
           MOOSA_HIGH_RES_FALLBACK: '480'
         timeout-minutes: 3
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Check both 1080p films at advertised 360p fallback
+        env:
+          MOOSA_HIGH_RES_FALLBACK: '360'
+        timeout-minutes: 3
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Browser-check Charade and House on Haunted Hill (no deployment)
+        env:
+          MOOSA_EXTRA_CINESTREAM: '1'
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
