@@ -92,6 +92,21 @@ function trustedDownloadHref(markup,currentUrl){
   }
   return null;
 }
+function sameHostHubDriveButton(markup,currentUrl){
+  for(const m of String(markup).matchAll(/<a\b[^>]{0,1800}>/gi)){
+    const tag=m[0];
+    if(!/\bclass\s*=\s*["'][^"']*\bbtn\b/i.test(tag))continue;
+    const href=tag.match(/\bhref\s*=\s*(["'])([^"'<>]{1,850})\1/i)?.[2];
+    if(!href)continue;
+    let target;
+    try{target=new URL(href,currentUrl);}catch{continue;}
+    if(target.protocol==='https:'&&target.hostname==='hubdrive.pics'&&
+       !target.username&&!target.password&&!target.port&&!target.hash&&
+       target.href!==currentUrl&&target.href.length<1600)
+      return target.href;
+  }
+  return null;
+}
 async function inspectLanding(link,fetchImpl,timeoutMs){
   let u;
   try{u=new URL(link);}catch{return null;}
@@ -109,7 +124,9 @@ async function inspectLanding(link,fetchImpl,timeoutMs){
     const markup=await boundedText(r);
     const summary=inspectLandingHtml(markup,u.hostname);
     const nextPage=u.hostname==='hubcloud.ist'?
-      trustedDownloadHref(markup,u.href):null;
+      trustedDownloadHref(markup,u.href):
+      u.hostname==='hubdrive.pics'?
+      sameHostHubDriveButton(markup,u.href):null;
     if(!nextPage)return summary;
     try{
       const detail=await fetchImpl(nextPage,{
@@ -123,7 +140,8 @@ async function inspectLanding(link,fetchImpl,timeoutMs){
       const html=await boundedText(detail);
       const inspected=inspectLandingHtml(html,u.hostname);
       return {...summary,nextPageStatus:'page_accessible',
-        finalServerButtons:inspected.serverButtons};
+        finalServerButtons:inspected.serverButtons,
+        finalButtonHosts:inspected.buttonHosts};
     }catch(e){
       const reason=String(e?.message||'');
       return {...summary,nextPageStatus:/^http_[0-9]{3}$/.test(reason)?
