@@ -9,7 +9,7 @@
  */
 import {isDirectVideoUrl} from './direct-media-policy.js';
 
-const TOKEN=/^\/api\/media\/[A-Za-z0-9_-]{32,128}$/;
+const TOKEN=/^\/api\/media\/[A-Za-z0-9_-]{32,128}(?:\/index\.m3u8)?$/;
 const FORMATS=new Map([
   ['mp4','mp4'],['video/mp4','mp4'],
   ['webm','webm'],['video/webm','webm'],
