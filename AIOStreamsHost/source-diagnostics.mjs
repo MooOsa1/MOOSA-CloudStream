@@ -104,6 +104,36 @@ export async function main() {
       }
     }
   }
+
+  // The default Comet endpoint can work while AIOStreams' generated configuration does not.
+  // Check the actual first-party Comet preset payload, with P2P explicitly enabled.
+  const cometConfiguration = {
+    maxResultsPerResolution: 0, maxSize: 0, cachedOnly: false,
+    removeTrash: true, resultFormat: ['all'], debridServices: [],
+    enableTorrent: true, scrapeDebridAccountTorrents: false,
+    debridStreamProxyPassword: '',
+    languages: { required: [], exclude: [], preferred: [] }, resolutions: {},
+    options: {
+      remove_ranks_under: -10000000000,
+      allow_english_in_languages: false, remove_unknown_languages: false
+    }
+  };
+  const cometSlug = Buffer.from(JSON.stringify(cometConfiguration)).toString('base64');
+  let cometConfiguredCount = 0;
+  for (const movie of [MOVIES[0], RECENT_LISTINGS[0]]) {
+    try {
+      const data = await getJson('https://comet.feels.legal/' + cometSlug +
+        '/stream/movie/' + movie.imdb + '.json', 15000);
+      const streams = Array.isArray(data.streams) ? data.streams : [];
+      const p2p = streams.filter(x => classify(x) === 'p2p').length;
+      cometConfiguredCount += p2p;
+      console.log('COMET_CONFIGURED_P2P_CHECK imdb=' + movie.imdb + ' p2p=' + p2p);
+    } catch (err) {
+      console.log('COMET_CONFIGURED_P2P_CHECK imdb=' + movie.imdb + ' failed=' + err.message);
+    }
+  }
+  console.log('MOOSA_COMET_CONFIGURED_TOTAL_P2P ' + cometConfiguredCount);
+  if (!cometConfiguredCount) process.exitCode = 1;
   const status = { validStreamManifests, totalCandidates, totalP2p, totalHttp };
   console.log('EXPLORATORY_PROVIDERS: MediaFusion and StremThru Torz are disabled in MOOSA Hub; counts represent raw metadata only.');
   console.log('MOOSA_STREMIO_DISCOVERY ' + JSON.stringify(status));
