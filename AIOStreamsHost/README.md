@@ -1,38 +1,62 @@
-# MOOSA Hub — AIOStreams experimental host
+# MOOSA Hub — Stremio for iPhone and PC
 
-This branch deploys the **real upstream AIOStreams**, not a hand-written
-replacement. It clones the pinned source commit
-`e65aeb0f27b284dfc5d3a7398e82400cf859dccd`, installs packages with
-pnpm and runs the upstream Node server. Upstream source, license and notices
-remain at https://github.com/Viren070/AIOStreams (AGPL-3.0-only).
+**Current direction: the original AIOStreams application, not MOOSA Web or a CloudStream emulator.**
+The checked-in `moosa-hub-template.json` is an importable AIOStreams preset
+using the original automatic provider queries. It is **not yet proven** to
+provide any particular modern copyrighted movie or a playable iPhone source.
 
-## Free Render deployment
+## Quick start on the free community instance
 
-Deploy this exact branch as a **separate**, free Node web service.
-Build: `bash AIOStreamsHost/build.sh`
-Start: `bash AIOStreamsHost/start.sh`
+[Open the MOOSA Hub setup in AIOStreams](https://aiostreams-nightly.fortheweak.cloud/stremio/configure?template=https%3A%2F%2Fraw.githubusercontent.com%2FMooOsa1%2FMOOSA-CloudStream%2Fexperiment%2Fmoosa-hub-aiostreams-20261018%2FAIOStreamsHost%2Fmoosa-hub-template.json)
 
-Environment: `NODE_VERSION=24.18.1`,
-`BASE_URL=https://<actual-service>.onrender.com`,
-`SECRET_KEY=<64 random lowercase hex>`,
-`DATABASE_URI=sqlite://./data/db.sqlite`,
-`AIOSTREAMS_AUTH=<operator>:<strong random password>`.
-Optional `ADDON_NAME=MOOSA Hub`.
+Import the preset, review what the providers do, create a configuration,
+and choose **Install to Stremio Web** while logged into your Stremio account.
 
-**Important limitations:** Free Render service storage is ephemeral; users
-and addon configuration can disappear after restarts/deploys. Use an external
-persistent PostgreSQL DB before depending on this. AIOStreams aggregates
-Stremio addons, NOT original CloudStream .cs3 Android plugins. It does not
-provide movies itself, guarantee 4K/1080p, or create licensed media access.
-Safari/iOS can consume supported HTTPS video streams. P2P torrents are not
-direct HTTPS and do not work as direct browser playback.
+The template currently includes:
+- Official Cinemeta metadata catalogs (continuously updated movie/TV metadata).
+- Official OpenSubtitles v3 subtitle addon (availability/sync vary per movie).
+- Two popular Stremio stream indexers (Torrentio and MediaFusion) which query
+  their indexes for each title, *not* a static local list of videos.
+- Sorting 4K → 1440p → 1080p → 720p; exclude sub-720p and CAM/TS/TC/SCR;
+  deduplicate repeated sources.
 
-## Operator checklist
+**Caution:** Indexer results are *candidates*, not tested playable video.
+Torrent/P2P streams will **not play in Stremio Web on standalone iPhone Safari**.
+A paid HTTPS debrid provider or a companion Stremio Service can provide
+different paths, but neither is included here, and license/region matters.
+Never infer that a metadata poster or torrent listing means the movie is
+available to stream.
 
-1. Open the running instance at `/stremio/configure`.
-2. Add working, authorized HTTP stream providers using their manifest URLs.
-3. Verify a modern film's real video/audio + seek on iPhone Safari and PC.
-4. Only then add additional sources and configure 4K→1080p→720p filtering.
-5. Export config backups after any configuration changes.
+## Full native Stremio on iPhone (alternative to Safari)
 
-This branch does not deploy changes to the original MOOSA Web.
+Stremio publishes its own fully featured sideloadable IPA, which it says
+supports torrent and Usenet playback. In Oman, the AltStore PAL regional
+store is not available; use SideStore or AltStore Classic to sideload the
+official IPA from Stremio's own download page.
+
+- Official release: https://blog.stremio.com/stremio-fully-featured-sideloadable-ipa-release-for-ios-ipados-apple-tv-tvos/
+- Official files: https://www.stremio.com/downloads
+- SideStore setup: https://docs.sidestore.io/docs/installation/install
+
+SideStore requires initial Apple-ID setup, normally a PC once, and
+re-signing every 7 days with a free account. It may ask for local VPN
+configuration and Developer Mode. Sideloading is optional and carries more
+setup/security risk than using the App Store or Safari. Do not enter an Apple
+account password into an unverified installer site.
+
+## Reliability gate before claiming success
+
+On iPhone and Windows, verify the SAME modern title opens with
+real video, audio, seeking, and subtitles. The Stremio app being
+able to display a source list is not proof of playback. Provider availability
+changes independently; **no software can guarantee every current movie
+for free**, even when the addon updates itself.
+
+## Deployment
+
+An isolated self-hosting wrapper is in this branch for future authorized
+deployment; the earlier Render API request failed/was blocked, so no live
+MOOSA-owned AIOStreams server has been created. The public instance is
+not controlled by MOOSA, and its operators can impose limits or outages.
+
+Source project (AGPL-3.0): https://github.com/Viren070/AIOStreams
