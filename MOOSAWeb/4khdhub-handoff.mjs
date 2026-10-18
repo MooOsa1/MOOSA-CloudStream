@@ -4,6 +4,7 @@
  * no file downloads, and no outgoing requests to extracted destinations.
  * All outputs are counts and failure states, never links or credentials.
  */
+import {probeStreamPlayRedirects} from './streamplay-redirect-probe.mjs';
 const SITE='https://4khdhub.one',CAP=150000;
 const status=(state,extra={})=>({
   provider:'4KHDHub → HubCloud',state,
@@ -125,7 +126,7 @@ export function countStreamPlayDownloadAnchors(markup){
 }
 
 export async function probe4khdhubHandoff({
-  title,year,fetchImpl=fetch,timeoutMs=8500
+  title,year,fetchImpl=fetch,timeoutMs=8500,diagnoseRedirects=false
 }={}){
   const name=norm(title),yr=Number(year);
   if(name.length<2||name.length>100||!Number.isInteger(yr)||
@@ -140,6 +141,7 @@ export async function probe4khdhubHandoff({
     if(!cards.length)return status('no_exact_movie_card');
     let posts=0,entries=0,externalLinks=0,downloadRowLinks=0;
     const streamPlay={downloadItems:0,downloadLinks:0,linkHosts:[]};
+    let redirectProbe=null;
     const cine={moduleFound:false,externalSourceAnchors:0,directHubHints:0,redirectorHints:0};
     const hostGroups={hubLike:0,fileHost:0,shortener:0,other:0};
     for(const href of cards){
@@ -149,6 +151,10 @@ export async function probe4khdhubHandoff({
           signal:AbortSignal.timeout(timeoutMs)
         });
         const body=await html(response);posts++;
+        if(diagnoseRedirects&&!redirectProbe)
+          redirectProbe=await probeStreamPlayRedirects({
+            postHtml:body,fetchImpl,timeoutMs:Math.min(timeoutMs,8000)
+          });
         const playAnchors=countStreamPlayDownloadAnchors(body);
         streamPlay.downloadItems+=playAnchors.downloadItems;
         streamPlay.downloadLinks+=playAnchors.downloadLinks;
@@ -192,7 +198,7 @@ export async function probe4khdhubHandoff({
       posts?'no_hubcloud_entry':'post_unavailable',{
       exactMoviePosts:cards.length,postPagesAccessible:posts,
       hubcloudEntryPages:entries,externalLinks,downloadRowLinks,hostGroups,
-      cineStreamAnchors:cine,streamPlayAnchors:streamPlay
+      cineStreamAnchors:cine,streamPlayAnchors:streamPlay,...(diagnoseRedirects?{redirectProbe}:{} )
     });
   }catch(e){
     const reason=String(e?.message||'');
