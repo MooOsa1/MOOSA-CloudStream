@@ -118,6 +118,33 @@ test('sources require actual bytes, preserve multiple distinct verified qualitie
   assert.notEqual(links[0].url,links[1].url);
 });
 
+test('bounded parallel preflight finds the fastest available quality without reordering server priority',async()=>{
+  const offered={qualities:Object.fromEntries([1080,720,480,360].map(q=>[
+    String(q),{url:'https://bcdn.hakunaymatata.com/parallel-'+q+'.mp4',type:'mp4'}
+  ]))};
+  let running=0,maxRunning=0,requests=0;
+  const verified=await verifiedFilmVariants({
+    meta:general,providerResponse:offered,enabled:true,rightsReviewed:true,
+    mediaGateway:{issueIfBytesVerified:async item=>{
+      assert.equal(item.rightsApproved,true);
+      assert.equal(item.sourceVerified,true);
+      requests++;running++;maxRunning=Math.max(maxRunning,running);
+      const q=Number(item.url.match(/parallel-(\\d+)/)[1]);
+      await new Promise(resolve=>setTimeout(resolve,q===1080?55:q===720?5:15));
+      running--;
+      if(q===480)return {source:null,reason:'invalid_media_bytes'};
+      return {source:{url:'https://moosa-web.onrender.com/api/media/'+
+        ({1080:'A',720:'B',360:'D'}[q]).repeat(43),
+        gatewayIssued:true,format:'video/mp4'}};
+    }}
+  });
+  assert.equal(requests,4,'All fallback qualities must be probed');
+  assert.equal(maxRunning,3,'Never exceed three simultaneous byte probes');
+  assert.deepEqual(verified.map(x=>x.name.match(/(1080|720|360)p offered/)[1]),
+    ['1080','720','360'],'Preserve quality ordering even when 1080p is slower');
+  assert.ok(verified.every(x=>x.gatewayIssued&&x.quality===0));
+});
+
 test('exact-film multi-source adapter refuses all requests when OFF or rights not reviewed',async()=>{
   let calls=0;
   const fetchImpl=async()=>{calls++;throw Error('unexpected external fetch');};
