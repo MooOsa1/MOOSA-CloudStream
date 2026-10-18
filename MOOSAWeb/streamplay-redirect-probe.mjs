@@ -124,7 +124,7 @@ function approvedGamerxytHref(markup,current){
   }
   return null;
 }
-function trustedPixelHubcloud(markup,current){
+function trustedPixelHubcloud(markup,current,targetHost='pixel.hubcloud.ist'){
   const result=[];
   for(const match of String(markup||'').matchAll(/<a\b[^>]{0,1800}>/gi)){
     const tag=match[0];
@@ -133,7 +133,7 @@ function trustedPixelHubcloud(markup,current){
     if(!href)continue;
     let target;
     try{target=new URL(href,current);}catch{continue;}
-    if(target.protocol!=='https:'||target.hostname!=='pixel.hubcloud.ist'||
+    if(target.protocol!=='https:'||target.hostname!==targetHost||
        target.port||target.username||target.password||target.hash||
        target.href.length>1600||result.includes(target.href))continue;
     result.push(target.href);
@@ -144,6 +144,13 @@ function trustedPixelHubcloud(markup,current){
 async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
   // Range bytes only, and at most 16 bytes read. No redirects, no stream
   // promotion, no full video download, no URL or signed token in output.
+  let entry;
+  try{entry=new URL(url);}catch{return {status:'invalid_url'};}
+  if(entry.protocol!=='https:'||
+     !['pixel.hubcloud.ist',
+       'little-hat-b47b.legalo74863004.workers.dev'].includes(entry.hostname)||
+     entry.username||entry.password||entry.port||entry.hash||
+     entry.href.length>1800)return {status:'unapproved_host'};
   let response;
   try{
     const rangeHeaders={Accept:'video/mp4,application/octet-stream',
@@ -163,7 +170,8 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
             redirectUrl=u.href;
         }
       }catch{}
-      if(!redirectUrl)return {status:'redirect_not_followed',redirectHost};
+      if(entry.hostname!=='pixel.hubcloud.ist'||!redirectUrl)
+        return {status:'redirect_not_followed',redirectHost};
       await response.body?.cancel?.().catch(()=>{});
       response=await fetchImpl(redirectUrl,{
         method:'GET',redirect:'manual',headers:rangeHeaders,
@@ -223,13 +231,18 @@ async function inspectGamerxyt(url,fetchImpl,timeoutMs){
     const content=await boundedText(response);
     const metadata=inspectLandingHtml(content,'gamerxyt.com');
     const pixel=trustedPixelHubcloud(content,target.href);
-    const pixelAudit=pixel.length?
-      await inspectPixelHubcloud(pixel[0],fetchImpl,timeoutMs):null;
+    const worker=trustedPixelHubcloud(content,target.href,
+      'little-hat-b47b.legalo74863004.workers.dev');
+    const [pixelAudit,workerAudit]=await Promise.all([
+      pixel.length?inspectPixelHubcloud(pixel[0],fetchImpl,timeoutMs):null,
+      worker.length?inspectPixelHubcloud(worker[0],fetchImpl,timeoutMs):null
+    ]);
     return {
       status:'page_accessible',serverButtons:metadata.serverButtons,
       buttonHosts:metadata.buttonHosts,
       downloadButtons:metadata.downloadButtons,
-      ...(pixelAudit?{pixelAudit}:{})
+      ...(pixelAudit?{pixelAudit}:{}),
+      ...(workerAudit?{workerAudit}:{})
     };
   }catch(e){
     const reason=String(e?.message||'');
