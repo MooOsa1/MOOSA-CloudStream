@@ -28,7 +28,8 @@ test('actual Play backend /api/resolve returns exact-title gateway sources and 3
     process.env.CINESTREAM_MULTIFILM_PILOT='1';
     process.env.CINESTREAM_MULTIFILM_RIGHTS_APPROVED='1';
     globalThis.fetch=async(raw,opts)=>{
-      const url=new URL(typeof raw==='string'?raw:raw.url);
+      const url=new URL(raw instanceof URL?raw.href:
+        typeof raw==='string'?raw:raw.url);
       if(url.hostname==='api.themoviedb.org'){
         return Response.json({id:FILM.id,title:FILM.title,
           original_title:FILM.title,release_date:'1927-01-01',
