@@ -23,12 +23,16 @@ test('MovieBox exact title enumerates HLS and MP4 without leaking any media URLs
     }
     if(u.hostname==='h5.aoneroom.com')
       return response({data:{items:[{subject:{detailPath:'movie-m'}}]}});
-    if(u.pathname.endsWith('/subject/play'))
+    if(u.pathname.endsWith('/subject/play')){
+      assert.ok(opts.headers.Referer.includes('type=/movie/detail'),
+        'MovieBox play context matches upstream extractor');
+      assert.equal(opts.headers['X-Client-Info'],'{"timezone":"Africa/Nairobi"}');
       return response({data:{streams:[
         {url:'https://video.example/movie.m3u8',resolutions:'1080'},
         {url:'https://video.example/movie-480.mp4',resolution:480},
         {url:'https://video.example/not-allowed.mp4',resolution:1080,vipLocked:true}
       ],dash:[{url:'https://video.example/manifest.mpd',resolution:1080}]}});
+    }
     if(u.pathname.endsWith('/subject/download'))
       return response({data:{downloads:[
         {url:'https://video.example/movie-720.mp4',resolution:720}
