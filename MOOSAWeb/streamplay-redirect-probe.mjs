@@ -83,6 +83,45 @@ export async function probeStreamPlayRedirects({
              !dst.port&&!dst.hash)redirectHost=dst.hostname.toLowerCase();
         }catch{}
         await response.body?.cancel?.().catch(()=>{});
+        // Provider redirects .club to .cc. Follow only this explicitly
+        // reviewed HTTPS host once, and reject any further redirect.
+        if(redirectHost==='greenmotors.cc'){
+          let destination;
+          try{
+            destination=new URL(response.headers.get('location')||'',url);
+            if(destination.protocol!=='https:'||destination.hostname!=='greenmotors.cc'||
+               destination.username||destination.password||destination.port||
+               destination.hash||destination.href.length>1600)
+              destination=null;
+          }catch{destination=null;}
+          if(destination){
+            try{
+              const step=await fetchImpl(destination.href,{
+                redirect:'manual',headers:{Accept:'text/html'},
+                signal:AbortSignal.timeout(timeoutMs)
+              });
+              if([301,302,303,307,308].includes(step.status)){
+                await step.body?.cancel?.().catch(()=>{});
+                attempts.push(result('second_redirect_blocked',{
+                  redirectsSeen:2,redirectHost:'greenmotors.cc'
+                }));
+              }else{
+                const body=await boundedText(step);
+                attempts.push({...classifyStreamPlayRedirectHtml(body),
+                  redirectsSeen:1,redirectHost:'greenmotors.cc'});
+              }
+              continue;
+            }catch(e){
+              const reason=String(e?.message||'');
+              const safe=/^(?:http_[0-9]{3}|not_html|oversized|empty)$/.test(reason)?
+                reason:e?.name==='TimeoutError'?'timeout':'connection_failed';
+              attempts.push(result('second_stage_'+safe,{
+                redirectsSeen:1,redirectHost:'greenmotors.cc'
+              }));
+              continue;
+            }
+          }
+        }
         attempts.push(result('http_redirect',{
           redirectsSeen:1,...(redirectHost?{redirectHost}:{})
         }));
@@ -101,7 +140,7 @@ export async function probeStreamPlayRedirects({
   const resolved=attempts.some(x=>x.decodedIntermediateLinks);
   const redirected=attempts.some(x=>x.redirectsSeen);
   const statuses=[...new Set(attempts.map(x=>x.state))];
-  return result(resolved?'resolved':redirected?'http_redirect':
+  return result(resolved?'resolved':
     attempts[0]?.state||'unavailable',{
     inspected:attempts.length,
     statuses,
