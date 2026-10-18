@@ -376,6 +376,7 @@ async function handle(req,res,mediaGateway=null) {
       const slot=url.searchParams.get('slot')||'';
       if(!/^[\p{L}\p{N}][\p{L}\p{N} .:'&(),!?-]{2,109}$/u.test(title)||
          !/^(?:19[5-9]\d|20[0-2]\d)$/.test(year)||
+         Number(year)>2026||
          !/^(?:0|2|4|6|8|10|12|14|16)$/.test(slot))
         return err(res,400,'Invalid movie identity or source slot');
       const result=await cachedModernSourceAudit(title,Number(year),Number(slot));
