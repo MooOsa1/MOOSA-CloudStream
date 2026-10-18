@@ -35,7 +35,7 @@ store is not available; use SideStore or AltStore Classic to sideload the
 official IPA from Stremio's own download page.
 
 - Official release: https://blog.stremio.com/stremio-fully-featured-sideloadable-ipa-release-for-ios-ipados-apple-tv-tvos/
-- Official files: https://www.stremio.com/downloads
+- Official Stremio release index (currently iOS 2.0.8 build 23, Sep 2026): https://dl.strem.io/apple/altstore/source.json\n- First-party Stremio CDN IPA for version 2.0.8 build 23: https://dl.strem.io/apple/2.0.8b23/ios/stremio_iOS.ipa\n- The main Downloads page currently emphasizes regional AltStore PAL, so use the official CDN release/source rather than an unknown mirror.
 - SideStore setup: https://docs.sidestore.io/docs/installation/install
 
 SideStore requires initial Apple-ID setup, normally a PC once, and
@@ -60,3 +60,13 @@ MOOSA-owned AIOStreams server has been created. The public instance is
 not controlled by MOOSA, and its operators can impose limits or outages.
 
 Source project (AGPL-3.0): https://github.com/Viren070/AIOStreams
+
+## Current factual source check (Oct 18 2026)
+
+[GitHub Actions source diagnostic run](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/39155821553) **PASS**:
+- Torrentio manifest valid. Returned 39 P2P candidate entries for IMDb tt0063350 and 23 for tt0032599.
+- MediaFusion manifest valid but returned zero entries for both old film IDs at this time; do not infer a permanent provider outage.
+- **Total 62 P2P candidates and zero direct HTTP links** across those two titles, from the test runner's location.
+- All three Node classification tests passed. **No video files were fetched, verified, or played.** The discovery pass is not proof that the movies or subtitles work on an actual iPhone/PC.
+
+A subsequent test also checks *Sinners (2025)* and *Dune: Part Two (2024)* listing metadata and checks the official iOS release index. Listing checks do not download copyrighted content or establish availability.
