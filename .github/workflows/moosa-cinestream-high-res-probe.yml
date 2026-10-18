@@ -11,7 +11,7 @@ permissions:
 jobs:
   browser-high-res:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 21
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,5 +70,10 @@ jobs:
       - name: Prove automatic 1080p outage to 720p source fallback for two films
         env:
           MOOSA_FAILOVER_TEST: '1'
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Simulate failed 1080p and 720p then prove actual automatic 480p decode
+        env:
+          MOOSA_FAILOVER_CHAIN: '1'
         timeout-minutes: 4
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
