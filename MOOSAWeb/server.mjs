@@ -805,11 +805,19 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
         {title:'Sinners',year:2025}
       ]){
         void probe4khdhubHandoff({
-          ...film,timeoutMs:6500,diagnoseRedirects:false
+          ...film,timeoutMs:6500,
+          // One current blockbuster gets full limited server-option audit.
+          // Other titles only check indexed availability to avoid rate spikes.
+          diagnoseRedirects:film.title==='Sinners'
         }).then(found=>console.log('MOOSA_MODERN_MOVIE_SOURCE_COVERAGE '+
           JSON.stringify({title:film.title,year:film.year,
             state:found.state,exactPosts:found.exactMoviePosts,
             intermediateLinks:found.streamPlayAnchors?.downloadLinks||0,
+            serverAudits:(found.redirectProbe?.landings||[]).map(row=>({
+              host:row.host,step:row.gatewayPage?.status||row.status,
+              pixel:row.gatewayPage?.pixelAudit?.status,
+              worker:row.gatewayPage?.workerAudit?.status
+            })),
             videoVerified:false})))
         .catch(()=>console.log('MOOSA_MODERN_MOVIE_SOURCE_COVERAGE_UNAVAILABLE'));
       }
