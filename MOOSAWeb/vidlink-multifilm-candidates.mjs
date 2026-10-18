@@ -9,11 +9,7 @@ const EXPECTED=new Map([
   [961,{tmdbId:961,imdb:'tt0017925',year:1926,title:'the general'}],
   [3085,{tmdbId:3085,imdb:'tt0032599',year:1940,title:'his girl friday'}],
   [19,{tmdbId:19,imdb:'tt0017136',year:1927,title:'metropolis'}],
-  [832,{tmdbId:832,imdb:'tt0022100',year:1931,title:'m'}],
-  // Previously decoded at multiple resolutions in isolated Chrome tests.
-  // Exact catalog IDs alone never prove stream edition or usage rights.
-  [962,{tmdbId:962,imdb:'tt0015864',year:1925,title:'the gold rush'}],
-  [10098,{tmdbId:10098,imdb:'tt0012349',year:1921,title:'the kid'}]
+  [832,{tmdbId:832,imdb:'tt0022100',year:1931,title:'m'}]
 ]);
 function standardTitle(value){
   return String(value||'').normalize('NFKD').toLowerCase()
