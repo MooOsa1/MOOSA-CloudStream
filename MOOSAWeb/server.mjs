@@ -808,7 +808,8 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
           ...film,timeoutMs:6500,
           // One current blockbuster gets full limited server-option audit.
           // Other titles only check indexed availability to avoid rate spikes.
-          diagnoseRedirects:film.title==='Sinners'
+          diagnoseRedirects:film.title==='Sinners',
+          diagnoseExtraRoutes:film.title==='Sinners'
         }).then(found=>console.log('MOOSA_MODERN_MOVIE_SOURCE_COVERAGE '+
           JSON.stringify({title:film.title,year:film.year,
             state:found.state,exactPosts:found.exactMoviePosts,
@@ -823,6 +824,13 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
               gpdl:row.gatewayPage?.gpdlAudit?.status,
               r2:row.gatewayPage?.r2Audit?.status,
               gpdlContainer:row.gatewayPage?.gpdlAudit?.container,
+              r2Container:row.gatewayPage?.r2Audit?.container
+            })),
+            alternateServerAudits:(found.extraRedirectProbe?.landings||[]).map(row=>({
+              host:row.host,step:row.gatewayPage?.status||row.status,
+              gatewayHosts:row.gatewayPage?.buttonHosts||[],
+              gpdl:row.gatewayPage?.gpdlAudit?.status,
+              r2:row.gatewayPage?.r2Audit?.status,
               r2Container:row.gatewayPage?.r2Audit?.container
             })),
             videoVerified:false})))
