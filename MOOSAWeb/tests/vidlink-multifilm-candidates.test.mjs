@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {exactExperimentalFilm,offeredVidlinkVariants,verifiedFilmVariants,findVerifiedMultiFilmVidlink}
+import {exactExperimentalFilm,reviewedFilmRegistry,offeredVidlinkVariants,verifiedFilmVariants,findVerifiedMultiFilmVidlink}
   from '../vidlink-multifilm-candidates.mjs';
 const general={id:961,media:'movie',year:1926,imdbId:'tt0017925',
   title:'The General',originalTitle:'The General'};
@@ -15,6 +15,74 @@ const provider={qualities:{
  '2160':{url:'https://hcdn3.hakunaymatata.com/general-4k.mp4',type:'mp4'},
  '480-clone':{url:'https://hcdn3.hakunaymatata.com/general-480.mp4',type:'mp4'}
 }};
+test('operator registry is empty until explicit rights and source-edition review',()=>{
+  const extra={tmdbId:345678,imdb:'tt1234567',year:2020,title:'Example Independent Film'};
+  for(const item of [
+    extra,{...extra,rightsReviewed:true},
+    {...extra,sourceEditionReviewed:true},
+    {...extra,rightsReviewed:'true',sourceEditionReviewed:true},
+    {...extra,rightsReviewed:true,sourceEditionReviewed:'true'},
+    {...extra,rightsReviewed:true,sourceEditionReviewed:true,imdb:'not-imdb'}
+  ])assert.equal(reviewedFilmRegistry([item]).size,0);
+  const verified={...extra,rightsReviewed:true,sourceEditionReviewed:true};
+  const map=reviewedFilmRegistry(JSON.stringify([verified]));
+  assert.equal(map.get(extra.tmdbId)?.imdb,'tt1234567');
+  assert.equal(exactExperimentalFilm({
+    id:extra.tmdbId,media:'movie',imdbId:extra.imdb,
+    year:extra.year,title:'Example Independent Film'
+  },{reviewed:[verified]})?.tmdbId,extra.tmdbId);
+  assert.equal(exactExperimentalFilm({
+    id:extra.tmdbId,media:'movie',imdbId:extra.imdb,
+    year:extra.year,title:'Example Independent Film'
+  },{reviewed:[]}),null);
+});
+test('all additional movie IDs require exact year IMDb and title, never fuzzy matches',()=>{
+  const row={tmdbId:345678,imdb:'tt1234567',year:2020,
+    title:'Example Independent Film',rightsReviewed:true,sourceEditionReviewed:true};
+  const good={id:345678,media:'movie',imdbId:row.imdb,
+    year:2020,title:'Example Independent Film'};
+  for(const wrong of [
+    {...good,id:345679},{...good,year:2019},{...good,media:'tv'},
+    {...good,imdbId:'tt1234568'},{...good,title:'Completely different film'},
+    {...good,originalTitle:'Other film',title:'Other film'}
+  ])assert.equal(exactExperimentalFilm(wrong,{reviewed:[row]}),null);
+  assert.equal(reviewedFilmRegistry('not valid JSON').size,0);
+  assert.equal(reviewedFilmRegistry([{...row,tmdbId:19}]).size,0,
+    'Cannot shadow fixed experimental Metropolis identity');
+  assert.equal(reviewedFilmRegistry([{...row,tmdbId:0}]).size,0);
+  assert.equal(reviewedFilmRegistry([{...row,year:1800}]).size,0);
+});
+test('operator-added exact film uses existing trusted gateway only when approved',async()=>{
+  const row={tmdbId:345678,imdb:'tt1234567',year:2020,
+    title:'Example Independent Film',rightsReviewed:true,sourceEditionReviewed:true};
+  const meta={id:row.tmdbId,media:'movie',imdbId:row.imdb,
+    year:row.year,title:row.title};
+  const prior=process.env.CINESTREAM_REVIEWED_FILMS;
+  let hits=0;
+  try{
+    process.env.CINESTREAM_REVIEWED_FILMS=JSON.stringify([row]);
+    const response={qualities:{'720':{
+      url:'https://hcdn3.hakunaymatata.com/operator-reviewed-test.mp4',type:'mp4'
+    }}};
+    const gateway={issueIfBytesVerified:async()=>{hits++;return {
+      source:{url:'https://moosa-web.onrender.com/api/media/'+('T'.repeat(43)),
+        gatewayIssued:true,format:'video/mp4'}
+    };}};
+    const links=await verifiedFilmVariants({meta,providerResponse:response,
+      mediaGateway:gateway,enabled:true,rightsReviewed:true});
+    assert.equal(links.length,1);
+    assert.equal(hits,1);
+    assert.equal(links[0].originalMovieTmdbId,row.tmdbId);
+    assert.equal(links[0].originalMovieImdbId,row.imdb);
+    assert.deepEqual(await verifiedFilmVariants({meta,providerResponse:response,
+      mediaGateway:gateway,enabled:true,rightsReviewed:false}),[]);
+    assert.equal(hits,1);
+  }finally{
+    if(prior===undefined)delete process.env.CINESTREAM_REVIEWED_FILMS;
+    else process.env.CINESTREAM_REVIEWED_FILMS=prior;
+  }
+});
+
 test('verify identity is strict and cannot map the other 1926 film',()=>{
   assert.equal(exactExperimentalFilm(general).tmdbId,961);
   const girl={id:3085,imdbId:'tt0032599',year:1940,
