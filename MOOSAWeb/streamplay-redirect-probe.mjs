@@ -203,18 +203,23 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
     if(!reader)return {status:'empty_body'};
     let bytes=Buffer.alloc(0);
     try{
-      while(bytes.length<16){
+      while(bytes.length<512){
         const part=await reader.read();
         if(part.done)break;
-        bytes=Buffer.concat([bytes,Buffer.from(part.value).subarray(0,16-bytes.length)]);
+        bytes=Buffer.concat([bytes,Buffer.from(part.value).subarray(0,512-bytes.length)]);
       }
     }finally{await reader.cancel().catch(()=>{});}
     const mp4=bytes.length>=12 &&
       ['ftyp','styp'].includes(bytes.subarray(4,8).toString('ascii'));
     const ebml=bytes.length>=4&&bytes.subarray(0,4).equals(
       Buffer.from([0x1a,0x45,0xdf,0xa3]));
+    const header=bytes.toString('latin1').toLowerCase();
+    const container=mp4?'mp4':ebml&&header.includes('matroska')?
+      'matroska':ebml&&header.includes('webm')?'webm':
+      ebml?'ebml_unknown':null;
     return {status:mp4?'mp4_bytes_verified':
-      ebml?'ebml_bytes_verified':'wrong_media_bytes'};
+      ebml?'ebml_bytes_verified':'wrong_media_bytes',
+      ...(container?{container}:{})};
   }catch(e){
     return {status:e?.name==='TimeoutError'?'timeout':'request_unavailable'};
   }finally{
