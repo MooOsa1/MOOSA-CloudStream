@@ -70,7 +70,7 @@ export async function probe4khdhubHandoff({
     });
     const index=await html(search),cards=extract4khdhubCards(index,title,yr);
     if(!cards.length)return status('no_exact_movie_card');
-    let posts=0,entries=0;
+    let posts=0,entries=0,externalLinks=0,downloadRowLinks=0;
     for(const href of cards){
       try{
         const response=await fetchImpl(href,{
@@ -83,15 +83,21 @@ export async function probe4khdhubHandoff({
           try{target=new URL(m[1],href);}catch{continue;}
           if(target.protocol!=='https:'||target.username||target.password||
              target.port||target.hash)continue;
+          if(target.origin!==SITE)externalLinks++;
+          const nearby=body.slice(Math.max(0,m.index-700),m.index);
+          if(/download-item|download-links|download-button/i.test(nearby))
+            downloadRowLinks++;
           if(/(^|\.)hubcloud\.[a-z]{2,12}$|(^|\.)vcloud\.[a-z]{2,12}$/i
              .test(target.hostname))entries++;
         }
         if(entries)break;
       }catch{}
     }
-    return status(entries?'hubcloud_entry_found':posts?'no_hubcloud_entry':'post_unavailable',{
+    return status(entries?'hubcloud_entry_found':
+      downloadRowLinks?'intermediate_download_links':
+      posts?'no_hubcloud_entry':'post_unavailable',{
       exactMoviePosts:cards.length,postPagesAccessible:posts,
-      hubcloudEntryPages:entries
+      hubcloudEntryPages:entries,externalLinks,downloadRowLinks
     });
   }catch(e){
     const reason=String(e?.message||'');
