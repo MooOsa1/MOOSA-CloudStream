@@ -4,6 +4,20 @@ let generation=0;
 let currentAbort=null;
 import {sourceLookupBudgetMs} from './source-timeout-policy.js';
 let runtimeReadiness;
+let cineStreamReadiness;
+function approvedCineStreamReady(){
+  if(!cineStreamReadiness){
+    cineStreamReadiness=fetch('/api/config',{
+      headers:{Accept:'application/json'},
+      signal:AbortSignal.timeout(2000)
+    }).then(async response=>{
+      if(!response.ok)return false;
+      const config=await response.json();
+      return config?.verifiedCineStreamPilotReady===true;
+    }).catch(()=>false);
+  }
+  return cineStreamReadiness;
+}
 function pilotRuntimeReady(){
   if(!runtimeReadiness){
     runtimeReadiness=fetch('/api/cloudstream/pilot-status',{
@@ -49,10 +63,15 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
       appendExternalSubtitles(data.subtitles);
     }).catch(()=>{}); // Subtitle network failure must not affect playback.
   try {
-    // Allow one independently vetted movie source an appropriate startup
-    // window on free hosting. All other titles retain normal deadlines.
+    // Only explicitly reviewed CineStream experimental titles can use the
+    // extended verification window. The public/disabled source flow retains
+    // the normal 16.5s deadline to avoid wasting the viewer's time.
+    const idText=String(id);
+    const reviewedMulti=media==='movie' &&
+      ['19','832'].includes(idText) && await approvedCineStreamReady();
     const longPilot=media==='movie' &&
-      (['10331','961','3085'].includes(String(id)) || await pilotRuntimeReady());
+      (reviewedMulti || ['10331','961','3085'].includes(idText) ||
+        await pilotRuntimeReady());
     if(job!==generation)return;
     const response=await fetch('/api/resolve?'+params.toString(),{
       headers:{Accept:'application/json'},
@@ -116,4 +135,5 @@ export function initAutomaticSources(){
   document.addEventListener('moosa-player-opened',cancelAutomaticSourceSearch);
   $('#open-free-film')?.addEventListener('click',openLicensedFullFilm);
   void pilotRuntimeReady();
+  void approvedCineStreamReady();
 }
