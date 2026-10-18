@@ -2,9 +2,9 @@
   "metadata": {
     "id": "moosa.hub.iphone-pc",
     "name": "MOOSA Hub — iPhone & PC",
-    "description": "Free Stremio P2P/HTTP addon aggregation for iPhone full IPA and Windows. Queries update automatically; neither source listings nor torrent metadata prove successful playback. Web/Safari on iPhone cannot play P2P unaided.",
+    "description": "Free iPhone full Stremio IPA and Windows Stremio setup with automatic P2P/HTTP source lookup. HTTP playback candidates are prioritised when available; torrent source listings do not imply working playback. No paid debrid service required.",
     "author": "MOOSA",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "category": "Streaming",
     "source": "external",
     "serviceRequired": false,
@@ -105,11 +105,15 @@
     "sortCriteria": {
       "global": [
         {
+          "key": "streamType",
+          "direction": "desc"
+        },
+        {
           "key": "resolution",
           "direction": "desc"
         },
         {
-          "key": "cached",
+          "key": "seeders",
           "direction": "desc"
         },
         {
