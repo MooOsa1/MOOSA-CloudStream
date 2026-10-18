@@ -11,7 +11,7 @@ permissions:
 jobs:
   browser-high-res:
     runs-on: ubuntu-latest
-    timeout-minutes: 26
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -91,4 +91,14 @@ jobs:
         env:
           MOOSA_SHORT_CLIP_REJECTION: '1'
         timeout-minutes: 3
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Decode true 480p alternatives for Metropolis and M
+        env:
+          MOOSA_NEW_VARIANT_QUALITY: '480'
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Decode true 360p alternatives for Metropolis and M
+        env:
+          MOOSA_NEW_VARIANT_QUALITY: '360'
+        timeout-minutes: 4
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
