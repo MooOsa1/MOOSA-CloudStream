@@ -11,7 +11,12 @@ import {createReadStream} from 'node:fs';
 import {mkdtemp,readFile,stat,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {randomBytes} from 'node:crypto';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
+function bundledFfmpeg(){
+  try{return require('ffmpeg-static')||'ffmpeg';}
+  catch{return 'ffmpeg';}
+}
 
 const FILE=/^(?:index\.m3u8|init\.mp4|seg_[0-9]{5}\.m4s)$/;
 const TYPES={'.m3u8':'application/vnd.apple.mpegurl',
@@ -44,7 +49,7 @@ export function remuxCli(input,outputDir,{binary='ffmpeg'}={}){
   return {binary,args};
 }
 export function createMkvHlsRemux({
-  binary=process.env.MOOSA_FFMPEG_BIN||'ffmpeg',
+  binary=process.env.MOOSA_FFMPEG_BIN||bundledFfmpeg(),
   spawnImpl=spawn,
   maxSessions=1,
   idleMs=90000
@@ -126,7 +131,7 @@ export function createMkvHlsRemux({
       'Content-Length':String(info.size),
       'Cache-Control':'no-store',
       'X-Content-Type-Options':'nosniff',
-      'Access-Control-Allow-Origin':'*'
+      'Cross-Origin-Resource-Policy':'same-origin'
     };
     res.writeHead(200,hdr);
     if(req.method==='HEAD'){res.end();return;}
