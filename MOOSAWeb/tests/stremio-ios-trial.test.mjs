@@ -17,6 +17,13 @@ test('MOOSA iPhone Stremio manifest, catalog and direct HTTPS audio/video source
     assert.equal(manifest.headers.get('access-control-allow-origin'),'*');
     const meta=await manifest.json();
     assert.equal(meta.id,'org.moosa.ios-test');
+    assert.ok(meta.catalogs[0].extra.some(x=>x.name==='search'));
+    const search=await fetch(origin+'/moosa-stremio/catalog/movie/moosa-iphone/search=wing%20it.json');
+    assert.equal(search.status,200);
+    const found=(await search.json()).metas;
+    assert.deepEqual(found.map(x=>x.id),['moosa-wing-it-2023']);
+    const other=await fetch(origin+'/moosa-stremio/catalog/movie/moosa-iphone/search=not-present.json');
+    assert.deepEqual((await other.json()).metas,[]);
     const catalog=await (await fetch(origin+'/moosa-stremio/catalog/movie/moosa-iphone.json')).json();
     assert.ok(catalog.metas.some(row=>row.id==='moosa-ios-player-test'));
     const streams=await (await fetch(origin+'/moosa-stremio/stream/movie/moosa-ios-player-test.json')).json();
