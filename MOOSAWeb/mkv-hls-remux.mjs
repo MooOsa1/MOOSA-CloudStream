@@ -45,6 +45,11 @@ export function remuxCli(input,outputDir,{binary='ffmpeg',headers={}}={}){
   ]:[];
   const args=[
     '-nostdin','-hide_banner','-loglevel','error',
+    // Without -re FFmpeg remuxes an entire 4K feature in seconds and
+    // deletes early live HLS segments before Safari can request them.
+    '-re',
+    // FFmpeg must not escape the operator-approved host through HTTP 302.
+    '-max_redirects','0',
     '-rw_timeout','15000000',...ffHeaders,'-i',parsed.href,
     '-map','0:v:0','-map','0:a:0?',
     '-c:v','copy','-tag:v','hvc1','-c:a','copy',
@@ -123,7 +128,7 @@ export function createMkvHlsRemux({
     // The first playlist and fMP4 init box take time to appear. Segment
     // polling is bounded so a dead ffmpeg never hangs the browser forever.
     let info=null;
-    for(let i=0;i<48;i++){
+    for(let i=0;i<120;i++){
       if(session.failed)break;
       try{
         info=await stat(target);
