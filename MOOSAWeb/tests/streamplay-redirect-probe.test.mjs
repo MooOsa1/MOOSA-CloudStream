@@ -19,7 +19,7 @@ test('StreamPlay encoded link stage reports destination hostname without disclos
     postHtml:'<a href="https://greenmotors.club/?id=1">source</a>'+
       '<a href="https://evil.example/path">unexpected</a>',
     fetchImpl:async(url,opts)=>{
-      calls.push(url);assert.equal(opts.redirect,'error');
+      calls.push(url);assert.equal(opts.redirect,'manual');
       return new Response(page,{headers:{'content-type':'text/html'}});
     }
   });
@@ -41,4 +41,34 @@ test('Unapproved hosts, 403 and page without encoded links do not imply video',a
   });
   assert.equal(blocked.state,'http_403');
   assert.equal(blocked.decodedIntermediateLinks,0);
+});
+
+test('HTTP 302 is classified by host with no redirect follow or signed-path disclosure',async()=>{
+  let calls=0;
+  const outcome=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/?id=private">Link</a>',
+    fetchImpl:async(url,init)=>{
+      calls++;
+      assert.equal(init.redirect,'manual');
+      return new Response(null,{status:302,headers:{
+        location:'https://hubcloud.example/drive/do-not-disclose?token=secret'
+      }});
+    }
+  });
+  assert.equal(calls,1);
+  assert.equal(outcome.state,'http_redirect');
+  assert.equal(outcome.redirectsSeen,1);
+  assert.deepEqual(outcome.destinationHosts,['hubcloud.example']);
+  assert.equal(outcome.videoVerified,false);
+  assert.doesNotMatch(JSON.stringify(outcome),/secret|private|do-not-disclose|https:|drive\//);
+});
+test('Network failure is distinct from rejected video lookup and no source',async()=>{
+  const failure=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/link">Link</a>',
+    fetchImpl:async()=>{throw TypeError('fetch failed');}
+  });
+  assert.equal(failure.state,'connection_failed');
+  assert.equal(failure.inspected,1);
+  assert.deepEqual(failure.statuses,['connection_failed']);
+  assert.equal(failure.videoVerified,false);
 });
