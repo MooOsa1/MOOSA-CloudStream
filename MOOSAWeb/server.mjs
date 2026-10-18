@@ -795,6 +795,24 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
       }).then(result=>console.log('MOOSA_DIRECT_CINESTREAM_HUB '+
         JSON.stringify(result)))
         .catch(()=>console.log('MOOSA_DIRECT_CINESTREAM_HUB_UNAVAILABLE'));
+      // Modern movie discovery batch: unlike the historical four-film
+      // playback tests, this checks catalog/source-page availability only.
+      // Keep one bounded HTML request per modern title, no download links
+      // or media gateway tokens issued automatically.
+      for(const film of [
+        {title:'Oppenheimer',year:2023},
+        {title:'Dune Part Two',year:2024},
+        {title:'Sinners',year:2025}
+      ]){
+        void probe4khdhubHandoff({
+          ...film,timeoutMs:6500,diagnoseRedirects:false
+        }).then(found=>console.log('MOOSA_MODERN_MOVIE_SOURCE_COVERAGE '+
+          JSON.stringify({title:film.title,year:film.year,
+            state:found.state,exactPosts:found.exactMoviePosts,
+            intermediateLinks:found.streamPlayAnchors?.downloadLinks||0,
+            videoVerified:false})))
+        .catch(()=>console.log('MOOSA_MODERN_MOVIE_SOURCE_COVERAGE_UNAVAILABLE'));
+      }
       void probe4khdhubHandoff({
         title:'Inception',year:2010,timeoutMs:7500,diagnoseRedirects:true
       })
