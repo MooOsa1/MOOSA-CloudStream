@@ -11,7 +11,7 @@ let browser,page,unblock;
 const hanging=new Promise(resolve=>{unblock=resolve;});
 let hungRequests=0,backupRequests=0;
 try{
-  browser=await chromium.launch({headless:true,channel:'chrome',
+  browser=await chromium.launch({headless:true,
     args:['--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']});
   page=await browser.newPage({viewport:{width:1152,height:768}});
   const errors=[];
