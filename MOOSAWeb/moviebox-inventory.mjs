@@ -113,7 +113,6 @@ export async function movieBoxInventory({
           bucket.reason=(/^http_[0-9]{3}$/.test(reason)||
             ['invalid_provider_response','provider_response_too_large',
               'large_response'].includes(reason))?reason:'network_or_timeout';
-            reason:'network_or_timeout';
           continue;
         }
         bucket.ok++;
