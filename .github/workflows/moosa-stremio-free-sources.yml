@@ -59,3 +59,30 @@ jobs:
         run: node --check AIOStreamsHost/end-to-end-addon.mjs
       - name: Create disposable addon, query real aggregator, then delete it
         run: node AIOStreamsHost/end-to-end-addon.mjs
+  real-indexed-media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 11
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate indexed-media test script
+        run: node --check AIOStreamsHost/real-source-engine.mjs
+      - name: Launch official Stremio Docker engine (loopback only)
+        run: |
+          docker run -d --rm --name moosa-stremio-server \
+            -p 127.0.0.1:11470:11470 stremio/server:v4.22.2
+          for i in $(seq 1 40); do
+            if curl -sf -m 3 http://127.0.0.1:11470/settings >/dev/null; then
+              echo "OFFICIAL_STREMIO_ENGINE_READY"
+              break
+            fi
+            sleep 2
+          done
+          curl -sSf -m 5 http://127.0.0.1:11470/settings >/dev/null
+      - name: Decode-check real AIOStreams indexed source transport
+        run: node AIOStreamsHost/real-source-engine.mjs
+      - name: Stop ephemeral engine
+        if: always()
+        run: docker rm -f moosa-stremio-server || true
