@@ -46,16 +46,34 @@ function inspectLandingHtml(html,host){
     return m?.[2]||'';
   };
   let downloadButtons=0,hubdriveButtons=0,serverButtons=0;
+  const downloadHosts=new Set(),buttonHosts=new Set();
   for(const entry of anchors){
     const tag=entry[0],id=getAttr(tag,'id'),classes=getAttr(tag,'class');
     const names=new Set(classes.toLowerCase().split(/\s+/).filter(Boolean));
-    if(id==='download' && getAttr(tag,'href'))downloadButtons++;
+    const href=getAttr(tag,'href');
+    let targetHost=null;
+    if(href){
+      try{
+        const target=new URL(href,'https://'+host+'/');
+        if(target.protocol==='https:'&&!target.username&&!target.password&&
+           !target.port&&!target.hash)targetHost=target.hostname.toLowerCase();
+      }catch{}
+    }
+    if(id==='download' && href){
+      downloadButtons++;
+      if(targetHost)downloadHosts.add(targetHost);
+    }
     if(['btn','btn-primary','btn-user','btn-success1','m-1']
       .every(name=>names.has(name)))hubdriveButtons++;
-    if(names.has('btn')&&getAttr(tag,'href'))serverButtons++;
+    if(names.has('btn')&&href){
+      serverButtons++;
+      if(targetHost)buttonHosts.add(targetHost);
+    }
   }
   return {host,status:'page_accessible',downloadButtons,
-    hubdriveButtons,serverButtons};
+    hubdriveButtons,serverButtons,
+    downloadHosts:[...downloadHosts].sort().slice(0,8),
+    buttonHosts:[...buttonHosts].sort().slice(0,12)};
 }
 function trustedDownloadHref(markup,currentUrl){
   // Mirror the HubCloud extractor's #download selector, but never follow
