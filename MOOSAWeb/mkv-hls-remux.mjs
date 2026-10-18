@@ -28,6 +28,19 @@ function send(res,code,message){
     'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   res.end(message);
 }
+/** Safari may request byte ranges for HLS init or fMP4 segment files. */
+export function parseHlsByteRange(value,size){
+  if(typeof value!=='string'||!Number.isSafeInteger(size)||size<1)
+    return null;
+  const match=value.match(/^bytes=(0|[1-9][0-9]{0,14})-((?:0|[1-9][0-9]{0,14}))?$/);
+  if(!match)return null;
+  const start=Number(match[1]);
+  const last=match[2]===undefined?size-1:Number(match[2]);
+  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(last)||
+     start>=size||start>last)return null;
+  const end=Math.min(last,size-1);
+  return {start,end,length:end-start+1};
+}
 export function remuxCli(input,outputDir,{binary='ffmpeg',headers={}}={}){
   const parsed=new URL(input);
   if(parsed.protocol!=='https:'||parsed.username||parsed.password||
@@ -131,7 +144,8 @@ export function createMkvHlsRemux({
     if(req.method!=='GET'&&req.method!=='HEAD')
       return send(res,405,'Unsupported method');
     if(!FILE.test(file))return send(res,404,'Unknown HLS segment');
-    if(req.headers.range)return send(res,416,'HLS requires whole segments');
+    if(req.headers.range && file==='index.m3u8')
+      return send(res,416,'Playlist cannot be ranged');
     const session=await launch(token,url,headers);
     if(!session)return send(res,503,'Live remux unavailable');
     session.touched=Date.now();
@@ -150,18 +164,27 @@ export function createMkvHlsRemux({
     }
     if(!info)return send(res,503,'Media segment is not ready');
     if(info.size>72*1024*1024)return send(res,413,'Segment too large');
+    const requestedRange=req.headers.range;
+    const partial=requestedRange?
+      parseHlsByteRange(requestedRange,info.size):null;
+    if(requestedRange&&!partial)return send(res,416,'Invalid media byte range');
     const extension=path.extname(file);
     const mime=TYPES[extension];
     const hdr={
       'Content-Type':mime,
-      'Content-Length':String(info.size),
+      'Content-Length':String(partial?.length||info.size),
       'Cache-Control':'no-store',
       'X-Content-Type-Options':'nosniff',
-      'Cross-Origin-Resource-Policy':'same-origin'
+      'Cross-Origin-Resource-Policy':'same-origin',
+      'Accept-Ranges':'bytes',
+      ...(partial?{'Content-Range':
+        'bytes '+partial.start+'-'+partial.end+'/'+info.size}:{})
     };
-    res.writeHead(200,hdr);
+    res.writeHead(partial?206:200,hdr);
     if(req.method==='HEAD'){res.end();return;}
-    createReadStream(target).on('error',()=>res.destroy()).pipe(res);
+    createReadStream(target,partial?
+      {start:partial.start,end:partial.end}:undefined)
+      .on('error',()=>res.destroy()).pipe(res);
   }
   function close(){
     clearInterval(cleanupTimer);
