@@ -1,6 +1,12 @@
 const friendlyStatus={
   not_integrated:'Not connected — search was not run',
   needs_upstream_link:'Waiting for a trusted movie-page link',
+  hubcloud_entry_found:'HubCloud movie-page entry discovered — playback not verified',
+  no_exact_movie_post:'No exact movie post in the upstream catalog',
+  index_unavailable:'HDHub4u index unreachable from Render',
+  index_http_403:'Upstream index refused request (HTTP 403)',
+  post_unavailable:'Matching movie post exists, but page fetch failed',
+  no_hubcloud_entry:'No HubCloud entry links on the matching movie page',
   no_exact_title:'No exact title/year match in MovieBox catalog',
   provider_access_denied:'Provider blocked playback lookup (HTTP 403)',
   no_compatible_candidates:'No compatible video candidates returned',
@@ -43,7 +49,14 @@ form.addEventListener('submit',async(e)=>{
       if(source.instances?.length)
         panel.append(make('p','Observed servers: '+source.instances.join(' / ')));
       if(source.searchExecuted===true){
-        panel.append(make('p','Potential links: '+Number(source.candidateCount||0)));
+        if(source.candidateCount!==null&&source.candidateCount!==undefined)
+          panel.append(make('p','Potential video links: '+Number(source.candidateCount)));
+        else
+          panel.append(make('p','Video links: not tested'));
+        if(source.name==='HubCloud'){
+          panel.append(make('p','Matching movie posts: '+Number(source.exactMoviePosts||0)));
+          panel.append(make('p','HubCloud handoff pages: '+Number(source.hubcloudEntryPages||0)));
+        }
         if(Number.isInteger(source.searchHits))
           panel.append(make('p','MovieBox catalog matches: '+Number(source.searchHits)+
             ' results; exact title: '+Number(source.exactTitleHits||0)+
