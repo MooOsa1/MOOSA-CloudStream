@@ -95,8 +95,11 @@ export function isPublicStremioTrialPath(raw){
 export async function handleStremioTrial(req,res,requestUrl){
   if(!isPublicStremioTrialPath(requestUrl.pathname))
     return send(res,404,{error:'Not found'});
-  if(requestUrl.search||requestUrl.hash)
-    return send(res,400,{error:'No query parameters'});
+  // Embedded iOS browsers may append tracking/query values to otherwise
+  // direct media links. These fixed, read-only endpoints never consume them;
+  // route by exact pathname only, with a bounded query length.
+  if(requestUrl.search.length>1024||requestUrl.hash)
+    return send(res,400,{error:'Invalid request'});
   if(!['GET','HEAD'].includes(req.method))
     return send(res,405,{error:'Method not allowed'});
   const sendJSON=(status,data)=>{
