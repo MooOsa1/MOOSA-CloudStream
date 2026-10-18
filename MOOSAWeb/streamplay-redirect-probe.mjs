@@ -177,8 +177,16 @@ async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
         method:'GET',redirect:'manual',headers:rangeHeaders,
         signal:AbortSignal.timeout(Math.min(timeoutMs,6000))
       });
-      if([301,302,303,307,308].includes(response.status))
-        return {status:'second_redirect_blocked',redirectHost};
+      if([301,302,303,307,308].includes(response.status)){
+        let nextHost=null;
+        try{
+          const next=new URL(response.headers.get('location')||'',redirectUrl);
+          if(next.protocol==='https:'&&!next.username&&!next.password&&
+             !next.port&&!next.hash)nextHost=next.hostname.toLowerCase();
+        }catch{}
+        return {status:'second_redirect_blocked',redirectHost,
+          ...(nextHost?{nextHost}:{})};
+      }
       // A normal same-source HTTP redirect is not a bypass of site access
       // controls. HTTP 403/429 still fail closed below.
     }
