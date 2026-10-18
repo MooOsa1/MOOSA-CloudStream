@@ -821,7 +821,9 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
               pixel:row.gatewayPage?.pixelAudit?.status,
               worker:row.gatewayPage?.workerAudit?.status,
               gpdl:row.gatewayPage?.gpdlAudit?.status,
-              r2:row.gatewayPage?.r2Audit?.status
+              r2:row.gatewayPage?.r2Audit?.status,
+              gpdlContainer:row.gatewayPage?.gpdlAudit?.container,
+              r2Container:row.gatewayPage?.r2Audit?.container
             })),
             videoVerified:false})))
         .catch(()=>console.log('MOOSA_MODERN_MOVIE_SOURCE_COVERAGE_UNAVAILABLE'));
