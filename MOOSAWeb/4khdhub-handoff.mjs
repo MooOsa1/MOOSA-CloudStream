@@ -71,6 +71,7 @@ export async function probe4khdhubHandoff({
     const index=await html(search),cards=extract4khdhubCards(index,title,yr);
     if(!cards.length)return status('no_exact_movie_card');
     let posts=0,entries=0,externalLinks=0,downloadRowLinks=0;
+    const hostGroups={hubLike:0,fileHost:0,shortener:0,other:0};
     for(const href of cards){
       try{
         const response=await fetchImpl(href,{
@@ -83,7 +84,17 @@ export async function probe4khdhubHandoff({
           try{target=new URL(m[1],href);}catch{continue;}
           if(target.protocol!=='https:'||target.username||target.password||
              target.port||target.hash)continue;
-          if(target.origin!==SITE)externalLinks++;
+          if(target.origin!==SITE){
+            externalLinks++;
+            const host=target.hostname.toLowerCase();
+            if(/(?:^|\.)(?:hubcloud|vcloud|hubdrive|hubcdn|hblinks|hubstream)\./.test(host))
+              hostGroups.hubLike++;
+            else if(/(?:^|\.)(?:pixeldrain|gofile|filepress|filemoon|gdflix)\./.test(host))
+              hostGroups.fileHost++;
+            else if(/(?:^|\.)(?:hrefli|linkvertise|shrinkme|shorturl|ouo)\./.test(host))
+              hostGroups.shortener++;
+            else hostGroups.other++;
+          }
           const nearby=body.slice(Math.max(0,m.index-700),m.index);
           if(/download-item|download-links|download-button/i.test(nearby))
             downloadRowLinks++;
@@ -97,7 +108,7 @@ export async function probe4khdhubHandoff({
       downloadRowLinks?'intermediate_download_links':
       posts?'no_hubcloud_entry':'post_unavailable',{
       exactMoviePosts:cards.length,postPagesAccessible:posts,
-      hubcloudEntryPages:entries,externalLinks,downloadRowLinks
+      hubcloudEntryPages:entries,externalLinks,downloadRowLinks,hostGroups
     });
   }catch(e){
     const reason=String(e?.message||'');
