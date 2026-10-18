@@ -12,6 +12,7 @@ const provider={qualities:{
  '720':{url:'https://hcdn3.hakunaymatata.com/general-720.mp4',
    type:'mp4'},
  '1080':{url:'https://bad.host.example/film-1080.mp4',type:'mp4'},
+ '2160':{url:'https://hcdn3.hakunaymatata.com/general-4k.mp4',type:'mp4'},
  '480-clone':{url:'https://hcdn3.hakunaymatata.com/general-480.mp4',type:'mp4'}
 }};
 test('verify identity is strict and cannot map the other 1926 film',()=>{
@@ -30,6 +31,8 @@ test('only operator allowlisted source, dedupe and sort multiple quality labels'
   const out=offeredVidlinkVariants(provider);
   assert.deepEqual(out.map(x=>x.advertisedQuality),[720,480,360]);
   assert.ok(out.every(x=>x.url.startsWith('https://hcdn3.hakunaymatata.com/')));
+  assert.ok(out.every(x=>x.advertisedQuality<=1080),
+    'Do not probe deferred 4K variants');
 });
 test('feature flag OFF or unreviewed content issues zero links',async()=>{
   let calls=0;
