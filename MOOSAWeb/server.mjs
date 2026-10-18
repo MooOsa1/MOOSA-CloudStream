@@ -815,6 +815,9 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
             intermediateLinks:found.streamPlayAnchors?.downloadLinks||0,
             serverAudits:(found.redirectProbe?.landings||[]).map(row=>({
               host:row.host,step:row.gatewayPage?.status||row.status,
+              linkHosts:row.buttonHosts||[],
+              downloadHosts:row.downloadHosts||[],
+              gatewayHosts:row.gatewayPage?.buttonHosts||[],
               pixel:row.gatewayPage?.pixelAudit?.status,
               worker:row.gatewayPage?.workerAudit?.status
             })),
