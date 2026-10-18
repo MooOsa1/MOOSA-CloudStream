@@ -111,11 +111,11 @@ test('private lab exposes counts but never URLs and rejects unauthorized invento
     const page=await original(base+'/source-discovery.html',{headers});
     assert.equal(page.status,200);
     const html=await page.text();
-    assert.match(html,/rel="stylesheet" href="\\/source-discovery.css"/);
-    assert.doesNotMatch(html,/<style[\\s>]/i);
+    assert.equal(html.includes('href="/source-discovery.css"'),true);
+    assert.equal(html.includes('<style'),false);
     const stylesheet=await original(base+'/source-discovery.css',{headers});
     assert.equal(stylesheet.status,200);
-    assert.match(stylesheet.headers.get('content-type')||'',/text\\/css/);
+    assert.equal((stylesheet.headers.get('content-type')||'').includes('text/css'),true);
     assert.match(await stylesheet.text(),/background:#17181d/);
   }finally{
     if(app)await new Promise(resolve=>app.close(resolve));
