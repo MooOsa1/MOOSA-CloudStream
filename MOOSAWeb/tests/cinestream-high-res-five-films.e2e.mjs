@@ -31,8 +31,13 @@ const EXTRAS=[
 // Feature length windows are broad screening guards, not identity proof.
 const NEW_FILMS=[
  {title:'Metropolis',year:1927,tmdbId:19,preferred:720,minDuration:3600,maxDuration:11000},
- {title:'The Cabinet of Dr. Caligari',year:1920,tmdbId:234,preferred:720,minDuration:3000,maxDuration:7200},
  {title:'M',year:1931,tmdbId:832,preferred:1080,minDuration:4500,maxDuration:8500}
+];
+// The only fetched Caligari source decoded 440s, too short for a feature.
+// Keep a separate negative regression: NEVER count its frames as a movie.
+const SHORT_CLIPS=[
+ {title:'The Cabinet of Dr. Caligari',year:1920,tmdbId:234,
+   preferred:720,minDuration:3000,maxDuration:7200}
 ];
 const HOSTS=new Set(['hcdn3.hakunaymatata.com','bcdn.hakunaymatata.com']);
 // Explicit fallback scans target only the two titles with verified 1080p.
@@ -47,24 +52,26 @@ const failoverOnly=process.env.MOOSA_FAILOVER_TEST==='1';
 const chainOnly=process.env.MOOSA_FAILOVER_CHAIN==='1';
 const newOnly=process.env.MOOSA_NEW_CINESTREAM==='1';
 const newSeekOnly=process.env.MOOSA_NEW_CINESTREAM_SEEK==='1';
+const rejectShortOnly=process.env.MOOSA_SHORT_CLIP_REJECTION==='1';
 const otherQuality=Number(process.env.MOOSA_OTHER_QUALITY||0);
 if(otherQuality&&![360,480].includes(otherQuality))
   throw Error('Other-quality test must be 360 or 480');
 if([extraOnly,seekOnly,midpointSeek,failoverOnly,chainOnly,newOnly,
-  newSeekOnly,Boolean(fallbackQuality),Boolean(otherQuality)]
+  newSeekOnly,rejectShortOnly,Boolean(fallbackQuality),Boolean(otherQuality)]
   .filter(Boolean).length>1)
   throw Error('Choose only one experimental browser probe mode');
 const otherFilms=otherQuality===360?[FILMS[4]]:
   [...FILMS.slice(2),EXTRAS[1]];
-const filmsToTest=(newOnly||newSeekOnly)?NEW_FILMS:
-  ((failoverOnly||chainOnly)?FILMS.slice(0,2):
+const filmsToTest=rejectShortOnly?SHORT_CLIPS:
+  ((newOnly||newSeekOnly)?NEW_FILMS:
+    ((failoverOnly||chainOnly)?FILMS.slice(0,2):
     (otherQuality?otherFilms:
       (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
-        (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS)))));
+        (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS))))));
 const SITE='https://moosa-web.onrender.com';
 const agent='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
 const browserErrors=[];
-let sourceRequests=0;let browser;let acceptedFilms=0;
+let sourceRequests=0;let browser;let acceptedFilms=0;let correctlyRejected=0;
 async function jsonSmall(url,headers,timeout=15000){
   const res=await fetch(url,{headers,redirect:'error',signal:AbortSignal.timeout(timeout)});
   if(!res.ok)throw Error('source_http_'+res.status);
@@ -257,6 +264,19 @@ try{
         siteProductionUnchanged:true
       }));
       phase='assert_movie_identity';
+      if(rejectShortOnly){
+        assert.ok(!durationPlausible && actual.duration<film.minDuration,
+          'Known short clip changed: reassess identity before enabling');
+        correctlyRejected++;
+        console.log('MOOSA_CINESTREAM_SHORT_CLIP_REJECTED '+JSON.stringify({
+          film:film.title,year:film.year,tmdbId:film.tmdbId,
+          decodedVideoWidth:actual.width,decodedVideoHeight:actual.height,
+          durationSeconds:actual.duration,minFeatureSeconds:film.minDuration,
+          reasons:['short_runtime','not_verified_full_film'],
+          sourcesPublished:false
+        }));
+        continue;
+      }
       assert.ok(durationPlausible,film.title+' source likely wrong film by duration');
       assert.ok(actual.decodedFrames>0,'Chrome decoded no video frames');
       if(failoverOnly||chainOnly){
@@ -323,8 +343,17 @@ try{
     actuallyPlayedWithPlausibleDuration:acceptedFilms,
     browserErrorCount:browserErrors.length,siteProductionUnchanged:true
   }));
-  assert.equal(acceptedFilms,filmsToTest.length,
-    'Do not claim high quality features playable if one failed');
+  if(rejectShortOnly){
+    console.log('MOOSA_CINESTREAM_SHORT_CLIP_REJECTION_SUMMARY '+
+      JSON.stringify({tested:filmsToTest.length,correctlyRejected,
+        acceptedAsFullFeatures:acceptedFilms,published:false}));
+    assert.equal(correctlyRejected,filmsToTest.length,
+      'Known short clip was not safely rejected');
+    assert.equal(acceptedFilms,0);
+  }else{
+    assert.equal(acceptedFilms,filmsToTest.length,
+      'Do not claim high quality features playable if one failed');
+  }
 }finally{
   await browser?.close().catch(()=>{});
   await new Promise(resolve=>server.close(resolve));
