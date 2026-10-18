@@ -3,6 +3,37 @@ const input=document.querySelector('#movie-id');
 const status=document.querySelector('#status');
 const output=document.querySelector('#output');
 const action=document.querySelector('#scan');
+const bbPanel=document.getElementById('bb-panel');
+const bbResult=document.getElementById('bb-result');
+let scanSerial=0;
+async function checkBingeBang(id,serial){
+  bbPanel.hidden=false;
+  bbResult.textContent='Checking the BingeBang movie page…';
+  try{
+    const query=new URLSearchParams({media:'movie',id});
+    const response=await fetch('/api/bingebang-discovery?'+query.toString(),{
+      headers:{Accept:'application/json'},
+      signal:AbortSignal.timeout(12000)
+    });
+    if(!response.ok)throw Error('BingeBang probe unavailable');
+    const info=await response.json();
+    if(serial!==scanSerial)return;
+    if(info.state==='page_no_direct_media')
+      bbResult.textContent='Movie page accessible, but no direct video file exposed in HTML. Player integration not ready.';
+    else if(info.state==='embedded_candidates_found')
+      bbResult.textContent=info.embeddedMediaCandidates+
+        ' unverified video references in HTML. Must verify bytes and usage rights before playback.';
+    else
+      bbResult.textContent='BingeBang page status: '+String(info.state||'unavailable')+
+        '. No verified video.';
+    if(info.observedVidyServers?.length)
+      bbResult.textContent+=' Vidy labels seen: '+info.observedVidyServers.join(' / ')+'.';
+  }catch{
+    if(serial===scanSerial)
+      bbResult.textContent='BingeBang request unavailable. No playable video confirmed.';
+  }
+}
+
 const set=(id,value)=>{document.getElementById(id).textContent=value;};
 form.addEventListener('submit',async event=>{
   event.preventDefault();
@@ -11,6 +42,8 @@ form.addEventListener('submit',async event=>{
     status.textContent='Enter a valid numeric TMDB movie ID.';
     output.hidden=true;return;
   }
+  const serial=++scanSerial;
+  void checkBingeBang(id,serial);
   action.disabled=true;
   output.hidden=true;
   status.textContent='Querying the provider…';
