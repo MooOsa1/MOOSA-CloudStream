@@ -34,8 +34,11 @@ const fallbackQuality=Number(process.env.MOOSA_HIGH_RES_FALLBACK||0);
 if(fallbackQuality && ![360,480,720].includes(fallbackQuality))
   throw Error('Invalid test fallback quality');
 const extraOnly=process.env.MOOSA_EXTRA_CINESTREAM==='1';
-if(extraOnly && fallbackQuality)throw Error('Extra-only and fallback modes are exclusive');
-const filmsToTest=extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS);
+const seekOnly=process.env.MOOSA_SEEK_STRESS==='1';
+if((extraOnly&&fallbackQuality)||(seekOnly&&(extraOnly||fallbackQuality)))
+  throw Error('Extra-only, seek-only, and fallback modes are exclusive');
+const filmsToTest=seekOnly?[...FILMS.slice(0,2),...EXTRAS]:
+  (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS));
 const SITE='https://moosa-web.onrender.com';
 const agent='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
 const browserErrors=[];
@@ -160,13 +163,18 @@ try{
         const video=document.querySelector('#video');
         return video&&!video.error&&!video.paused&&video.currentTime>0.6 &&
           video.videoWidth>0&&video.videoHeight>0&&
-          Number.isFinite(video.duration);
+          Number.isFinite(video.duration)&&
+          (video.getVideoPlaybackQuality?.().totalVideoFrames||
+            video.webkitDecodedFrameCount||0)>0;
       },null,{timeout:70000});
       phase='read_real_media_metadata';
       const actual=await page.locator('#video').evaluate(video=>({
         height:video.videoHeight,width:video.videoWidth,
         duration:Math.round(video.duration),
         currentTime:Math.round(video.currentTime*10)/10,
+        decodedFrames:video.getVideoPlaybackQuality?.().totalVideoFrames||
+          video.webkitDecodedFrameCount||0,
+        droppedFrames:video.getVideoPlaybackQuality?.().droppedVideoFrames||0,
         error:video.error?.code||null
       }));
       const durationPlausible=actual.duration>=film.minDuration&&
@@ -175,7 +183,7 @@ try{
         actual.height<=target.quality+24;
       console.log('MOOSA_HIGH_RES_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
         film:film.title,year:film.year,tmdbId:film.tmdbId,
-        actuallyDecodedFrames:true,
+        actuallyDecodedFrames:actual.decodedFrames>0,
         claimedQualityLabel:target.quality,
         measuredVideo:actual,
         qualityLabelMatchesActualPixels:qualityClaimMatches,
@@ -186,6 +194,34 @@ try{
       }));
       phase='assert_movie_identity';
       assert.ok(durationPlausible,film.title+' source likely wrong film by duration');
+      assert.ok(actual.decodedFrames>0,'Chrome decoded no video frames');
+      if(seekOnly){
+        phase='seek_into_feature';
+        const seekTo=90;
+        await page.locator('#video').evaluate((video,t)=>{
+          video.currentTime=t;
+          if(video.paused)video.play().catch(()=>{});
+        },seekTo);
+        await page.waitForFunction(({seekTo,framesBefore})=>{
+          const video=document.querySelector('#video');
+          const frames=video?.getVideoPlaybackQuality?.().totalVideoFrames||
+            video?.webkitDecodedFrameCount||0;
+          return video&&!video.error&&video.readyState>=2&&
+            video.currentTime>seekTo+0.3&&frames>framesBefore;
+        },{seekTo,framesBefore:actual.decodedFrames},{timeout:50000});
+        const afterSeek=await page.locator('#video').evaluate(video=>({
+          currentTime:Math.round(video.currentTime*10)/10,
+          decodedFrames:video.getVideoPlaybackQuality?.().totalVideoFrames||
+            video.webkitDecodedFrameCount||0,
+          error:video.error?.code||null
+        }));
+        console.log('MOOSA_HIGH_RES_CINESTREAM_SEEK_OK '+JSON.stringify({
+          film:film.title,year:film.year,seekTargetSeconds:seekTo,
+          ...afterSeek,frameAdvance:afterSeek.decodedFrames-actual.decodedFrames,
+          rangeRequestCount,approxReadBytes:rangeTotalBytes,
+          productionUnchanged:true
+        }));
+      }
       acceptedFilms++;
     }catch(error){
       console.log('MOOSA_HIGH_RES_CINESTREAM_CHROME_FAILED '+JSON.stringify({
