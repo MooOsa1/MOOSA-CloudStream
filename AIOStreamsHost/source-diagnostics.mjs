@@ -3,8 +3,8 @@
  * MOOSA Hub live, read-only Stremio discovery audit.
  * This checks addon protocols and classifies stream *candidates*.
  * It DOES NOT download media, assert movie identity, or prove playback.
- * Tests two old public-domain US film titles plus recent movies' metadata listings.
- * No copyrighted movie video or torrent payload is fetched.
+ * Tests 2025 mainstream releases (Sinners and F1) plus Dune Part Two (2024).
+ * Only addon metadata is requested; no movie video/torrent payload is downloaded.
  */
 import { readFile } from 'node:fs/promises';
 
@@ -17,11 +17,10 @@ const ADDONS = [
   { name: 'StremThru Torz', base: 'https://stremthru.13377001.xyz/stremio/torz', exploratory: true },
 ];
 const MOVIES = [
-  { imdb: 'tt0063350', title: 'Night of the Living Dead (1968)' },
-  { imdb: 'tt0032599', title: 'His Girl Friday (1940)' },
+  { imdb: 'tt31193180', title: 'Sinners (2025)' },
+  { imdb: 'tt16311594', title: 'F1: The Movie (2025)' },
 ];
 const RECENT_LISTINGS = [
-  { imdb: 'tt31193180', title: 'Sinners (2025)' },
   { imdb: 'tt15239678', title: 'Dune: Part Two (2024)' },
 ];
 const META = [
@@ -147,7 +146,7 @@ export async function main() {
 |---:|---:|---:|---:|
 |${validStreamManifests}|${totalCandidates}|${totalP2p}|${totalHttp}|
 
-Checked two public-domain and two recent title IDs (metadata only). No videos were downloaded or played.
+Checked Sinners (2025), F1 (2025), and Dune: Part Two (2024) metadata only. No video downloaded or played.
 `
     );
   }
