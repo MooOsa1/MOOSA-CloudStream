@@ -8,6 +8,8 @@ const friendlyStatus={
   http_403:'Alternative directory also returned HTTP 403',
   non_html_search:'Alternative directory returned no HTML',
   no_exact_movie_card:'No exact title/year card found in alternate directory',
+  intermediate_download_links:'Movie post has intermediate download links, but no verified HubCloud URL',
+  no_hubcloud_entry:'Movie post opens, but no HubCloud handoff was exposed',
   search_unavailable:'Alternative directory search unavailable',
   provider_access_restricted:'BingeBang blocked access from Render',
   page_no_direct_media:'Movie page loaded, no video file exposed',
