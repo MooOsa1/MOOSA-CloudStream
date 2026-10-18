@@ -17,6 +17,7 @@ import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-nigh
 import {findVerifiedMultiFilmVidlink,discoverVidlinkInventory} from './vidlink-multifilm-candidates.mjs';
 import {movieBoxInventory} from './moviebox-inventory.mjs';
 import {probeBingeBangMovie} from './bingebang-inventory.mjs';
+import {inspectHubCloudHandoff} from './hubcloud-handoff.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -85,6 +86,17 @@ function authenticatePrivateLab(req,res,pathname){
   return false;
 }
 const CONFIG_PATH = process.env.STREAMS_FILE || 'data/streams.json';
+const focusedHubCloudCache=new Map();
+function cachedHubCloudHandoff(title,year){
+  const key=title.normalize('NFKC').toLowerCase()+'|'+year;
+  const current=focusedHubCloudCache.get(key);
+  if(current&&current.until>Date.now())return current.promise;
+  if(focusedHubCloudCache.size>=30)
+    focusedHubCloudCache.delete(focusedHubCloudCache.keys().next().value);
+  const promise=inspectHubCloudHandoff({title,year:Number(year),timeoutMs:7500});
+  focusedHubCloudCache.set(key,{until:Date.now()+180000,promise});
+  return promise;
+}
 const focusedMovieBoxCache=new Map();
 async function cachedMovieBoxInventory(title,year){
   const key=title.normalize('NFKC').toLowerCase()+'|'+year;
@@ -298,16 +310,29 @@ async function handle(req,res,mediaGateway=null) {
       if(!/^[A-Za-z0-9][\p{L}\p{N} \-'.:,&()]{0,109}$/u.test(title)||
         !/^(?:18[89]\d|19\d\d|20\d\d|2100)$/.test(year))
         return err(res,400,'Invalid film identity');
-      const movieBox=await cachedMovieBoxInventory(title,year);
+      const [movieBox,hubCloud]=await Promise.all([
+        cachedMovieBoxInventory(title,year),cachedHubCloudHandoff(title,year)
+      ]);
       return json(res,200,{
         title,year:Number(year),
         sources:[
           {name:'BingeBang',status:'not_integrated',
             searchExecuted:false,candidateCount:null,verifiedPlayable:false,
             explanation:'Not connected to an approved search/playback API. No search was performed.'},
-          {name:'HubCloud',status:'needs_upstream_link',
-            searchExecuted:false,candidateCount:null,verifiedPlayable:false,
-            explanation:'A link resolver, not a searchable movie catalog. Needs a trusted upstream movie page.'},
+          {name:'HubCloud',status:hubCloud.state,
+            searchExecuted:true,candidateCount:null,verifiedPlayable:false,
+            exactMoviePosts:hubCloud.exactMoviePosts,
+            indexHits:hubCloud.indexHits,
+            hubcloudEntryPages:hubCloud.hubcloudEntryPages,
+            explanation:hubCloud.state==='hubcloud_entry_found'?
+              'Found HubCloud entry pages linked from a matching movie post; no video URL has been validated.':
+              hubCloud.state==='index_unavailable'?
+              'HDHub4u index lookup failed from Render; no conclusion about film availability.':
+              hubCloud.state==='no_exact_movie_post'?
+              'HDHub4u returned no matching movie post with the strict title/year check.':
+              hubCloud.state==='post_unavailable'?
+              'Matching movie post found, but its page could not be fetched by Render.':
+              'HDHub4u did not yield a verified HubCloud entry link.'},
           {name:'Vidy',status:'not_integrated',
             instances:['Miami','Boise'],searchExecuted:false,
             candidateCount:null,verifiedPlayable:false,
@@ -724,6 +749,11 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
         .then(result=>console.log('MOOSA_BINGEBANG_LIVE_PAGE '+
           JSON.stringify(result)))
         .catch(()=>console.log('MOOSA_BINGEBANG_LIVE_PAGE_UNAVAILABLE'));
+      void inspectHubCloudHandoff({
+        title:'Inception',year:2010,imdbId:'tt1375666',timeoutMs:7500
+      }).then(result=>console.log('MOOSA_HUBCLOUD_LIVE_HANDOFF '+
+        JSON.stringify(result)))
+        .catch(()=>console.log('MOOSA_HUBCLOUD_LIVE_HANDOFF_UNAVAILABLE'));
       void movieBoxInventory({title:'Inception',year:2010,timeoutMs:6500})
         .then(result=>console.log('MOOSA_MOVIEBOX_LIVE_DISCOVERY '+
           JSON.stringify(result)))
