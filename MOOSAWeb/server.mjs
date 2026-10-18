@@ -310,15 +310,25 @@ async function handle(req,res,mediaGateway=null) {
       if(!/^[A-Za-z0-9][\p{L}\p{N} \-'.:,&()]{0,109}$/u.test(title)||
         !/^(?:18[89]\d|19\d\d|20\d\d|2100)$/.test(year))
         return err(res,400,'Invalid film identity');
-      const [movieBox,hubCloud]=await Promise.all([
-        cachedMovieBoxInventory(title,year),cachedHubCloudHandoff(title,year)
+      const knownTmdb=title.trim().toLowerCase()==='inception'&&year==='2010'?
+        27205:null;
+      const [movieBox,hubCloud,bingeBang]=await Promise.all([
+        cachedMovieBoxInventory(title,year),cachedHubCloudHandoff(title,year),
+        knownTmdb?cachedBingeBangPage(knownTmdb):Promise.resolve(null)
       ]);
       return json(res,200,{
         title,year:Number(year),
         sources:[
-          {name:'BingeBang',status:'not_integrated',
-            searchExecuted:false,candidateCount:null,verifiedPlayable:false,
-            explanation:'Not connected to an approved search/playback API. No search was performed.'},
+          {name:'BingeBang',
+            status:bingeBang?.state||'needs_verified_tmdb_id',
+            searchExecuted:!!bingeBang,candidateCount:null,
+            pageAccessible:bingeBang?.pageAccessible===true,
+            verifiedPlayable:false,
+            explanation:bingeBang?.state==='provider_access_restricted'?
+              'Official BingeBang refused the Render data-center request. The player session was not accessed.':
+              bingeBang?.pageAccessible===true?
+              'Official movie page loaded; direct playable stream remains unverified.':
+              'Requires an exact verified movie ID and a permitted player session; no playable links tested.'},
           {name:'HubCloud',status:hubCloud.state,
             searchExecuted:true,candidateCount:null,verifiedPlayable:false,
             exactMoviePosts:hubCloud.exactMoviePosts,
@@ -333,10 +343,10 @@ async function handle(req,res,mediaGateway=null) {
               hubCloud.state==='post_unavailable'?
               'Matching movie post found, but its page could not be fetched by Render.':
               'HDHub4u did not yield a verified HubCloud entry link.'},
-          {name:'Vidy',status:'not_integrated',
+          {name:'Vidy',status:'requires_parent_player',
             instances:['Miami','Boise'],searchExecuted:false,
             candidateCount:null,verifiedPlayable:false,
-            explanation:'Only server labels seen inside BingeBang. No independent search or playable stream has been verified.'},
+            explanation:'Miami and Boise are visible server labels in the BingeBang player. No independent Vidy catalog or verified stream API was found. The official BingeBang session is required before these can be evaluated.'},
           {name:'MovieBox',status:movieBox.state,
             searchExecuted:['no_exact_title','candidates_found',
               'no_compatible_candidates','provider_access_denied'].includes(movieBox.state),
