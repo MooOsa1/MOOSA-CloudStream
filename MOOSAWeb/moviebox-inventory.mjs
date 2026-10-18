@@ -16,8 +16,9 @@ function normalized(s){
 }
 function unpack(j){return j?.data?.data||j?.data||j||{};}
 async function responseJson(r){
-  if(!r?.ok||Number(r.headers.get('content-length')||0)>MAX)
-    throw Error('provider_unavailable');
+  if(!r?.ok)throw Error('http_'+String(r?.status||0));
+  if(Number(r.headers.get('content-length')||0)>MAX)
+    throw Error('provider_response_too_large');
   if(!String(r.headers.get('content-type')||'').includes('json'))
     throw Error('invalid_provider_response');
   const raw=await r.text();
@@ -106,7 +107,13 @@ export async function movieBoxInventory({
       subjectRequests++;
       for(const [idx,result] of responses.entries()){
         const bucket=idx===0?diagnostics.plays:diagnostics.downloads;
-        if(result.status!=='fulfilled'){bucket.failed++;continue;}
+        if(result.status!=='fulfilled'){
+          bucket.failed++;
+          const reason=String(result.reason?.message||'unavailable');
+          bucket.reason=/^(?:http_\\d{3}|invalid_provider_response|provider_response_too_large|large_response)$/.test(reason)?
+            reason:'network_or_timeout';
+          continue;
+        }
         bucket.ok++;
         const d=result.value;
         for(const prop of ['streams','downloads','dash']){
