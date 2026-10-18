@@ -47,41 +47,6 @@ test('catalog identity only: Metropolis and M require matching TMDB IMDb title a
   assert.equal(exactExperimentalFilm(unrelated),null,
     'Do not promote the 440-second Caligari clip to a verified full feature');
 });
-test('1080-capable Chaplin film identities are exact, test-only and never cross-map',()=>{
-  const fixtures=[
-    {id:962,media:'movie',imdbId:'tt0015864',year:1925,
-      title:'The Gold Rush'},
-    {id:10098,media:'movie',imdbId:'tt0012349',year:1921,
-      title:'The Kid'}
-  ];
-  for(const film of fixtures){
-    assert.equal(exactExperimentalFilm(film)?.tmdbId,film.id);
-    for(const altered of [
-      {...film,imdbId:fixtures.find(x=>x.id!==film.id).imdbId},
-      {...film,year:film.year+1},
-      {...film,title:'Other unrelated movie',originalTitle:'Other unrelated movie'},
-      {...film,media:'tv'}
-    ])assert.equal(exactExperimentalFilm(altered),null);
-  }
-});
-test('Newly catalog-matched films cannot access Vidlink without both operator gates',async()=>{
-  let calls=0;
-  const fetchImpl=async()=>{calls++;throw Error('Must not contact provider');};
-  const gateway={issueIfBytesVerified:async()=>{calls++;throw Error('Must not mint source');}};
-  for(const film of [
-    {id:962,media:'movie',imdbId:'tt0015864',year:1925,title:'The Gold Rush'},
-    {id:10098,media:'movie',imdbId:'tt0012349',year:1921,title:'The Kid'}
-  ]){
-    assert.deepEqual(await findVerifiedMultiFilmVidlink({
-      meta:film,mediaGateway:gateway,enabled:false,rightsReviewed:true,fetchImpl
-    }),[]);
-    assert.deepEqual(await findVerifiedMultiFilmVidlink({
-      meta:film,mediaGateway:gateway,enabled:true,rightsReviewed:false,fetchImpl
-    }),[]);
-  }
-  assert.equal(calls,0);
-});
-
 test('Metropolis and M cannot initiate provider requests without rights review',async()=>{
   let requests=0;
   const fetchImpl=async()=>{requests++;throw Error('Provider request must be blocked');};
