@@ -110,7 +110,9 @@ export async function movieBoxInventory({
         if(result.status!=='fulfilled'){
           bucket.failed++;
           const reason=String(result.reason?.message||'unavailable');
-          bucket.reason=/^(?:http_\\d{3}|invalid_provider_response|provider_response_too_large|large_response)$/.test(reason)?
+          bucket.reason=(/^http_[0-9]{3}$/.test(reason)||
+            ['invalid_provider_response','provider_response_too_large',
+              'large_response'].includes(reason))?reason:'network_or_timeout';
             reason:'network_or_timeout';
           continue;
         }
