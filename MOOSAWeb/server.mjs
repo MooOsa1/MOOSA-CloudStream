@@ -15,6 +15,7 @@ import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio
 import {createMediaGateway} from './verified-media-gateway.mjs';
 import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
 import {findVerifiedMultiFilmVidlink,discoverVidlinkInventory} from './vidlink-multifilm-candidates.mjs';
+import {movieBoxInventory} from './moviebox-inventory.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -257,6 +258,40 @@ async function handle(req,res,mediaGateway=null) {
       const match=url.pathname.match(/^\/api\/stremio\/stream\/movie\/(tt\d{5,12})\.json$/);
       if(!match)return err(res,404,'Unsupported Stremio stream route');
       return json(res,200,await resolveStremioProtocolMovie(match[1]));
+    }
+    if(PRIVATE_LAB&&url.pathname==='/api/focused-sources'){
+      // Three providers requested by operator. Only MovieBox has a current
+      // title-search protocol; HubCloud needs a reviewed upstream page URL,
+      // and BingeBang needs a provider-authorized play session.
+      // Never accept an arbitrary URL or a provider-supplied auth token.
+      const keys=functionalParams(url.searchParams).sort();
+      if(keys.join(',')!=='title,year'||
+        url.searchParams.getAll('title').length!==1||
+        url.searchParams.getAll('year').length!==1)
+        return err(res,400,'Expected exactly title and year');
+      const title=url.searchParams.get('title')||'';
+      const year=url.searchParams.get('year')||'';
+      if(!/^[A-Za-z0-9][\p{L}\p{N} \-'.:,&()]{1,109}$/u.test(title)||
+        !/^(?:18[89]\d|19\d\d|20\d\d|2100)$/.test(year))
+        return err(res,400,'Invalid film identity');
+      const movieBox=await movieBoxInventory({title,year:Number(year),timeoutMs:6500});
+      return json(res,200,{
+        title,year:Number(year),
+        sources:[
+          {name:'BingeBang',status:'requires_provider_session',
+            candidateCount:0,verifiedPlayable:false,
+            explanation:'Player-issued short-lived access pass; no standalone verified browser stream yet.'},
+          {name:'HubCloud',status:'requires_upstream_page',
+            candidateCount:0,verifiedPlayable:false,
+            explanation:'Terminal link resolver, not an independent movie catalog.'},
+          {name:'MovieBox',status:movieBox.state,
+            candidateCount:movieBox.sourceVariants,
+            qualities:movieBox.offeredQualities,
+            formats:movieBox.formats,
+            verifiedPlayable:false,
+            explanation:'Candidate inventory only; exact edition, CDN bytes and playback not yet confirmed.'}
+        ]
+      });
     }
     if(PRIVATE_LAB&&url.pathname==='/api/source-discovery'){
       // Authenticated private inventory for any numeric TMDB movie ID.
