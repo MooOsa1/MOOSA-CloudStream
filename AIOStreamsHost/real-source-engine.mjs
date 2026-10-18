@@ -46,7 +46,7 @@ async function main(){
     const results=await json(path+'/stream/movie/'+MOVIE+'.json',{},60000);
     if(!results.ok || !Array.isArray(results.body.streams)) throw Error('AIOStreams real source query failed: '+results.status);
     const torrents = results.body.streams
-      .filter(x=> /^[a-f0-9]{40}$/i.test(x.infoHash||'') && !x.behaviorHints?.notWebReady)
+      .filter(x=> /^[a-f0-9]{40}$/i.test(x.infoHash||''))
       .filter(x=>!/720p|480p|360p|CAM|TS|TELESYNC|TRAILER|RESTORED/i.test(x.name||'') || /1080p|2160p/i.test(x.name||''))
       .slice(0,limit);
     console.log('MOOSA_RUNTIME_AIOSTREAMS count='+results.body.streams.length+' trialCount='+torrents.length);
