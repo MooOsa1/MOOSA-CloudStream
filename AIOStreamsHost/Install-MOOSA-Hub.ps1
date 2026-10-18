@@ -57,7 +57,7 @@ function Check-MoosaStreams([string]$uuid, [string]$token) {
     $m = Invoke-RestMethod -Uri $manifest -TimeoutSec 35
     $resources = @($m.resources | ForEach-Object { if ($_ -is [string]) { $_ } else { $_.name } })
     if ($resources -notcontains 'stream') { throw 'MOOSA manifest does not provide a stream resource.' }
-    $probe = "$HostBase/stremio/$uuid/$segment/stream/movie/tt0063350.json"
+    $probe = "$HostBase/stremio/$uuid/$segment/stream/movie/tt31193180.json"
     $movie = Invoke-RestMethod -Uri $probe -TimeoutSec 70
     $count = @($movie.streams).Count
     if ($count -lt 1) { throw 'No stream candidates found through the installed MOOSA addon.' }
