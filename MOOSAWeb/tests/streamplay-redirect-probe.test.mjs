@@ -358,3 +358,75 @@ test('pixel.hubcloud HTTP 429 never passes as video',async()=>{
   assert.equal(r.landings[0].gatewayPage.pixelAudit.status,'rate_limited');
   assert.equal(r.videoVerified,false);
 });
+
+test('pixel.hubcloud follows only one exact reviewed Cloudflare-host redirect for HTTP 206 MP4',async()=>{
+  const envelope=JSON.stringify({o:b64('https://hubcloud.ist/film')});
+  const encoded=b64(b64(rot13(b64(envelope))));
+  const visited=[];
+  const scan=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/film">Source</a>',
+    fetchImpl:async(raw,opts)=>{
+      const u=new URL(raw);visited.push(u.hostname);
+      assert.equal(opts.redirect,'manual');
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/film'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+encoded+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist')
+        return new Response('<a id="download" href="https://gamerxyt.com/p">Continue</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='gamerxyt.com')
+        return new Response('<a class="btn" href="https://pixel.hubcloud.ist/p?token=hidden">File</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='pixel.hubcloud.ist')
+        return new Response(null,{status:302,headers:{
+          location:'https://pixel.rohitkiskk.workers.dev/range?p=secret'
+        }});
+      if(u.hostname==='pixel.rohitkiskk.workers.dev'){
+        assert.equal(opts.headers.Range,'bytes=0-4095');
+        return new Response(Buffer.concat([
+          Buffer.from([0,0,0,24]),Buffer.from('ftypisom'),Buffer.alloc(20)
+        ]),{status:206,headers:{
+          'content-type':'video/mp4',
+          'content-range':'bytes 0-4095/999999999'
+        }});
+      }
+      throw Error('unsupported host');
+    }
+  });
+  assert.deepEqual(visited,[
+    'greenmotors.club','greenmotors.cc','hubcloud.ist',
+    'gamerxyt.com','pixel.hubcloud.ist','pixel.rohitkiskk.workers.dev'
+  ]);
+  assert.equal(scan.landings[0].gatewayPage.pixelAudit.status,'mp4_bytes_verified');
+  assert.equal(scan.videoVerified,false);
+  assert.doesNotMatch(JSON.stringify(scan),/secret|hidden|\/range|\/film|token=/);
+});
+test('unreviewed Cloudflare redirect remains blocked and no third-party requests are made',async()=>{
+  const envelope=JSON.stringify({o:b64('https://hubcloud.ist/film')});
+  const encoded=b64(b64(rot13(b64(envelope))));
+  const visited=[];
+  const result=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/film">Source</a>',
+    fetchImpl:async raw=>{
+      const u=new URL(raw);visited.push(u.hostname);
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/film'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+encoded+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist')
+        return new Response('<a id="download" href="https://gamerxyt.com/p">Continue</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='gamerxyt.com')
+        return new Response('<a class="btn" href="https://pixel.hubcloud.ist/p">File</a>',{
+          headers:{'content-type':'text/html'}});
+      return new Response(null,{status:302,headers:{location:'https://other.workers.dev/p'}});
+    }
+  });
+  assert.deepEqual(visited,['greenmotors.club','greenmotors.cc',
+    'hubcloud.ist','gamerxyt.com','pixel.hubcloud.ist']);
+  assert.equal(result.landings[0].gatewayPage.pixelAudit.status,'redirect_not_followed');
+  assert.equal(result.videoVerified,false);
+});
