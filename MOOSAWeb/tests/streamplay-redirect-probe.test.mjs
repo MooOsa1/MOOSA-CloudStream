@@ -519,3 +519,23 @@ test('2025 Sinners alternative R2 and GPDL options are probed once each with Ran
   ]);
   assert.doesNotMatch(JSON.stringify(res),/token=|secret|hidden|\/film|\/sinners/);
 });
+
+test('Modern movie alternate route selection examines only two later unique links',async()=>{
+  const page=Array.from({length:8},(_,i)=>
+    '<a href="https://greenmotors.club/source/'+i+'">S'+i+'</a>').join('');
+  const paths=[];
+  const r=await probeStreamPlayRedirects({
+    postHtml:page,startAt:4,
+    fetchImpl:async(url,opts)=>{
+      paths.push(new URL(url).pathname);
+      assert.equal(opts.redirect,'manual');
+      return new Response('not here',{status:403});
+    }
+  });
+  assert.deepEqual(paths,['/source/4','/source/5']);
+  assert.equal(r.inspected,2);
+  assert.equal(r.decodedIntermediateLinks,0);
+  assert.equal(r.videoVerified,false);
+  const bad=await probeStreamPlayRedirects({postHtml:page,startAt:-1});
+  assert.equal(bad.state,'invalid_start_index');
+});
