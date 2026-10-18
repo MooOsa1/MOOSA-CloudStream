@@ -2,18 +2,26 @@
  * Pure local source retry policy. No URL fetching or rights decisions here.
  * Called only for alternatives already attached to the SAME selected title.
  */
-function format(url){
+import {trustedMediaCapability} from './media-capability-policy.js';
+
+// Operator-issued, same-origin capabilities use opaque paths without .mp4.
+// They must pass the SAME trust policy as normal playback before retrying.
+function format(source,origin){
   try {
-    const u=new URL(url);
+    const u=new URL(source?.url);
     if(u.protocol!=='https:'||u.username||u.password)return '';
+    const allowed=trustedMediaCapability(source,origin);
+    if(allowed)return allowed.format==='hls'?'m3u8':allowed.format;
     const ext=u.pathname.toLowerCase().match(/\.(mp4|m4v|webm|m3u8)$/);
     return ext?.[1]||'';
   }catch{return '';}
 }
-export function nextPlaybackSource(sources,attempted,canPlayType=()=>'',maxTries=4){
+export function nextPlaybackSource(
+  sources,attempted,canPlayType=()=>'',maxTries=4,origin=''
+){
   if(!Array.isArray(sources)||!attempted || attempted.size>=maxTries)return null;
   const candidates=sources.flatMap((source,index)=>{
-    const type=format(source?.url);
+    const type=format(source,origin);
     if(!type||attempted.has(source.url))return [];
     const mime=type==='webm'?'video/webm; codecs="vp9, opus"':
       type==='mp4'||type==='m4v'?'video/mp4':'application/vnd.apple.mpegurl';
