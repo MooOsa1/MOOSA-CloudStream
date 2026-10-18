@@ -4,7 +4,8 @@
  * Does not fetch or publish any external media URLs, bypass access tokens,
  * or treat an HTML player as a playable source.
  */
-const ORIGIN='https://bingebang.cc';
+// The provider explicitly identifies bingebang.cc as a fake domain.
+const ORIGIN='https://bingebang.st';
 const MAX_BYTES=98304;
 const empty=(id,state)=>({provider:'BingeBang',tmdbId:id,state,
   pageAccessible:false,embeddedMediaCandidates:0,
@@ -21,7 +22,8 @@ export async function probeBingeBangMovie({tmdbId,fetchImpl=fetch,timeoutMs=7000
     });
     if(!response.ok){
       await response.body?.cancel?.().catch(()=>{});
-      return empty(id,'http_'+response.status);
+      return empty(id,response.status===403||response.status===429?
+        'provider_access_restricted':'http_'+response.status);
     }
     const contentType=response.headers.get('content-type')||'';
     if(!contentType.toLowerCase().includes('text/html')){
