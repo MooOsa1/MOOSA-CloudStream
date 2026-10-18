@@ -111,11 +111,11 @@ test('fast vetted Play response does not await unrelated slow provider services'
       const url=new URL(raw instanceof URL?raw.href:
         typeof raw==='string'?raw:raw.url);
       if(url.hostname==='api.themoviedb.org')
-        return Response.json({id:19,title:'Metropolis',
-          original_title:'Metropolis',release_date:'1927-01-01',
-          imdb_id:'tt0017136'});
+        return Response.json({id:832,title:'M',
+          original_title:'M',release_date:'1931-01-01',
+          imdb_id:'tt0022100'});
       if(url.hostname==='enc-dec.app')
-        return Response.json({result:'metropolis_fast_key'});
+        return Response.json({result:'m_fast_key'});
       if(url.hostname==='vidlink.pro')
         return Response.json(payload);
       unrelatedCount++;
@@ -134,7 +134,7 @@ test('fast vetted Play response does not await unrelated slow provider services'
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
     const started=performance.now();
     const resp=await native('http://127.0.0.1:'+server.address().port+
-      '/api/resolve?media=movie&id=19',{signal:AbortSignal.timeout(1500)});
+      '/api/resolve?media=movie&id=832',{signal:AbortSignal.timeout(1500)});
     const elapsed=performance.now()-started;
     assert.equal(resp.status,200);
     const result=await resp.json();
