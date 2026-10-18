@@ -15,9 +15,44 @@ function standardTitle(value){
   return String(value||'').normalize('NFKD').toLowerCase()
     .replace(/[^a-z0-9]+/g,' ').trim();
 }
-export function exactExperimentalFilm(meta){
-  const item=EXPECTED.get(Number(meta?.id));
-  if(!item||meta?.media!=='movie'||meta?.imdbId!==item.imdb||
+/**
+ * Optional operator-reviewed movie registry. A single boolean flag is NOT
+ * blanket film clearance. Each EXTRA title needs its own positive review,
+ * exact identifiers and operator-held documentation for the source edition.
+ *
+ * No visitor may submit a registry or URLs through an HTTP query. The only
+ * default registered titles are the four tightly scoped existing pilots.
+ * Adding a record does not prove availability, rights or actual video frames.
+ */
+export function reviewedFilmRegistry(input=process.env.CINESTREAM_REVIEWED_FILMS||'[]'){
+  let rows=input;
+  if(typeof rows==='string'){
+    if(rows.length>24000)return new Map();
+    try{rows=JSON.parse(rows);}catch{return new Map();}
+  }
+  if(!Array.isArray(rows))return new Map();
+  const allowed=new Map();
+  for(const item of rows.slice(0,40)){
+    if(!item||item.rightsReviewed!==true||
+       item.sourceEditionReviewed!==true)continue;
+    const tmdbId=Number(item.tmdbId),year=Number(item.year);
+    const imdb=String(item.imdb||'');
+    const title=standardTitle(item.title);
+    if(!Number.isSafeInteger(tmdbId)||tmdbId<1||tmdbId>9999999999||
+       !Number.isInteger(year)||year<1888||year>2100||
+       !/^tt\\d{5,12}$/.test(imdb)||title.length<1||title.length>140||
+       allowed.has(tmdbId)||EXPECTED.has(tmdbId))continue;
+    allowed.set(tmdbId,{tmdbId,imdb,year,title});
+  }
+  return allowed;
+}
+export function exactExperimentalFilm(meta,{
+  reviewed=process.env.CINESTREAM_REVIEWED_FILMS||'[]'
+}={}){
+  const id=Number(meta?.id);
+  if(!Number.isSafeInteger(id)||id<1||meta?.media!=='movie')return null;
+  const item=EXPECTED.get(id)||reviewedFilmRegistry(reviewed).get(id);
+  if(!item||meta?.imdbId!==item.imdb||
     Number(meta.year)!==item.year)return null;
   if(![meta.title,meta.originalTitle].some(t=>standardTitle(t)===item.title))
     return null;
