@@ -145,13 +145,17 @@ try{
         const video=document.querySelector('#video');
         return video&&!video.error&&!video.paused&&video.currentTime>0.6 &&
           video.videoWidth>0&&video.videoHeight>0&&
-          Number.isFinite(video.duration);
+          Number.isFinite(video.duration)&&
+          (video.getVideoPlaybackQuality?.().totalVideoFrames||
+            video.webkitDecodedFrameCount||0)>0;
       },null,{timeout:70000});
       phase='read_real_media_metadata';
       const actual=await page.locator('#video').evaluate(video=>({
         height:video.videoHeight,width:video.videoWidth,
         duration:Math.round(video.duration),
         currentTime:Math.round(video.currentTime*10)/10,
+        decodedFrames:video.getVideoPlaybackQuality?.().totalVideoFrames||
+          video.webkitDecodedFrameCount||0,
         error:video.error?.code||null
       }));
       const durationPlausible=actual.duration>=film.minDuration&&
@@ -160,7 +164,7 @@ try{
         actual.height<=target.quality+24;
       console.log('MOOSA_ADDITIONAL_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
         film:film.title,year:film.year,tmdbId:film.tmdbId,
-        actuallyDecodedFrames:true,
+        actuallyDecodedFrames:actual.decodedFrames>0,
         claimedQualityLabel:target.quality,
         measuredVideo:actual,
         qualityLabelMatchesActualPixels:qualityClaimMatches,
@@ -171,6 +175,7 @@ try{
       }));
       phase='assert_movie_identity';
       assert.ok(durationPlausible,film.title+' source likely wrong film by duration');
+      assert.ok(actual.decodedFrames>0,'Chrome decoded no video frames');
       acceptedFilms++;
     }catch(error){
       console.log('MOOSA_ADDITIONAL_CINESTREAM_CHROME_FAILED '+JSON.stringify({
