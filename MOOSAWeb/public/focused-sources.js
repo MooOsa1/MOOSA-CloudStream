@@ -12,7 +12,7 @@ function make(tag,content,cls=''){
 form.addEventListener('submit',async(e)=>{
   e.preventDefault();
   const name=title.value.trim(),yr=year.value.trim();
-  if(name.length<2||name.length>110||!/^(?:18[89]\d|19\d\d|20\d\d|2100)$/.test(yr)){
+  if(name.length<1||name.length>110||!/^(?:18[89]\d|19\d\d|20\d\d|2100)$/.test(yr)){
     message.textContent='Enter an original title and release year.';
     return;
   }
