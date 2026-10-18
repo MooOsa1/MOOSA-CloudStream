@@ -176,7 +176,7 @@ try{
       phase='browse_MOOSA_static_site';
       await page.goto(SITE+'/',{waitUntil:'domcontentloaded',timeout:35000});
       phase='player_source_picker';
-      const chosen=await page.evaluate(async({source,film})=>{
+      const chosen=await page.evaluate(async({source,film,fallbackSource})=>{
         const {showPlayer}=await import('/player.js');
         showPlayer({title:film.title,sources:[{
           ...source,name:'CineStream • Vidlink '+film.year,
