@@ -93,26 +93,37 @@ export function classifyCineStreamAnchors(markup,base=SITE){
  * Only identifies anchor presence; never follows shortlinks or visits media.
  */
 export function countStreamPlayDownloadAnchors(markup){
-  const src=String(markup||'');
-  const begins=[...src.matchAll(/<div\b[^>]*class\s*=\s*["'][^"']*\bdownload-item\b[^"']*["'][^>]*>/gi)]
-    .slice(0,30);
-  let links=0;
-  for(const begin of begins){
-    const fragment=src.slice(begin.index,begin.index+8000);
-    // Count likely links within the download item window but stop when
-    // the next top-level download-item starts; this is a diagnostic count.
-    const following=fragment.search(/<div\b[^>]*class\s*=\s*["'][^"']*\bdownload-item\b/i);
-    const chunk=following>begin[0].length?fragment.slice(0,following):fragment;
-    for(const m of chunk.matchAll(/<a\b[^>]*href\s*=\s*(["'])([^"'<>]{1,800})\1/gi)){
-      const raw=m[2];
-      let u;
-      try{u=new URL(raw,SITE);}catch{continue;}
-      if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash)continue;
-      links++;if(links>=35)break;
+  // Tokenize div and anchor tags to respect nested download-item sections.
+  // Returns only unique link counts and hostnames, never media URLs.
+  const src=String(markup||'').replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi,'')
+    .replace(/<!--[\s\S]*?-->/g,'');
+  let divDepth=0,items=0,links=0;
+  const active=[],unique=new Set(),hosts=new Set();
+  for(const m of src.matchAll(/<\/?(?:div|a)\b[^>]*>/gi)){
+    const tag=m[0];
+    if(/^<div\b/i.test(tag)){
+      divDepth++;
+      if(/\bclass\s*=\s*["'][^"']*\bdownload-item\b[^"']*["']/i.test(tag)){
+        active.push(divDepth);items++;
+      }
+    }else if(/^<\/div\b/i.test(tag)){
+      while(active.length && active[active.length-1]>=divDepth)active.pop();
+      divDepth=Math.max(0,divDepth-1);
+    }else if(/^<a\b/i.test(tag)&&active.length){
+      const href=tag.match(/\bhref\s*=\s*(["'])([^"'<>]{1,850})\1/i);
+      if(!href)continue;
+      let target;
+      try{target=new URL(href[2],SITE);}catch{continue;}
+      if(target.protocol!=='https:'||target.username||target.password||
+         target.port||target.hash||unique.has(target.href))continue;
+      unique.add(target.href);links++;hosts.add(target.hostname.toLowerCase());
+      if(links>=35)break;
     }
   }
-  return {downloadItems:begins.length,downloadLinks:links};
+  return {downloadItems:items,downloadLinks:links,
+    linkHosts:[...hosts].sort().slice(0,15)};
 }
+
 export async function probe4khdhubHandoff({
   title,year,fetchImpl=fetch,timeoutMs=8500
 }={}){
