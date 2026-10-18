@@ -1,0 +1,109 @@
+name: MOOSA five high-resolution CineStream video probes
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tests/cinestream-high-res-five-films.e2e.mjs'
+      - '.github/workflows/moosa-cinestream-high-res-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser-high-res:
+    runs-on: ubuntu-latest
+    timeout-minutes: 34
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chrome test dependencies
+        run: |
+          cd MOOSAWeb
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chrome
+      - name: Verify candidate 1080p and 720p sources decode real film video
+        timeout-minutes: 8
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Check both 1080p films at advertised 720p fallback
+        env:
+          MOOSA_HIGH_RES_FALLBACK: '720'
+        timeout-minutes: 3
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Check both 1080p films at advertised 480p fallback
+        env:
+          MOOSA_HIGH_RES_FALLBACK: '480'
+        timeout-minutes: 3
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Check both 1080p films at advertised 360p fallback
+        env:
+          MOOSA_HIGH_RES_FALLBACK: '360'
+        timeout-minutes: 3
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Browser-check Charade and House on Haunted Hill (no deployment)
+        env:
+          MOOSA_EXTRA_CINESTREAM: '1'
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Seek 90s into four experimental films and verify decoded-frame advance
+        env:
+          MOOSA_SEEK_STRESS: '1'
+        timeout-minutes: 5
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Validate other films at 480p including second CDN
+        env:
+          MOOSA_OTHER_QUALITY: '480'
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Validate Sherlock Jr at 360p without trusting labels
+        env:
+          MOOSA_OTHER_QUALITY: '360'
+        timeout-minutes: 2
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Verify four movies still decode after a midpoint seek
+        env:
+          MOOSA_MIDPOINT_SEEK: '1'
+        timeout-minutes: 5
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Prove automatic 1080p outage to 720p source fallback for two films
+        env:
+          MOOSA_FAILOVER_TEST: '1'
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Simulate failed 1080p and 720p then prove actual automatic 480p decode
+        env:
+          MOOSA_FAILOVER_CHAIN: '1'
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Browser-decode feature-length Metropolis and M from real Vidlink
+        env:
+          MOOSA_NEW_CINESTREAM: '1'
+        timeout-minutes: 5
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Validate midpoint seek and frame advance for two new films
+        env:
+          MOOSA_NEW_CINESTREAM_SEEK: '1'
+        timeout-minutes: 5
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Reject Caligari 440-second clip even though 720p frames decode
+        env:
+          MOOSA_SHORT_CLIP_REJECTION: '1'
+        timeout-minutes: 3
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Decode true 480p alternatives for Metropolis and M
+        env:
+          MOOSA_NEW_VARIANT_QUALITY: '480'
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Decode true 360p alternatives for Metropolis and M
+        env:
+          MOOSA_NEW_VARIANT_QUALITY: '360'
+        timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Break first two Metropolis and M variants then auto-decode 360p
+        env:
+          MOOSA_NEW_FAILOVER_CHAIN: '1'
+        timeout-minutes: 5
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs

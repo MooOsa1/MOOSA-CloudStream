@@ -13,6 +13,7 @@ import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream
 import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
 import {createMediaGateway} from './verified-media-gateway.mjs';
 import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
+import {findVerifiedMultiFilmVidlink} from './vidlink-multifilm-candidates.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -180,7 +181,15 @@ async function handle(req,res,mediaGateway=null) {
       if(!match)return err(res,404,'Unsupported Stremio stream route');
       return json(res,200,await resolveStremioProtocolMovie(match[1]));
     }
-    if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
+    if(url.pathname==='/api/config')return json(res,200,{
+      catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',
+      automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine(),
+      // Inform the browser about a strictly operator-reviewed source pilot
+      // so only those catalog titles receive a longer Play lookup window.
+      verifiedCineStreamPilotReady:!!mediaGateway &&
+        process.env.CINESTREAM_MULTIFILM_PILOT==='1' &&
+        process.env.CINESTREAM_MULTIFILM_RIGHTS_APPROVED==='1'
+    });
     if(url.pathname==='/api/web-native/status'){
       if(functionalParams(url.searchParams).length)
         return err(res,400,'No arbitrary provider parameters');
@@ -347,6 +356,12 @@ async function handle(req,res,mediaGateway=null) {
       }
     }
     if(url.pathname==='/api/resolve'){
+      // The default response can return verified pilot sources immediately.
+      // A second same-title request asks for ordinary providers in the
+      // background without delaying first video playback.
+      const phase=url.searchParams.get('phase');
+      if(phase!==null&&phase!=='extras')
+        return err(res,400,'Invalid source discovery phase');
       const media=url.searchParams.get('media');
       const id=cleanId(url.searchParams.get('id'));
       const episodeRequested=url.searchParams.has('season')||url.searchParams.has('episode');
@@ -367,13 +382,34 @@ async function handle(req,res,mediaGateway=null) {
           imdbId:details.imdb_id||details.external_ids?.imdb_id||null,
           ...(media==='tv'?{season,episode}:{})
         };
-        const [usual,cinestream]=await Promise.all([
-          resolveWebSources(meta),
-          findNightFromCineStream({meta,mediaGateway})
+        // Start the ordinary source search in parallel. In an explicitly
+        // approved CineStream pilot, do NOT wait for unrelated slow catalog
+        // providers once multiple byte-verified same-title sources are available.
+        // If the pilot cannot deliver, continue to await the usual adapters.
+        // Keep the public/disabled-pilot behavior unchanged.
+        // Source expansion reuses the normal resolver's per-title in-flight
+        // cache; it never runs unreviewed CineStream protocol requests.
+        if(phase==='extras'){
+          const sources=await resolveWebSources(meta);
+          return json(res,200,{
+            sources,providerMode:'server',count:sources.length,
+            cloudstreamEngineConfigured:!!configuredEngine()
+          });
+        }
+        const usualPending=resolveWebSources(meta).catch(()=>[]);
+        const [cinestream,multifilm]=await Promise.all([
+          findNightFromCineStream({meta,mediaGateway}),
+          findVerifiedMultiFilmVidlink({meta,mediaGateway})
         ]);
-        const sources=[...cinestream,...usual.filter(x=>
-          !cinestream.some(y=>y.url===x.url))];
-        return json(res,200,{sources,providerMode:'server',count:sources.length,cloudstreamEngineConfigured:!!configuredEngine()});
+        const vetted=[...cinestream,...multifilm];
+        const extrasAvailable=vetted.length>=2;
+        const usual=extrasAvailable?[]:await usualPending;
+        const sources=[...vetted,...usual.filter(x=>
+          !vetted.some(y=>y.url===x.url))];
+        return json(res,200,{
+          sources,providerMode:'server',count:sources.length,extrasAvailable,
+          cloudstreamEngineConfigured:!!configuredEngine()
+        });
       } catch(e) {
         return err(res,e.status||502,e.message==='TMDB_NOT_CONFIGURED'?
           'Configure TMDB for automatic source matching':'Source lookup temporarily unavailable');
@@ -425,7 +461,8 @@ export function createServer({mediaGateway=null}={}){
   const hosts=vidlinkPilotHosts();
   // One-film only, operator controlled, and disabled by default.
   const gateway=mediaGateway || (
-    process.env.CINESTREAM_NIGHT_PILOT==='1' && hosts.length
+    (process.env.CINESTREAM_NIGHT_PILOT==='1' ||
+      process.env.CINESTREAM_MULTIFILM_PILOT==='1') && hosts.length
       ?createMediaGateway({
           origin:'https://moosa-web.onrender.com',
           allowedHosts:hosts,ttlMs:3*60*60_000

@@ -1,0 +1,372 @@
+/**
+ * EXPERIMENTAL original CineStream Vidlink -> ACTUAL MOOSA Node media gateway
+ * -> real Chrome HTML5 player for five higher-quality original-film variants.
+ *
+ * Not a fixture and not the public production site. No URLs/tokens are logged,
+ * no media downloaded/redistributed beyond bounded thumbnail-length test.
+ * Prevent source mismatch: demand original TMDB+year known film, real decoded
+ * dimensions, plausible duration and a matching displayed requested title.
+ */
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {chromium} from 'playwright';
+import {createMediaGateway} from '../verified-media-gateway.mjs';
+import {createServer} from '../server.mjs';
+
+const FILMS=[
+ {title:'The Gold Rush',year:1925,tmdbId:962,preferred:1080,minDuration:4300,maxDuration:6500},
+ {title:'The Kid',year:1921,tmdbId:10098,preferred:1080,minDuration:2700,maxDuration:4500},
+ {title:'The Little Shop of Horrors',year:1960,tmdbId:24452,preferred:720,minDuration:3300,maxDuration:5000},
+ {title:'The Last Man on Earth',year:1964,tmdbId:21159,preferred:720,minDuration:4200,maxDuration:6100},
+ {title:'Sherlock Jr.',year:1924,tmdbId:992,preferred:720,minDuration:2200,maxDuration:3500}
+];
+// Test-only CDN allowlist. Public MOOSA server configuration is untouched.
+// Additional titles are exercised only by an opt-in CI step. Neither the
+// sources nor the CDN host approval escapes this local browser test.
+const EXTRAS=[
+ {title:'Charade',year:1963,tmdbId:4808,preferred:480,minDuration:6300,maxDuration:7300},
+ {title:'House on Haunted Hill',year:1959,tmdbId:15856,preferred:720,minDuration:4000,maxDuration:5100}
+];
+// Proven source bytes in 15-film audit, NOT yet browser-proven content.
+// Feature length windows are broad screening guards, not identity proof.
+const NEW_FILMS=[
+ {title:'Metropolis',year:1927,tmdbId:19,preferred:720,minDuration:3600,maxDuration:11000},
+ {title:'M',year:1931,tmdbId:832,preferred:1080,minDuration:4500,maxDuration:8500}
+];
+// The only fetched Caligari source decoded 440s, too short for a feature.
+// Keep a separate negative regression: NEVER count its frames as a movie.
+const SHORT_CLIPS=[
+ {title:'The Cabinet of Dr. Caligari',year:1920,tmdbId:234,
+   preferred:720,minDuration:3000,maxDuration:7200}
+];
+const HOSTS=new Set(['hcdn3.hakunaymatata.com','bcdn.hakunaymatata.com']);
+// Explicit fallback scans target only the two titles with verified 1080p.
+// No production film or source is enabled by these test-only probes.
+const fallbackQuality=Number(process.env.MOOSA_HIGH_RES_FALLBACK||0);
+if(fallbackQuality && ![360,480,720].includes(fallbackQuality))
+  throw Error('Invalid test fallback quality');
+const extraOnly=process.env.MOOSA_EXTRA_CINESTREAM==='1';
+const seekOnly=process.env.MOOSA_SEEK_STRESS==='1';
+const midpointSeek=process.env.MOOSA_MIDPOINT_SEEK==='1';
+const failoverOnly=process.env.MOOSA_FAILOVER_TEST==='1';
+const chainOnly=process.env.MOOSA_FAILOVER_CHAIN==='1';
+const newChainOnly=process.env.MOOSA_NEW_FAILOVER_CHAIN==='1';
+const newOnly=process.env.MOOSA_NEW_CINESTREAM==='1';
+const newSeekOnly=process.env.MOOSA_NEW_CINESTREAM_SEEK==='1';
+const rejectShortOnly=process.env.MOOSA_SHORT_CLIP_REJECTION==='1';
+const newVariantQuality=Number(process.env.MOOSA_NEW_VARIANT_QUALITY||0);
+if(newVariantQuality && ![360,480].includes(newVariantQuality))
+  throw Error('New-film quality check only supports 360p and 480p');
+const otherQuality=Number(process.env.MOOSA_OTHER_QUALITY||0);
+if(otherQuality&&![360,480].includes(otherQuality))
+  throw Error('Other-quality test must be 360 or 480');
+if([extraOnly,seekOnly,midpointSeek,failoverOnly,chainOnly,newChainOnly,newOnly,
+  newSeekOnly,rejectShortOnly,Boolean(newVariantQuality),Boolean(fallbackQuality),Boolean(otherQuality)]
+  .filter(Boolean).length>1)
+  throw Error('Choose only one experimental browser probe mode');
+const otherFilms=otherQuality===360?[FILMS[4]]:
+  [...FILMS.slice(2),EXTRAS[1]];
+const filmsToTest=rejectShortOnly?SHORT_CLIPS:
+  ((newOnly||newSeekOnly||newVariantQuality||newChainOnly)?NEW_FILMS:
+    ((failoverOnly||chainOnly)?FILMS.slice(0,2):
+    (otherQuality?otherFilms:
+      (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
+        (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS))))));
+const SITE='https://moosa-web.onrender.com';
+const agent='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
+const browserErrors=[];
+let sourceRequests=0;let browser;let acceptedFilms=0;let correctlyRejected=0;
+async function jsonSmall(url,headers,timeout=15000){
+  const res=await fetch(url,{headers,redirect:'error',signal:AbortSignal.timeout(timeout)});
+  if(!res.ok)throw Error('source_http_'+res.status);
+  const body=await res.text();
+  if(body.length>160000)throw Error('source_json_oversized');
+  return JSON.parse(body);
+}
+function filmVariants(payload){
+  const variants=payload?.stream?.qualities||payload?.qualities||{};
+  return Object.entries(variants).flatMap(([label,value])=>{
+    try{
+      const u=new URL(value?.url);
+      if(u.protocol!=='https:'||!HOSTS.has(u.hostname)||u.username||u.password||u.port||
+        !u.pathname.toLowerCase().endsWith('.mp4'))return [];
+      const quality=Number(String(label).match(/([0-9]{3,4})/)?.[1]||0);
+      // User deferred 4K. Keep every 360/480/720/1080 choice discoverable
+      // without letting larger variants consume the four-slot test limit.
+      if(!Number.isInteger(quality)||quality<144||quality>1080)return [];
+      const head=value.headers&&typeof value.headers==='object'?value.headers:{
+        Referer:'https://filmboom.top/',Origin:'https://filmboom.top'
+      };
+      return [{url:u.href,format:'mp4',quality,headers:head}];
+    }catch{return [];}
+  }).sort((a,b)=>b.quality-a.quality).slice(0,4);
+}
+const gateway=createMediaGateway({
+  origin:SITE,allowedHosts:[...HOSTS],ttlMs:50*60_000
+});
+const server=createServer({mediaGateway:gateway});
+await new Promise((resolve,reject)=>{
+  server.once('error',reject);
+  server.listen(0,'127.0.0.1',resolve);
+});
+const LOCAL='http://127.0.0.1:'+server.address().port;
+
+try{
+  browser=await chromium.launch({headless:true,channel:'chrome',args:[
+    '--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']});
+  for(const film of filmsToTest){
+    let page;
+    let phase='provider_lookup';
+    try{
+      const key=await jsonSmall(
+        'https://enc-dec.app/api/enc-vidlink?text='+film.tmdbId,
+        {Accept:'application/json'},13000);
+      assert.match(String(key.result||''),/^[A-Za-z0-9+/=_-]{3,320}$/);
+      const data=await jsonSmall('https://vidlink.pro/api/b/movie/'+
+        encodeURIComponent(key.result),
+        {'User-Agent':agent,Accept:'application/json',
+          Referer:'https://vidlink.pro/',Origin:'https://vidlink.pro'},16000);
+      phase='variant_listing';
+      const variants=filmVariants(data);
+      console.log('MOOSA_HIGH_RES_FILM_VARIANTS '+JSON.stringify({
+        film:film.title,year:film.year,
+        apiVariants:variants.length,
+        advertisedQualities:variants.map(x=>x.quality)
+      }));
+      const target=variants.find(x=>x.quality===(fallbackQuality||otherQuality||newVariantQuality||film.preferred));
+      assert.ok(target,'Requested CineStream quality not returned for '+film.title);
+      assert.ok(target,'No actual CineStream source for '+film.title);
+      phase='media_byte_preflight';
+      const tested=await gateway.issueIfBytesVerified({
+        url:target.url,format:'mp4',headers:target.headers,
+        rightsApproved:true,sourceVerified:true
+      });
+      console.log('MOOSA_HIGH_RES_CINESTREAM_PREFLIGHT '+JSON.stringify({film:film.title,year:film.year,quality:target.quality,result:tested.reason||'unknown',mediaSourceIssued:!!tested.source}));
+      assert.ok(tested.source,'Media byte check rejected '+film.title);
+      // Simulate a 1080p server dropping out after a successful preflight.
+      // This validates the actual automatic retry logic, not a manual pick.
+      const fallbackSources=[];
+      if(failoverOnly||chainOnly||newChainOnly){
+        phase='verify_same_film_fallback';
+        for(const q of (newChainOnly?[480,360]:(chainOnly?[720,480]:[720]))){
+          const spare=variants.find(x=>x.quality===q);
+          assert.ok(spare,'No '+q+'p fallback offered for '+film.title);
+          const verified=await gateway.issueIfBytesVerified({
+            url:spare.url,format:'mp4',headers:spare.headers,
+            rightsApproved:true,sourceVerified:true
+          });
+          assert.ok(verified.source,q+'p fallback bytes not verified');
+          fallbackSources.push({quality:q,source:verified.source});
+        }
+      }
+      phase='browser_new_page';
+      page=await browser.newPage({viewport:{width:1200,height:760}});
+      page.on('pageerror',err=>browserErrors.push(String(err.name||'script_error')));
+      const urlToken=new URL(tested.source.url).pathname;
+      const fallbackTokens=fallbackSources.map(x=>new URL(x.source.url).pathname);
+      const allowedTokens=new Set([urlToken,...fallbackTokens]);
+      const brokenTokens=new Set(((chainOnly||newChainOnly)?[urlToken,fallbackTokens[0]]:
+        (failoverOnly?[urlToken]:[])).filter(Boolean));
+      let outageCount=0;
+      let rangeRequestCount=0;let rangeTotalBytes=0;
+      await page.route(SITE+'/**',async route=>{
+        const parsed=new URL(route.request().url());
+        const range=route.request().headers().range||'';
+        const headers={};
+        if(parsed.pathname.startsWith('/api/media/')){
+          if(!allowedTokens.has(parsed.pathname))throw Error('Unknown media token');
+          if(brokenTokens.has(parsed.pathname)){
+            outageCount++;
+            await route.fulfill({status:502,contentType:'text/plain',
+              body:'Simulated post-preflight CDN outage'});
+            return;
+          }
+          rangeRequestCount++;
+          if(rangeRequestCount>130)throw Error('Too many media range requests');
+          const hit=range.match(/^bytes=(\d+)-(\d*)$/);
+          if(!hit)throw Error('Unrecognized media Range header');
+          const start=Number(hit[1]);
+          const end=Math.min(hit[2]?Number(hit[2]):start+1_300_000,
+            start+1_300_000);
+          headers.range='bytes='+start+'-'+end;
+        }
+        const response=await fetch(LOCAL+parsed.pathname+parsed.search,{
+          method:route.request().method(),headers,redirect:'error',
+          signal:AbortSignal.timeout(26000)});
+        const forwarded={};
+        for(const field of ['content-type','content-range','content-length','accept-ranges']){
+          const value=response.headers.get(field);
+          if(value)forwarded[field]=value;
+        }
+        const body=Buffer.from(await response.arrayBuffer());
+        if(parsed.pathname.startsWith('/api/media/'))rangeTotalBytes+=body.length;
+        await route.fulfill({status:response.status,headers:forwarded,body});
+      });
+      phase='browse_MOOSA_static_site';
+      await page.goto(SITE+'/',{waitUntil:'domcontentloaded',timeout:35000});
+      phase='player_source_picker';
+      const chosen=await page.evaluate(async({source,film,fallbackSources})=>{
+        const {showPlayer}=await import('/player.js');
+        showPlayer({title:film.title,sources:[{
+          ...source,name:'CineStream • Vidlink '+film.year,
+          provider:'CineStream',quality:0
+        },...fallbackSources.map(entry=>({
+          ...entry.source,name:'CineStream • alternate '+entry.quality+' test',
+          provider:'CineStream',quality:0
+        }))]});
+        const picker=document.querySelector('#player-source');
+        const count=picker.options.length;
+        // showPlayer() fills the picker but starts from its blank
+        // placeholder. Real user selects the first Vidlink source.
+        picker.value='0';
+        picker.dispatchEvent(new Event('change',{bubbles:true}));
+        return {count,selected:picker.value};
+      },{source:tested.source,film,fallbackSources});
+      console.log('MOOSA_HIGH_RES_CINESTREAM_PICKER '+JSON.stringify({film:film.title,...chosen}));
+      assert.equal(chosen.selected,'0');
+      phase='video_frames';
+      await page.waitForFunction(()=>{
+        const video=document.querySelector('#video');
+        return video&&!video.error&&!video.paused&&video.currentTime>0.6 &&
+          video.videoWidth>0&&video.videoHeight>0&&
+          Number.isFinite(video.duration)&&
+          (video.getVideoPlaybackQuality?.().totalVideoFrames||
+            video.webkitDecodedFrameCount||0)>0;
+      },null,{timeout:70000});
+      phase='read_real_media_metadata';
+      const actual=await page.locator('#video').evaluate(video=>({
+        height:video.videoHeight,width:video.videoWidth,
+        duration:Math.round(video.duration),
+        currentTime:Math.round(video.currentTime*10)/10,
+        decodedFrames:video.getVideoPlaybackQuality?.().totalVideoFrames||
+          video.webkitDecodedFrameCount||0,
+        droppedFrames:video.getVideoPlaybackQuality?.().droppedVideoFrames||0,
+        error:video.error?.code||null
+      }));
+      phase='measured_quality_selector';
+      const measuredUI=await page.locator('#player-quality').evaluate(select=>({
+        label:select.selectedOptions[0]?.textContent||'',
+        disabled:select.disabled
+      }));
+      assert.equal(measuredUI.label,
+        'Actual resolution: '+actual.width+'×'+actual.height,
+        'Quality menu must show decoded pixel dimensions, not advertised label');
+      assert.equal(measuredUI.disabled,true,
+        'Fixed MP4 source cannot offer artificial adaptive quality selection');
+      const durationPlausible=actual.duration>=film.minDuration&&
+        actual.duration<=film.maxDuration;
+      const activeClaim=newChainOnly?360:(chainOnly?540:(failoverOnly?720:target.quality));
+      const qualityClaimMatches=actual.height>=activeClaim-24 &&
+        actual.height<=activeClaim+24;
+      console.log('MOOSA_HIGH_RES_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
+        film:film.title,year:film.year,tmdbId:film.tmdbId,
+        actuallyDecodedFrames:actual.decodedFrames>0,
+        claimedQualityLabel:activeClaim,
+        measuredVideo:actual,
+        qualityLabelMatchesActualPixels:qualityClaimMatches,
+        displayedMeasuredResolution:measuredUI.label,
+        plausibleRequestedMovieRuntime:durationPlausible,
+        sameOriginGateway:true,
+        rangeRequestCount,approxReadBytes:rangeTotalBytes,
+        siteProductionUnchanged:true
+      }));
+      phase='assert_movie_identity';
+      if(rejectShortOnly){
+        assert.ok(!durationPlausible && actual.duration<film.minDuration,
+          'Known short clip changed: reassess identity before enabling');
+        correctlyRejected++;
+        console.log('MOOSA_CINESTREAM_SHORT_CLIP_REJECTED '+JSON.stringify({
+          film:film.title,year:film.year,tmdbId:film.tmdbId,
+          decodedVideoWidth:actual.width,decodedVideoHeight:actual.height,
+          durationSeconds:actual.duration,minFeatureSeconds:film.minDuration,
+          reasons:['short_runtime','not_verified_full_film'],
+          sourcesPublished:false
+        }));
+        continue;
+      }
+      assert.ok(durationPlausible,film.title+' source likely wrong film by duration');
+      assert.ok(actual.decodedFrames>0,'Chrome decoded no video frames');
+      if(failoverOnly||chainOnly||newChainOnly){
+        phase='assert_automatic_failover';
+        const picked=await page.locator('#player-source').inputValue();
+        const expectedIndex=(chainOnly||newChainOnly)?'2':'1';
+        assert.equal(picked,expectedIndex,'Player did not select intended fallback');
+        assert.ok(outageCount>=((chainOnly||newChainOnly)?2:1),'Not all failed variants attempted');
+        const expectedHeight=newChainOnly?360:(chainOnly?540:720);
+        // Some encoders pad 360p (M is 363 vertical pixels). Require a
+        // close measured resolution, never blindly trust upstream labels.
+        assert.ok(Math.abs(actual.height-expectedHeight)<=8,
+          'Wrong decoded fallback height: '+actual.height+' vs '+expectedHeight);
+        console.log('MOOSA_CINESTREAM_AUTOMATIC_FAILOVER_OK '+JSON.stringify({
+          film:film.title,year:film.year,
+          failedAdvertised:newChainOnly?[film.preferred,480]:
+            (chainOnly?[1080,720]:[1080]),
+          fallbackAdvertised:newChainOnly?360:(chainOnly?480:720),
+          actualVideoWidth:actual.width,
+          actualVideoHeight:actual.height,decodedFrames:actual.decodedFrames,
+          outageRequests:outageCount,rangeRequestCount,
+          publicWebsiteUnchanged:true
+        }));
+      }
+      if(seekOnly||midpointSeek||newSeekOnly){
+        phase='seek_into_feature';
+        // A midpoint seek tests browser Range requests far beyond initial startup.
+        // Still bounded by the existing per-range cap and finite duration.
+        const seekTo=(midpointSeek||newSeekOnly)?
+          Math.min(Math.floor(actual.duration/2),actual.duration-30):90;
+        await page.locator('#video').evaluate((video,t)=>{
+          video.currentTime=t;
+          if(video.paused)video.play().catch(()=>{});
+        },seekTo);
+        await page.waitForFunction(({seekTo,framesBefore})=>{
+          const video=document.querySelector('#video');
+          const frames=video?.getVideoPlaybackQuality?.().totalVideoFrames||
+            video?.webkitDecodedFrameCount||0;
+          return video&&!video.error&&video.readyState>=2&&
+            video.currentTime>seekTo+0.3&&frames>framesBefore;
+        },{seekTo,framesBefore:actual.decodedFrames},{timeout:50000});
+        const afterSeek=await page.locator('#video').evaluate(video=>({
+          currentTime:Math.round(video.currentTime*10)/10,
+          decodedFrames:video.getVideoPlaybackQuality?.().totalVideoFrames||
+            video.webkitDecodedFrameCount||0,
+          error:video.error?.code||null
+        }));
+        console.log('MOOSA_HIGH_RES_CINESTREAM_SEEK_OK '+JSON.stringify({
+          film:film.title,year:film.year,seekTargetSeconds:seekTo,
+          ...afterSeek,frameAdvance:afterSeek.decodedFrames-actual.decodedFrames,
+          rangeRequestCount,approxReadBytes:rangeTotalBytes,
+          productionUnchanged:true
+        }));
+      }
+      acceptedFilms++;
+    }catch(error){
+      console.log('MOOSA_HIGH_RES_CINESTREAM_CHROME_FAILED '+JSON.stringify({
+        film:film.title,year:film.year,
+        errorName:String(error?.name||'Error').slice(0,55),
+        stage:phase,
+        notes:'No fake success; no production enable'
+      }));
+    }finally{await page?.close();}
+  }
+  console.log('MOOSA_HIGH_RES_FILMS_PROVEN '+JSON.stringify({
+    tested:filmsToTest.length,requestedQualities:filmsToTest.map(f=>({
+      title:f.title,quality:newChainOnly?360:(chainOnly?480:(failoverOnly?720:
+        (fallbackQuality||otherQuality||newVariantQuality||f.preferred)))})),
+    actuallyPlayedWithPlausibleDuration:acceptedFilms,
+    browserErrorCount:browserErrors.length,siteProductionUnchanged:true
+  }));
+  if(rejectShortOnly){
+    console.log('MOOSA_CINESTREAM_SHORT_CLIP_REJECTION_SUMMARY '+
+      JSON.stringify({tested:filmsToTest.length,correctlyRejected,
+        acceptedAsFullFeatures:acceptedFilms,published:false}));
+    assert.equal(correctlyRejected,filmsToTest.length,
+      'Known short clip was not safely rejected');
+    assert.equal(acceptedFilms,0);
+  }else{
+    assert.equal(acceptedFilms,filmsToTest.length,
+      'Do not claim high quality features playable if one failed');
+  }
+}finally{
+  await browser?.close().catch(()=>{});
+  await new Promise(resolve=>server.close(resolve));
+}

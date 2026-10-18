@@ -4,6 +4,20 @@ let generation=0;
 let currentAbort=null;
 import {sourceLookupBudgetMs} from './source-timeout-policy.js';
 let runtimeReadiness;
+let cineStreamReadiness;
+function approvedCineStreamReady(){
+  if(!cineStreamReadiness){
+    cineStreamReadiness=fetch('/api/config',{
+      headers:{Accept:'application/json'},
+      signal:AbortSignal.timeout(2000)
+    }).then(async response=>{
+      if(!response.ok)return false;
+      const config=await response.json();
+      return config?.verifiedCineStreamPilotReady===true;
+    }).catch(()=>false);
+  }
+  return cineStreamReadiness;
+}
 function pilotRuntimeReady(){
   if(!runtimeReadiness){
     runtimeReadiness=fetch('/api/cloudstream/pilot-status',{
@@ -49,10 +63,15 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
       appendExternalSubtitles(data.subtitles);
     }).catch(()=>{}); // Subtitle network failure must not affect playback.
   try {
-    // Allow one independently vetted movie source an appropriate startup
-    // window on free hosting. All other titles retain normal deadlines.
+    // Only explicitly reviewed CineStream experimental titles can use the
+    // extended verification window. The public/disabled source flow retains
+    // the normal 16.5s deadline to avoid wasting the viewer's time.
+    const idText=String(id);
+    const reviewedMulti=media==='movie' &&
+      ['19','832'].includes(idText) && await approvedCineStreamReady();
     const longPilot=media==='movie' &&
-      (String(id)==='10331' || await pilotRuntimeReady());
+      (reviewedMulti || ['10331','961','3085'].includes(idText) ||
+        await pilotRuntimeReady());
     if(job!==generation)return;
     const response=await fetch('/api/resolve?'+params.toString(),{
       headers:{Accept:'application/json'},
@@ -68,6 +87,37 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
     if(sources.length){
       appendPlayerSources(sources);
       message(describeSourceResolution(result));
+      if(result.extrasAvailable===true){
+        // Play the verified CineStream source NOW, while regular licensed
+        // providers expand the same title in parallel. Preserve any source
+        // already playing; appended results must not restart the video.
+        message('تم العثور على '+sources.length+
+          ' سيرفرات؛ جاري فحص مصادر إضافية بالخلفية…');
+        try{
+          const moreParams=new URLSearchParams(params);
+          moreParams.set('phase','extras');
+          const extraResponse=await fetch('/api/resolve?'+moreParams.toString(),{
+            headers:{Accept:'application/json'},
+            signal:AbortSignal.any([
+              controller.signal,AbortSignal.timeout(sourceLookupBudgetMs(media))
+            ])
+          });
+          if(job!==generation)return;
+          if(extraResponse.ok){
+            const extraData=await extraResponse.json();
+            if(job!==generation)return;
+            const more=Array.isArray(extraData.sources)?extraData.sources:[];
+            if(more.length)appendPlayerSources(more);
+            message('مصادر الفيديو جاهزة • تم فحص '+more.length+
+              ' مصدر إضافي دون إيقاف التشغيل.');
+          }else{
+            message('مصادر الفيديو الأساسية جاهزة • البحث الإضافي غير متاح حاليًا.');
+          }
+        }catch{
+          if(job===generation)
+            message('مصادر الفيديو الأساسية جاهزة • اكتمل وقت البحث الإضافي.');
+        }
+      }
     } else {
       markNoAutomaticSources();
       message(describeSourceResolution(result));
@@ -116,4 +166,5 @@ export function initAutomaticSources(){
   document.addEventListener('moosa-player-opened',cancelAutomaticSourceSearch);
   $('#open-free-film')?.addEventListener('click',openLicensedFullFilm);
   void pilotRuntimeReady();
+  void approvedCineStreamReady();
 }
