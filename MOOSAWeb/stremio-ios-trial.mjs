@@ -23,7 +23,8 @@ const MANIFEST={
   resources:['catalog','meta','stream'],
   idPrefixes:['moosa-'],
   catalogs:[{type:'movie',id:'moosa-iphone',
-    name:'MOOSA — iPhone compatibility check'}],
+    name:'MOOSA — iPhone compatibility check',
+    extra:[{name:'search',isRequired:false}]}],
   behaviorHints:{adult:false,p2p:false,configurable:false}
 };
 const ITEMS=[
@@ -87,8 +88,9 @@ function approvedWingSource(source){
       url:u.href,description:'2023 Blender Studio Creative Commons source'};
   }catch{return null;}
 }
+const SEARCH_ROUTE=/^\/moosa-stremio\/catalog\/movie\/moosa-iphone\/search=([^/?#]{1,140})\.json$/;
 export function isPublicStremioTrialPath(raw){
-  return typeof raw==='string'&&ROUTES.has(raw);
+  return typeof raw==='string'&&(ROUTES.has(raw)||SEARCH_ROUTE.test(raw));
 }
 export async function handleStremioTrial(req,res,requestUrl){
   if(!isPublicStremioTrialPath(requestUrl.pathname))
@@ -107,6 +109,18 @@ export async function handleStremioTrial(req,res,requestUrl){
   if(requestUrl.pathname===ROOT+'/manifest.json')return sendJSON(200,MANIFEST);
   if(requestUrl.pathname===ROOT+'/catalog/movie/moosa-iphone.json')
     return sendJSON(200,{metas:ITEMS});
+  const searchRoute=requestUrl.pathname.match(SEARCH_ROUTE);
+  if(searchRoute){
+    let term;
+    try{term=decodeURIComponent(searchRoute[1]).normalize('NFKC')
+      .trim().toLowerCase();}catch{return sendJSON(400,{error:'Invalid search term'});}
+    if(!term||term.length>80)return sendJSON(200,{metas:[]});
+    // Exact operator-owned demo catalog only. No external provider queries.
+    const matches=term.includes('moosa')?ITEMS:ITEMS.filter(film=>
+      (film.name+' '+film.description).toLowerCase().includes(term) ||
+      (term.includes('wing')&&film.id===WING_ID));
+    return sendJSON(200,{metas:matches});
+  }
   const suffix=requestUrl.pathname.split('/').at(-1);
   if(requestUrl.pathname.startsWith(ROOT+'/meta/movie/')){
     const item=ITEMS.find(x=>suffix===x.id+'.json');
