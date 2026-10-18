@@ -7,6 +7,9 @@
  * Playback on iOS is NOT established by this Linux service test.
  */
 import { randomBytes } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
 import { readFile } from 'node:fs/promises';
 
 const HUB = 'https://aiostreams-nightly.fortheweak.cloud';
@@ -80,15 +83,56 @@ async function main(){
         const transport=resp.status===206 && size>=65536 && (bmff||ebml||riff);
         console.log('MOOSA_RUNTIME_SOURCE_'+i+' status='+resp.status+' bytes='+size+
           ' mediaContainer='+(bmff?'MP4':ebml?'Matroska':riff?'RIFF':'unknown')+' playableTransport='+transport);
-        if(transport){played=true;break;}
+        if(transport){
+          try {
+            // Prove demuxable audio/video tracks, not just an MKV/MP4 signature.
+            const probe = await execFileAsync('ffprobe', [
+              '-v','error','-rw_timeout','14000000','-probesize','4000000',
+              '-analyzeduration','4000000','-show_entries',
+              'stream=codec_type,codec_name,width,height','-of','json',fileRoute
+            ], {timeout:58000,maxBuffer:200000});
+            const tracks=JSON.parse(probe.stdout).streams||[];
+            const video=tracks.find(x=>x.codec_type==='video'&&x.width>0&&x.height>0);
+            const audio=tracks.some(x=>x.codec_type==='audio');
+            if(!video){ console.log('MOOSA_RUNTIME_DECODE_PROBE video=false'); continue; }
+            console.log('MOOSA_RUNTIME_TRACKS video=true audio='+audio+
+              ' pixels='+video.width+'x'+video.height+' codec='+video.codec_name);
+            // FFmpeg must DECODE real frames, not simply extract container metadata.
+            await execFileAsync('ffmpeg', [
+              '-nostdin','-hide_banner','-loglevel','error','-rw_timeout','14000000',
+              '-analyzeduration','4000000','-probesize','4000000',
+              '-i',fileRoute,'-map','0:v:0','-frames:v','2',
+              '-an','-sn','-dn','-f','null','-'
+            ],{timeout:85000,maxBuffer:200000});
+            console.log('MOOSA_RUNTIME_DECODED_VIDEO_FRAMES=2');
+            if(audio) {
+              // Verify audio is decodable too, without writing or retaining media.
+              try {
+                await execFileAsync('ffmpeg', [
+                  '-nostdin','-hide_banner','-loglevel','error','-rw_timeout','14000000',
+                  '-i',fileRoute,'-map','0:a:0','-vn','-sn','-dn','-t','0.4',
+                  '-f','null','-'
+                ],{timeout:60000,maxBuffer:200000});
+                console.log('MOOSA_RUNTIME_DECODED_AUDIO=true');
+              }catch {
+                console.log('MOOSA_RUNTIME_DECODED_AUDIO=false');
+              }
+            }
+            played=true;
+            break;
+          } catch (decodeErr) {
+            const why=decodeErr?.killed?'time-limit':'decode-error';
+            console.log('MOOSA_RUNTIME_DECODE_TRIAL_'+i+' result='+why);
+          }
+        }
       }catch(e){
         const error=(e?.name==='TimeoutError'||e?.name==='AbortError')?'timeout':'network-error';
         console.log('MOOSA_RUNTIME_SOURCE_'+i+' status='+error+' media=false');
       }
     }
     if(!played)throw Error('No real media bytes from selected indexed titles through official Stremio engine');
-    console.log('MOOSA_RUNTIME_P2P_MEDIA_BYTES_VERIFIED=true');
-    console.log('NOT_FULL_PLAYBACK: Initial range is genuine container, NOT decoded movie frames, not a 90-minute viewing and NOT iPhone playback.');
+    console.log('MOOSA_RUNTIME_P2P_FRAMES_DECODED=true');
+    console.log('NOT_FULL_PLAYBACK: Decoded startup frames on Linux with FFmpeg, not a full film viewing and NOT native iOS/PC app playback.');
   } finally {await cleanup();}
 }
 main().catch(err=>{console.error('MOOSA_RUNTIME_FAILED '+String(err?.message||err).slice(0,190));process.exitCode=1;});
