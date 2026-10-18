@@ -273,3 +273,91 @@ export async function findVerifiedMultiFilmVidlink({
       enabled:true,rightsReviewed:true});
   }catch{return [];}
 }
+
+/**
+ * Read-only real MP4 byte audit for arbitrary exact TMDB IDs.
+ * This does NOT authorize films, publish source URLs, issue media tokens,
+ * prove editions, or claim decoded browser playback.
+ */
+export async function probeVidlinkContainerBytes({
+  tmdbId,fetchImpl=fetch,maxVariants=2
+}={}){
+  const id=Number(tmdbId);
+  const state=(status,extra={})=>({
+    tmdbId:Number.isSafeInteger(id)&&id>0?id:null,
+    status,checked:0,mp4ContainersVerified:0,
+    verifiedQualityLabels:[],rightsVerified:false,
+    playbackVerified:false,...extra
+  });
+  if(!Number.isSafeInteger(id)||id<1||id>9999999999)
+    return state('invalid_movie_id');
+  try{
+    const keyUrl=new URL('https://enc-dec.app/api/enc-vidlink');
+    keyUrl.searchParams.set('text',String(id));
+    const key=await smallProviderJson(await fetchImpl(keyUrl.href,{
+      redirect:'error',headers:{Accept:'application/json'},
+      signal:AbortSignal.timeout(10000)
+    }),24000);
+    const code=key?.result;
+    if(typeof code!=='string'||!/^[a-zA-Z0-9+/_=-]{3,320}$/.test(code))
+      return state('no_provider_id');
+    const data=await smallProviderJson(await fetchImpl(
+      'https://vidlink.pro/api/b/movie/'+encodeURIComponent(code),{
+      redirect:'error',signal:AbortSignal.timeout(12000),
+      headers:{Accept:'application/json',Referer:'https://vidlink.pro/',
+        Origin:'https://vidlink.pro/'}
+    }));
+    const found=offeredVidlinkVariants(data,{maxVariants:3})
+      .filter(x=>x.format==='mp4')
+      .slice(0,Math.max(1,Math.min(3,Number(maxVariants)||2)));
+    if(!found.length)return state('no_mp4_candidate');
+    let confirmed=0;
+    const labels=[];
+    const statuses=[];
+    for(const candidate of found){
+      let response;
+      try{
+        response=await fetchImpl(candidate.url,{
+          method:'GET',redirect:'error',
+          signal:AbortSignal.timeout(8000),
+          headers:{
+            Range:'bytes=0-4095',
+            Referer:'https://filmboom.top/',
+            Origin:'https://filmboom.top/'
+          }
+        });
+        if(response.status!==206){
+          statuses.push('http_'+response.status);continue;
+        }
+        const type=(response.headers.get('content-type')||'').toLowerCase();
+        if(!type.startsWith('video/mp4') &&
+          !type.startsWith('application/octet-stream')){
+          statuses.push('wrong_mime');continue;
+        }
+        const reader=response.body?.getReader();
+        if(!reader){statuses.push('no_body');continue;}
+        let bytes=Buffer.alloc(0);
+        try{
+          while(bytes.length<16){
+            const part=await reader.read();
+            if(part.done)break;
+            bytes=Buffer.concat([bytes,Buffer.from(part.value).subarray(0,16-bytes.length)]);
+          }
+        }finally{await reader.cancel().catch(()=>{});}
+        if(bytes.length>=12 && ['ftyp','styp'].includes(
+          bytes.subarray(4,8).toString('ascii'))){
+          confirmed++;labels.push(candidate.advertisedQuality);
+          statuses.push('mp4_header_verified');
+        }else statuses.push('wrong_mp4_signature');
+      }catch{statuses.push('network_or_timeout');}
+      finally{
+        if(response?.body&&!response.body.locked)
+          await response.body.cancel().catch(()=>{});
+      }
+    }
+    return state(confirmed?'mp4_bytes_verified':'no_valid_media_bytes',{
+      checked:found.length,mp4ContainersVerified:confirmed,
+      verifiedQualityLabels:labels,statuses
+    });
+  }catch{return state('provider_unavailable');}
+}
