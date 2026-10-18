@@ -34,7 +34,15 @@ const PRIVATE_FILMS=[
   {id:832,title:'M',original_title:'M',
     release_date:'1931-05-11',imdb_id:'tt0022100',
     media_type:'movie',vote_average:8.0,vote_count:1,
-    overview:'Private test of the original film player. Edition and source rights unverified.'}
+    overview:'Private test of the original film player. Edition and source rights unverified.'},
+  {id:961,title:'The General',original_title:'The General',
+    release_date:'1926-12-31',imdb_id:'tt0017925',
+    media_type:'movie',vote_average:8.0,vote_count:1,
+    overview:'Experimental feature-film playback. Exact source edition and rights not yet independently verified.'},
+  {id:3085,title:'His Girl Friday',original_title:'His Girl Friday',
+    release_date:'1940-01-18',imdb_id:'tt0032599',
+    media_type:'movie',vote_average:8.0,vote_count:1,
+    overview:'Experimental feature-film playback. Exact source edition and rights not yet independently verified.'}
 ];
 function privateCatalog(route){
   if(!PRIVATE_LAB)return null;
@@ -45,7 +53,7 @@ function privateCatalog(route){
       search===x.title.toLowerCase()+' '+x.release_date.slice(0,4));
     return {page:1,total_pages:1,total_results:match.length,results:match};
   }
-  const detail=route.endpoint.match(/^\/movie\/(19|832)$/);
+  const detail=route.endpoint.match(/^\/movie\/(19|832|961|3085)$/);
   if(detail){
     const film=PRIVATE_FILMS.find(x=>String(x.id)===detail[1]);
     return {...film,external_ids:{imdb_id:film.imdb_id},runtime:null};
@@ -53,7 +61,7 @@ function privateCatalog(route){
   if(route.endpoint==='/trending/movie/week'||
      route.endpoint==='/movie/top_rated' ||
      route.endpoint==='/discover/movie'){
-    return {page:1,total_pages:1,total_results:2,results:PRIVATE_FILMS};
+    return {page:1,total_pages:1,total_results:PRIVATE_FILMS.length,results:PRIVATE_FILMS};
   }
   return {page:1,total_pages:1,total_results:0,results:[]};
 }
@@ -712,7 +720,7 @@ const twoFilmLabStatus={};
 async function probePrivateFilmSources(port){
   const auth='Basic '+Buffer.from('moosa:'+process.env.MOOSA_LAB_PASSWORD)
     .toString('base64');
-  for(const id of [19,832]){
+  for(const id of [19,832,961,3085]){
     const result={tmdbId:id,checkedAt:new Date().toISOString(),
       backendResponsive:false,verifiedSources:0,playbackNotYetVerified:true};
     try{
