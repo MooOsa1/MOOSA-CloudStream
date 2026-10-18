@@ -824,14 +824,18 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
               gpdl:row.gatewayPage?.gpdlAudit?.status,
               r2:row.gatewayPage?.r2Audit?.status,
               gpdlContainer:row.gatewayPage?.gpdlAudit?.container,
-              r2Container:row.gatewayPage?.r2Audit?.container
+              r2Container:row.gatewayPage?.r2Audit?.container,
+              r2CodecIds:row.gatewayPage?.r2Audit?.codecIds||[],
+              mp4RemuxCandidate:row.gatewayPage?.r2Audit?.mp4RemuxCandidate===true
             })),
             alternateServerAudits:(found.extraRedirectProbe?.landings||[]).map(row=>({
               host:row.host,step:row.gatewayPage?.status||row.status,
               gatewayHosts:row.gatewayPage?.buttonHosts||[],
               gpdl:row.gatewayPage?.gpdlAudit?.status,
               r2:row.gatewayPage?.r2Audit?.status,
-              r2Container:row.gatewayPage?.r2Audit?.container
+              r2Container:row.gatewayPage?.r2Audit?.container,
+              r2CodecIds:row.gatewayPage?.r2Audit?.codecIds||[],
+              mp4RemuxCandidate:row.gatewayPage?.r2Audit?.mp4RemuxCandidate===true
             })),
             videoVerified:false})))
         .catch(()=>console.log('MOOSA_MODERN_MOVIE_SOURCE_COVERAGE_UNAVAILABLE'));
