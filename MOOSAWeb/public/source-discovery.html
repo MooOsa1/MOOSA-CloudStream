@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#18191e">
+<title>MOOSA • Source Discovery</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:#17181d;color:#f3f3f6;min-height:100vh}
+main{max-width:660px;margin:0 auto;padding:28px 18px 44px}
+a{color:#b9e1d7}header{letter-spacing:.28em;color:#bed1ca;font-size:.8rem;font-weight:650}
+h1{font-size:1.7rem;margin:20px 0 8px}p{color:#b6b8c2;line-height:1.65}
+.panel{background:#25262d;border:1px solid #454651;border-radius:16px;padding:20px;margin:20px 0}
+label{display:block;margin-bottom:10px;color:#d3d5dc}
+.entry{display:flex;flex-wrap:wrap;gap:10px}input{min-width:150px;flex:1;background:#18191f;border:1px solid #737581;color:white;border-radius:10px;padding:14px;font-size:1rem}
+button{border:1px solid #72747c;background:#343640;border-radius:10px;color:white;padding:13px 18px;font-size:1rem;cursor:pointer}
+button:disabled{opacity:.6}button:focus-visible,input:focus-visible{outline:3px solid #b9e1d7}
+strong{color:white}#status{min-height:30px}
+.values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.metric{padding:14px;background:#1c1d23;border-radius:12px}.metric b{display:block;font-size:1.4rem;margin:6px 0}
+#output[hidden]{display:none}.note{font-size:.9rem;color:#aeb0bb}code{font-size:.9rem}
+</style>
+</head><body><main>
+<header>MOOSA / PRIVATE SOURCE LAB</header>
+<h1>Find movie sources</h1>
+<p>Check whether Vidlink exposes potential video sources for any TMDB movie ID. This is live provider discovery, not a playback guarantee.</p>
+<div class="panel">
+<form id="discovery-form">
+<label for="movie-id">TMDB movie ID</label>
+<div class="entry"><input id="movie-id" type="text" inputmode="numeric" pattern="[1-9][0-9]{0,9}" maxlength="10" placeholder="e.g. 19" autocomplete="off" required>
+<button id="scan" type="submit">Search sources</button></div>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+<section id="output" hidden>
+<div class="values">
+<div class="metric">Provider <b id="provider"></b></div>
+<div class="metric">Potential variants <b id="count"></b></div>
+<div class="metric">Offered quality labels <b id="qualities"></b></div>
+<div class="metric">Media formats <b id="formats"></b></div>
+</div>
+<p class="note" id="disclaimer"></p>
+</section>
+</div>
+<p class="note">This page never displays signed CDN URLs or claims that an unverified stream can play. The existing reviewed-film playback path is unchanged. For a film's ID, open its TMDB page and use the number after <code>/movie/</code>.</p>
+<p><a href="/">← Back to MOOSA movie player</a></p>
+</main><script type="module" src="/source-discovery.js"></script></body></html>
