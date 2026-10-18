@@ -85,3 +85,59 @@ test('actual Play backend /api/resolve returns exact-title gateway sources and 3
       if(value===undefined)delete process.env[key];else process.env[key]=value;
   }
 });
+
+test('fast vetted Play response does not await unrelated slow provider services',async()=>{
+  const native=globalThis.fetch;
+  const original=Object.fromEntries(['TMDB_API_KEY','TMDB_READ_ACCESS_TOKEN',
+    'CINESTREAM_MULTIFILM_PILOT','CINESTREAM_MULTIFILM_RIGHTS_APPROVED']
+    .map(x=>[x,process.env[x]]));
+  let server,releaseSlow,unrelatedCount=0,realProbes=0;
+  const paused=new Promise(resolve=>{releaseSlow=resolve;});
+  try{
+    process.env.TMDB_API_KEY='ISOLATED_TEST_KEY';
+    delete process.env.TMDB_READ_ACCESS_TOKEN;
+    process.env.CINESTREAM_MULTIFILM_PILOT='1';
+    process.env.CINESTREAM_MULTIFILM_RIGHTS_APPROVED='1';
+    globalThis.fetch=async(raw)=>{
+      const url=new URL(raw instanceof URL?raw.href:
+        typeof raw==='string'?raw:raw.url);
+      if(url.hostname==='api.themoviedb.org')
+        return Response.json({id:19,title:'Metropolis',
+          original_title:'Metropolis',release_date:'1927-01-01',
+          imdb_id:'tt0017136'});
+      if(url.hostname==='enc-dec.app')
+        return Response.json({result:'metropolis_fast_key'});
+      if(url.hostname==='vidlink.pro')
+        return Response.json(payload);
+      unrelatedCount++;
+      await paused;
+      return Response.json({response:{docs:[]}});
+    };
+    const gateway={issueIfBytesVerified:async({url})=>{
+      const q=url.match(/test-(\\d+)\\.mp4$/)?.[1];
+      if(!['720','480','360'].includes(q))
+        return {source:null,reason:'invalid_source'};
+      realProbes++;
+      return {source:{gatewayIssued:true,format:'video/mp4',
+        url:SITE+'/api/media/'+({720:'A',480:'B',360:'C'}[q]).repeat(43)}};
+    }};
+    server=createServer({mediaGateway:gateway});
+    await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const started=performance.now();
+    const resp=await native('http://127.0.0.1:'+server.address().port+
+      '/api/resolve?media=movie&id=19',{signal:AbortSignal.timeout(1500)});
+    const elapsed=performance.now()-started;
+    assert.equal(resp.status,200);
+    const result=await resp.json();
+    assert.equal(result.count,3);
+    assert.equal(realProbes,3);
+    assert.ok(unrelatedCount>0,'The ordinary search should be running concurrently');
+    assert.ok(elapsed<1200,'Play must not wait for stalled unrelated providers; ms='+elapsed);
+  }finally{
+    releaseSlow?.();
+    if(server)await new Promise(resolve=>server.close(resolve));
+    globalThis.fetch=native;
+    for(const [k,v] of Object.entries(original))
+      if(v===undefined)delete process.env[k];else process.env[k]=v;
+  }
+});
