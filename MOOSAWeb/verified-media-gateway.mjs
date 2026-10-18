@@ -301,5 +301,7 @@ export function createMediaGateway({
       }
     }
   }
-  return {issue,issueIfBytesVerified,handle,activeTokenCount:()=>entries.size};
+  return {issue,issueIfBytesVerified,handle,
+    remuxAvailable:()=>remux.isAvailable(),
+    activeTokenCount:()=>entries.size};
 }
