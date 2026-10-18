@@ -104,18 +104,17 @@ export async function main() {
   console.log('MOOSA_STREMIO_DISCOVERY ' + JSON.stringify(status));
   console.log('NOT_PLAYBACK_PROOF: Candidates may be unseeded, unreachable, wrong titles, or unsupported in iOS Safari.');
   if (process.env.GITHUB_STEP_SUMMARY) {
-    await (await import('node:fs/promises')).appendFile(process.env.GITHUB_STEP_SUMMARY,
-      '### MOOSA Stremio discovery only (NOT playback proof)
+    await (await import('node:fs/promises')).appendFile(
+      process.env.GITHUB_STEP_SUMMARY,
+      `### MOOSA Stremio discovery only — NOT playback proof
 
-' +
-      '| Stream manifests | Candidates | P2P candidates | HTTP candidates |
+| Stream manifests | Candidates | P2P candidates | HTTP candidates |
 |---:|---:|---:|---:|
-|' +
-      [validStreamManifests, totalCandidates, totalP2p, totalHttp].join('|') + '|
+|${validStreamManifests}|${totalCandidates}|${totalP2p}|${totalHttp}|
 
-' +
-      'Checked two public-domain feature titles. No videos downloaded or verified.
-');
+Checked two public-domain and two recent title IDs (metadata only). No videos were downloaded or played.
+`
+    );
   }
   // A down provider or empty stream index is a *failed live discovery*, not a pass.
   if (validStreamManifests === 0 || totalCandidates === 0) process.exitCode = 1;
