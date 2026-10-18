@@ -52,7 +52,7 @@ try {
     ' validStreamResource=' + hasStream +
     ' resourceTypes=' + types.filter(x=>['catalog','meta','stream','subtitles'].includes(x)).join(','));
   if (!hasStream) throw new Error('Manifest missing stream resource');
-  const stream = await request(base + '/stream/movie/tt0063350.json', {}, 90000);
+  const stream = await request(base + '/stream/movie/tt31193180.json', {}, 90000);
   const streams = Array.isArray(stream.payload.streams) ? stream.payload.streams : [];
   const p2p = streams.filter(s => typeof s.infoHash === 'string' && s.infoHash).length;
   const http = streams.filter(s => typeof s.url === 'string' && /^https?:\/\//.test(s.url)).length;
