@@ -65,25 +65,33 @@ export async function verifiedFilmVariants({
   const exact=exactExperimentalFilm(meta);
   if(!exact)return [];
   const candidates=offeredVidlinkVariants(providerResponse);
+  // HTTP Range preflights are independent. Run at most three at once to
+  // reduce the Play-button delay, without opening unlimited CDN connections.
+  // Keep advertised-quality order even if a lower quality finishes earlier.
   const accepted=[];
-  for(const candidate of candidates){
-    let verification;
-    try{verification=await mediaGateway.issueIfBytesVerified({
-      url:candidate.url,format:candidate.format,headers:candidate.headers,
-      rightsApproved:true,sourceVerified:true
-    });}catch{continue;}
-    if(!verification?.source)continue;
-    accepted.push({
-      ...verification.source,
-      name:'CineStream • Vidlink — verified bytes / '+candidate.advertisedQuality+'p offered',
-      provider:'CineStream',
-      // Leave quality automatic until Chrome measures actual vertical pixels.
-      quality:0,
-      subtitles:[],
-      originalMovieTmdbId:exact.tmdbId,
-      originalMovieImdbId:exact.imdb,
-      originalMovieYear:exact.year
-    });
+  for(let start=0;start<candidates.length;start+=3){
+    const group=candidates.slice(start,start+3);
+    const batch=await Promise.all(group.map(async candidate=>{
+      try{
+        const verification=await mediaGateway.issueIfBytesVerified({
+          url:candidate.url,format:candidate.format,headers:candidate.headers,
+          rightsApproved:true,sourceVerified:true
+        });
+        if(!verification?.source)return null;
+        return {
+          ...verification.source,
+          name:'CineStream • Vidlink — verified bytes / '+candidate.advertisedQuality+'p offered',
+          provider:'CineStream',
+          // Decode and measure actual dimensions in Chrome before claiming quality.
+          quality:0,
+          subtitles:[],
+          originalMovieTmdbId:exact.tmdbId,
+          originalMovieImdbId:exact.imdb,
+          originalMovieYear:exact.year
+        };
+      }catch{return null;}
+    }));
+    accepted.push(...batch.filter(Boolean));
   }
   return accepted;
 }
