@@ -96,6 +96,52 @@ function authenticatePrivateLab(req,res,pathname){
   return false;
 }
 const CONFIG_PATH = process.env.STREAMS_FILE || 'data/streams.json';
+// Bounded operator-only modern movie checks. No provider URLs or film
+// download links are returned to clients. Caching prevents repeated
+// shortlink and storage probes for the same movie/source slots.
+const modernSourceAuditCache=new Map();
+let modernAuditsInFlight=0;
+async function cachedModernSourceAudit(title,year,slot){
+  const key=title.normalize('NFKC').toLowerCase()+'|'+year+'|'+slot;
+  const cached=modernSourceAuditCache.get(key);
+  if(cached&&cached.expires>Date.now())return cached.promise;
+  if(modernAuditsInFlight>=2)return null;
+  if(modernSourceAuditCache.size>=20)
+    modernSourceAuditCache.delete(modernSourceAuditCache.keys().next().value);
+  modernAuditsInFlight++;
+  const promise=(async()=>{
+    const raw=await probe4khdhubHandoff({
+      title,year:Number(year),timeoutMs:6500,
+      diagnoseRedirects:true,redirectStartAt:slot
+    });
+    const landings=raw.redirectProbe?.landings||[];
+    return {
+      title,year:Number(year),sourceOffset:slot,
+      indexedState:raw.state,matchingPosts:raw.exactMoviePosts,
+      matchingPagesOpened:raw.postPagesAccessible||0,
+      intermediateLinks:raw.streamPlayAnchors?.downloadLinks||0,
+      linksInspected:raw.redirectProbe?.inspected||0,
+      hosts:landings.map(row=>({
+        sourceHost:row.host,
+        landingState:row.status,
+        optionHosts:row.gatewayPage?.buttonHosts||row.buttonHosts||[],
+        videoCandidates:[
+          {name:'Pixel',state:row.gatewayPage?.pixelAudit?.status},
+          {name:'Worker',state:row.gatewayPage?.workerAudit?.status},
+          {name:'GPDL',state:row.gatewayPage?.gpdlAudit?.status},
+          {name:'R2',state:row.gatewayPage?.r2Audit?.status,
+            container:row.gatewayPage?.r2Audit?.container,
+            codecs:row.gatewayPage?.r2Audit?.codecIds||[],
+            remuxCandidate:row.gatewayPage?.r2Audit?.mp4RemuxCandidate===true}
+        ].filter(row=>row.state)
+      })),
+      watchReady:false,rightsVerified:false,
+      note:'Provider byte headers and source paths are diagnostic only; not Safari playback or film rights approval.'
+    };
+  })().finally(()=>{modernAuditsInFlight--;});
+  modernSourceAuditCache.set(key,{expires:Date.now()+720000,promise});
+  return promise;
+}
 const focusedHubCloudCache=new Map();
 function cachedHubCloudHandoff(title,year){
   const key=title.normalize('NFKC').toLowerCase()+'|'+year;
@@ -317,6 +363,24 @@ async function handle(req,res,mediaGateway=null) {
       const match=url.pathname.match(/^\/api\/stremio\/stream\/movie\/(tt\d{5,12})\.json$/);
       if(!match)return err(res,404,'Unsupported Stremio stream route');
       return json(res,200,await resolveStremioProtocolMovie(match[1]));
+    }
+    if(PRIVATE_LAB&&url.pathname==='/api/modern-source-audit'){
+      const keys=functionalParams(url.searchParams).sort();
+      if(keys.join(',')!=='slot,title,year'||keys.length!==3||
+         url.searchParams.getAll('slot').length!==1||
+         url.searchParams.getAll('title').length!==1||
+         url.searchParams.getAll('year').length!==1)
+        return err(res,400,'Expected title, year, slot');
+      const title=(url.searchParams.get('title')||'').trim();
+      const year=url.searchParams.get('year')||'';
+      const slot=url.searchParams.get('slot')||'';
+      if(!/^[\\p{L}\\p{N}][\\p{L}\\p{N} .:'&(),!?-]{2,109}$/u.test(title)||
+         !/^(?:19[5-9]\\d|20[0-2]\\d)$/.test(year)||
+         !/^(?:0|2|4|6|8|10|12|14|16)$/.test(slot))
+        return err(res,400,'Invalid movie identity or source slot');
+      const result=await cachedModernSourceAudit(title,Number(year),Number(slot));
+      if(!result)return err(res,429,'Modern source checker busy; retry after the current check');
+      return json(res,200,result);
     }
     if(PRIVATE_LAB&&url.pathname==='/api/focused-sources'){
       // Four operator-priority sources. Only MovieBox currently supports
