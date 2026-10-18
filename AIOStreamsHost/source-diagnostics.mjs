@@ -10,9 +10,10 @@ import { readFile } from 'node:fs/promises';
 
 const ADDONS = [
   { name: 'Torrentio', base: 'https://torrentio.strem.fun' },
-  { name: 'MediaFusion', base: 'https://mediafusion.elfhosted.com' },
+  // Previous zero-result provider, kept for comparative diagnostics but not installed.
+  { name: 'MediaFusion', base: 'https://mediafusion.elfhosted.com', exploratory: true },
   // Candidates are not enabled in MOOSA Hub until a live metadata audit succeeds.
-  { name: 'Comet', base: 'https://comet.feels.legal', exploratory: true },
+  { name: 'Comet', base: 'https://comet.feels.legal' },
   { name: 'StremThru Torz', base: 'https://stremthru.13377001.xyz/stremio/torz', exploratory: true },
 ];
 const MOVIES = [
@@ -57,7 +58,7 @@ export async function main() {
   const file = new URL('./moosa-hub-template.json', import.meta.url);
   const config = JSON.parse(await readFile(file, 'utf8'));
   const types = (config.config?.presets || []).filter(p => p.enabled).map(p => p.type);
-  for (const required of ['torrentio', 'mediafusion']) {
+  for (const required of ['torrentio', 'comet']) {
     if (!types.includes(required)) throw new Error('Missing configured provider: ' + required);
   }
   if (!Array.isArray(config.metadata?.services) || config.metadata.services.length) {
@@ -104,7 +105,7 @@ export async function main() {
     }
   }
   const status = { validStreamManifests, totalCandidates, totalP2p, totalHttp };
-  console.log('EXPLORATORY_PROVIDERS: these are not active in MOOSA Hub preset; counts show only raw index results.');
+  console.log('EXPLORATORY_PROVIDERS: MediaFusion and StremThru Torz are disabled in MOOSA Hub; counts represent raw metadata only.');
   console.log('MOOSA_STREMIO_DISCOVERY ' + JSON.stringify(status));
   console.log('NOT_PLAYBACK_PROOF: Candidates may be unseeded, unreachable, wrong titles, or unsupported in iOS Safari.');
   if (process.env.GITHUB_STEP_SUMMARY) {
