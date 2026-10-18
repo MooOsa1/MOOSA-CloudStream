@@ -12,7 +12,7 @@ function decode64(s){
   if(!/^[a-zA-Z0-9+/=]{1,15000}$/.test(s))throw Error('invalid_base64');
   return Buffer.from(s,'base64').toString('utf8');
 }
-export function classifyStreamPlayRedirectHtml(html){
+export function classifyStreamPlayRedirectHtml(html,onDecodedTarget=null){
   const tokens=[];
   const rx=/s\('o','([A-Za-z0-9+/=]+)'|ck\('_wp_http_[0-9]+','([^']+)'/g;
   for(const m of String(html).matchAll(rx))tokens.push(m[1]||m[2]);
@@ -26,6 +26,7 @@ export function classifyStreamPlayRedirectHtml(html){
     const u=new URL(plain);
     if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash)
       return result('non_https_redirect');
+    if(typeof onDecodedTarget==='function')onDecodedTarget(u.href);
     const hub=/^(?:.+\.)?(?:hubcloud|hubdrive|vcloud)\.[a-z]{2,12}$/i.test(u.hostname);
     return result('decoded_intermediate',{
       decodedIntermediateLinks:1,hubcloudHints:hub?1:0,
@@ -33,6 +34,54 @@ export function classifyStreamPlayRedirectHtml(html){
     });
   }catch{return result('malformed_obfuscation');}
 }
+// Only the two hosts confirmed in the operator's Inception probe are
+// permitted for a bounded read-only landing-page inspection.
+const LANDING_HOSTS=new Set(['hubcloud.ist','hubdrive.pics']);
+function inspectLandingHtml(html,host){
+  // StreamPlay: HubCloud checks a#download, then a.btn on the next page.
+  // Hubdrive checks .btn.btn-primary.btn-user.btn-success1.m-1.
+  const anchors=[...String(html).matchAll(/<a\b[^>]{0,1800}>/gi)].slice(0,110);
+  const getAttr=(tag,attr)=>{
+    const m=tag.match(new RegExp('\\b'+attr+'\\s*=\\s*(["\\x27])([^"\\x27<>]{1,850})\\1','i'));
+    return m?.[2]||'';
+  };
+  let downloadButtons=0,hubdriveButtons=0,serverButtons=0;
+  for(const entry of anchors){
+    const tag=entry[0],id=getAttr(tag,'id'),classes=getAttr(tag,'class');
+    const names=new Set(classes.toLowerCase().split(/\s+/).filter(Boolean));
+    if(id==='download' && getAttr(tag,'href'))downloadButtons++;
+    if(['btn','btn-primary','btn-user','btn-success1','m-1']
+      .every(name=>names.has(name)))hubdriveButtons++;
+    if(names.has('btn')&&getAttr(tag,'href'))serverButtons++;
+  }
+  return {host,status:'page_accessible',downloadButtons,
+    hubdriveButtons,serverButtons};
+}
+async function inspectLanding(link,fetchImpl,timeoutMs){
+  let u;
+  try{u=new URL(link);}catch{return null;}
+  if(u.protocol!=='https:'||!LANDING_HOSTS.has(u.hostname)||
+     u.username||u.password||u.port||u.hash||u.href.length>1800)return null;
+  try{
+    const r=await fetchImpl(u.href,{
+      redirect:'manual',headers:{Accept:'text/html'},
+      signal:AbortSignal.timeout(Math.min(timeoutMs,6000))
+    });
+    if([301,302,303,307,308].includes(r.status)){
+      await r.body?.cancel?.().catch(()=>{});
+      return {host:u.hostname,status:'redirect_not_followed'};
+    }
+    const markup=await boundedText(r);
+    return inspectLandingHtml(markup,u.hostname);
+  }catch(e){
+    const reason=String(e?.message||'');
+    const state=/^http_[0-9]{3}$/.test(reason)?reason:
+      reason==='not_html'?'not_html':reason==='oversized'?'page_oversized':
+      e?.name==='TimeoutError'?'timeout':'request_unavailable';
+    return {host:u.hostname,status:state};
+  }
+}
+
 async function boundedText(res){
   if(!res.ok)throw Error('http_'+res.status);
   if(!String(res.headers.get('content-type')||'').includes('text/html'))
@@ -107,8 +156,15 @@ export async function probeStreamPlayRedirects({
                 }));
               }else{
                 const body=await boundedText(step);
-                attempts.push({...classifyStreamPlayRedirectHtml(body),
-                  redirectsSeen:1,redirectHost:'greenmotors.cc'});
+                let landingUrl=null;
+                const decoded=classifyStreamPlayRedirectHtml(body,u=>{
+                  landingUrl=u;
+                });
+                const landing=landingUrl?
+                  await inspectLanding(landingUrl,fetchImpl,timeoutMs):null;
+                attempts.push({...decoded,
+                  redirectsSeen:1,redirectHost:'greenmotors.cc',
+                  ...(landing?{landing}:{} )});
               }
               continue;
             }catch(e){
@@ -148,6 +204,7 @@ export async function probeStreamPlayRedirects({
     decodedIntermediateLinks:attempts.reduce((s,x)=>s+x.decodedIntermediateLinks,0),
     hubcloudHints:attempts.reduce((s,x)=>s+x.hubcloudHints,0),
     destinationHosts:[...new Set(attempts.flatMap(x=>
-      [x.destinationHost,x.redirectHost].filter(Boolean)))].sort()
+      [x.destinationHost,x.redirectHost].filter(Boolean)))].sort(),
+    landings:attempts.map(x=>x.landing).filter(Boolean)
   });
 }
