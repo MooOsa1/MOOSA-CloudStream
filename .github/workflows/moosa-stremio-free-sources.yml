@@ -30,3 +30,6 @@ jobs:
         run: node --test AIOStreamsHost/source-diagnostics.test.mjs
       - name: Check live addon manifests and source metadata (no video downloaded)
         run: node AIOStreamsHost/source-diagnostics.mjs
+
+      - name: Verify latest official iPhone IPA on Stremio CDN (HEAD only)
+        run: node AIOStreamsHost/check-ios.mjs
