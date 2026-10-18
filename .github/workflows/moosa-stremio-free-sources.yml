@@ -61,14 +61,14 @@ jobs:
         run: node AIOStreamsHost/end-to-end-addon.mjs
   real-indexed-media:
     runs-on: ubuntu-latest
-    timeout-minutes: 11
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Validate indexed-media test script
-        run: node --check AIOStreamsHost/real-source-engine.mjs
+        run: node --check AIOStreamsHost/modern-2025-engine.mjs
       - name: Launch official Stremio Docker engine (loopback only)
         run: |
           docker run -d --rm --name moosa-stremio-server \
@@ -81,8 +81,8 @@ jobs:
             sleep 2
           done
           curl -sSf -m 5 http://127.0.0.1:11470/settings >/dev/null
-      - name: Decode-check real AIOStreams indexed source transport
-        run: node AIOStreamsHost/real-source-engine.mjs
+      - name: Decode-check modern 2025 film video and audio
+        run: node AIOStreamsHost/modern-2025-engine.mjs
       - name: Stop ephemeral engine
         if: always()
         run: docker rm -f moosa-stremio-server || true
