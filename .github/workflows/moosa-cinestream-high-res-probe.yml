@@ -11,7 +11,7 @@ permissions:
 jobs:
   browser-high-res:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 34
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,4 +101,9 @@ jobs:
         env:
           MOOSA_NEW_VARIANT_QUALITY: '360'
         timeout-minutes: 4
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Break first two Metropolis and M variants then auto-decode 360p
+        env:
+          MOOSA_NEW_FAILOVER_CHAIN: '1'
+        timeout-minutes: 5
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
