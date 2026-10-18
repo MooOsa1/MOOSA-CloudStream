@@ -129,7 +129,7 @@ test('bounded parallel preflight finds the fastest available quality without reo
       assert.equal(item.rightsApproved,true);
       assert.equal(item.sourceVerified,true);
       requests++;running++;maxRunning=Math.max(maxRunning,running);
-      const q=Number(item.url.match(/parallel-(\\d+)/)[1]);
+      const q=Number(item.url.match(/parallel-(\d+)/)[1]);
       await new Promise(resolve=>setTimeout(resolve,q===1080?55:q===720?5:15));
       running--;
       if(q===480)return {source:null,reason:'invalid_media_bytes'};
