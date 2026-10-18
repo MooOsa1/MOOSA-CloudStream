@@ -47,3 +47,8 @@ jobs:
           MOOSA_EXTRA_CINESTREAM: '1'
         timeout-minutes: 4
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Seek 90s into four experimental films and verify decoded-frame advance
+        env:
+          MOOSA_SEEK_STRESS: '1'
+        timeout-minutes: 5
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
