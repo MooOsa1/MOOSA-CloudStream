@@ -111,6 +111,13 @@ try{
           const data=JSON.parse(body.toString('utf8'));
           const sources=(data.sources||[]).filter(x=>x?.gatewayIssued===true);
           issuedCount=sources.length;
+          console.log('MOOSA_PLAY_BACKEND_RESOLVE_DIAGNOSTIC '+JSON.stringify({
+            film:film.title,httpStatus:upstream.status,
+            apiError:typeof data.error==='string'?data.error.slice(0,90):null,
+            sourceCount:Array.isArray(data.sources)?data.sources.length:0,
+            gatewaySources:issuedCount,preflightIssuedTokens:gateway.activeTokenCount(),
+            tmdbMetadataCalls:tmdbCount,protocolRequests:providerCount
+          }));
           assert.ok(sources.length>=2,'Backend returned fewer than two real verified film sources');
           assert.ok(sources.every(x=>
             x.originalMovieTmdbId===film.id &&
