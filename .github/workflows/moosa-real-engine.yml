@@ -1,10 +1,10 @@
-name: MOOSA real indexed P2P through official Stremio server
+name: MOOSA 2025 movie decode through official Stremio server
 on:
   push:
     branches:
       - experiment/moosa-hub-aiostreams-20261018
     paths:
-      - 'AIOStreamsHost/real-source-engine.mjs'
+      - 'AIOStreamsHost/modern-2025-engine.mjs'
       - '.github/workflows/moosa-real-engine.yml'
   workflow_dispatch:
 
@@ -14,14 +14,14 @@ permissions:
 jobs:
   real-indexed-media:
     runs-on: ubuntu-latest
-    timeout-minutes: 11
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Check test code
-        run: node --check AIOStreamsHost/real-source-engine.mjs
+        run: node --check AIOStreamsHost/modern-2025-engine.mjs
       - name: Start official Stremio streaming engine bound to localhost
         run: |
           docker run -d --rm --name moosa-stremio-server \
@@ -34,8 +34,8 @@ jobs:
             sleep 2
           done
           curl -sSf -m 5 http://127.0.0.1:11470/settings > /dev/null
-      - name: Test real indexed media Range bytes (no paid service, bounded)
-        run: node AIOStreamsHost/real-source-engine.mjs
+      - name: Test 2025 films Sinners and F1 actual decoded video and audio
+        run: node AIOStreamsHost/modern-2025-engine.mjs
       - name: Stop streaming engine
         if: always()
         run: docker rm -f moosa-stremio-server || true
