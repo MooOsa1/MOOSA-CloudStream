@@ -430,3 +430,41 @@ test('unreviewed Cloudflare redirect remains blocked and no third-party requests
   assert.equal(result.landings[0].gatewayPage.pixelAudit.status,'redirect_not_followed');
   assert.equal(result.videoVerified,false);
 });
+
+test('second reviewed worker option accepts MP4 bytes but never publishes the source URL',async()=>{
+  const encoded=b64(b64(rot13(b64(JSON.stringify({o:b64('https://hubcloud.ist/film')})))));
+  const visited=[];
+  const r=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/b">Movie</a>',
+    fetchImpl:async (raw,init)=>{
+      const u=new URL(raw);visited.push(u.hostname);
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/b'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+encoded+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist')
+        return new Response('<a id="download" href="https://gamerxyt.com/entry">Download</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='gamerxyt.com')
+        return new Response('<a class="btn" href="https://little-hat-b47b.legalo74863004.workers.dev/path?secret=1">FSL</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='little-hat-b47b.legalo74863004.workers.dev'){
+        assert.equal(init.headers.Range,'bytes=0-4095');
+        return new Response(Buffer.concat([
+          Buffer.from([0,0,0,24]),Buffer.from('ftypisom'),Buffer.alloc(12)
+        ]),{status:206,headers:{
+          'content-type':'application/octet-stream',
+          'content-range':'bytes 0-4095/123456'
+        }});
+      }
+      throw Error('unexpected host');
+    }
+  });
+  assert.deepEqual(visited,['greenmotors.club','greenmotors.cc',
+    'hubcloud.ist','gamerxyt.com',
+    'little-hat-b47b.legalo74863004.workers.dev']);
+  assert.equal(r.landings[0].gatewayPage.workerAudit.status,'mp4_bytes_verified');
+  assert.equal(r.videoVerified,false);
+  assert.doesNotMatch(JSON.stringify(r),/secret=1|\/entry|\/path|\/film/);
+});
