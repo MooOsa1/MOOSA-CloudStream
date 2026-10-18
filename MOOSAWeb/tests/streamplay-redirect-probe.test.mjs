@@ -494,7 +494,7 @@ test('2025 Sinners alternative R2 and GPDL options are probed once each with Ran
       assert.equal(opts.headers.Range,'bytes=0-4095');
       if(host==='gpdl.hubcloud.ist')
         return new Response(Buffer.concat([
-          Buffer.from([0x1a,0x45,0xdf,0xa3]),Buffer.alloc(20)
+          Buffer.from([0x1a,0x45,0xdf,0xa3]),Buffer.from('matroska'),Buffer.alloc(20)
         ]),{status:206,headers:{
           'content-type':'video/x-matroska',
           'content-range':'bytes 0-4095/100000'
@@ -509,7 +509,9 @@ test('2025 Sinners alternative R2 and GPDL options are probed once each with Ran
     }
   });
   assert.equal(res.landings[0].gatewayPage.gpdlAudit.status,'ebml_bytes_verified');
+  assert.equal(res.landings[0].gatewayPage.gpdlAudit.container,'matroska');
   assert.equal(res.landings[0].gatewayPage.r2Audit.status,'mp4_bytes_verified');
+  assert.equal(res.landings[0].gatewayPage.r2Audit.container,'mp4');
   assert.equal(res.videoVerified,false);
   assert.deepEqual(seen.slice(-2).sort(),[
     '297de52426dc9b4d861466cc51253577.r2.cloudflarestorage.com',
