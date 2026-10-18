@@ -13,6 +13,7 @@ import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream-stremio-interop.mjs';
 import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
 import {createMediaGateway} from './verified-media-gateway.mjs';
+import {isPublicStremioTrialPath,handleStremioTrial} from './stremio-ios-trial.mjs';
 import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
 import {findVerifiedMultiFilmVidlink,discoverVidlinkInventory,probeVidlinkContainerBytes} from './vidlink-multifilm-candidates.mjs';
 import {movieBoxInventory} from './moviebox-inventory.mjs';
@@ -341,6 +342,10 @@ async function readSources(media,id,season=null,episode=null) {
 async function handle(req,res,mediaGateway=null) {
   try {
     const earlyUrl = new URL(req.url||'/', 'http://localhost');
+    // This exact-path, openly licensed Stremio compatibility check is public;
+    // the existing private movie lab, API, bridge and media tokens remain gated.
+    if(isPublicStremioTrialPath(earlyUrl.pathname))
+      return handleStremioTrial(req,res,earlyUrl);
     if(!authenticatePrivateLab(req,res,earlyUrl.pathname))return;
     if(earlyUrl.pathname.startsWith('/api/bridge/'))return bridge.handle(req,res,earlyUrl);
     if(earlyUrl.pathname.startsWith('/api/media/')){
