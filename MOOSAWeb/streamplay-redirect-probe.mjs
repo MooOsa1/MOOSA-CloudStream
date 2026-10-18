@@ -1,0 +1,90 @@
+/**
+ * One bounded, read-only diagnosis of StreamPlay's getRedirectLinks() input.
+ * No redirects, JavaScript, captcha/session bypass, media fetch, or second-
+ * stage blog_url requests. No URL, token, or signed path appears in output.
+ */
+const HOST='greenmotors.club',MAX_HTML=85000;
+const result=(state,x={})=>({provider:'StreamPlay Greenmotors',state,
+  decodedIntermediateLinks:0,hubcloudHints:0,videoVerified:false,...x});
+function rot13(s){return s.replace(/[a-zA-Z]/g,c=>String.fromCharCode(
+  (c.charCodeAt(0)&32?97:65)+(c.toLowerCase().charCodeAt(0)-97+13)%26));}
+function decode64(s){
+  if(!/^[a-zA-Z0-9+/=]{1,15000}$/.test(s))throw Error('invalid_base64');
+  return Buffer.from(s,'base64').toString('utf8');
+}
+export function classifyStreamPlayRedirectHtml(html){
+  const tokens=[];
+  const rx=/s\('o','([A-Za-z0-9+/=]+)'|ck\('_wp_http_[0-9]+','([^']+)'/g;
+  for(const m of String(html).matchAll(rx))tokens.push(m[1]||m[2]);
+  if(!tokens.length)return result('no_obfuscated_redirect');
+  const joined=tokens.join('');
+  if(joined.length>15000)return result('oversized_redirect');
+  try{
+    const json=JSON.parse(decode64(rot13(decode64(decode64(joined)))));
+    const plain=decode64(String(json?.o||''));
+    if(!plain)return result('requires_second_stage');
+    const u=new URL(plain);
+    if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash)
+      return result('non_https_redirect');
+    const hub=/^(?:.+\.)?(?:hubcloud|hubdrive|vcloud)\.[a-z]{2,12}$/i.test(u.hostname);
+    return result('decoded_intermediate',{
+      decodedIntermediateLinks:1,hubcloudHints:hub?1:0,
+      destinationHost:u.hostname.toLowerCase()
+    });
+  }catch{return result('malformed_obfuscation');}
+}
+async function boundedText(res){
+  if(!res.ok)throw Error('http_'+res.status);
+  if(!String(res.headers.get('content-type')||'').includes('text/html'))
+    throw Error('not_html');
+  if(Number(res.headers.get('content-length')||0)>MAX_HTML)
+    throw Error('oversized');
+  if(!res.body)throw Error('empty');
+  const reader=res.body.getReader(),data=[];let length=0;
+  try{
+    while(true){
+      const p=await reader.read();if(p.done)break;
+      length+=p.value.byteLength;if(length>MAX_HTML)throw Error('oversized');
+      data.push(Buffer.from(p.value));
+    }
+  }finally{await reader.cancel().catch(()=>{});}
+  return Buffer.concat(data).toString('utf8');
+}
+export async function probeStreamPlayRedirects({
+  postHtml,fetchImpl=fetch,timeoutMs=7500
+}={}){
+  const unique=new Set(),hrefs=[];
+  // Input is a previously verified matching movie post. Only the fixed
+  // provider host is contacted; all other download links are ignored.
+  for(const m of String(postHtml||'').matchAll(/<a\b[^>]*href\s*=\s*(["'])([^"'<>]{1,850})\1/gi)){
+    let u;
+    try{u=new URL(m[2]);}catch{continue;}
+    if(u.protocol!=='https:'||u.hostname!==HOST||u.port||u.hash||
+       u.username||u.password||unique.has(u.href))continue;
+    unique.add(u.href);hrefs.push(u.href);
+    if(hrefs.length>=2)break;
+  }
+  if(!hrefs.length)return result('no_greenmotors_links');
+  const attempts=[];
+  for(const url of hrefs){
+    try{
+      const response=await fetchImpl(url,{
+        redirect:'error',headers:{Accept:'text/html'},
+        signal:AbortSignal.timeout(timeoutMs)
+      });
+      const page=await boundedText(response);
+      attempts.push(classifyStreamPlayRedirectHtml(page));
+    }catch(e){
+      const reason=String(e?.message||'');
+      attempts.push(result(/^http_[0-9]{3}$/.test(reason)?
+        reason:'redirect_page_unavailable'));
+    }
+  }
+  return result(attempts.some(x=>x.decodedIntermediateLinks)?'resolved':
+    attempts[0]?.state||'unavailable',{
+    inspected:attempts.length,
+    decodedIntermediateLinks:attempts.reduce((s,x)=>s+x.decodedIntermediateLinks,0),
+    hubcloudHints:attempts.reduce((s,x)=>s+x.hubcloudHints,0),
+    destinationHosts:[...new Set(attempts.map(x=>x.destinationHost).filter(Boolean))]
+  });
+}
