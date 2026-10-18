@@ -68,23 +68,47 @@ export async function probeStreamPlayRedirects({
   const attempts=[];
   for(const url of hrefs){
     try{
+      // "error" obscures a normal HTTP 3xx as a generic fetch failure in
+      // Node. "manual" observes redirects WITHOUT following them.
       const response=await fetchImpl(url,{
-        redirect:'error',headers:{Accept:'text/html'},
+        redirect:'manual',headers:{Accept:'text/html'},
         signal:AbortSignal.timeout(timeoutMs)
       });
+      if([301,302,303,307,308].includes(response.status)){
+        let redirectHost=null;
+        try{
+          const location=response.headers.get('location')||'';
+          const dst=new URL(location,url);
+          if(dst.protocol==='https:'&&!dst.username&&!dst.password&&
+             !dst.port&&!dst.hash)redirectHost=dst.hostname.toLowerCase();
+        }catch{}
+        await response.body?.cancel?.().catch(()=>{});
+        attempts.push(result('http_redirect',{
+          redirectsSeen:1,...(redirectHost?{redirectHost}:{})
+        }));
+        continue;
+      }
       const page=await boundedText(response);
       attempts.push(classifyStreamPlayRedirectHtml(page));
     }catch(e){
       const reason=String(e?.message||'');
-      attempts.push(result(/^http_[0-9]{3}$/.test(reason)?
-        reason:'redirect_page_unavailable'));
+      const known=/^(?:http_[0-9]{3}|not_html|oversized|empty)$/.test(reason);
+      const networkError=e?.name==='TimeoutError'||e?.name==='AbortError'?
+        'timeout':e?.name==='TypeError'?'connection_failed':'request_failed';
+      attempts.push(result(known?reason:networkError));
     }
   }
-  return result(attempts.some(x=>x.decodedIntermediateLinks)?'resolved':
+  const resolved=attempts.some(x=>x.decodedIntermediateLinks);
+  const redirected=attempts.some(x=>x.redirectsSeen);
+  const statuses=[...new Set(attempts.map(x=>x.state))];
+  return result(resolved?'resolved':redirected?'http_redirect':
     attempts[0]?.state||'unavailable',{
     inspected:attempts.length,
+    statuses,
+    redirectsSeen:attempts.reduce((s,x)=>s+Number(x.redirectsSeen||0),0),
     decodedIntermediateLinks:attempts.reduce((s,x)=>s+x.decodedIntermediateLinks,0),
     hubcloudHints:attempts.reduce((s,x)=>s+x.hubcloudHints,0),
-    destinationHosts:[...new Set(attempts.map(x=>x.destinationHost).filter(Boolean))]
+    destinationHosts:[...new Set(attempts.flatMap(x=>
+      [x.destinationHost,x.redirectHost].filter(Boolean)))].sort()
   });
 }
