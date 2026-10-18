@@ -27,6 +27,13 @@ const EXTRAS=[
  {title:'Charade',year:1963,tmdbId:4808,preferred:480,minDuration:6300,maxDuration:7300},
  {title:'House on Haunted Hill',year:1959,tmdbId:15856,preferred:720,minDuration:4000,maxDuration:5100}
 ];
+// Proven source bytes in 15-film audit, NOT yet browser-proven content.
+// Feature length windows are broad screening guards, not identity proof.
+const NEW_FILMS=[
+ {title:'Metropolis',year:1927,tmdbId:19,preferred:720,minDuration:3600,maxDuration:11000},
+ {title:'The Cabinet of Dr. Caligari',year:1920,tmdbId:234,preferred:720,minDuration:3000,maxDuration:7200},
+ {title:'M',year:1931,tmdbId:832,preferred:1080,minDuration:4500,maxDuration:8500}
+];
 const HOSTS=new Set(['hcdn3.hakunaymatata.com','bcdn.hakunaymatata.com']);
 // Explicit fallback scans target only the two titles with verified 1080p.
 // No production film or source is enabled by these test-only probes.
@@ -38,19 +45,22 @@ const seekOnly=process.env.MOOSA_SEEK_STRESS==='1';
 const midpointSeek=process.env.MOOSA_MIDPOINT_SEEK==='1';
 const failoverOnly=process.env.MOOSA_FAILOVER_TEST==='1';
 const chainOnly=process.env.MOOSA_FAILOVER_CHAIN==='1';
+const newOnly=process.env.MOOSA_NEW_CINESTREAM==='1';
+const newSeekOnly=process.env.MOOSA_NEW_CINESTREAM_SEEK==='1';
 const otherQuality=Number(process.env.MOOSA_OTHER_QUALITY||0);
 if(otherQuality&&![360,480].includes(otherQuality))
   throw Error('Other-quality test must be 360 or 480');
-if([extraOnly,seekOnly,midpointSeek,failoverOnly,chainOnly,
-  Boolean(fallbackQuality),Boolean(otherQuality)]
+if([extraOnly,seekOnly,midpointSeek,failoverOnly,chainOnly,newOnly,
+  newSeekOnly,Boolean(fallbackQuality),Boolean(otherQuality)]
   .filter(Boolean).length>1)
   throw Error('Choose only one experimental browser probe mode');
 const otherFilms=otherQuality===360?[FILMS[4]]:
   [...FILMS.slice(2),EXTRAS[1]];
-const filmsToTest=(failoverOnly||chainOnly)?FILMS.slice(0,2):
-  (otherQuality?otherFilms:
-    (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
-      (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS))));
+const filmsToTest=(newOnly||newSeekOnly)?NEW_FILMS:
+  ((failoverOnly||chainOnly)?FILMS.slice(0,2):
+    (otherQuality?otherFilms:
+      (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
+        (extraOnly?EXTRAS:(fallbackQuality?FILMS.slice(0,2):FILMS)))));
 const SITE='https://moosa-web.onrender.com';
 const agent='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
 const browserErrors=[];
@@ -266,12 +276,12 @@ try{
           publicWebsiteUnchanged:true
         }));
       }
-      if(seekOnly||midpointSeek){
+      if(seekOnly||midpointSeek||newSeekOnly){
         phase='seek_into_feature';
         // A midpoint seek tests browser Range requests far beyond initial startup.
         // Still bounded by the existing per-range cap and finite duration.
-        const seekTo=midpointSeek?Math.min(Math.floor(actual.duration/2),
-          actual.duration-30):90;
+        const seekTo=(midpointSeek||newSeekOnly)?
+          Math.min(Math.floor(actual.duration/2),actual.duration-30):90;
         await page.locator('#video').evaluate((video,t)=>{
           video.currentTime=t;
           if(video.paused)video.play().catch(()=>{});
