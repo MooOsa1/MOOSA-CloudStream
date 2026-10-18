@@ -28,4 +28,7 @@ test('MOOSA preset prioritizes playable HTTP candidates without dropping P2P', a
     assert.ok(d.config.excludedResolutions.includes(resolution));
   }
   assert.equal(d.config.presets.find(p => p.type === 'torrentio')?.enabled, true);
+  assert.equal(d.config.presets.find(p => p.type === 'comet')?.enabled, true);
+  assert.equal(d.config.presets.find(p => p.type === 'comet')?.options?.includeP2P, true);
+  assert.equal(d.config.presets.some(p => p.type === 'mediafusion'), false);
 });
