@@ -29,9 +29,22 @@ form.addEventListener('submit',async event=>{
         ' / HLS: '+Number(result.formatCounts?.hls||0));
     set('disclaimer','Result: '+String(result.status||'unknown')+
       '. Quality is only a provider label. Streams are not authenticated, licensed or browser-decoded by this scan.');
+    const counts=result.filterCounts||{};
+    const rejected=['blockedHosts','invalidUrls','unsupportedFormats',
+      'excludedQualities','duplicates'].map(name=>
+        name.replace(/([A-Z])/g,' $1').toLowerCase()+': '+
+        Number(counts[name]||0));
+    set('filter-info','Provider candidate rows: '+Number(counts.providerEntries||0)+
+      ' • Filtered: '+rejected.join(' • '));
+    const zero={
+      no_provider_id:'Vidlink did not return a usable lookup ID for this movie.',
+      provider_no_quality_list:'Vidlink answered, but provided no video quality list.',
+      all_candidates_filtered:'Vidlink returned entries but none passed the permitted host, format and quality filters.',
+      provider_unavailable:'Vidlink lookup could not be completed.'
+    };
     status.textContent=result.availableVariants>0?
       'Potential sources found; playback verification is still required.':
-      'No compatible candidate returned by this provider.';
+      zero[result.status]||'No compatible candidate returned by this provider.';
     output.hidden=false;
   }catch{
     status.textContent='The provider lookup is unavailable right now. Try again later.';
