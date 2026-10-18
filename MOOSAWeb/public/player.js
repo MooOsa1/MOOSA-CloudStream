@@ -1,4 +1,5 @@
 import {nextPlaybackSource} from './playback-fallback.js';
+import {compatibleResumeTime} from './resume-position-policy.js';
 import {chooseBrowserSources} from './source-compatibility.js';
 import {safeSubtitleFileUrl} from './subtitle-file-url.js';
 import {isDirectVideoUrl} from './direct-media-policy.js';
@@ -21,6 +22,29 @@ let customSubtitle = null;
 let selectedSourceUrl = null;
 let attemptedSourceUrls = new Set();
 let fallbackAttempts = 0;
+// Only a source already listed under the same open film may inherit
+// playback position, and only after comparing both verified video runtimes.
+let pendingResume=null;
+function restoreCompatiblePlaybackPosition(){
+  const request=pendingResume;
+  if(!request || request.url!==selectedSourceUrl ||
+     request.ticket!==playbackToken)return;
+  pendingResume=null;
+  const target=compatibleResumeTime({
+    position:request.position,oldDuration:request.duration,
+    newDuration:video.duration
+  });
+  if(target===null)return;
+  try{
+    video.currentTime=target;
+    notice('متابعة المشاهدة من '+Math.floor(target/60)+
+      ':'+String(Math.floor(target%60)).padStart(2,'0')+
+      ' على السيرفر البديل.');
+  }catch{
+    // Browser media may not support Range seeking; retain new playback
+    // rather than retrying an incompatible or unseekable time.
+  }
+}
 // Do not leave users trapped on a source that never returns a video frame.
 // The 20/25 second thresholds are conservative and reset on real progress.
 let playbackWatchdog=null;
@@ -219,6 +243,7 @@ export function showPlayer({title='مشغل MOOSA',sources=[]}={}){
   // including standalone licensed films that do not call the catalog search.
   document.dispatchEvent(new Event('moosa-player-opened'));
   previousFocus=document.activeElement;
+  pendingResume=null;
   externalSubtitles=[];
   activeSources=chooseBrowserSources((Array.isArray(sources)?sources:[])
     .filter(x=>playableMediaSource(x,location.origin)),navigator.userAgent);
@@ -242,6 +267,7 @@ export function hidePlayer(){
   document.dispatchEvent(new Event('moosa-player-closed'));
   selectedSourceUrl=null;attemptedSourceUrls.clear();fallbackAttempts=0;
   externalSubtitles=[];
+  pendingResume=null;
   resetVideo();$('#player-panel').classList.add('hidden');
   if($('#detail-panel').classList.contains('hidden'))$('#overlay').classList.add('hidden');
   previousFocus?.focus?.();
@@ -344,6 +370,7 @@ export function markNoAutomaticSources(){
 export function startDemo(){
   document.dispatchEvent(new Event('moosa-player-opened'));
   externalSubtitles=[];
+  pendingResume=null;
   selectedSourceUrl=null;
   $('#player-source').value='';
   currentMediaTitle='فيديو تجريبي حر — MDN Flower (CC0)';
@@ -386,12 +413,24 @@ function adjustCues(value){
 function sourceSelected(value,{fallback=false}={}){
   if(!fallback){attemptedSourceUrls.clear();fallbackAttempts=0;}
   if(value===''){
-    selectedSourceUrl=null;resetVideo();
+    selectedSourceUrl=null;pendingResume=null;resetVideo();
     notice('اختر مصدرًا للتشغيل أو افتح فيديو من جهازك.');return;
   }
   const src=activeSources[Number(value)];
   if(!src)return;
+  // Capture before playLink() resets HTML5 playback state. If a fallback
+  // itself fails before metadata arrives, carry an earlier resume request
+  // forward only within the same open title/source chain.
+  const position=Number(video.currentTime),duration=Number(video.duration);
+  const snapshot=selectedSourceUrl && Number.isFinite(position) &&
+    Number.isFinite(duration) && position>=30 && duration>=1200
+      ?{position,duration}:null;
+  const inherited=!snapshot && fallback && pendingResume?.url===selectedSourceUrl
+    ?{position:pendingResume.position,duration:pendingResume.duration}:null;
   selectedSourceUrl=src.url;
+  const toResume=snapshot||inherited;
+  pendingResume=toResume?
+    {...toResume,url:src.url,ticket:playbackToken+1}:null;
   attemptedSourceUrls.add(src.url);
   $('#player-title').textContent=currentMediaTitle||src.name||'مشغل MOOSA';
   // playLink resets the track menu synchronously; repopulate immediately,
@@ -446,12 +485,13 @@ $('#close-player').addEventListener('click',hidePlayer);
 $('#play-demo').addEventListener('click',startDemo);
 $('#play-custom').addEventListener('click',()=>{
   selectedSourceUrl=null;
+  pendingResume=null;
   const url=$('#custom-stream').value.trim();
   if(!extensions.test(url))notice('ملاحظة: يفضل رابط MP4 أو HLS بصيغة m3u8 قابل للتشغيل بالمتصفح.');
   playLink(url,'رابط الفيديو الخاص بك');
 });
 $('#custom-stream').addEventListener('keydown',e=>{if(e.key==='Enter')$('#play-custom').click();});
-$('#local-video').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;selectedSourceUrl=null;resetVideo();mediaUrl=URL.createObjectURL(file);video.src=mediaUrl;showVideo();$('#player-title').textContent=file.name;video.play().catch(()=>{});notice('تشغيل ملف محلي من جهازك');e.target.value='';});
+$('#local-video').addEventListener('change',e=>{const file=e.target.files?.[0];if(!file)return;selectedSourceUrl=null;pendingResume=null;resetVideo();mediaUrl=URL.createObjectURL(file);video.src=mediaUrl;showVideo();$('#player-title').textContent=file.name;video.play().catch(()=>{});notice('تشغيل ملف محلي من جهازك');e.target.value='';});
 $('#local-subtitle').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>3*1024*1024)throw new Error('ملف الترجمة كبير جدًا');const ticket=subtitleToken;const raw=await file.text();if(ticket===subtitleToken)loadSubtitle(raw,file.name,/\bar\b|arabic/i.test(file.name)?'ar':'en')}catch(error){notice(error.message)}e.target.value='';});
 let rejectedVideoToken=-1;
 function enforceDecodedHd(){
@@ -494,6 +534,7 @@ video.addEventListener('stalled',()=>{
 });
 video.addEventListener('pause',stopPlaybackWatchdog);
 video.addEventListener('loadedmetadata',enforceDecodedHd);
+video.addEventListener('loadedmetadata',restoreCompatiblePlaybackPosition);
 video.addEventListener('resize',enforceDecodedHd);
 video.addEventListener('loadedmetadata',showDecodedResolution);
 video.addEventListener('resize',showDecodedResolution);
