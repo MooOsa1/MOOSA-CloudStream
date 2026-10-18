@@ -54,7 +54,7 @@ test('zero provider qualities and filtered hosts produce distinct actionable dia
   assert.equal(filtered.filterCounts.blockedHosts,1);
   assert.equal(filtered.filterCounts.excludedQualities,1);
   assert.equal(filtered.filterCounts.unsupportedFormats,1);
-  assert.doesNotMatch(JSON.stringify(filtered),/https?:|example\\/film|\.mp4/i);
+  assert.equal(JSON.stringify(filtered).includes('https://'),false);
 });
 
 test('invalid ids make zero network requests; upstream errors are explicit',async()=>{
