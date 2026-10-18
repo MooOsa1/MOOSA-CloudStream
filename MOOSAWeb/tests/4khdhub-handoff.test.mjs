@@ -71,8 +71,22 @@ test('StreamPlay selector detects download-item anchors without requesting or re
   assert.equal(x.downloadItems,1);
   assert.equal(x.downloadLinks,1);
   assert.deepEqual(countStreamPlayDownloadAnchors('<div class="download-item">No links</div>'),
-    {downloadItems:1,downloadLinks:0});
+    {downloadItems:1,downloadLinks:0,linkHosts:[]});
   assert.deepEqual(countStreamPlayDownloadAnchors('<a href="https://x.example/">Ad</a>'),
-    {downloadItems:0,downloadLinks:0});
-  assert.doesNotMatch(JSON.stringify(x),/https:|gateway/);
+    {downloadItems:0,downloadLinks:0,linkHosts:[]});
+  assert.equal(x.linkHosts[0],'gateway.example');
+  assert.doesNotMatch(JSON.stringify(x),/https:|\/link1/);
+});
+
+test('StreamPlay nested source items deduplicate identical links and exclude advertising siblings',()=>{
+  const markup='<div class="download-item"><div class="inner">'+
+    '<a href="https://one.example/t?id=123">1080p</a>'+
+    '<a href="https://one.example/t?id=123">Mirror</a></div></div>'+
+    '<a href="https://ads.example/banner">Ad</a>'+
+    '<div class="download-item"><a href="https://two.example/video">720p</a></div>';
+  const scan=countStreamPlayDownloadAnchors(markup);
+  assert.equal(scan.downloadItems,2);
+  assert.equal(scan.downloadLinks,2);
+  assert.deepEqual(scan.linkHosts,['one.example','two.example']);
+  assert.doesNotMatch(JSON.stringify(scan),/t\?id|\/video|ads\.example/);
 });
