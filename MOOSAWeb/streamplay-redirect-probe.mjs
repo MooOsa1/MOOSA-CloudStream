@@ -134,8 +134,15 @@ async function inspectLanding(link,fetchImpl,timeoutMs){
         signal:AbortSignal.timeout(Math.min(timeoutMs,6000))
       });
       if([301,302,303,307,308].includes(detail.status)){
+        let redirectHost=null;
+        try{
+          const url=new URL(detail.headers.get('location')||'',nextPage);
+          if(url.protocol==='https:'&&!url.username&&!url.password&&
+             !url.port&&!url.hash)redirectHost=url.hostname.toLowerCase();
+        }catch{}
         await detail.body?.cancel?.().catch(()=>{});
-        return {...summary,nextPageStatus:'redirect_not_followed'};
+        return {...summary,nextPageStatus:'redirect_not_followed',
+          ...(redirectHost?{nextRedirectHost:redirectHost}:{})};
       }
       const html=await boundedText(detail);
       const inspected=inspectLandingHtml(html,u.hostname);
