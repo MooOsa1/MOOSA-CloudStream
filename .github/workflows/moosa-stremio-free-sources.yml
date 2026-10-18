@@ -86,3 +86,18 @@ jobs:
       - name: Stop ephemeral engine
         if: always()
         run: docker rm -f moosa-stremio-server || true
+  windows-one-click-installer:
+    runs-on: windows-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check Windows PowerShell installer
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'AIOStreamsHost/Install-MOOSA-Hub.ps1').Path, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+      - name: Test installed addon using disposable AIOStreams config and delete it
+        shell: powershell
+        run: ./AIOStreamsHost/Install-MOOSA-Hub.ps1 -TestOnly -NoOpen
