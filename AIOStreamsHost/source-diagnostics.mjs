@@ -3,7 +3,8 @@
  * MOOSA Hub live, read-only Stremio discovery audit.
  * This checks addon protocols and classifies stream *candidates*.
  * It DOES NOT download media, assert movie identity, or prove playback.
- * Tests two old public-domain US film titles plus recent movies' metadata listings.\n * No copyrighted movie video or torrent payload is fetched.
+ * Tests two old public-domain US film titles plus recent movies' metadata listings.
+ * No copyrighted movie video or torrent payload is fetched.
  */
 import { readFile } from 'node:fs/promises';
 
@@ -15,7 +16,11 @@ const MOVIES = [
   { imdb: 'tt0063350', title: 'Night of the Living Dead (1968)' },
   { imdb: 'tt0032599', title: 'His Girl Friday (1940)' },
 ];
-const RECENT_LISTINGS = [\n  { imdb: 'tt31193180', title: 'Sinners (2025)' },\n  { imdb: 'tt15239678', title: 'Dune: Part Two (2024)' },\n];\nconst META = [
+const RECENT_LISTINGS = [
+  { imdb: 'tt31193180', title: 'Sinners (2025)' },
+  { imdb: 'tt15239678', title: 'Dune: Part Two (2024)' },
+];
+const META = [
   { name: 'Cinemeta', base: 'https://v3-cinemeta.strem.io' },
   { name: 'OpenSubtitles v3', base: 'https://opensubtitles-v3.strem.io' },
 ];
@@ -100,10 +105,17 @@ export async function main() {
   console.log('NOT_PLAYBACK_PROOF: Candidates may be unseeded, unreachable, wrong titles, or unsupported in iOS Safari.');
   if (process.env.GITHUB_STEP_SUMMARY) {
     await (await import('node:fs/promises')).appendFile(process.env.GITHUB_STEP_SUMMARY,
-      '### MOOSA Stremio discovery only (NOT playback proof)\n\n' +
-      '| Stream manifests | Candidates | P2P candidates | HTTP candidates |\n|---:|---:|---:|---:|\n|' +
-      [validStreamManifests, totalCandidates, totalP2p, totalHttp].join('|') + '|\n\n' +
-      'Checked two public-domain feature titles. No videos downloaded or verified.\n');
+      '### MOOSA Stremio discovery only (NOT playback proof)
+
+' +
+      '| Stream manifests | Candidates | P2P candidates | HTTP candidates |
+|---:|---:|---:|---:|
+|' +
+      [validStreamManifests, totalCandidates, totalP2p, totalHttp].join('|') + '|
+
+' +
+      'Checked two public-domain feature titles. No videos downloaded or verified.
+');
   }
   // A down provider or empty stream index is a *failed live discovery*, not a pass.
   if (validStreamManifests === 0 || totalCandidates === 0) process.exitCode = 1;
