@@ -565,7 +565,7 @@ async function probePrivateFilmSources(port){
             ['ftyp','styp','moof'].includes(prefix.toString('latin1',4,8));
           result.gatewayRanges.push({
             httpStatus:range.status,partialContent:range.status===206,
-            contentTypeVideo:/video\\/mp4|octet-stream/i.test(mime),
+            contentTypeVideo:mime.includes('video/mp4')||mime.includes('octet-stream'),
             contentRange:!!range.headers.get('content-range'),
             size:prefix.length,looksMp4
           });
