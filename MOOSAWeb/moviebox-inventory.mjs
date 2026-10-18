@@ -76,6 +76,7 @@ export async function movieBoxInventory({
     }).slice(0,4);
     if(!matched.length)return status('no_exact_title', {searchHits:items.length});
     const all=[];
+    const diagnostics={detailPages:0,plays:{ok:0,failed:0,entries:0},downloads:{ok:0,failed:0,entries:0},unsupportedUrls:0,locked:0};
     let subjectRequests=0;
     for(const item of matched){
       const id=String(item.subjectId||item.id);
@@ -88,6 +89,7 @@ export async function movieBoxInventory({
         const doc=await responseJson(resp);
         detailPath=String(doc.data?.items?.[0]?.subject?.detailPath||'');
       }catch{}
+      if(detailPath)diagnostics.detailPages++;
       if(!detailPath||detailPath.length>280||
          /[\r\n?#]/.test(detailPath))continue;
       const params=new URLSearchParams({subjectId:id,detailPath});
@@ -102,13 +104,17 @@ export async function movieBoxInventory({
         return unpack(await responseJson(r));
       }));
       subjectRequests++;
-      for(const result of responses){
-        if(result.status!=='fulfilled')continue;
+      for(const [idx,result] of responses.entries()){
+        const bucket=idx===0?diagnostics.plays:diagnostics.downloads;
+        if(result.status!=='fulfilled'){bucket.failed++;continue;}
+        bucket.ok++;
         const d=result.value;
         for(const prop of ['streams','downloads','dash']){
           const arr=Array.isArray(d[prop])?d[prop].slice(0,30):[];
+          bucket.entries+=arr.length;
           for(const s of arr){
-            if(!s?.url||s.vipLocked===true)continue;
+            if(s?.vipLocked===true){diagnostics.locked++;continue;}
+            if(!s?.url){diagnostics.unsupportedUrls++;continue;}
             let u;
             try{u=new URL(s.url);}catch{continue;}
             if(u.protocol!=='https:'||u.username||u.password||
@@ -116,7 +122,7 @@ export async function movieBoxInventory({
             const format=prop==='dash'?'dash':
               /\.m3u8$/i.test(u.pathname)||/hls/i.test(String(s.type||''))?'hls':
               /\.mp4$/i.test(u.pathname)?'mp4':null;
-            if(!format)continue;
+            if(!format){diagnostics.unsupportedUrls++;continue;}
             let q=Number(s.resolution||s.resolutions||0);
             if(!Number.isInteger(q)||q<144||q>1080)q=0;
             // Return counts only: no credentials, source URLs or CDN hostnames.
@@ -128,6 +134,7 @@ export async function movieBoxInventory({
     const qualities=[...new Set(all.map(s=>s.quality).filter(q=>q>0))].sort((a,b)=>b-a);
     return status(all.length?'candidates_found':'no_compatible_candidates',{
       found:matched.length,sourceVariants:all.length,subjectsProbed:subjectRequests,
+      diagnostics,
       formats:{
         hls:all.filter(x=>x.format==='hls').length,
         mp4:all.filter(x=>x.format==='mp4').length,
