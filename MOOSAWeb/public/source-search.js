@@ -87,6 +87,37 @@ export async function searchAutomaticSources(media,id,season=null,episode=null) 
     if(sources.length){
       appendPlayerSources(sources);
       message(describeSourceResolution(result));
+      if(result.extrasAvailable===true){
+        // Play the verified CineStream source NOW, while regular licensed
+        // providers expand the same title in parallel. Preserve any source
+        // already playing; appended results must not restart the video.
+        message('تم العثور على '+sources.length+
+          ' سيرفرات؛ جاري فحص مصادر إضافية بالخلفية…');
+        try{
+          const moreParams=new URLSearchParams(params);
+          moreParams.set('phase','extras');
+          const extraResponse=await fetch('/api/resolve?'+moreParams.toString(),{
+            headers:{Accept:'application/json'},
+            signal:AbortSignal.any([
+              controller.signal,AbortSignal.timeout(sourceLookupBudgetMs(media))
+            ])
+          });
+          if(job!==generation)return;
+          if(extraResponse.ok){
+            const extraData=await extraResponse.json();
+            if(job!==generation)return;
+            const more=Array.isArray(extraData.sources)?extraData.sources:[];
+            if(more.length)appendPlayerSources(more);
+            message('مصادر الفيديو جاهزة • تم فحص '+more.length+
+              ' مصدر إضافي دون إيقاف التشغيل.');
+          }else{
+            message('مصادر الفيديو الأساسية جاهزة • البحث الإضافي غير متاح حاليًا.');
+          }
+        }catch{
+          if(job===generation)
+            message('مصادر الفيديو الأساسية جاهزة • اكتمل وقت البحث الإضافي.');
+        }
+      }
     } else {
       markNoAutomaticSources();
       message(describeSourceResolution(result));
