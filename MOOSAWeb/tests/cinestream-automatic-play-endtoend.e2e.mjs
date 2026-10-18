@@ -268,6 +268,41 @@ try{
       assert.equal(afterAppend.options,4);
       assert.equal(heldVideoRequests,0,
         'The newly added server must not be requested while video is playing');
+      phase='seek_then_switch_same_film';
+      const framesBeforeSeek=await page.locator('#video').evaluate(v=>
+        v.getVideoPlaybackQuality?.().totalVideoFrames||0);
+      await page.locator('#video').evaluate(v=>{v.currentTime=75;});
+      await page.waitForFunction(before=>{
+        const v=document.querySelector('#video');
+        return v.currentTime>=75.1&&!v.seeking&&v.readyState>=2&&
+          (v.getVideoPlaybackQuality?.().totalVideoFrames||0)>before;
+      },framesBeforeSeek,{timeout:60000});
+      const positionBeforeSwitch=await page.locator('#video').evaluate(v=>v.currentTime);
+      assert.ok(positionBeforeSwitch>=75&&positionBeforeSwitch<150);
+      await page.locator('#player-source').selectOption('2');
+      await page.waitForFunction(({path,minimum})=>{
+        const v=document.querySelector('#video'),sel=document.querySelector('#player-source');
+        return sel?.value==='2'&&v.currentSrc.endsWith(path)&&
+          v.currentTime>=minimum-3&&v.readyState>=2&&!v.error&&
+          v.videoHeight>=350&&v.videoHeight<=380&&
+          (v.getVideoPlaybackQuality?.().totalVideoFrames||0)>0;
+      },{path:heldMediaToken,minimum:positionBeforeSwitch},{timeout:60000});
+      const switchResult=await page.locator('#video').evaluate(v=>({
+        currentTime:v.currentTime,videoHeight:v.videoHeight,
+        decodedFrames:v.getVideoPlaybackQuality?.().totalVideoFrames||0
+      }));
+      assert.ok(heldVideoRequests>0,
+        'The third same-film capability was not requested after user selection');
+      assert.ok(Math.abs(switchResult.currentTime-positionBeforeSwitch)<15,
+        'Selected verified alternative must resume near prior timestamp');
+      console.log('MOOSA_REAL_UI_SOURCE_SWITCH_RESUME_OK '+JSON.stringify({
+        film:film.title,fromServerIndex:1,toServerIndex:2,
+        beforeSeconds:Math.round(positionBeforeSwitch),
+        afterSeconds:Math.round(switchResult.currentTime),
+        actualAlternateHeight:switchResult.videoHeight,
+        decodedFrames:switchResult.decodedFrames,
+        sameTitle:true,compatibleRuntimeGuard:true
+      }));
       assert.ok(actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration,'Short clip or wrong feature runtime');
       assert.ok(actual.decodedFrames>0);
