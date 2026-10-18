@@ -155,6 +155,56 @@ async function smallProviderJson(response,max=180000){
  * the existing known protocol hosts; unapproved titles can NEVER contact it.
  * No HTML to scrape, no downloading feature movies, and no source URLs in logs.
  */
+// One reusable Vidlink lookup for arbitrary positive TMDB movie IDs.
+// This stage discovers provider availability ONLY. It never returns a
+// media URL, auth header, signed capability or playable stream to a viewer.
+// The existing exact-title / rights-reviewed path is a separate promotion.
+export async function discoverVidlinkInventory({
+  tmdbId,fetchImpl=fetch,allowedHosts=[
+    'hcdn3.hakunaymatata.com','bcdn.hakunaymatata.com']
+}={}){
+  const id=Number(tmdbId);
+  const empty=(status)=>({
+    tmdbId:Number.isSafeInteger(id)&&id>0?id:null,
+    provider:'CineStream • Vidlink',status,availableVariants:0,
+    advertisedQualities:[],formatCounts:{mp4:0,hls:0},
+    playableVerified:false,rightsVerified:false
+  });
+  if(!Number.isSafeInteger(id)||id<1||id>9999999999)
+    return empty('invalid_movie_id');
+  try{
+    const query=new URL('https://enc-dec.app/api/enc-vidlink');
+    query.searchParams.set('text',String(id));
+    const keyResult=await smallProviderJson(await fetchImpl(query.href,{
+      headers:{Accept:'application/json'},redirect:'error',
+      signal:AbortSignal.timeout(11000)
+    }),24000);
+    const code=keyResult?.result;
+    if(typeof code!=='string'||!(/^[a-zA-Z0-9+/_=-]{3,320}$/).test(code))
+      return empty('no_provider_id');
+    const providerResponse=await smallProviderJson(await fetchImpl(
+      'https://vidlink.pro/api/b/movie/'+encodeURIComponent(code),{
+      headers:{Accept:'application/json',Referer:'https://vidlink.pro/',
+        Origin:'https://vidlink.pro/',
+        'User-Agent':'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36'},
+      redirect:'error',signal:AbortSignal.timeout(14000)
+    }));
+    const variants=offeredVidlinkVariants(providerResponse,{
+      approvedHosts:allowedHosts,maxVariants:4});
+    return {
+      ...empty(variants.length?'candidates_found':'no_compatible_candidates'),
+      availableVariants:variants.length,
+      advertisedQualities:variants.map(x=>x.advertisedQuality),
+      formatCounts:{
+        mp4:variants.filter(x=>x.format==='mp4').length,
+        hls:variants.filter(x=>x.format==='hls').length
+      }
+    };
+  }catch{return empty('provider_unavailable');}
+}
+
+// The safe, existing promotion path remains restricted to independently
+// reviewed exact film identities. Shared discovery does NOT grant rights.
 export async function findVerifiedMultiFilmVidlink({
   meta,mediaGateway,
   enabled=process.env.CINESTREAM_MULTIFILM_PILOT==='1',
@@ -182,7 +232,5 @@ export async function findVerifiedMultiFilmVidlink({
     }));
     return verifiedFilmVariants({meta,providerResponse,mediaGateway,
       enabled:true,rightsReviewed:true});
-  }catch{
-    return [];
-  }
+  }catch{return [];}
 }
