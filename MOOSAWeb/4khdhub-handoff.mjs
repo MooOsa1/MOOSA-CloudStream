@@ -126,7 +126,8 @@ export function countStreamPlayDownloadAnchors(markup){
 }
 
 export async function probe4khdhubHandoff({
-  title,year,fetchImpl=fetch,timeoutMs=8500,diagnoseRedirects=false
+  title,year,fetchImpl=fetch,timeoutMs=8500,diagnoseRedirects=false,
+  diagnoseExtraRoutes=false
 }={}){
   const name=norm(title),yr=Number(year);
   if(name.length<2||name.length>100||!Number.isInteger(yr)||
@@ -141,7 +142,7 @@ export async function probe4khdhubHandoff({
     if(!cards.length)return status('no_exact_movie_card');
     let posts=0,entries=0,externalLinks=0,downloadRowLinks=0;
     const streamPlay={downloadItems:0,downloadLinks:0,linkHosts:[]};
-    let redirectProbe=null;
+    let redirectProbe=null,extraRedirectProbe=null;
     const cine={moduleFound:false,externalSourceAnchors:0,directHubHints:0,redirectorHints:0};
     const hostGroups={hubLike:0,fileHost:0,shortener:0,other:0};
     for(const href of cards){
@@ -154,6 +155,11 @@ export async function probe4khdhubHandoff({
         if(diagnoseRedirects&&!redirectProbe)
           redirectProbe=await probeStreamPlayRedirects({
             postHtml:body,fetchImpl,timeoutMs:Math.min(timeoutMs,8000)
+          });
+        if(diagnoseExtraRoutes&&!extraRedirectProbe)
+          extraRedirectProbe=await probeStreamPlayRedirects({
+            postHtml:body,fetchImpl,timeoutMs:Math.min(timeoutMs,8000),
+            startAt:4
           });
         const playAnchors=countStreamPlayDownloadAnchors(body);
         streamPlay.downloadItems+=playAnchors.downloadItems;
@@ -198,7 +204,8 @@ export async function probe4khdhubHandoff({
       posts?'no_hubcloud_entry':'post_unavailable',{
       exactMoviePosts:cards.length,postPagesAccessible:posts,
       hubcloudEntryPages:entries,externalLinks,downloadRowLinks,hostGroups,
-      cineStreamAnchors:cine,streamPlayAnchors:streamPlay,...(diagnoseRedirects?{redirectProbe}:{} )
+      cineStreamAnchors:cine,streamPlayAnchors:streamPlay,...(diagnoseRedirects?{redirectProbe}:{} ),
+      ...(diagnoseExtraRoutes?{extraRedirectProbe}:{} )
     });
   }catch(e){
     const reason=String(e?.message||'');
