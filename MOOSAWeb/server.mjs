@@ -491,6 +491,7 @@ async function handle(req,res,mediaGateway=null) {
     if(url.pathname==='/api/config')return json(res,200,{
       catalogReady:PRIVATE_LAB||!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',
       automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine(),
+      privateMkvHlsRemuxReady:PRIVATE_LAB&&mediaGateway?.remuxAvailable?.()===true,
       // Inform the browser about a strictly operator-reviewed source pilot
       // so only those catalog titles receive a longer Play lookup window.
       verifiedCineStreamPilotReady:!!mediaGateway &&
@@ -776,6 +777,11 @@ export function createServer({mediaGateway=null}={}){
           allowedHosts:hosts,ttlMs:3*60*60_000
         }):null
   );
+  if(PRIVATE_LAB&&gateway?.remuxAvailable)
+    console.log('MOOSA_NATIVE_MKV_HLS_READY '+JSON.stringify({
+      ffmpegAvailable:gateway.remuxAvailable(),operatorApprovedSourcesOnly:true,
+      note:'Does not prove any particular movie is playable'
+    }));
   return http.createServer((req,res)=>handle(req,res,gateway));
 }
 // Check actual live Render backend once per boot, without recording any
