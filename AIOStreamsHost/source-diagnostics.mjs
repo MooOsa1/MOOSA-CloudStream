@@ -11,6 +11,9 @@ import { readFile } from 'node:fs/promises';
 const ADDONS = [
   { name: 'Torrentio', base: 'https://torrentio.strem.fun' },
   { name: 'MediaFusion', base: 'https://mediafusion.elfhosted.com' },
+  // Candidates are not enabled in MOOSA Hub until a live metadata audit succeeds.
+  { name: 'Comet', base: 'https://comet.feels.legal', exploratory: true },
+  { name: 'StremThru Torz', base: 'https://stremthru.13377001.xyz/stremio/torz', exploratory: true },
 ];
 const MOVIES = [
   { imdb: 'tt0063350', title: 'Night of the Living Dead (1968)' },
@@ -84,7 +87,7 @@ export async function main() {
       // No login, media URL fetch, magnet open, or video download.
       const endpoint = addon.base + '/stream/movie/' + movie.imdb + '.json';
       try {
-        const response = await getJson(endpoint, 20000);
+        const response = await getJson(endpoint, addon.exploratory ? 10000 : 20000);
         if (!Array.isArray(response.streams)) throw new Error('no streams array');
         const counts = { p2p: 0, http_candidate: 0, external: 0, unknown: 0 };
         for (const stream of response.streams) counts[classify(stream)]++;
@@ -101,6 +104,7 @@ export async function main() {
     }
   }
   const status = { validStreamManifests, totalCandidates, totalP2p, totalHttp };
+  console.log('EXPLORATORY_PROVIDERS: these are not active in MOOSA Hub preset; counts show only raw index results.');
   console.log('MOOSA_STREMIO_DISCOVERY ' + JSON.stringify(status));
   console.log('NOT_PLAYBACK_PROOF: Candidates may be unseeded, unreachable, wrong titles, or unsupported in iOS Safari.');
   if (process.env.GITHUB_STEP_SUMMARY) {
