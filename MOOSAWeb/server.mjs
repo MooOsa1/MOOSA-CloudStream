@@ -14,7 +14,7 @@ import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream
 import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
 import {createMediaGateway} from './verified-media-gateway.mjs';
 import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
-import {findVerifiedMultiFilmVidlink,discoverVidlinkInventory} from './vidlink-multifilm-candidates.mjs';
+import {findVerifiedMultiFilmVidlink,discoverVidlinkInventory,probeVidlinkContainerBytes} from './vidlink-multifilm-candidates.mjs';
 import {movieBoxInventory} from './moviebox-inventory.mjs';
 import {probeBingeBangMovie} from './bingebang-inventory.mjs';
 import {inspectHubCloudHandoff} from './hubcloud-handoff.mjs';
@@ -801,6 +801,12 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
         .then(result=>console.log('MOOSA_4KHDHUB_HANDOFF '+
           JSON.stringify(result)))
         .catch(()=>console.log('MOOSA_4KHDHUB_HANDOFF_UNAVAILABLE'));
+      for(const id of [27205,155]){
+        void probeVidlinkContainerBytes({tmdbId:id,maxVariants:2})
+          .then(result=>console.log('MOOSA_GENERAL_MOVIE_MEDIA_BYTES '+
+            JSON.stringify(result)))
+          .catch(()=>console.log('MOOSA_GENERAL_MOVIE_MEDIA_BYTES_UNAVAILABLE'));
+      }
       void movieBoxInventory({title:'Inception',year:2010,timeoutMs:6500})
         .then(result=>console.log('MOOSA_MOVIEBOX_LIVE_DISCOVERY '+
           JSON.stringify(result)))
