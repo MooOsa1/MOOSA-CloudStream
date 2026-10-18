@@ -10,7 +10,9 @@
 import { randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 const exec = promisify(execFile);
 
 const HUB='https://aiostreams-nightly.fortheweak.cloud';
@@ -34,54 +36,72 @@ async function fetchJSON(url,options={},timeout=40000){
 async function decodeOne(src,index){
  const idx=Number.isInteger(src.fileIdx)&&src.fileIdx>=0?src.fileIdx:-1;
  const url=ENGINE+'/'+src.infoHash.toLowerCase()+'/'+idx;
- const headers={Range:'bytes=0-1048575'};
- let bytes=0,signature=Buffer.alloc(0),transportStatus=0;
+ const cap=6*1024*1024;  // bounded 6MiB HEAD of a modern movie, no whole-film copy.
+ let chunks=[], bytes=0, signature=Buffer.alloc(0), transportStatus=0;
  try {
-  const response=await fetch(url,{headers,signal:AbortSignal.timeout(55000)});
+  const response=await fetch(url,{
+    headers:{Range:'bytes=0-'+(cap-1)},
+    signal:AbortSignal.timeout(65000)
+  });
   transportStatus=response.status;
-  if(response.status!==206){await response.body?.cancel();return {ok:false,reason:'range_http_'+response.status};}
+  if(response.status!==206){
+    await response.body?.cancel();
+    return {ok:false,reason:'range_http_'+response.status};
+  }
   const reader=response.body.getReader();
   try {
-    while(bytes<1048576){
+    while(bytes<cap){
       const n=await reader.read();
       if(n.done)break;
-      bytes+=n.value.byteLength;
-      if(signature.length<24)signature=Buffer.concat([signature,Buffer.from(n.value)]).subarray(0,24);
+      const part=Buffer.from(n.value).subarray(0,cap-bytes);
+      chunks.push(part); bytes+=part.byteLength;
+      if(signature.length<24)signature=Buffer.concat([signature,part]).subarray(0,24);
     }
-  } finally {await reader.cancel().catch(()=>{});}
+  }finally{await reader.cancel().catch(()=>{});}
  }catch(e){return {ok:false,reason:e.name==='TimeoutError'?'range_timeout':'range_network_error'};}
  const matroska=signature.subarray(0,4).equals(Buffer.from([0x1a,0x45,0xdf,0xa3]));
  const mp4=signature.subarray(4,8).toString('ascii')==='ftyp';
  if(bytes<65536 || !(matroska||mp4))return {ok:false,reason:'invalid_container',status:transportStatus,bytes};
- const baseArgs=['-nostdin','-hide_banner','-loglevel','error','-rw_timeout','14000000',
-    '-analyzeduration','4000000','-probesize','4000000'];
- let streams=[];
- try{
-   const probe=await exec('ffprobe',['-v','error','-rw_timeout','14000000','-analyzeduration',
-     '4000000','-probesize','4000000','-show_entries',
-     'stream=codec_type,codec_name,width,height','-of','json',url],
-     {timeout:45000,maxBuffer:150000});
-   streams=JSON.parse(probe.stdout).streams||[];
- }catch(e){return {ok:false,reason:'ffprobe_failed',status:transportStatus,bytes};}
- const video=streams.find(t=>t.codec_type==='video'&&t.width>=640&&t.height>=360);
- const audio=streams.some(t=>t.codec_type==='audio');
- if(!video)return {ok:false,reason:'no_video_track',status:transportStatus,bytes};
+ const folder=await mkdtemp(join(tmpdir(),'moosa-modern-'));
+ const file=join(folder,matroska?'head.mkv':'head.mp4');
+ const baseArgs=['-nostdin','-hide_banner','-loglevel','error',
+    '-analyzeduration','5000000','-probesize','5000000'];
  try {
-  await exec('ffmpeg',[...baseArgs,'-i',url,'-map','0:v:0','-frames:v','2','-an','-sn',
-   '-dn','-f','null','-'],{timeout:70000,maxBuffer:150000});
- }catch(e){return {ok:false,reason:'video_decode_failed',status:transportStatus,bytes};}
- let audioDecoded=false;
- if(audio){
+  await writeFile(file,Buffer.concat(chunks,bytes));
+  chunks=[];
+  let streams=[];
   try{
-   await exec('ffmpeg',[...baseArgs,'-i',url,'-map','0:a:0','-vn','-sn','-dn',
-     '-t','0.4','-f','null','-'],{timeout:45000,maxBuffer:150000});
-   audioDecoded=true;
-  }catch{}
+    const probe=await exec('ffprobe',['-v','error',
+      '-analyzeduration','5000000','-probesize','5000000',
+      '-show_entries','stream=codec_type,codec_name,width,height',
+      '-of','json',file],{timeout:20000,maxBuffer:150000});
+    streams=JSON.parse(probe.stdout).streams||[];
+  }catch(e){
+    return {ok:false,reason:'ffprobe_failed',diagnostic:String(e?.code||e?.signal||'unknown').slice(0,30),status:transportStatus,bytes};
+  }
+  const video=streams.find(t=>t.codec_type==='video'&&t.width>=640&&t.height>=360);
+  const audio=streams.some(t=>t.codec_type==='audio');
+  if(!video)return {ok:false,reason:'no_video_track',status:transportStatus,bytes};
+  try{
+   await exec('ffmpeg',[...baseArgs,'-i',file,'-map','0:v:0','-frames:v','2',
+    '-an','-sn','-dn','-f','null','-'],{timeout:25000,maxBuffer:150000});
+  }catch(e){
+   return {ok:false,reason:'video_decode_failed',diagnostic:String(e?.code||e?.signal||'unknown').slice(0,30),status:transportStatus,bytes};
+  }
+  let audioDecoded=false;
+  if(audio) {
+   try{
+    await exec('ffmpeg',[...baseArgs,'-i',file,'-map','0:a:0','-vn','-sn','-dn',
+      '-t','0.4','-f','null','-'],{timeout:20000,maxBuffer:150000});
+    audioDecoded=true;
+   }catch{}
+  }
+  return {ok:true,bytes,status:transportStatus,codec:video.codec_name,
+   pixels:video.width+'x'+video.height,videoFrames:2,audioTrack:audio,audioDecoded};
+ }finally{
+  await rm(folder,{force:true,recursive:true}).catch(()=>{});
  }
- return {ok:true,bytes,status:transportStatus,codec:video.codec_name,
-  pixels:video.width+'x'+video.height,videoFrames:2,audioTrack:audio,audioDecoded};
 }
-
 function releaseHints(stream){
  return [stream.behaviorHints?.filename||'',stream.name||'',stream.description||''].join(' ');
 }
@@ -115,7 +135,7 @@ async function inspectMovie(base,movie){
  for(let i=0;i<selected.length;i++){
   const result=await decodeOne(selected[i],i);
   console.log('MOOSA_MODERN_TRIAL movie='+movie.imdb+' index='+i+
-    ' status='+(result.status||'-')+' bytes='+(result.bytes||0)+' reason='+(result.reason||'none')+
+    ' status='+(result.status||'-')+' bytes='+(result.bytes||0)+' reason='+(result.reason||'none')+' diagnostic='+(result.diagnostic||'-')+
     ' videoFrames='+(result.videoFrames||0)+' audioDecoded='+(result.audioDecoded||false)+
     ' pixels='+(result.pixels||'unknown'));
   if(result.ok){
