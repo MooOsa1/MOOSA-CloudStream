@@ -11,7 +11,7 @@ test('BingeBang probes exact TMDB movie page but never returns a CDN URL',async(
     assert.equal(req.redirect,'error');
     return new Response(sample,{headers:{'content-type':'text/html'}});
   }});
-  assert.deepEqual(urls,['https://bingebang.cc/movie/27205']);
+  assert.deepEqual(urls,['https://bingebang.st/movie/27205']);
   assert.equal(result.state,'embedded_candidates_found');
   assert.equal(result.embeddedMediaCandidates,1);
   assert.deepEqual(result.observedVidyServers,['Miami','Boise']);
@@ -36,6 +36,6 @@ test('Invalid movie ID and blocked provider never look like successful streams',
   assert.equal(calls,0);
   const denial=await probeBingeBangMovie({tmdbId:27205,
     fetchImpl:async()=>new Response('blocked',{status:403})});
-  assert.equal(denial.state,'http_403');
+  assert.equal(denial.state,'provider_access_restricted');
   assert.equal(denial.playbackVerified,false);
 });
