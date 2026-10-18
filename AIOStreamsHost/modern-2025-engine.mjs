@@ -82,22 +82,28 @@ async function decodeOne(src,index){
   const video=streams.find(t=>t.codec_type==='video'&&t.width>=640&&t.height>=360);
   const audio=streams.some(t=>t.codec_type==='audio');
   if(!video)return {ok:false,reason:'no_video_track',status:transportStatus,bytes};
+  let decodedFrames=0;
   try{
-   await exec('ffmpeg',[...baseArgs,'-i',file,'-map','0:v:0','-frames:v','2',
-    '-an','-sn','-dn','-f','null','-'],{timeout:25000,maxBuffer:150000});
+   const decoded=await exec('ffmpeg',[...baseArgs,'-i',file,'-map','0:v:0','-frames:v','2',
+    '-an','-sn','-dn','-progress','pipe:1','-f','null','-'],{timeout:25000,maxBuffer:150000});
+   const matched=[...decoded.stdout.matchAll(/^frame=([0-9]+)/gm)];
+   decodedFrames=matched.length?Number(matched[matched.length-1][1]):0;
+   if(decodedFrames<2)return {ok:false,reason:'insufficient_decoded_video_frames',
+     status:transportStatus,bytes,videoFrames:decodedFrames};
   }catch(e){
    return {ok:false,reason:'video_decode_failed',diagnostic:String(e?.code||e?.signal||'unknown').slice(0,30),status:transportStatus,bytes};
   }
   let audioDecoded=false;
   if(audio) {
    try{
-    await exec('ffmpeg',[...baseArgs,'-i',file,'-map','0:a:0','-vn','-sn','-dn',
-      '-t','0.4','-f','null','-'],{timeout:20000,maxBuffer:150000});
-    audioDecoded=true;
+    const sound=await exec('ffmpeg',[...baseArgs,'-i',file,'-map','0:a:0','-vn','-sn','-dn',
+      '-t','0.4','-progress','pipe:1','-f','null','-'],{timeout:20000,maxBuffer:150000});
+    const times=[...sound.stdout.matchAll(/^out_time_(?:us|ms)=([0-9]+)/gm)];
+    audioDecoded=times.some(x=>Number(x[1])>0);
    }catch{}
   }
   return {ok:true,bytes,status:transportStatus,codec:video.codec_name,
-   pixels:video.width+'x'+video.height,videoFrames:2,audioTrack:audio,audioDecoded};
+   pixels:video.width+'x'+video.height,videoFrames:decodedFrames,audioTrack:audio,audioDecoded};
  }finally{
   await rm(folder,{force:true,recursive:true}).catch(()=>{});
  }
