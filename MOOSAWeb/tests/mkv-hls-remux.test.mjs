@@ -5,7 +5,7 @@ import {mkdtemp,readFile,readdir,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
-import {remuxCli,createMkvHlsRemux} from '../mkv-hls-remux.mjs';
+import {remuxCli,createMkvHlsRemux,parseHlsByteRange} from '../mkv-hls-remux.mjs';
 
 const require=createRequire(import.meta.url);
 const ffmpeg=require('ffmpeg-static');
@@ -67,4 +67,18 @@ test('Real FFmpeg remuxes generated HEVC+EAC3 MKV into native fMP4 HLS with soun
     assert.match(decoded.stderr||'',/Video:\s*hevc/i);
     assert.match(decoded.stderr||'',/Audio:\s*eac3/i);
   }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('Safari partial HLS fMP4 init and segment requests are computed safely',()=>{
+  assert.deepEqual(parseHlsByteRange('bytes=0-3',100),
+    {start:0,end:3,length:4});
+  assert.deepEqual(parseHlsByteRange('bytes=32-',100),
+    {start:32,end:99,length:68});
+  assert.deepEqual(parseHlsByteRange('bytes=0-200',100),
+    {start:0,end:99,length:100});
+  for(const bad of ['bytes=-2','bytes=100-','bytes=7-3',
+    'bytes=0-1,5-8','bytes=99999999999999999-','bytes=01-2',
+    'bytes=0-3\r\nX-Evil:1','not-a-range']){
+    assert.equal(parseHlsByteRange(bad,100),null,bad);
+  }
 });
