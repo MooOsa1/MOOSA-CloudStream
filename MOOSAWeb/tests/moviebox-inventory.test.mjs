@@ -94,3 +94,30 @@ test('actual HTTP 403 on both MovieBox routes is reported as denied, not missing
   assert.equal(out.diagnostics.plays.reason,'http_403');
   assert.equal(out.diagnostics.downloads.reason,'http_403');
 });
+
+test('MovieBox exact identity handles a release-year suffix without matching another year',async()=>{
+  const fixture=async raw=>{
+    const u=new URL(raw);
+    if(u.pathname.includes('get-latest-app-pkgs'))
+      return new Response('{}',{headers:{'content-type':'application/json',
+        'x-user':'{"token":"fixture_guest_123456789"}'}});
+    if(u.pathname.endsWith('/subject/search'))
+      return Response.json({data:{items:[
+        {subjectId:'id-1931',title:'M',year:1931},
+        {subjectId:'id-2010',title:'M',year:2010}
+      ]}});
+    if(u.hostname==='h5.aoneroom.com')
+      return Response.json({data:{items:[{subject:{detailPath:'m-movie'}}]}});
+    if(u.pathname.endsWith('/subject/play')||u.pathname.endsWith('/subject/download'))
+      return Response.json({data:{streams:[],downloads:[]}});
+    throw Error('unexpected request');
+  };
+  const result=await movieBoxInventory({title:'M (1931)',year:1931,fetchImpl:fixture});
+  assert.equal(result.found,1);
+  assert.equal(result.subjectsProbed,1);
+  const wrong=await movieBoxInventory({title:'M (1931)',year:1925,fetchImpl:fixture});
+  assert.equal(wrong.state,'no_exact_title');
+  assert.equal(wrong.searchHits,2);
+  assert.equal(wrong.exactTitleHits,0);
+  assert.equal(wrong.exactTitleAndYearHits,0);
+});
