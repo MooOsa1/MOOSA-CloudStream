@@ -628,9 +628,13 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
       // Output only availability counts, never film/media URLs.
       void probePrivateFilmSources(PORT).catch(()=>
         console.log('MOOSA_PRIVATE_TWO_FILM_PROBE_UNAVAILABLE'));
-      void memoizedSourceInventory(27205).then(result=>
-        console.log('MOOSA_GENERIC_MOVIE_ID_DISCOVERY '+JSON.stringify(result))
-      ).catch(()=>console.log('MOOSA_GENERIC_MOVIE_ID_DISCOVERY_UNAVAILABLE'));
+      // Compare the exact two user-observed outcomes on the live backend:
+      // 27205 returns candidates; 157336 returned none in Safari.
+      for(const id of [27205,157336]){
+        void memoizedSourceInventory(id).then(result=>
+          console.log('MOOSA_GENERIC_MOVIE_ID_DISCOVERY '+JSON.stringify(result))
+        ).catch(()=>console.log('MOOSA_GENERIC_MOVIE_ID_DISCOVERY_UNAVAILABLE'));
+      }
     }
   });
 }
