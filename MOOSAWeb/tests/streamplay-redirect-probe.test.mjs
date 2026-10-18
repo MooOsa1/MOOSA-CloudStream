@@ -294,3 +294,67 @@ test('gamerxyt off-host redirect is described, never followed',async()=>{
   assert.equal(result.landings[0].gatewayPage.nextHost,'external.example');
   assert.equal(result.videoVerified,false);
 });
+
+test('Inception pixel.hubcloud option proves MP4 bytes only with Range 206 and correct magic',async()=>{
+  const envelope=JSON.stringify({o:b64('https://hubcloud.ist/film/inception')});
+  const packed=b64(b64(rot13(b64(envelope))));
+  const requested=[];
+  const r=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/t">Source</a>',
+    fetchImpl:async(raw,opts)=>{
+      const u=new URL(raw);requested.push(u.hostname);
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/t'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+packed+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist')
+        return new Response('<a id="download" href="https://gamerxyt.com/s/go">Go</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='gamerxyt.com')
+        return new Response('<a class="btn" href="https://pixel.hubcloud.ist/v?token=private">File</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='pixel.hubcloud.ist'){
+        assert.equal(opts.headers.Range,'bytes=0-4095');
+        assert.equal(opts.redirect,'manual');
+        const bytes=Buffer.concat([
+          Buffer.from([0,0,0,24]),Buffer.from('ftypisom'),Buffer.alloc(16)
+        ]);
+        return new Response(bytes,{status:206,headers:{
+          'content-type':'video/mp4',
+          'content-range':'bytes 0-4095/12345678'
+        }});
+      }
+      throw Error('not allowlisted');
+    }
+  });
+  assert.deepEqual(requested,['greenmotors.club','greenmotors.cc',
+    'hubcloud.ist','gamerxyt.com','pixel.hubcloud.ist']);
+  assert.equal(r.landings[0].gatewayPage.pixelAudit.status,'mp4_bytes_verified');
+  assert.equal(r.videoVerified,false,'byte test is not a full movie or rights proof');
+  assert.doesNotMatch(JSON.stringify(r),/token=|\/v\?|\/film\/inception/);
+});
+test('pixel.hubcloud HTTP 429 never passes as video',async()=>{
+  const envelope=JSON.stringify({o:b64('https://hubcloud.ist/f')});
+  const packed=b64(b64(rot13(b64(envelope))));
+  const r=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/t">Source</a>',
+    fetchImpl:async(raw)=>{
+      const u=new URL(raw);
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/t'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+packed+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist')
+        return new Response('<a id="download" href="https://gamerxyt.com/s">Go</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='gamerxyt.com')
+        return new Response('<a class="btn" href="https://pixel.hubcloud.ist/film">File</a>',{
+          headers:{'content-type':'text/html'}});
+      return new Response('Too many requests',{status:429});
+    }
+  });
+  assert.equal(r.landings[0].gatewayPage.pixelAudit.status,'rate_limited');
+  assert.equal(r.videoVerified,false);
+});
