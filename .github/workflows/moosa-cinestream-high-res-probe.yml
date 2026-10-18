@@ -27,3 +27,13 @@ jobs:
       - name: Verify candidate 1080p and 720p sources decode real film video
         timeout-minutes: 8
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Check both 1080p films at advertised 720p fallback
+        env:
+          MOOSA_HIGH_RES_FALLBACK: '720'
+        timeout-minutes: 3
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Check both 1080p films at advertised 480p fallback
+        env:
+          MOOSA_HIGH_RES_FALLBACK: '480'
+        timeout-minutes: 3
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
