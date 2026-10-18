@@ -14,7 +14,7 @@ import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream
 import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
 import {createMediaGateway} from './verified-media-gateway.mjs';
 import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
-import {findVerifiedMultiFilmVidlink} from './vidlink-multifilm-candidates.mjs';
+import {findVerifiedMultiFilmVidlink,discoverVidlinkInventory} from './vidlink-multifilm-candidates.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(ROOT, 'public');
@@ -83,6 +83,17 @@ function authenticatePrivateLab(req,res,pathname){
   return false;
 }
 const CONFIG_PATH = process.env.STREAMS_FILE || 'data/streams.json';
+const sourceInventoryCache=new Map();
+async function memoizedSourceInventory(id){
+  const key=String(id),now=Date.now();
+  const existing=sourceInventoryCache.get(key);
+  if(existing&&existing.until>now)return existing.value;
+  const value=discoverVidlinkInventory({tmdbId:id});
+  if(sourceInventoryCache.size>=80)
+    sourceInventoryCache.delete(sourceInventoryCache.keys().next().value);
+  sourceInventoryCache.set(key,{until:now+120000,value});
+  return value;
+}
 const CACHE = new Map();
 const bridge = createBridge();
 const jsDemo = nativeJsEngine;
@@ -246,6 +257,19 @@ async function handle(req,res,mediaGateway=null) {
       const match=url.pathname.match(/^\/api\/stremio\/stream\/movie\/(tt\d{5,12})\.json$/);
       if(!match)return err(res,404,'Unsupported Stremio stream route');
       return json(res,200,await resolveStremioProtocolMovie(match[1]));
+    }
+    if(PRIVATE_LAB&&url.pathname==='/api/source-discovery'){
+      // Authenticated private inventory for any numeric TMDB movie ID.
+      // Enumerate provider availability, NOT video URLs or approved rights.
+      const keys=functionalParams(url.searchParams);
+      if(keys.length!==2||keys[0]!=='media'||keys[1]!=='id'||
+         url.searchParams.get('media')!=='movie')
+        return err(res,400,'Require only media=movie and id=TMDB number');
+      const raw=url.searchParams.get('id');
+      if(!/^[1-9]\\d{0,9}$/.test(raw||''))
+        return err(res,400,'Invalid movie ID');
+      const result=await memoizedSourceInventory(Number(raw));
+      return json(res,200,result);
     }
     if(PRIVATE_LAB&&url.pathname==='/api/lab-status')
       return json(res,200,{films:twoFilmLabStatus,privateLab:true,
