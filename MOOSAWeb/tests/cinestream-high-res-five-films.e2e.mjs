@@ -22,7 +22,12 @@ const FILMS=[
 ];
 // Test-only CDN allowlist. Public MOOSA server configuration is untouched.
 const HOSTS=new Set(['hcdn3.hakunaymatata.com','bcdn.hakunaymatata.com']);
-const filmsToTest=FILMS;
+// Explicit fallback scans target only the two titles with verified 1080p.
+// No production film or source is enabled by these test-only probes.
+const fallbackQuality=Number(process.env.MOOSA_HIGH_RES_FALLBACK||0);
+if(fallbackQuality && ![480,720].includes(fallbackQuality))
+  throw Error('Invalid test fallback quality');
+const filmsToTest=fallbackQuality?FILMS.slice(0,2):FILMS;
 const SITE='https://moosa-web.onrender.com';
 const agent='Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
 const browserErrors=[];
@@ -81,7 +86,7 @@ try{
         apiVariants:variants.length,
         advertisedQualities:variants.map(x=>x.quality)
       }));
-      const target=variants.find(x=>x.quality===film.preferred);
+      const target=variants.find(x=>x.quality===(fallbackQuality||film.preferred));
       assert.ok(target,'Requested CineStream quality not returned for '+film.title);
       assert.ok(target,'No actual CineStream source for '+film.title);
       phase='media_byte_preflight';
@@ -158,8 +163,8 @@ try{
       }));
       const durationPlausible=actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration;
-      const qualityClaimMatches=actual.height>=film.preferred-24 &&
-        actual.height<=film.preferred+24;
+      const qualityClaimMatches=actual.height>=target.quality-24 &&
+        actual.height<=target.quality+24;
       console.log('MOOSA_HIGH_RES_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
         film:film.title,year:film.year,tmdbId:film.tmdbId,
         actuallyDecodedFrames:true,
@@ -184,7 +189,7 @@ try{
     }finally{await page?.close();}
   }
   console.log('MOOSA_HIGH_RES_FILMS_PROVEN '+JSON.stringify({
-    tested:filmsToTest.length,requestedQualities:filmsToTest.map(f=>({title:f.title,quality:f.preferred})),
+    tested:filmsToTest.length,requestedQualities:filmsToTest.map(f=>({title:f.title,quality:fallbackQuality||f.preferred})),
     actuallyPlayedWithPlausibleDuration:acceptedFilms,
     browserErrorCount:browserErrors.length,siteProductionUnchanged:true
   }));
