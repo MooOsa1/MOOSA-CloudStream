@@ -28,14 +28,24 @@ function send(res,code,message){
     'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   res.end(message);
 }
-export function remuxCli(input,outputDir,{binary='ffmpeg'}={}){
+export function remuxCli(input,outputDir,{binary='ffmpeg',headers={}}={}){
   const parsed=new URL(input);
   if(parsed.protocol!=='https:'||parsed.username||parsed.password||
      parsed.port||parsed.hash||input.length>4000)throw Error('Invalid trusted HTTPS source');
   if(!path.isAbsolute(outputDir))throw Error('Invalid output directory');
+  const requestHeaders=[];
+  for(const name of ['referer','origin','user-agent']){
+    const value=headers?.[name];
+    if(typeof value==='string'&&value.length>0&&value.length<=512&&
+       !/[\\r\\n]/.test(value))
+      requestHeaders.push(name+': '+value);
+  }
+  const ffHeaders=requestHeaders.length?[
+    '-headers',requestHeaders.join('\\r\\n')+'\\r\\n'
+  ]:[];
   const args=[
     '-nostdin','-hide_banner','-loglevel','error',
-    '-rw_timeout','15000000','-i',parsed.href,
+    '-rw_timeout','15000000',...ffHeaders,'-i',parsed.href,
     '-map','0:v:0','-map','0:a:0?',
     '-c:v','copy','-tag:v','hvc1','-c:a','copy',
     '-sn','-dn',
@@ -79,13 +89,13 @@ export function createMkvHlsRemux({
       if(now-s.touched>idleMs || s.failed)cleanup(id);
   },15000);
   cleanupTimer.unref?.();
-  async function launch(token,url){
+  async function launch(token,url,headers={}){
     const old=sessions.get(token);
     if(old)return old;
     if(sessions.size>=maxSessions || !isAvailable())return null;
     const dir=await mkdtemp(path.join(os.tmpdir(),'moosa-remux-'));
     let config;
-    try{config=remuxCli(url,dir,{binary});}
+    try{config=remuxCli(url,dir,{binary,headers});}
     catch{await rm(dir,{recursive:true,force:true});return null;}
     const proc=spawnImpl(config.binary,config.args,{
       stdio:['ignore','ignore','ignore'],windowsHide:true
@@ -101,12 +111,12 @@ export function createMkvHlsRemux({
     });
     return state;
   }
-  async function handle({token,file='index.m3u8',url,req,res}){
+  async function handle({token,file='index.m3u8',url,headers={},req,res}){
     if(req.method!=='GET'&&req.method!=='HEAD')
       return send(res,405,'Unsupported method');
     if(!FILE.test(file))return send(res,404,'Unknown HLS segment');
     if(req.headers.range)return send(res,416,'HLS requires whole segments');
-    const session=await launch(token,url);
+    const session=await launch(token,url,headers);
     if(!session)return send(res,503,'Live remux unavailable');
     session.touched=Date.now();
     const target=path.join(session.dir,file);
