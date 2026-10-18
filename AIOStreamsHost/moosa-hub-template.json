@@ -1,0 +1,135 @@
+{
+  "metadata": {
+    "id": "moosa.hub.iphone-pc",
+    "name": "MOOSA Hub — iPhone & PC",
+    "description": "AIOStreams configuration for automatic Stremio addon aggregation and modern catalog metadata. Prioritises 4K / 1080p / 720p, rejects low quality duplicates, and adds subtitles. Stremio Web on iPhone only plays direct HTTP; for peer-to-peer links use Stremio's official full iOS IPA. Provider availability is not guaranteed.",
+    "author": "MOOSA",
+    "version": "1.0.0",
+    "category": "Streaming",
+    "source": "external",
+    "serviceRequired": false,
+    "setToSaveInstallMenu": true
+  },
+  "config": {
+    "presets": [
+      {
+        "type": "custom",
+        "instanceId": "mcm1",
+        "enabled": true,
+        "options": {
+          "name": "Cinemeta — movies and series",
+          "manifestUrl": "https://v3-cinemeta.strem.io/manifest.json",
+          "timeout": 5000,
+          "resources": [
+            "catalog",
+            "meta"
+          ],
+          "mediaTypes": []
+        }
+      },
+      {
+        "type": "custom",
+        "instanceId": "mos1",
+        "enabled": true,
+        "options": {
+          "name": "OpenSubtitles v3 — subtitles",
+          "manifestUrl": "https://opensubtitles-v3.strem.io/manifest.json",
+          "timeout": 5000,
+          "resources": [
+            "subtitles"
+          ],
+          "mediaTypes": []
+        }
+      },
+      {
+        "type": "torrentio",
+        "instanceId": "mto1",
+        "enabled": true,
+        "options": {
+          "name": "Torrentio — updated stream index",
+          "timeout": 6000,
+          "resources": [
+            "stream"
+          ],
+          "providers": [],
+          "useMultipleInstances": false
+        }
+      },
+      {
+        "type": "mediafusion",
+        "instanceId": "mmf1",
+        "enabled": true,
+        "options": {
+          "name": "MediaFusion — updated stream index",
+          "timeout": 7000,
+          "resources": [
+            "stream"
+          ],
+          "useCachedResultsOnly": true,
+          "enableWatchlistCatalogs": false,
+          "mediaTypes": [],
+          "useMultipleInstances": false
+        }
+      }
+    ],
+    "preferredResolutions": [
+      "2160p",
+      "1440p",
+      "1080p",
+      "720p",
+      "576p",
+      "480p",
+      "360p",
+      "240p",
+      "144p",
+      "Unknown"
+    ],
+    "excludedResolutions": [
+      "576p",
+      "480p",
+      "360p",
+      "240p",
+      "144p"
+    ],
+    "excludedQualities": [
+      "CAM",
+      "SCR",
+      "TS",
+      "TC"
+    ],
+    "excludedVisualTags": [
+      "3D"
+    ],
+    "sortCriteria": {
+      "global": [
+        {
+          "key": "resolution",
+          "direction": "desc"
+        },
+        {
+          "key": "cached",
+          "direction": "desc"
+        },
+        {
+          "key": "quality",
+          "direction": "desc"
+        },
+        {
+          "key": "size",
+          "direction": "desc"
+        }
+      ]
+    },
+    "deduplicator": {
+      "enabled": true,
+      "multiGroupBehaviour": "aggressive",
+      "keys": [
+        "filename",
+        "infoHash"
+      ],
+      "cached": "single_result",
+      "uncached": "per_service",
+      "p2p": "single_result"
+    }
+  }
+}
