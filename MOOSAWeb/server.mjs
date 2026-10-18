@@ -181,7 +181,15 @@ async function handle(req,res,mediaGateway=null) {
       if(!match)return err(res,404,'Unsupported Stremio stream route');
       return json(res,200,await resolveStremioProtocolMovie(match[1]));
     }
-    if(url.pathname==='/api/config')return json(res,200,{catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine()});
+    if(url.pathname==='/api/config')return json(res,200,{
+      catalogReady:!!apiKey(),playerDemo:true,sourcePolicy:'authorized_only',
+      automaticSources:true,cloudstreamEngineConfigured:!!configuredEngine(),
+      // Inform the browser about a strictly operator-reviewed source pilot
+      // so only those catalog titles receive a longer Play lookup window.
+      verifiedCineStreamPilotReady:!!mediaGateway &&
+        process.env.CINESTREAM_MULTIFILM_PILOT==='1' &&
+        process.env.CINESTREAM_MULTIFILM_RIGHTS_APPROVED==='1'
+    });
     if(url.pathname==='/api/web-native/status'){
       if(functionalParams(url.searchParams).length)
         return err(res,400,'No arbitrary provider parameters');
