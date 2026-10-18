@@ -368,12 +368,18 @@ async function handle(req,res,mediaGateway=null) {
           imdbId:details.imdb_id||details.external_ids?.imdb_id||null,
           ...(media==='tv'?{season,episode}:{})
         };
-        const [usual,cinestream,multifilm]=await Promise.all([
-          resolveWebSources(meta),
+        // Start the ordinary source search in parallel. In an explicitly
+        // approved CineStream pilot, do NOT wait for unrelated slow catalog
+        // providers once three byte-verified same-title sources are available.
+        // If the pilot cannot deliver, continue to await the usual adapters.
+        // Keep the public/disabled-pilot behavior unchanged.
+        const usualPending=resolveWebSources(meta).catch(()=>[]);
+        const [cinestream,multifilm]=await Promise.all([
           findNightFromCineStream({meta,mediaGateway}),
           findVerifiedMultiFilmVidlink({meta,mediaGateway})
         ]);
         const vetted=[...cinestream,...multifilm];
+        const usual=vetted.length?[]:await usualPending;
         const sources=[...vetted,...usual.filter(x=>
           !vetted.some(y=>y.url===x.url))];
         return json(res,200,{sources,providerMode:'server',count:sources.length,cloudstreamEngineConfigured:!!configuredEngine()});
