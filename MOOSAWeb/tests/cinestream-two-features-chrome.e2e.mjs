@@ -158,6 +158,15 @@ try{
           video.webkitDecodedFrameCount||0,
         error:video.error?.code||null
       }));
+      phase='measured_quality_selector';
+      const measuredUI=await page.locator('#player-quality').evaluate(select=>({
+        label:select.selectedOptions[0]?.textContent||'',
+        disabled:select.disabled
+      }));
+      assert.equal(measuredUI.label,
+        'Actual resolution: '+actual.width+'×'+actual.height,
+        'Player should report decoded dimensions not offered quality label');
+      assert.equal(measuredUI.disabled,true);
       const durationPlausible=actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration;
       const qualityClaimMatches=actual.height>=target.quality-24 &&
@@ -168,6 +177,7 @@ try{
         claimedQualityLabel:target.quality,
         measuredVideo:actual,
         qualityLabelMatchesActualPixels:qualityClaimMatches,
+        displayedMeasuredResolution:measuredUI.label,
         plausibleRequestedMovieRuntime:durationPlausible,
         sameOriginGateway:true,
         rangeRequestCount,approxReadBytes:rangeTotalBytes,
