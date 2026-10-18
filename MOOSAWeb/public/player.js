@@ -31,6 +31,9 @@ function stopPlaybackWatchdog(){
   }
 }
 function armPlaybackWatchdog(reason='startup'){
+  // Repeated waiting/stalled events must NOT keep postponing the deadline:
+  // once a source is stuck, preserve the original buffer timeout.
+  if(reason==='buffering' && playbackWatchdog!==null)return;
   stopPlaybackWatchdog();
   if(!selectedSourceUrl)return;
   const ticket=playbackToken;
