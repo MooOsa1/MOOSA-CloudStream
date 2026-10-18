@@ -15,7 +15,7 @@ and choose **Install to Stremio Web** while logged into your Stremio account.
 The template currently includes:
 - Official Cinemeta metadata catalogs (continuously updated movie/TV metadata).
 - Official OpenSubtitles v3 subtitle addon (availability/sync vary per movie).
-- Free/P2P mode by default; the debrid service prompt is skipped.\n- Two popular Stremio stream indexers (Torrentio and MediaFusion) which query
+- Free/P2P mode by default; the debrid service prompt is skipped.\n- Two live-checked free P2P indexes (Torrentio and Comet) which query
   their indexes for each title, *not* a static local list of videos.
 - Prefer direct HTTP candidates, then P2P; this does **not** guarantee any direct HTTPS results.\n- Sorting 4K → 1440p → 1080p → 720p; exclude sub-720p and CAM/TS/TC/SCR;
   deduplicate repeated sources.
@@ -61,12 +61,14 @@ not controlled by MOOSA, and its operators can impose limits or outages.
 
 Source project (AGPL-3.0): https://github.com/Viren070/AIOStreams
 
-## Current factual source check (Oct 18 2026)
+## Live source audits — Oct 18, 2026
 
-[GitHub Actions source diagnostic run](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/39155821553) **PASS**:
-- Torrentio manifest valid. Returned 39 P2P candidate entries for IMDb tt0063350 and 23 for tt0032599.
-- MediaFusion manifest valid but returned zero entries for both old film IDs at this time; do not infer a permanent provider outage.
-- **Total 62 P2P candidates and zero direct HTTP links** across those two titles, from the test runner's location.
-- All three Node classification tests passed. **No video files were fetched, verified, or played.** The discovery pass is not proof that the movies or subtitles work on an actual iPhone/PC.
+- [Torrentio/Comet provider audit](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/39157369906) **PASS**. Four IMDb title lookups returned **324 Torrentio P2P candidates** and **2,036 Comet P2P candidates**. Both are now the only active stream providers in MOOSA Hub v1.3.0.
+- The same audit found zero MediaFusion P2P candidates for those four titles; its preset was removed, without claiming the provider is permanently offline.
+- StremThru Torz returned 404 on direct stream requests and is NOT activated.
+- All direct HTTP candidate counts were zero in this audit. On iPhone this means the full native IPA (torrent support) is needed for these candidates; iOS Safari cannot stream P2P unaided.
+- These are **source index listings only**. The count includes repeats and can contain dead torrents, wrong matches or non-playable formats. There has been NO actual playback of these titles in iOS/Windows verified by this experiment, and no copyrighted video downloaded.
+- Min-quality policy still excludes <720p candidates; HTTP is ranked before P2P when present, then resolution and seeders. OpenSubtitles v3 supplies the subtitle metadata endpoint, but per-film Arabic/English availability/sync is unproved.
+- [Latest diagnostics workflow](https://github.com/MooOsa1/MOOSA-CloudStream/actions/workflows/moosa-stremio-free-sources.yml) verifies source metadata, preset policy tests and Stremio's first-party iOS IPA on future branch commits. A workflow pass does NOT prove movie playback.
 
-A subsequent test also checks *Sinners (2025)* and *Dune: Part Two (2024)* listing metadata and checks the official iOS release index. Listing checks do not download copyrighted content or establish availability.
+Do not merge/deploy the old MOOSA Web project from this branch. Only install the AIOStreams preset when ready to test on real devices.
