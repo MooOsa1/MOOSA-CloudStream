@@ -358,9 +358,11 @@ async function boundedText(res){
   return Buffer.concat(data).toString('utf8');
 }
 export async function probeStreamPlayRedirects({
-  postHtml,fetchImpl=fetch,timeoutMs=7500
+  postHtml,fetchImpl=fetch,timeoutMs=7500,startAt=0
 }={}){
-  const unique=new Set(),hrefs=[];
+  if(!Number.isInteger(startAt)||startAt<0||startAt>16)
+    return result('invalid_start_index');
+  const unique=new Set(),options=[];
   // Input is a previously verified matching movie post. Only the fixed
   // provider host is contacted; all other download links are ignored.
   for(const m of String(postHtml||'').matchAll(/<a\b[^>]*href\s*=\s*(["'])([^"'<>]{1,850})\1/gi)){
@@ -368,9 +370,10 @@ export async function probeStreamPlayRedirects({
     try{u=new URL(m[2]);}catch{continue;}
     if(u.protocol!=='https:'||u.hostname!==HOST||u.port||u.hash||
        u.username||u.password||unique.has(u.href))continue;
-    unique.add(u.href);hrefs.push(u.href);
-    if(hrefs.length>=2)break;
+    unique.add(u.href);options.push(u.href);
+    if(options.length>=20)break;
   }
+  const hrefs=options.slice(startAt,startAt+2);
   if(!hrefs.length)return result('no_greenmotors_links');
   const attempts=[];
   for(const url of hrefs){
