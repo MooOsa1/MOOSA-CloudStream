@@ -64,7 +64,7 @@ try{
     args:['--autoplay-policy=no-user-gesture-required','--disable-dev-shm-usage']});
   for(const film of FILMS){
     let page;let phase='start';
-    let resolveCount=0,outageCount=0,firstToken=null;
+    let resolveCount=0,extraStarted=0,outageCount=0,firstToken=null;
     let issuedCount=0,selectOptions=0;
     try{
       phase='new_page';
@@ -74,6 +74,8 @@ try{
       page.on('pageerror',error=>errors.push(String(error.name||'script_error')));
       await page.route(SITE+'/**',async route=>{
         const parsed=new URL(route.request().url());
+        if(parsed.pathname==='/api/resolve' &&
+           parsed.searchParams.get('phase')==='extras')extraStarted++;
         if(parsed.pathname==='/api/stremio-subtitles'){
           await route.fulfill({status:200,contentType:'application/json',
             body:JSON.stringify({subtitles:[],active:false,count:0})});
@@ -107,7 +109,8 @@ try{
           if(value)forwarded[header]=value;
         }
         const body=Buffer.from(await upstream.arrayBuffer());
-        if(parsed.pathname==='/api/resolve'){
+        if(parsed.pathname==='/api/resolve' &&
+           parsed.searchParams.get('phase')!=='extras'){
           resolveCount++;
           const data=JSON.parse(body.toString('utf8'));
           const sources=(data.sources||[]).filter(x=>x?.gatewayIssued===true);
@@ -171,7 +174,9 @@ try{
       assert.equal(actual.playerTitle,film.title,'Player title changed during fallback');
       assert.equal(actual.selected,'1','Automatic fallback did not select the next source');
       assert.ok(outageCount>=1,'Initial verified source was not tried');
-      assert.equal(resolveCount,1,'Play should resolve only once per title');
+      assert.equal(resolveCount,1,'Play must make just one fast resolve request');
+      assert.ok(extraStarted>=1,
+        'Fast CineStream source picker must also start extra provider search');
       assert.ok(issuedCount>=2&&selectOptions>=3,'Source picker did not list returned sources');
       assert.ok(actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration,'Short clip or wrong feature runtime');
@@ -183,7 +188,7 @@ try{
       assert.deepEqual(errors,[]);
       console.log('MOOSA_REAL_AUTO_PLAY_BACKEND_TO_BROWSER_PASS '+JSON.stringify({
         title:film.title,tmdbId:film.id,
-        backendResolveRequests:resolveCount,
+        backendResolveRequests:resolveCount,backgroundSearchRequests:extraStarted,
         offeredServerCount:issuedCount,sourcePickerEntries:selectOptions,
         firstServerFailureCount:outageCount,automaticallySelectedSourceIndex:1,
         fallbackActualWidth:actual.width,fallbackActualHeight:actual.height,
