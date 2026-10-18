@@ -2,13 +2,15 @@
   "metadata": {
     "id": "moosa.hub.iphone-pc",
     "name": "MOOSA Hub — iPhone & PC",
-    "description": "AIOStreams configuration for automatic Stremio addon aggregation and modern catalog metadata. Prioritises 4K / 1080p / 720p, rejects low quality duplicates, and adds subtitles. Stremio Web on iPhone only plays direct HTTP; for peer-to-peer links use Stremio's official full iOS IPA. Provider availability is not guaranteed.",
+    "description": "Free Stremio P2P/HTTP addon aggregation for iPhone full IPA and Windows. Queries update automatically; neither source listings nor torrent metadata prove successful playback. Web/Safari on iPhone cannot play P2P unaided.",
     "author": "MOOSA",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "category": "Streaming",
     "source": "external",
     "serviceRequired": false,
-    "setToSaveInstallMenu": true
+    "setToSaveInstallMenu": true,
+    "services": [],
+    "sourceUrl": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/experiment/moosa-hub-aiostreams-20261018/AIOStreamsHost/moosa-hub-template.json"
   },
   "config": {
     "presets": [
@@ -130,6 +132,14 @@
       "cached": "single_result",
       "uncached": "per_service",
       "p2p": "single_result"
-    }
+    },
+    "preferredStreamTypes": [
+      "http",
+      "p2p"
+    ],
+    "preferredSubtitles": [
+      "Arabic",
+      "English"
+    ]
   }
 }
