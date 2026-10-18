@@ -16,6 +16,9 @@ test('server-issued SAME-ORIGIN opaque HLS capability is accepted with type',()=
   assert.equal(playableMediaSource({
     gatewayIssued:true,url:path,format:'webm'
   },host).format,'webm');
+  assert.deepEqual(trustedMediaCapability({
+    gatewayIssued:true,url:path+'/index.m3u8',format:'m3u8'
+  },host),{url:path+'/index.m3u8',format:'hls'});
 });
 
 test('never accept a bare extensionless plugin URL or untrusted capability',()=>{
