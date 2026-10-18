@@ -491,7 +491,8 @@ test('2025 Sinners alternative R2 and GPDL options are probed once each with Ran
         return new Response('<a class="btn" href="https://gpdl.hubcloud.ist/video?token=secret">GPDL</a>'+
           '<a class="btn" href="https://297de52426dc9b4d861466cc51253577.r2.cloudflarestorage.com/film?token=hidden">R2</a>',{
           headers:{'content-type':'text/html'}});
-      assert.equal(opts.headers.Range,'bytes=0-4095');
+      assert.equal(opts.headers.Range,host.endsWith('.r2.cloudflarestorage.com')?
+        'bytes=0-65535':'bytes=0-4095');
       if(host==='gpdl.hubcloud.ist')
         return new Response(Buffer.concat([
           Buffer.from([0x1a,0x45,0xdf,0xa3]),Buffer.from('matroska'),Buffer.alloc(20)
