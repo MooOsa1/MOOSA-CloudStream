@@ -140,7 +140,10 @@ export async function movieBoxInventory({
       }
     }
     const qualities=[...new Set(all.map(s=>s.quality).filter(q=>q>0))].sort((a,b)=>b-a);
-    return status(all.length?'candidates_found':'no_compatible_candidates',{
+    const restricted=diagnostics.plays.reason==='http_403' &&
+      diagnostics.downloads.reason==='http_403';
+    return status(all.length?'candidates_found':
+      restricted?'provider_access_denied':'no_compatible_candidates',{
       found:matched.length,sourceVariants:all.length,subjectsProbed:subjectRequests,
       diagnostics,
       formats:{
