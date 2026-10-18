@@ -27,5 +27,18 @@
 </section>
 </div>
 <p class="note">This page never displays signed CDN URLs or claims that an unverified stream can play. The existing reviewed-film playback path is unchanged. For a film's ID, open its TMDB page and use the number after <code>/movie/</code>.</p>
+<div class="panel">
+<h2>Priority sources: BingeBang • HubCloud • MovieBox</h2>
+<p>Look up an exact movie title and release year. MovieBox queries its catalog and stream metadata; the other two show why their own links are not yet available in MOOSA.</p>
+<form id="focus-form">
+<label for="focus-title">Original movie title</label>
+<div class="entry"><input type="text" id="focus-title" placeholder="e.g. Inception" maxlength="110" required autocomplete="off">
+<input type="number" id="focus-year" min="1888" max="2100" placeholder="Year" required style="max-width:130px">
+<button type="submit" id="focus-scan">Check 3 sources</button></div>
+</form>
+<p id="focus-status" role="status" aria-live="polite"></p>
+<section id="focus-results" hidden></section>
+<p class="note">Provider counts are discovery only. None of these three has been approved as a playable source in MOOSA yet.</p>
+</div>
 <p><a href="/">← Back to MOOSA movie player</a></p>
-</main><script type="module" src="/source-discovery.js"></script></body></html>
+</main><script type="module" src="/source-discovery.js"></script><script type="module" src="/focused-sources.js"></script></body></html>
