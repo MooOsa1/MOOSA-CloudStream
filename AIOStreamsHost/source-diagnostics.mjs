@@ -3,7 +3,7 @@
  * MOOSA Hub live, read-only Stremio discovery audit.
  * This checks addon protocols and classifies stream *candidates*.
  * It DOES NOT download media, assert movie identity, or prove playback.
- * Test titles are two old public-domain US film titles.
+ * Tests two old public-domain US film titles plus recent movies' metadata listings.\n * No copyrighted movie video or torrent payload is fetched.
  */
 import { readFile } from 'node:fs/promises';
 
@@ -15,7 +15,7 @@ const MOVIES = [
   { imdb: 'tt0063350', title: 'Night of the Living Dead (1968)' },
   { imdb: 'tt0032599', title: 'His Girl Friday (1940)' },
 ];
-const META = [
+const RECENT_LISTINGS = [\n  { imdb: 'tt31193180', title: 'Sinners (2025)' },\n  { imdb: 'tt15239678', title: 'Dune: Part Two (2024)' },\n];\nconst META = [
   { name: 'Cinemeta', base: 'https://v3-cinemeta.strem.io' },
   { name: 'OpenSubtitles v3', base: 'https://opensubtitles-v3.strem.io' },
 ];
@@ -75,7 +75,7 @@ export async function main() {
     }
   }
   for (const addon of ADDONS) {
-    for (const movie of MOVIES) {
+    for (const movie of [...MOVIES, ...RECENT_LISTINGS]) {
       // No login, media URL fetch, magnet open, or video download.
       const endpoint = addon.base + '/stream/movie/' + movie.imdb + '.json';
       try {
