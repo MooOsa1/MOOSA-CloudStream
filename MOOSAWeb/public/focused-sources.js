@@ -17,7 +17,7 @@ form.addEventListener('submit',async(e)=>{
     return;
   }
   button.disabled=true;results.hidden=true;results.replaceChildren();
-  message.textContent='Checking the three selected sources…';
+  message.textContent='Checking the four selected sources…';
   try{
     const q=new URLSearchParams({title:name,year:yr});
     const r=await fetch('/api/focused-sources?'+q.toString(),{
@@ -29,6 +29,7 @@ form.addEventListener('submit',async(e)=>{
       const panel=make('div','','metric');
       panel.append(make('h3',source.name));
       panel.append(make('p','Status: '+source.status));
+      if(source.instances?.length)panel.append(make('p','Instances: '+source.instances.join(' / ')));
       panel.append(make('p','Candidate links: '+(source.candidateCount||0)));
       if(source.qualities?.length)panel.append(
         make('p','Offered labels: '+source.qualities.join(' / ')));
