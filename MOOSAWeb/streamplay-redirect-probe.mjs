@@ -107,6 +107,56 @@ function sameHostHubDriveButton(markup,currentUrl){
   }
   return null;
 }
+// HubCloud's actual #download button on the operator's Inception sample
+// points to gamerxyt.com, not the HubCloud host. This one-hop HTML inspection
+// checks its server buttons without trusting or following their destinations.
+function approvedGamerxytHref(markup,current){
+  for(const match of String(markup||'').matchAll(/<a\b[^>]{0,1800}>/gi)){
+    const tag=match[0];
+    if(!/\bid\s*=\s*(["'])download\1/i.test(tag))continue;
+    const href=tag.match(/\bhref\s*=\s*(["'])([^"'<>]{1,850})\1/i)?.[2];
+    if(!href)continue;
+    let target;
+    try{target=new URL(href,current);}catch{continue;}
+    if(target.protocol==='https:'&&target.hostname==='gamerxyt.com'&&
+      !target.port&&!target.username&&!target.password&&!target.hash&&
+      target.href.length<1600)return target.href;
+  }
+  return null;
+}
+async function inspectGamerxyt(url,fetchImpl,timeoutMs){
+  const target=new URL(url);
+  if(target.protocol!=='https:'||target.hostname!=='gamerxyt.com'||
+     target.username||target.password||target.port||target.hash)return null;
+  try{
+    const response=await fetchImpl(target.href,{
+      redirect:'manual',headers:{Accept:'text/html'},
+      signal:AbortSignal.timeout(Math.min(timeoutMs,6000))
+    });
+    if([301,302,303,307,308].includes(response.status)){
+      await response.body?.cancel?.().catch(()=>{});
+      let nextHost=null;
+      try{
+        const u=new URL(response.headers.get('location')||'',target);
+        if(u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&!u.hash)
+          nextHost=u.hostname.toLowerCase();
+      }catch{}
+      return {status:'redirect_not_followed',nextHost};
+    }
+    const content=await boundedText(response);
+    const metadata=inspectLandingHtml(content,'gamerxyt.com');
+    return {
+      status:'page_accessible',serverButtons:metadata.serverButtons,
+      buttonHosts:metadata.buttonHosts,
+      downloadButtons:metadata.downloadButtons
+    };
+  }catch(e){
+    const reason=String(e?.message||'');
+    return {status:/^http_[0-9]{3}$/.test(reason)?reason:
+      reason==='not_html'?'not_html':e?.name==='TimeoutError'?'timeout':
+      'request_unavailable'};
+  }
+}
 async function inspectLanding(link,fetchImpl,timeoutMs){
   let u;
   try{u=new URL(link);}catch{return null;}
@@ -123,6 +173,14 @@ async function inspectLanding(link,fetchImpl,timeoutMs){
     }
     const markup=await boundedText(r);
     const summary=inspectLandingHtml(markup,u.hostname);
+    if(u.hostname==='hubcloud.ist' && summary.downloadHosts.includes('gamerxyt.com')){
+      const approved=approvedGamerxytHref(markup,u.href);
+      if(approved)return {...summary,
+        nextPageStatus:'cross_host_reviewed',
+        nextPageHost:'gamerxyt.com',
+        gatewayPage:await inspectGamerxyt(approved,fetchImpl,timeoutMs)
+      };
+    }
     const nextPage=u.hostname==='hubcloud.ist'?
       trustedDownloadHref(markup,u.href):
       u.hostname==='hubdrive.pics'?
