@@ -2,7 +2,7 @@
 
 **Current direction: the original AIOStreams application, not MOOSA Web or a CloudStream emulator.**
 The checked-in `moosa-hub-template.json` is an importable AIOStreams preset
-using the original automatic provider queries. It is **not yet proven** to
+using automatically queried source indexes, with no paid debrid requirement. It is **not yet proven** to
 provide any particular modern copyrighted movie or a playable iPhone source.
 
 ## Quick start on the free community instance
@@ -15,12 +15,12 @@ and choose **Install to Stremio Web** while logged into your Stremio account.
 The template currently includes:
 - Official Cinemeta metadata catalogs (continuously updated movie/TV metadata).
 - Official OpenSubtitles v3 subtitle addon (availability/sync vary per movie).
-- Two popular Stremio stream indexers (Torrentio and MediaFusion) which query
+- Free/P2P mode by default; the debrid service prompt is skipped.\n- Two popular Stremio stream indexers (Torrentio and MediaFusion) which query
   their indexes for each title, *not* a static local list of videos.
-- Sorting 4K → 1440p → 1080p → 720p; exclude sub-720p and CAM/TS/TC/SCR;
+- Prefer direct HTTP candidates, then P2P; this does **not** guarantee any direct HTTPS results.\n- Sorting 4K → 1440p → 1080p → 720p; exclude sub-720p and CAM/TS/TC/SCR;
   deduplicate repeated sources.
 
-**Caution:** Indexer results are *candidates*, not tested playable video.
+**Caution:** Indexer results are *candidates*, not tested playable video.\nAn experimental GitHub Actions check at\n[`moosa-stremio-free-sources.yml`](../.github/workflows/moosa-stremio-free-sources.yml)\nqueries current manifests and source listings for two older public-domain film titles.\nIt classifies P2P versus HTTP *candidates*, downloads no video, and does not assert that the films play.\nThe test results reflect GitHub runner network access, not iPhone playback in Oman.
 Torrent/P2P streams will **not play in Stremio Web on standalone iPhone Safari**.
 A paid HTTPS debrid provider or a companion Stremio Service can provide
 different paths, but neither is included here, and license/region matters.
