@@ -45,5 +45,27 @@
 <section id="focus-results" hidden></section>
 <p class="note">MovieBox performs a real catalog lookup. The other three show integration status only. Video links are never considered playable without verification.</p>
 </div>
+<div class="panel">
+<h2>Modern movie source inspector</h2>
+<p>Inspect a movie released from 1950 to 2026 and select which two StreamPlay links to check. No deployment is needed between films. Matroska and MP4 byte checks are not proof of browser playback or source rights.</p>
+<form id="modern-form">
+<label for="modern-title">Movie title</label>
+<div class="entry">
+<input id="modern-title" type="text" value="Sinners" maxlength="110" required autocomplete="off">
+<input id="modern-year" type="number" min="1950" max="2026" value="2025" required style="max-width:120px">
+<select id="modern-slot" aria-label="Source link group">
+<option value="0">Sources 1–2</option><option value="2">Sources 3–4</option>
+<option value="4">Sources 5–6</option><option value="6">Sources 7–8</option>
+<option value="8">Sources 9–10</option><option value="10">Sources 11–12</option>
+<option value="12">Sources 13–14</option><option value="14">Sources 15–16</option>
+<option value="16">Sources 17–18</option>
+</select>
+<button type="submit" id="modern-scan">Inspect film</button>
+</div>
+</form>
+<p id="modern-status" role="status" aria-live="polite"></p>
+<section id="modern-results" hidden></section>
+<p class="note">Results are cached for 12 minutes, with at most two active inspections. Provider links, tokens and film downloads are not displayed. Existing reviewed-film playback is unchanged.</p>
+</div>
 <p><a href="/">← Back to MOOSA movie player</a></p>
-</main><script type="module" src="/source-discovery.js"></script><script type="module" src="/focused-sources.js"></script></body></html>
+</main><script type="module" src="/source-discovery.js"></script><script type="module" src="/focused-sources.js"></script><script type="module" src="/modern-source-audit.js"></script></body></html>
