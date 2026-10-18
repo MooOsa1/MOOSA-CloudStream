@@ -61,14 +61,29 @@ function resetVideo(){
   video.removeAttribute('src');video.load();
   if(mediaUrl){URL.revokeObjectURL(mediaUrl);mediaUrl=null;}
   $('#player-quality').replaceChildren(new Option('تلقائي','-1'));
+  $('#player-quality').disabled=false;
   $('#player-subtitles').replaceChildren(new Option('بدون ترجمة',''));
   $('#video-overlay').classList.remove('hidden');
 }
 function showVideo(){ $('#video-overlay').classList.add('hidden'); }
 function updateQuality(){
   const el=$('#player-quality');el.replaceChildren(new Option('تلقائي','-1'));
+  el.disabled=false;
   if(hls?.levels?.length){hls.levels.forEach((level,i)=>el.add(new Option(level.height?`${level.height}p`:`مستوى ${i+1}`,String(i))));}
   else el.add(new Option('حسب مصدر الفيديو','-2'));
+}
+// Progressive MP4 sources have a single fixed encoding. Display pixels that
+// Chrome actually decoded rather than an unverified provider quality label.
+// Leave adaptive hls.js quality selection untouched.
+function showDecodedResolution(){
+  if(hls || !video.videoWidth || !video.videoHeight ||
+      $('#player-panel').classList.contains('hidden'))return;
+  const quality=$('#player-quality');
+  const label='Actual resolution: '+video.videoWidth+'×'+video.videoHeight;
+  if(quality.options.length!==1 || quality.options[0]?.textContent!==label)
+    quality.replaceChildren(new Option(label,'-2'));
+  quality.value='-2';
+  quality.disabled=true;
 }
 let scriptPromise=null;
 function preferNativeHls(){
@@ -432,6 +447,8 @@ function enforceDecodedHd(){
 }
 video.addEventListener('loadedmetadata',enforceDecodedHd);
 video.addEventListener('resize',enforceDecodedHd);
+video.addEventListener('loadedmetadata',showDecodedResolution);
+video.addEventListener('resize',showDecodedResolution);
 video.addEventListener('playing',()=>{
   if(enforceDecodedHd())return;
   if(!$('#player-panel').classList.contains('hidden'))
