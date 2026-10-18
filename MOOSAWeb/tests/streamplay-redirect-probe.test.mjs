@@ -200,3 +200,34 @@ test('HubCloud download link to another host is not requested',async()=>{
   assert.equal(r.landings[0].nextPageStatus,undefined);
   assert.equal(r.videoVerified,false);
 });
+
+test('HubDrive follows only its same-host button and discovers destination host labels',async()=>{
+  const payload=JSON.stringify({o:b64('https://hubdrive.pics/film/secret')});
+  const encoded=b64(b64(rot13(b64(payload))));
+  const urls=[];
+  const result=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/entry">Entry</a>',
+    fetchImpl:async(raw,opts)=>{
+      const u=new URL(raw);urls.push(u.hostname+u.pathname);
+      assert.equal(opts.redirect,'manual');
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/entry'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+encoded+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubdrive.pics'&&u.pathname==='/film/secret')
+        return new Response('<a class="btn" href="/next">Continue</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubdrive.pics'&&u.pathname==='/next')
+        return new Response('<a class="btn" href="https://hubcloud.ist/player">HubCloud</a>',{
+          headers:{'content-type':'text/html'}});
+      throw Error('unexpected');
+    }
+  });
+  assert.deepEqual(urls,['greenmotors.club/entry','greenmotors.cc/entry',
+    'hubdrive.pics/film/secret','hubdrive.pics/next']);
+  assert.equal(result.landings[0].nextPageStatus,'page_accessible');
+  assert.deepEqual(result.landings[0].finalButtonHosts,['hubcloud.ist']);
+  assert.equal(result.videoVerified,false);
+  assert.doesNotMatch(JSON.stringify(result),/\/film\/secret|\/next|\/player/);
+});
