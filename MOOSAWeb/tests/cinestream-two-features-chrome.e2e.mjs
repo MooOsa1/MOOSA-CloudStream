@@ -156,8 +156,8 @@ try{
       }));
       const durationPlausible=actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration;
-      const qualityClaimMatches=actual.height>=film.preferred-24 &&
-        actual.height<=film.preferred+24;
+      const qualityClaimMatches=actual.height>=target.quality-24 &&
+        actual.height<=target.quality+24;
       console.log('MOOSA_ADDITIONAL_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
         film:film.title,year:film.year,tmdbId:film.tmdbId,
         actuallyDecodedFrames:true,
