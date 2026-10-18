@@ -127,11 +127,12 @@ export function countStreamPlayDownloadAnchors(markup){
 
 export async function probe4khdhubHandoff({
   title,year,fetchImpl=fetch,timeoutMs=8500,diagnoseRedirects=false,
-  diagnoseExtraRoutes=false
+  diagnoseExtraRoutes=false,redirectStartAt=0
 }={}){
   const name=norm(title),yr=Number(year);
   if(name.length<2||name.length>100||!Number.isInteger(yr)||
-     yr<1888||yr>2100)return status('invalid_movie');
+     yr<1888||yr>2100||!Number.isInteger(redirectStartAt)||
+     redirectStartAt<0||redirectStartAt>16)return status('invalid_movie');
   try{
     const url=new URL('/',SITE);url.searchParams.set('s',String(title));
     const search=await fetchImpl(url.href,{
@@ -154,7 +155,8 @@ export async function probe4khdhubHandoff({
         const body=await html(response);posts++;
         if(diagnoseRedirects&&!redirectProbe)
           redirectProbe=await probeStreamPlayRedirects({
-            postHtml:body,fetchImpl,timeoutMs:Math.min(timeoutMs,8000)
+            postHtml:body,fetchImpl,timeoutMs:Math.min(timeoutMs,8000),
+            startAt:redirectStartAt
           });
         if(diagnoseExtraRoutes&&!extraRedirectProbe)
           extraRedirectProbe=await probeStreamPlayRedirects({
