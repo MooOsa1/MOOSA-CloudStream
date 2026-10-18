@@ -70,6 +70,7 @@ export function createMkvHlsRemux({
   idleMs=90000
 }={}){
   const sessions=new Map();
+  const launching=new Map();
   let available;
   function isAvailable(){
     if(available!==undefined)return available;
@@ -96,25 +97,35 @@ export function createMkvHlsRemux({
   cleanupTimer.unref?.();
   async function launch(token,url,headers={}){
     const old=sessions.get(token);
-    if(old)return old;
-    if(sessions.size>=maxSessions || !isAvailable())return null;
-    const dir=await mkdtemp(path.join(os.tmpdir(),'moosa-remux-'));
-    let config;
-    try{config=remuxCli(url,dir,{binary,headers});}
-    catch{await rm(dir,{recursive:true,force:true});return null;}
-    const proc=spawnImpl(config.binary,config.args,{
-      stdio:['ignore','ignore','ignore'],windowsHide:true
-    });
-    const state={dir,process:proc,touched:Date.now(),failed:false};
-    sessions.set(token,state);
-    proc.on('error',()=>{state.failed=true;});
-    proc.on('exit',code=>{
-      // A successful end-of-file is normal for a short clip. An unexpected
-      // nonzero exit before any playlist exists is not.
-      state.exitCode=code;
-      if(code!==0 && code!==null)state.failed=true;
-    });
-    return state;
+    if(old)return old.failed?null:old;
+    const pending=launching.get(token);
+    if(pending)return pending;
+    // Safari can request the playlist and init file at the same time.
+    // A single-flight launch avoids two FFmpeg writers racing for filenames.
+    if(sessions.size+launching.size>=maxSessions || !isAvailable())return null;
+    const start=(async()=>{
+      const dir=await mkdtemp(path.join(os.tmpdir(),'moosa-remux-'));
+      let config,proc;
+      try{
+        config=remuxCli(url,dir,{binary,headers});
+        proc=spawnImpl(config.binary,config.args,{
+          stdio:['ignore','ignore','ignore'],windowsHide:true
+        });
+      }catch{
+        await rm(dir,{recursive:true,force:true}).catch(()=>{});
+        return null;
+      }
+      const state={dir,process:proc,touched:Date.now(),failed:false};
+      sessions.set(token,state);
+      proc.on('error',()=>{state.failed=true;});
+      proc.on('exit',code=>{
+        state.exitCode=code;
+        if(code!==0 && code!==null)state.failed=true;
+      });
+      return state;
+    })().finally(()=>launching.delete(token));
+    launching.set(token,start);
+    return start;
   }
   async function handle({token,file='index.m3u8',url,headers={},req,res}){
     if(req.method!=='GET'&&req.method!=='HEAD')
