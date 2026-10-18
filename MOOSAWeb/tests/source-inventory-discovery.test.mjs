@@ -33,6 +33,30 @@ test('arbitrary valid movie ID reaches real generic Vidlink protocol, not fixed 
   assert.doesNotMatch(publicBody,/https?:|\.mp4|api\/media|headers|cookie/i);
 });
 
+test('zero provider qualities and filtered hosts produce distinct actionable diagnostics',async()=>{
+  async function run(qualities){
+    return discoverVidlinkInventory({tmdbId:157336,fetchImpl:async url=>{
+      if(new URL(url).hostname==='enc-dec.app')
+        return Response.json({result:'interstellar_test'});
+      return Response.json({qualities});
+    }});
+  }
+  const noQualities=await run({});
+  assert.equal(noQualities.status,'provider_no_quality_list');
+  assert.equal(noQualities.filterCounts.providerEntries,0);
+  const filtered=await run({
+    '720':{url:'https://unapproved.example/film.mp4',type:'mp4'},
+    '2160':{url:'https://hcdn3.hakunaymatata.com/film-4k.mp4',type:'mp4'},
+    '480':{url:'https://hcdn3.hakunaymatata.com/fake.txt'}
+  });
+  assert.equal(filtered.status,'all_candidates_filtered');
+  assert.equal(filtered.availableVariants,0);
+  assert.equal(filtered.filterCounts.blockedHosts,1);
+  assert.equal(filtered.filterCounts.excludedQualities,1);
+  assert.equal(filtered.filterCounts.unsupportedFormats,1);
+  assert.doesNotMatch(JSON.stringify(filtered),/https?:|example\\/film|\.mp4/i);
+});
+
 test('invalid ids make zero network requests; upstream errors are explicit',async()=>{
   let called=0;
   const stub=async()=>{called++;throw Error('network unavailable');};
@@ -84,7 +108,15 @@ test('private lab exposes counts but never URLs and rejects unauthorized invento
       '/api/source-discovery?id=27205',
       '/api/source-discovery?media=movie&id=27205&id=832'
     ])assert.equal((await original(base+path,{headers})).status,400,path);
-    assert.equal((await original(base+'/source-discovery.html',{headers})).status,200);
+    const page=await original(base+'/source-discovery.html',{headers});
+    assert.equal(page.status,200);
+    const html=await page.text();
+    assert.match(html,/rel="stylesheet" href="\\/source-discovery.css"/);
+    assert.doesNotMatch(html,/<style[\\s>]/i);
+    const stylesheet=await original(base+'/source-discovery.css',{headers});
+    assert.equal(stylesheet.status,200);
+    assert.match(stylesheet.headers.get('content-type')||'',/text\\/css/);
+    assert.match(await stylesheet.text(),/background:#17181d/);
   }finally{
     if(app)await new Promise(resolve=>app.close(resolve));
     globalThis.fetch=original;
