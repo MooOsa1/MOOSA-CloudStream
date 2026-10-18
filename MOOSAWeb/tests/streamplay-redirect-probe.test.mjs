@@ -72,3 +72,46 @@ test('Network failure is distinct from rejected video lookup and no source',asyn
   assert.deepEqual(failure.statuses,['connection_failed']);
   assert.equal(failure.videoVerified,false);
 });
+
+test('only reviewed .club to .cc host redirect is followed once, without leaking the link',async()=>{
+  const envelope=JSON.stringify({o:b64('https://hubcloud.example/signed-private-media')});
+  const encoded=b64(b64(rot13(b64(envelope))));
+  const calls=[];
+  const probe=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/go/film">movie source</a>',
+    fetchImpl:async(raw,init)=>{
+      const u=new URL(raw);
+      calls.push(u.hostname);
+      assert.equal(init.redirect,'manual');
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{
+          location:'https://greenmotors.cc/go/film?token=hidden'
+        }});
+      assert.equal(u.hostname,'greenmotors.cc');
+      return new Response("<script>s('o','"+encoded+"')</script>",{
+        headers:{'content-type':'text/html'}
+      });
+    }
+  });
+  assert.deepEqual(calls,['greenmotors.club','greenmotors.cc']);
+  assert.equal(probe.state,'resolved');
+  assert.equal(probe.decodedIntermediateLinks,1);
+  assert.equal(probe.hubcloudHints,1);
+  assert.equal(probe.videoVerified,false);
+  assert.doesNotMatch(JSON.stringify(probe),/private-media|token=|\/go\/film/);
+});
+test('second HTTP redirect is deliberately blocked, never contacts a third-party destination',async()=>{
+  let calls=0;
+  const output=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/id">redirect</a>',
+    fetchImpl:async()=>{
+      calls++;
+      return new Response(null,{status:302,headers:{
+        location:calls===1?'https://greenmotors.cc/id':'https://other.example/remote'
+      }});
+    }
+  });
+  assert.equal(calls,2);
+  assert.equal(output.state,'second_redirect_blocked');
+  assert.equal(output.decodedIntermediateLinks,0);
+});
