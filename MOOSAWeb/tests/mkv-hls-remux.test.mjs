@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp,readFile,readdir,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,readdir,rm,writeFile} from 'node:fs/promises';
+import http from 'node:http';
+import {EventEmitter} from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
@@ -80,5 +82,60 @@ test('Safari partial HLS fMP4 init and segment requests are computed safely',()=
     'bytes=0-1,5-8','bytes=99999999999999999-','bytes=01-2',
     'bytes=0-3\r\nX-Evil:1','not-a-range']){
     assert.equal(parseHlsByteRange(bad,100),null,bad);
+  }
+});
+
+test('same signed HLS session handles concurrent Safari requests and returns true byte ranges',async()=>{
+  let launches=0;
+  const remux=createMkvHlsRemux({
+    binary:ffmpeg,
+    maxSessions:1,
+    spawnImpl:(_binary,args)=>{
+      launches++;
+      const proc=new EventEmitter();
+      proc.kill=()=>true;
+      const dir=path.dirname(args[args.length-1]);
+      void Promise.all([
+        writeFile(path.join(dir,'index.m3u8'),'#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:2.0,\nseg_00000.m4s\n'),
+        writeFile(path.join(dir,'init.mp4'),Buffer.from('AAAABBBBCCCC')),
+        writeFile(path.join(dir,'seg_00000.m4s'),Buffer.from('0123456789abcdef'))
+      ]).catch(e=>proc.emit('error',e));
+      return proc;
+    }
+  });
+  const server=http.createServer((req,res)=>{
+    const file=new URL(req.url,'http://127.0.0.1').pathname.slice(1);
+    void remux.handle({req,res,token:'test-opaque-capability',
+      file,url:'https://licensed-media.example/film.mkv'});
+  });
+  await new Promise((resolve,reject)=>{
+    server.once('error',reject);server.listen(0,'127.0.0.1',resolve);
+  });
+  try{
+    const base='http://127.0.0.1:'+server.address().port+'/';
+    const [playlist,init,segment]=await Promise.all([
+      fetch(base+'index.m3u8'),
+      fetch(base+'init.mp4',{headers:{Range:'bytes=0-3'}}),
+      fetch(base+'seg_00000.m4s',{headers:{Range:'bytes=4-7'}})
+    ]);
+    assert.equal(playlist.status,200);
+    assert.match(await playlist.text(),/#EXT-X-MAP/);
+    assert.equal(init.status,206);
+    assert.equal(init.headers.get('content-range'),'bytes 0-3/12');
+    assert.equal(await init.text(),'AAAA');
+    assert.equal(segment.status,206);
+    assert.equal(segment.headers.get('content-range'),'bytes 4-7/16');
+    assert.equal(await segment.text(),'4567');
+    assert.equal(launches,1,'only one ffmpeg process starts');
+    const full=await fetch(base+'seg_00000.m4s');
+    assert.equal(full.status,200);
+    assert.equal(await full.text(),'0123456789abcdef');
+    const bad=await fetch(base+'seg_00000.m4s',{
+      headers:{Range:'bytes=1000-'}
+    });
+    assert.equal(bad.status,416);
+  }finally{
+    remux.close();
+    await new Promise(resolve=>server.close(resolve));
   }
 });
