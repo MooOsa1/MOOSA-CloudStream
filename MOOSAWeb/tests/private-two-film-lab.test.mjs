@@ -21,7 +21,8 @@ try{
   });
   await test('Unauthorized visitor cannot load site, search, resolve or stream',async()=>{
     for(const pathname of ['/', '/api/config','/api/search?q=Metropolis',
-      '/api/resolve?media=movie&id=19','/api/media/'+('A'.repeat(43))]){
+      '/api/resolve?media=movie&id=19','/api/media/'+('A'.repeat(43)),
+      '/api/modern-source-audit?title=Sinners&year=2025&slot=0']){
       const r=await fetch(base+pathname);
       assert.equal(r.status,401,pathname);
       assert.match(r.headers.get('www-authenticate')||'',/Basic/);
@@ -58,6 +59,24 @@ try{
     assert.equal(protectedMedia.status,404,
       'Cookie-authenticated media must reach gateway routing, not 401');
 
+  });
+  await test('Modern source inspector is private and rejects invalid titles, years and slots without fetching media',async()=>{
+    const invalid=[
+      '/api/modern-source-audit',
+      '/api/modern-source-audit?title=Sinners&year=2025&slot=3',
+      '/api/modern-source-audit?title=Sinners&year=2027&slot=0',
+      '/api/modern-source-audit?title=Sinners&year=2025&slot=99',
+      '/api/modern-source-audit?title=Sinners&year=2025&slot=0&slot=2',
+      '/api/modern-source-audit?title=https%3A%2F%2Fexample.com%2Ffoo&year=2025&slot=0',
+      '/api/modern-source-audit?title=A&year=2025&slot=0'
+    ];
+    for(const route of invalid){
+      const res=await fetch(base+route,{headers:auth});
+      assert.equal(res.status,400,route);
+    }
+    const page=await fetch(base+'/source-discovery.html',{headers:auth});
+    assert.equal(page.status,200);
+    assert.match(await page.text(),/modern-source-audit\\.js/);
   });
   await test('Exact IMDb is present in each private movie details route',async()=>{
     for(const [id,imdb] of [[19,'tt0017136'],[832,'tt0022100'],
