@@ -47,3 +47,15 @@ jobs:
           ./AIOStreamsHost/node_modules/.bin/playwright install chromium
       - name: Open real AIOStreams page and load MOOSA template in Chromium
         run: node AIOStreamsHost/import-ui-smoke.cjs
+  ephemeral-addon-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check the isolated backend test
+        run: node --check AIOStreamsHost/end-to-end-addon.mjs
+      - name: Create disposable addon, query real aggregator, then delete it
+        run: node AIOStreamsHost/end-to-end-addon.mjs
