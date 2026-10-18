@@ -57,6 +57,23 @@ function inspectLandingHtml(html,host){
   return {host,status:'page_accessible',downloadButtons,
     hubdriveButtons,serverButtons};
 }
+function trustedDownloadHref(markup,currentUrl){
+  // Mirror the HubCloud extractor's #download selector, but never follow
+  // another host, protocol, port, fragment, or authentication field.
+  for(const m of String(markup).matchAll(/<a\b[^>]{0,1800}>/gi)){
+    const tag=m[0];
+    if(!/\bid\s*=\s*(["'])download\1/i.test(tag))continue;
+    const href=tag.match(/\bhref\s*=\s*(["'])([^"'<>]{1,850})\1/i)?.[2];
+    if(!href)continue;
+    let target;
+    try{target=new URL(href,currentUrl);}catch{continue;}
+    if(target.protocol==='https:'&&target.hostname==='hubcloud.ist'&&
+       !target.username&&!target.password&&!target.port&&!target.hash&&
+       target.href!==currentUrl&&target.href.length<1600)
+      return target.href;
+  }
+  return null;
+}
 async function inspectLanding(link,fetchImpl,timeoutMs){
   let u;
   try{u=new URL(link);}catch{return null;}
@@ -72,7 +89,28 @@ async function inspectLanding(link,fetchImpl,timeoutMs){
       return {host:u.hostname,status:'redirect_not_followed'};
     }
     const markup=await boundedText(r);
-    return inspectLandingHtml(markup,u.hostname);
+    const summary=inspectLandingHtml(markup,u.hostname);
+    const nextPage=u.hostname==='hubcloud.ist'?
+      trustedDownloadHref(markup,u.href):null;
+    if(!nextPage)return summary;
+    try{
+      const detail=await fetchImpl(nextPage,{
+        redirect:'manual',headers:{Accept:'text/html'},
+        signal:AbortSignal.timeout(Math.min(timeoutMs,6000))
+      });
+      if([301,302,303,307,308].includes(detail.status)){
+        await detail.body?.cancel?.().catch(()=>{});
+        return {...summary,nextPageStatus:'redirect_not_followed'};
+      }
+      const html=await boundedText(detail);
+      const inspected=inspectLandingHtml(html,u.hostname);
+      return {...summary,nextPageStatus:'page_accessible',
+        finalServerButtons:inspected.serverButtons};
+    }catch(e){
+      const reason=String(e?.message||'');
+      return {...summary,nextPageStatus:/^http_[0-9]{3}$/.test(reason)?
+        reason:'request_unavailable'};
+    }
   }catch(e){
     const reason=String(e?.message||'');
     const state=/^http_[0-9]{3}$/.test(reason)?reason:
