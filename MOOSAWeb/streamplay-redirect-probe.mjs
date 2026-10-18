@@ -124,6 +124,70 @@ function approvedGamerxytHref(markup,current){
   }
   return null;
 }
+function trustedPixelHubcloud(markup,current){
+  const result=[];
+  for(const match of String(markup||'').matchAll(/<a\b[^>]{0,1800}>/gi)){
+    const tag=match[0];
+    if(!/\bclass\s*=\s*["'][^"']*\bbtn\b/i.test(tag))continue;
+    const href=tag.match(/\bhref\s*=\s*(["'])([^"'<>]{1,850})\1/i)?.[2];
+    if(!href)continue;
+    let target;
+    try{target=new URL(href,current);}catch{continue;}
+    if(target.protocol!=='https:'||target.hostname!=='pixel.hubcloud.ist'||
+       target.port||target.username||target.password||target.hash||
+       target.href.length>1600||result.includes(target.href))continue;
+    result.push(target.href);
+    if(result.length>=1)break;
+  }
+  return result;
+}
+async function inspectPixelHubcloud(url,fetchImpl,timeoutMs){
+  // Range bytes only, and at most 16 bytes read. No redirects, no stream
+  // promotion, no full video download, no URL or signed token in output.
+  let response;
+  try{
+    response=await fetchImpl(url,{
+      method:'GET',redirect:'manual',
+      headers:{Accept:'video/mp4,application/octet-stream',
+        Range:'bytes=0-4095'},
+      signal:AbortSignal.timeout(Math.min(timeoutMs,6000))
+    });
+    if([301,302,303,307,308].includes(response.status)){
+      let redirectHost=null;
+      try{
+        const u=new URL(response.headers.get('location')||'',url);
+        if(u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&!u.hash)
+          redirectHost=u.hostname.toLowerCase();
+      }catch{}
+      return {status:'redirect_not_followed',redirectHost};
+    }
+    if(response.status===429)return {status:'rate_limited'};
+    if(response.status!==206)return {status:'http_'+response.status};
+    const type=String(response.headers.get('content-type')||'').toLowerCase();
+    if(!/(?:video\/mp4|application\/octet-stream)/.test(type))
+      return {status:'not_video_mime'};
+    if(!response.headers.get('content-range')?.startsWith('bytes 0-'))
+      return {status:'missing_content_range'};
+    const reader=response.body?.getReader();
+    if(!reader)return {status:'empty_body'};
+    let bytes=Buffer.alloc(0);
+    try{
+      while(bytes.length<16){
+        const part=await reader.read();
+        if(part.done)break;
+        bytes=Buffer.concat([bytes,Buffer.from(part.value).subarray(0,16-bytes.length)]);
+      }
+    }finally{await reader.cancel().catch(()=>{});}
+    return {status:bytes.length>=12 &&
+      ['ftyp','styp'].includes(bytes.subarray(4,8).toString('ascii'))?
+      'mp4_bytes_verified':'wrong_media_bytes'};
+  }catch(e){
+    return {status:e?.name==='TimeoutError'?'timeout':'request_unavailable'};
+  }finally{
+    if(response?.body&&!response.body.locked)
+      await response.body.cancel().catch(()=>{});
+  }
+}
 async function inspectGamerxyt(url,fetchImpl,timeoutMs){
   const target=new URL(url);
   if(target.protocol!=='https:'||target.hostname!=='gamerxyt.com'||
@@ -145,10 +209,14 @@ async function inspectGamerxyt(url,fetchImpl,timeoutMs){
     }
     const content=await boundedText(response);
     const metadata=inspectLandingHtml(content,'gamerxyt.com');
+    const pixel=trustedPixelHubcloud(content,target.href);
+    const pixelAudit=pixel.length?
+      await inspectPixelHubcloud(pixel[0],fetchImpl,timeoutMs):null;
     return {
       status:'page_accessible',serverButtons:metadata.serverButtons,
       buttonHosts:metadata.buttonHosts,
-      downloadButtons:metadata.downloadButtons
+      downloadButtons:metadata.downloadButtons,
+      ...(pixelAudit?{pixelAudit}:{})
     };
   }catch(e){
     const reason=String(e?.message||'');
