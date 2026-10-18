@@ -808,8 +808,10 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
           ...film,timeoutMs:6500,
           // One current blockbuster gets full limited server-option audit.
           // Other titles only check indexed availability to avoid rate spikes.
-          diagnoseRedirects:film.title==='Sinners',
-          diagnoseExtraRoutes:film.title==='Sinners'
+          diagnoseRedirects:film.title==='Sinners'||film.title==='Dune Part Two',
+          // Previous Sinners slots 4/5 led to the same MKV host as 0/1.
+          // Skip those duplicate probes rather than increasing provider traffic.
+          diagnoseExtraRoutes:false
         }).then(found=>console.log('MOOSA_MODERN_MOVIE_SOURCE_COVERAGE '+
           JSON.stringify({title:film.title,year:film.year,
             state:found.state,exactPosts:found.exactMoviePosts,
