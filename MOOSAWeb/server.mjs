@@ -290,24 +290,37 @@ async function handle(req,res,mediaGateway=null) {
       return json(res,200,{
         title,year:Number(year),
         sources:[
-          {name:'BingeBang',status:'requires_provider_session',
-            candidateCount:0,verifiedPlayable:false,
-            explanation:'Player-issued short-lived access pass; no standalone verified browser stream yet.'},
-          {name:'HubCloud',status:'requires_upstream_page',
-            candidateCount:0,verifiedPlayable:false,
-            explanation:'Terminal link resolver, not an independent movie catalog.'},
-          {name:'Vidy',status:'requires_player_source_details',
-            instances:['Miami','Boise'],
-            candidateCount:0,verifiedPlayable:false,
-            explanation:'Vidy Miami/Boise appeared in the BingeBang player. Their actual stream endpoints are not verified; these may be BingeBang-hosted alternatives rather than a separate catalog.'},
+          {name:'BingeBang',status:'not_integrated',
+            searchExecuted:false,candidateCount:null,verifiedPlayable:false,
+            explanation:'Not connected to an approved search/playback API. No search was performed.'},
+          {name:'HubCloud',status:'needs_upstream_link',
+            searchExecuted:false,candidateCount:null,verifiedPlayable:false,
+            explanation:'A link resolver, not a searchable movie catalog. Needs a trusted upstream movie page.'},
+          {name:'Vidy',status:'not_integrated',
+            instances:['Miami','Boise'],searchExecuted:false,
+            candidateCount:null,verifiedPlayable:false,
+            explanation:'Only server labels seen inside BingeBang. No independent search or playable stream has been verified.'},
           {name:'MovieBox',status:movieBox.state,
-            candidateCount:movieBox.sourceVariants,
+            searchExecuted:['no_exact_title','candidates_found',
+              'no_compatible_candidates','provider_access_denied'].includes(movieBox.state),
+            candidateCount:['no_exact_title','candidates_found',
+              'no_compatible_candidates','provider_access_denied'].includes(movieBox.state)?
+              movieBox.sourceVariants:null,
+            searchHits:movieBox.searchHits,
+            exactTitleHits:movieBox.exactTitleHits,
+            exactTitleAndYearHits:movieBox.exactTitleAndYearHits,
             qualities:movieBox.offeredQualities,
             formats:movieBox.formats,
             verifiedPlayable:false,
             explanation:movieBox.state==='provider_access_denied'?
-              'MovieBox returned HTTP 403 for both play and download from Render; no stream can be issued.':
-              'Candidate inventory only; exact edition, CDN bytes and playback not yet confirmed.'}
+              'MovieBox identified the film, but its play and download API returned HTTP 403 from Render.':
+              movieBox.state==='no_exact_title'?
+              'MovieBox returned search results but none matched the exact title/year and required ID.':
+              movieBox.state==='guest_session_unavailable'?
+              'MovieBox guest authentication did not complete, so video lookup did not start.':
+              movieBox.state==='provider_unavailable'?
+              'MovieBox could not be contacted; do not interpret this as zero available sources.':
+              'Candidate inventory only, not verified playback.'}
         ]
       });
     }
