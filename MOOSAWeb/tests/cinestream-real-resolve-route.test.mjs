@@ -63,6 +63,7 @@ test('actual Play backend /api/resolve returns exact-title gateway sources and 3
     const data=await res.json();
     assert.equal(data.sources.length,3,'Actual backend did not offer 3 verified choices');
     assert.equal(data.count,3);
+    assert.equal(data.extrasAvailable,true);
     assert.equal(lookupCalls,1);
     assert.equal(protocolCalls,1);
     assert.equal(issueCalls,3);
@@ -72,6 +73,14 @@ test('actual Play backend /api/resolve returns exact-title gateway sources and 3
     assert.ok(data.sources.every(x=>x.gatewayIssued===true&&x.quality===0));
     assert.deepEqual(data.sources.map(x=>x.url),
       ['A','B','C'].map(ch=>SITE+'/api/media/'+ch.repeat(43)));
+    const extras=await native(address+'/api/resolve?media=movie&id=19&phase=extras');
+    assert.equal(extras.status,200);
+    const extraData=await extras.json();
+    assert.ok(Array.isArray(extraData.sources));
+    assert.equal(protocolCalls,1,
+      'Background extra search must never duplicate CineStream source requests');
+    const unsupported=await native(address+'/api/resolve?media=movie&id=19&phase=untrusted');
+    assert.equal(unsupported.status,400);
     // A second unrelated title must never reuse Metropolis sources.
     const res2=await native(address+'/api/resolve?media=movie&id=1234567');
     assert.equal(res2.status,200);
@@ -130,6 +139,7 @@ test('fast vetted Play response does not await unrelated slow provider services'
     assert.equal(resp.status,200);
     const result=await resp.json();
     assert.equal(result.count,3);
+    assert.equal(result.extrasAvailable,true);
     assert.equal(realProbes,3);
     assert.ok(unrelatedCount>0,'The ordinary search should be running concurrently');
     assert.ok(elapsed<1200,'Play must not wait for stalled unrelated providers; ms='+elapsed);
