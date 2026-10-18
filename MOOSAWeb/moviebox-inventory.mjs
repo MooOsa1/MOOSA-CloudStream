@@ -66,16 +66,27 @@ export async function movieBoxInventory({
     const data=unpack(await responseJson(response));
     const items=Array.isArray(data.items)?data.items.slice(0,24):[];
     // Never pick the first search hit when exact identity is not confirmed.
-    // Language annotations are allowed; years must agree where supplied.
-    const matched=items.filter(item=>{
-      const raw=String(item.title||item.name||'').trim();
-      const base=raw.replace(/\s+\[[^\]]{1,35}\]\s*$/,'');
-      const providerYear=Number(item.year||item.releaseYear||item.release_date?.slice?.(0,4)||0);
-      return normalized(base)===want &&
-        (!providerYear||providerYear===release) &&
-        /^[a-zA-Z0-9_-]{1,70}$/.test(String(item.subjectId||item.id||''));
-    }).slice(0,4);
-    if(!matched.length)return status('no_exact_title', {searchHits:items.length});
+    // Strip only a matching terminal release year and language annotations,
+    // not arbitrary similar titles: wrong movies must not cross-map.
+    const identity=(value)=>{
+      let cleaned=String(value||'').trim()
+        .replace(/\s+\[[^\]]{1,35}\]\s*$/,'');
+      cleaned=cleaned.replace(/\s*\((18\d\d|19\d\d|20\d\d|2100)\)\s*$/,(_,year)=>
+        Number(year)===release?'':' ('+year+')');
+      return normalized(cleaned);
+    };
+    const matchingNames=items.filter(item=>identity(item.title||item.name)===identity(title));
+    const yearOf=item=>Number(item.year||item.releaseYear||
+      item.release_date?.slice?.(0,4)||0);
+    const matchingYears=matchingNames.filter(item=>!yearOf(item)||yearOf(item)===release);
+    const matched=matchingYears.filter(item=>
+      /^[a-zA-Z0-9_-]{1,70}$/.test(String(item.subjectId||item.id||''))
+    ).slice(0,4);
+    if(!matched.length)return status('no_exact_title',{
+      searchHits:items.length,
+      exactTitleHits:matchingNames.length,
+      exactTitleAndYearHits:matchingYears.length
+    });
     const all=[];
     const diagnostics={detailPages:0,plays:{ok:0,failed:0,entries:0},downloads:{ok:0,failed:0,entries:0},unsupportedUrls:0,locked:0};
     let subjectRequests=0;
