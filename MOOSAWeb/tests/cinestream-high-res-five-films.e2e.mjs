@@ -91,6 +91,9 @@ function filmVariants(payload){
       if(u.protocol!=='https:'||!HOSTS.has(u.hostname)||u.username||u.password||u.port||
         !u.pathname.toLowerCase().endsWith('.mp4'))return [];
       const quality=Number(String(label).match(/([0-9]{3,4})/)?.[1]||0);
+      // User deferred 4K. Keep every 360/480/720/1080 choice discoverable
+      // without letting larger variants consume the four-slot test limit.
+      if(!Number.isInteger(quality)||quality<144||quality>1080)return [];
       const head=value.headers&&typeof value.headers==='object'?value.headers:{
         Referer:'https://filmboom.top/',Origin:'https://filmboom.top'
       };
