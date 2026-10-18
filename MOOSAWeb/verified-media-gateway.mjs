@@ -11,16 +11,19 @@
 import {randomBytes} from 'node:crypto';
 import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
+import {createMkvHlsRemux} from './mkv-hls-remux.mjs';
+import {inspectMatroskaCodecs} from './matroska-header-classifier.mjs';
 
 const ALLOWED_FORMATS=new Map([
   ['mp4','video/mp4'],['video/mp4','video/mp4'],
   ['webm','video/webm'],['video/webm','video/webm'],
   ['m3u8','application/vnd.apple.mpegurl'],['hls','application/vnd.apple.mpegurl'],
   ['application/vnd.apple.mpegurl','application/vnd.apple.mpegurl'],
-  ['ts','video/mp2t'],['video/mp2t','video/mp2t']
+  ['ts','video/mp2t'],['video/mp2t','video/mp2t'],
+  ['mkv','video/x-matroska'],['video/x-matroska','video/x-matroska']
 ]);
 const HEADER_NAMES=new Set(['referer','origin','user-agent','accept']);
-const PATH=/^\/api\/media\/([a-zA-Z0-9_-]{32,128})$/;
+const PATH=/^\/api\/media\/([a-zA-Z0-9_-]{32,128})(?:\/(index\.m3u8|init\.mp4|seg_[0-9]{5}\.m4s))?$/;
 const PLAYLIST_LIMIT=2*1024*1024;
 
 function mediaUrl(raw,allowedHosts){
@@ -73,7 +76,7 @@ function sniffContentMime(response,format){
   }else{
     // Neither 200 nor a video-looking name is proof of media bytes. The
     // browser/ffmpeg final codec+frame check remains mandatory.
-    if(type && !/^video\/(?:mp4|webm|mp2t)$/.test(type) &&
+    if(type && !/^video\/(?:mp4|webm|mp2t|x-matroska)$/.test(type) &&
       type!=='application/octet-stream')throw Error('Not a video MIME');
   }
 }
@@ -88,6 +91,7 @@ export function createMediaGateway({
   const hosts=new Set(allowedHosts.map(x=>String(x).toLowerCase()));
   if(!hosts.size)throw Error('At least one operator-approved media host required');
   const entries=new Map();
+  const remux=createMkvHlsRemux();
   function add({url,format,headers={},rightsApproved=false,sourceVerified=false},internal=false){
     if(!internal&&(!rightsApproved||!sourceVerified))
       throw Error('Trusted film source verification required');
@@ -104,8 +108,10 @@ export function createMediaGateway({
     entries.set(token,{url:target.href,mime,headers:safeHeaders(headers),
       expiry:clock()+ttlMs});
     return {
-      url:base.origin+'/api/media/'+token,gatewayIssued:true,
-      format:mime==='application/vnd.apple.mpegurl'?'m3u8':
+      url:base.origin+'/api/media/'+token+
+        (mime==='video/x-matroska'?'/index.m3u8':''),gatewayIssued:true,
+      format:mime==='video/x-matroska'?'m3u8':
+        mime==='application/vnd.apple.mpegurl'?'m3u8':
         mime==='video/mp2t'?'ts':mime
     };
   }
@@ -119,6 +125,8 @@ export function createMediaGateway({
       return {source:null,reason:'operator_approval_required'};
     const kind=ALLOWED_FORMATS.get(String(input?.format||'').toLowerCase());
     if(!kind)return {source:null,reason:'unsupported_media_type'};
+    if(kind==='video/x-matroska'&&!remux.isAvailable())
+      return {source:null,reason:'ffmpeg_remux_unavailable'};
     let target;
     try{target=mediaUrl(input.url,hosts);}
     catch{return {source:null,reason:'not_on_operator_allowlist'};}
@@ -150,7 +158,8 @@ export function createMediaGateway({
       try{
         response=await fetchImpl(remote.href,{
           method:'GET',redirect:'error',
-          headers:{...reqHeaders,...(playlist?{}:{range:'bytes=0-4095'})},
+          headers:{...reqHeaders,...(playlist?{}:{range:format==='video/x-matroska'? 
+            'bytes=0-65535':'bytes=0-4095'})},
           signal:AbortSignal.timeout(10000)
         });
         if(![200,206].includes(response.status))
@@ -173,7 +182,14 @@ export function createMediaGateway({
           if(!extension)return 'unrecognized_hls_segment';
           return verify(child.href,ALLOWED_FORMATS.get(extension),depth+1);
         }
-        const bytes=await prefix(response);
+        const bytes=await prefix(response,format==='video/x-matroska'?65536:4096);
+        if(format==='video/x-matroska'){
+          const track=inspectMatroskaCodecs(bytes);
+          if(!track.codecMetadataPresent)return 'mkv_codec_not_detected';
+          if(!track.codecIds.includes('V_MPEGH/ISO/HEVC')||
+             !track.codecIds.includes('A_EAC3'))return 'mkv_codec_not_supported';
+          return 'media_bytes_verified';
+        }
         if(format==='video/mp4'){
           const box=bytes.subarray(4,8).toString('latin1');
           return bytes.length>=12&&['ftyp','styp','moof'].includes(box)
@@ -238,6 +254,11 @@ export function createMediaGateway({
     if(requestUrl.search||requestUrl.hash)return respond(res,400);
     const item=find(match[1]);
     if(!item)return respond(res,404,'Expired or invalid media token');
+    if(item.mime==='video/x-matroska'){
+      if(!match[2])return respond(res,404,'Use the HLS manifest capability');
+      return remux.handle({token:match[1],file:match[2],url:item.url,req,res});
+    }
+    if(match[2])return respond(res,404);
     const headers={...item.headers};
     const range=req.headers.range;
     if(range){
