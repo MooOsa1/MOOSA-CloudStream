@@ -1,0 +1,140 @@
+/**
+ * Live MKV -> HLS/fMP4 remux for a media-gateway-approved exact film.
+ * Stream copy only (HEVC/E-AC-3). NEVER transcodes, bypasses access controls,
+ * accepts visitor URLs, or logs source paths. Private gateway tokens only.
+ *
+ * HLS is a sliding live window, not VOD seeking. A full-film seekable version
+ * requires a separate per-timestamp segment service and upstream permission.
+ */
+import {spawn,spawnSync} from 'node:child_process';
+import {createReadStream} from 'node:fs';
+import {mkdtemp,readFile,stat,rm} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {randomBytes} from 'node:crypto';
+
+const FILE=/^(?:index\.m3u8|init\.mp4|seg_[0-9]{5}\.m4s)$/;
+const TYPES={'.m3u8':'application/vnd.apple.mpegurl',
+  '.mp4':'video/mp4','.m4s':'video/iso.segment'};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+function send(res,code,message){
+  if(res.headersSent){res.destroy();return;}
+  res.writeHead(code,{'Content-Type':'text/plain; charset=utf-8',
+    'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+  res.end(message);
+}
+export function remuxCli(input,outputDir,{binary='ffmpeg'}={}){
+  const parsed=new URL(input);
+  if(parsed.protocol!=='https:'||parsed.username||parsed.password||
+     parsed.port||parsed.hash||input.length>4000)throw Error('Invalid trusted HTTPS source');
+  if(!path.isAbsolute(outputDir))throw Error('Invalid output directory');
+  const args=[
+    '-nostdin','-hide_banner','-loglevel','error',
+    '-rw_timeout','15000000','-i',parsed.href,
+    '-map','0:v:0','-map','0:a:0?',
+    '-c:v','copy','-tag:v','hvc1','-c:a','copy',
+    '-sn','-dn',
+    '-f','hls','-hls_segment_type','fmp4',
+    '-hls_time','6','-hls_list_size','6',
+    '-hls_flags','delete_segments+temp_file',
+    '-hls_fmp4_init_filename','init.mp4',
+    '-hls_segment_filename',path.join(outputDir,'seg_%05d.m4s'),
+    path.join(outputDir,'index.m3u8')
+  ];
+  return {binary,args};
+}
+export function createMkvHlsRemux({
+  binary=process.env.MOOSA_FFMPEG_BIN||'ffmpeg',
+  spawnImpl=spawn,
+  maxSessions=1,
+  idleMs=90000
+}={}){
+  const sessions=new Map();
+  let available;
+  function isAvailable(){
+    if(available!==undefined)return available;
+    try{
+      const check=spawnSync(binary,['-version'],{
+        timeout:1800,stdio:'ignore'
+      });
+      available=check.status===0;
+    }catch{available=false;}
+    return available;
+  }
+  function cleanup(token){
+    const s=sessions.get(token);
+    if(!s)return;
+    sessions.delete(token);
+    s.process?.kill('SIGTERM');
+    void rm(s.dir,{recursive:true,force:true,maxRetries:1}).catch(()=>{});
+  }
+  const cleanupTimer=setInterval(()=>{
+    const now=Date.now();
+    for(const [id,s] of sessions)
+      if(now-s.touched>idleMs || s.failed)cleanup(id);
+  },15000);
+  cleanupTimer.unref?.();
+  async function launch(token,url){
+    const old=sessions.get(token);
+    if(old)return old;
+    if(sessions.size>=maxSessions || !isAvailable())return null;
+    const dir=await mkdtemp(path.join(os.tmpdir(),'moosa-remux-'));
+    let config;
+    try{config=remuxCli(url,dir,{binary});}
+    catch{await rm(dir,{recursive:true,force:true});return null;}
+    const proc=spawnImpl(config.binary,config.args,{
+      stdio:['ignore','ignore','ignore'],windowsHide:true
+    });
+    const state={dir,process:proc,touched:Date.now(),failed:false};
+    sessions.set(token,state);
+    proc.on('error',()=>{state.failed=true;});
+    proc.on('exit',code=>{
+      // A successful end-of-file is normal for a short clip. An unexpected
+      // nonzero exit before any playlist exists is not.
+      state.exitCode=code;
+      if(code!==0 && code!==null)state.failed=true;
+    });
+    return state;
+  }
+  async function handle({token,file='index.m3u8',url,req,res}){
+    if(req.method!=='GET'&&req.method!=='HEAD')
+      return send(res,405,'Unsupported method');
+    if(!FILE.test(file))return send(res,404,'Unknown HLS segment');
+    if(req.headers.range)return send(res,416,'HLS requires whole segments');
+    const session=await launch(token,url);
+    if(!session)return send(res,503,'Live remux unavailable');
+    session.touched=Date.now();
+    const target=path.join(session.dir,file);
+    // The first playlist and fMP4 init box take time to appear. Segment
+    // polling is bounded so a dead ffmpeg never hangs the browser forever.
+    let info=null;
+    for(let i=0;i<48;i++){
+      if(session.failed)break;
+      try{
+        info=await stat(target);
+        if(info.isFile()&&info.size>0)break;
+        info=null;
+      }catch{}
+      await wait(200);
+    }
+    if(!info)return send(res,503,'Media segment is not ready');
+    if(info.size>72*1024*1024)return send(res,413,'Segment too large');
+    const extension=path.extname(file);
+    const mime=TYPES[extension];
+    const hdr={
+      'Content-Type':mime,
+      'Content-Length':String(info.size),
+      'Cache-Control':'no-store',
+      'X-Content-Type-Options':'nosniff',
+      'Access-Control-Allow-Origin':'*'
+    };
+    res.writeHead(200,hdr);
+    if(req.method==='HEAD'){res.end();return;}
+    createReadStream(target).on('error',()=>res.destroy()).pipe(res);
+  }
+  function close(){
+    clearInterval(cleanupTimer);
+    for(const token of [...sessions.keys()])cleanup(token);
+  }
+  return {isAvailable,handle,close,activeSessions:()=>sessions.size};
+}
