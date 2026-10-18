@@ -27,13 +27,14 @@ try{
       assert.match(r.headers.get('www-authenticate')||'',/Basic/);
     }
   });
-  await test('Only the two real target movie identities are in the private catalog',async()=>{
+  await test('Private movie catalog exposes four independently named title identities',async()=>{
     const result=await fetch(base+'/api/catalog?section=trending_movies',{headers:auth});
     assert.equal(result.status,200);
     const data=await result.json();
     assert.deepEqual(data.results.map(x=>[x.id,x.title]),[
-      [19,'Metropolis'],[832,'M']]);
-    for(const [q,title] of [['Metropolis','Metropolis'],['M 1931','M']]){
+      [19,'Metropolis'],[832,'M'],[961,'The General'],[3085,'His Girl Friday']]);
+    for(const [q,title] of [['Metropolis','Metropolis'],['M 1931','M'],
+      ['The General 1926','The General'],['His Girl Friday','His Girl Friday']]){
       const r=await fetch(base+'/api/search?q='+encodeURIComponent(q),{headers:auth});
       assert.equal(r.status,200);
       assert.deepEqual((await r.json()).results.map(x=>x.title),[title]);
@@ -59,7 +60,8 @@ try{
 
   });
   await test('Exact IMDb is present in each private movie details route',async()=>{
-    for(const [id,imdb] of [[19,'tt0017136'],[832,'tt0022100']]){
+    for(const [id,imdb] of [[19,'tt0017136'],[832,'tt0022100'],
+      [961,'tt0017925'],[3085,'tt0032599']]){
       const res=await fetch(base+'/api/details?media=movie&id='+id,{headers:auth});
       const data=await res.json();
       assert.equal(data.imdb_id,imdb);
