@@ -29,3 +29,38 @@ test('Reject insecure and malformed retry URLs, even if passed by bad provider',
   ],new Set(),()=>'' );
   assert.equal(next.source.url,'https://licensed.example/movie.mp4');
 });
+
+const mediaOrigin='https://moosa-web.onrender.com';
+const capabilityToken=c=>mediaOrigin+'/api/media/'+c.repeat(43);
+test('opaque same-origin media capability automatically falls back from failed 1080p to 720p',()=>{
+  const candidates=[
+    {url:capabilityToken('A'),format:'video/mp4',gatewayIssued:true,quality:0,name:'1080p measured'},
+    {url:capabilityToken('B'),format:'video/mp4',gatewayIssued:true,quality:0,name:'720p measured'},
+    {url:capabilityToken('C'),format:'video/mp4',gatewayIssued:true,quality:0,name:'480p measured'}
+  ];
+  const attempted=new Set([candidates[0].url]);
+  const next=nextPlaybackSource(candidates,attempted,
+    mime=>mime==='video/mp4'?'probably':'',4,mediaOrigin);
+  assert.equal(next?.index,1);
+  attempted.add(next.source.url);
+  assert.equal(nextPlaybackSource(candidates,attempted,
+    mime=>mime==='video/mp4'?'probably':'',4,mediaOrigin)?.index,2);
+  attempted.add(candidates[2].url);
+  assert.equal(nextPlaybackSource(candidates,attempted,()=>'',4,mediaOrigin),null);
+});
+test('opaque source fallback refuses forged, foreign, expired-format and altered tokens',()=>{
+  const valid={url:capabilityToken('V'),format:'video/mp4',gatewayIssued:true};
+  const malicious=[
+    {...valid,url:'https://evil.example/api/media/'+('X'.repeat(43))},
+    {...valid,url:capabilityToken('M')+'?redirect=1'},
+    {...valid,url:capabilityToken('M')+'#secret'},
+    {...valid,format:'text/html'},
+    {...valid,gatewayIssued:false},
+    {...valid,url:mediaOrigin+'/api/media/short'}
+  ];
+  assert.equal(nextPlaybackSource(malicious,new Set(),()=>'',4,mediaOrigin),null);
+  assert.equal(nextPlaybackSource([...malicious,valid],new Set(),()=>'',4,mediaOrigin)?.source.url,
+    valid.url);
+  assert.equal(nextPlaybackSource([valid],new Set(),()=>'',4,'https://not-moosa.example'),null);
+  assert.equal(nextPlaybackSource([valid],new Set(),()=>'',4),null);
+});

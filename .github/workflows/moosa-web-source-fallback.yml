@@ -5,6 +5,9 @@ on:
       - 'MOOSAWeb/public/player.js'
       - 'MOOSAWeb/public/playback-fallback.js'
       - 'MOOSAWeb/tests/player-fallback.e2e.mjs'
+      - 'MOOSAWeb/tests/player-stall-watchdog.e2e.mjs'
+      - 'MOOSAWeb/public/resume-position-policy.js'
+      - 'MOOSAWeb/tests/resume-position-policy.test.mjs'
       - '.github/workflows/moosa-web-source-fallback.yml'
   push:
     branches: [main]
@@ -12,6 +15,9 @@ on:
       - 'MOOSAWeb/public/player.js'
       - 'MOOSAWeb/public/playback-fallback.js'
       - 'MOOSAWeb/tests/player-fallback.e2e.mjs'
+      - 'MOOSAWeb/tests/player-stall-watchdog.e2e.mjs'
+      - 'MOOSAWeb/public/resume-position-policy.js'
+      - 'MOOSAWeb/tests/resume-position-policy.test.mjs'
       - '.github/workflows/moosa-web-source-fallback.yml'
   workflow_dispatch:
 permissions:
@@ -31,3 +37,4 @@ jobs:
       - run: npm install --no-save --no-package-lock playwright@1.56.1
       - run: npx playwright install --with-deps chromium
       - run: node tests/player-fallback.e2e.mjs
+      - run: node tests/player-stall-watchdog.e2e.mjs
