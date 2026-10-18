@@ -33,7 +33,11 @@ test('server only issues capabilities for operator-verified HTTPS allowlisted ho
   assert.throws(()=>g.issue({url:'https://user:pass@'+host+'/film.mp4',
     format:'mp4',rightsApproved:true,sourceVerified:true}),/allowlist/);
   assert.throws(()=>g.issue({url:'https://'+host+'/film.mkv',format:'mkv',
-    rightsApproved:true,sourceVerified:true}),/format/);
+    rightsApproved:false,sourceVerified:true}),/verification/);
+  const mkv=g.issue({url:'https://'+host+'/film.mkv',format:'mkv',
+    rightsApproved:true,sourceVerified:true});
+  assert.match(mkv.url,/^https:\/\/moosa-web\.onrender\.com\/api\/media\/[A-Za-z0-9_-]{40,}\/index\.m3u8$/);
+  assert.equal(mkv.format,'m3u8');
   const stream=issue(g);
   assert.match(stream.url,/^https:\/\/moosa-web\.onrender\.com\/api\/media\/[a-zA-Z0-9_-]{40,}$/);
   assert.equal(stream.format,'video/mp4');
