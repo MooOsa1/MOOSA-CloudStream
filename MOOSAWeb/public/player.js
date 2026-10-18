@@ -358,7 +358,7 @@ function tryFallbackSource(){
   if(!selectedSourceUrl || fallbackAttempts>=3 ||
       $('#player-panel').classList.contains('hidden'))return false;
   const next=nextPlaybackSource(activeSources,attemptedSourceUrls,
-    mime=>video.canPlayType(mime),4);
+    mime=>video.canPlayType(mime),4,location.origin);
   if(!next)return false;
   fallbackAttempts++;
   const picker=$('#player-source');
