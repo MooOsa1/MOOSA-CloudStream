@@ -219,6 +219,16 @@ try{
         droppedFrames:video.getVideoPlaybackQuality?.().droppedVideoFrames||0,
         error:video.error?.code||null
       }));
+      phase='measured_quality_selector';
+      const measuredUI=await page.locator('#player-quality').evaluate(select=>({
+        label:select.selectedOptions[0]?.textContent||'',
+        disabled:select.disabled
+      }));
+      assert.equal(measuredUI.label,
+        'Actual resolution: '+actual.width+'×'+actual.height,
+        'Quality menu must show decoded pixel dimensions, not advertised label');
+      assert.equal(measuredUI.disabled,true,
+        'Fixed MP4 source cannot offer artificial adaptive quality selection');
       const durationPlausible=actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration;
       const activeClaim=chainOnly?540:(failoverOnly?720:target.quality);
@@ -230,6 +240,7 @@ try{
         claimedQualityLabel:activeClaim,
         measuredVideo:actual,
         qualityLabelMatchesActualPixels:qualityClaimMatches,
+        displayedMeasuredResolution:measuredUI.label,
         plausibleRequestedMovieRuntime:durationPlausible,
         sameOriginGateway:true,
         rangeRequestCount,approxReadBytes:rangeTotalBytes,
