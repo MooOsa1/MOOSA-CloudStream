@@ -75,6 +75,11 @@ try{
     let page;let phase='start';
     let resolveCount=0,extraStarted=0,outageCount=0,firstToken=null;
     let issuedCount=0,selectOptions=0;
+    // Third backend-verified server is delivered deliberately late through
+    // the extras response, after a real movie has already begun decoding.
+    let heldVerifiedSource=null,heldMediaToken=null;
+    let extraReleased=false,extraBefore=null,extraRequests=0;
+    let heldVideoRequests=0;
     let clickStarted=0,firstFrameMs=0;
     try{
       phase='new_page';
@@ -85,7 +90,29 @@ try{
       await page.route(SITE+'/**',async route=>{
         const parsed=new URL(route.request().url());
         if(parsed.pathname==='/api/resolve' &&
-           parsed.searchParams.get('phase')==='extras')extraStarted++;
+           parsed.searchParams.get('phase')==='extras'){
+          extraStarted++;
+          assert.ok(heldVerifiedSource,
+            'Backend must first verify the late server for the same film');
+          // Wait for actual fallback playback, not an artificial timer.
+          await page.waitForFunction(()=>{
+            const v=document.querySelector('#video');
+            const q=document.querySelector('#player-source');
+            return v&&q?.value==='1'&&v.currentTime>1.5&&
+              !v.paused&&!v.error&&v.videoWidth>0&&
+              (v.getVideoPlaybackQuality?.().totalVideoFrames||0)>5;
+          },null,{timeout:90000});
+          extraBefore=await page.evaluate(()=>{
+            const v=document.querySelector('#video');
+            return {source:v.currentSrc,time:v.currentTime,
+              decoded:v.getVideoPlaybackQuality?.().totalVideoFrames||0};
+          });
+          await route.fulfill({status:200,contentType:'application/json',
+            body:JSON.stringify({sources:[heldVerifiedSource],
+              count:1,providerMode:'server',backgroundTest:true})});
+          extraReleased=true;
+          return;
+        }
         if(parsed.pathname==='/api/catalog'){
           await route.fulfill({status:200,contentType:'application/json',
             body:JSON.stringify({page:1,total_pages:1,results:[]})});
@@ -98,6 +125,8 @@ try{
         }
         const headers={};
         if(parsed.pathname.startsWith('/api/media/')){
+          if(heldMediaToken&&parsed.pathname===heldMediaToken)
+            heldVideoRequests++;
           if(firstToken && parsed.pathname===firstToken){
             outageCount++;
             await route.fulfill({status:502,contentType:'text/plain',
@@ -123,7 +152,7 @@ try{
           const value=upstream.headers.get(header);
           if(value)forwarded[header]=value;
         }
-        const body=Buffer.from(await upstream.arrayBuffer());
+        let body=Buffer.from(await upstream.arrayBuffer());
         if(parsed.pathname==='/api/resolve' &&
            parsed.searchParams.get('phase')!=='extras'){
           resolveCount++;
@@ -144,7 +173,16 @@ try{
             x.originalMovieYear===film.year &&
             /^https:\/\/moosa-web\.onrender\.com\/api\/media\/[a-zA-Z0-9_-]{32,128}$/.test(x.url)
           ),'Backend returned an unrelated or untrusted movie source');
+          assert.ok(sources.length>=3,
+            'Need three independently verified server capabilities for late delivery');
+          heldVerifiedSource=sources[2];
+          heldMediaToken=new URL(heldVerifiedSource.url).pathname;
           firstToken=new URL(sources[0].url).pathname;
+          const immediate={...data,sources:sources.slice(0,2),count:2,
+            extrasAvailable:true};
+          body=Buffer.from(JSON.stringify(immediate));
+          forwarded['content-type']='application/json';
+          forwarded['content-length']=String(body.length);
         }
         await route.fulfill({status:upstream.status,headers:forwarded,body});
       });
@@ -204,7 +242,32 @@ try{
         'Real UI Play to decoded fallback was not bounded');
       assert.ok(extraStarted>=1,
         'Fast CineStream source picker must also start extra provider search');
-      assert.ok(issuedCount>=2&&selectOptions>=3,'Source picker did not list returned sources');
+      assert.ok(issuedCount>=3&&selectOptions>=3,
+        'The same-film backend must verify 3 sources before background delivery');
+      phase='wait_background_append';
+      await page.waitForFunction(()=>document.querySelector('#player-source')?.options.length===4,
+        null,{timeout:30000});
+      assert.ok(extraReleased && extraBefore,
+        'Background provider route must append only after actual video playback');
+      await page.waitForFunction(({previousTime,previousFrames})=>{
+        const v=document.querySelector('#video');
+        return v && v.currentTime>previousTime+0.5 &&
+          (v.getVideoPlaybackQuality?.().totalVideoFrames||0)>previousFrames &&
+          !v.paused&&!v.error;
+      },{previousTime:extraBefore.time,previousFrames:extraBefore.decoded},
+      {timeout:20000});
+      const afterAppend=await page.evaluate(()=>{
+        const v=document.querySelector('#video'),picker=document.querySelector('#player-source');
+        return {url:v.currentSrc,selected:picker.value,
+          options:picker.options.length,currentTime:v.currentTime};
+      });
+      assert.equal(afterAppend.url,extraBefore.source,
+        'New background server must never replace a playing source');
+      assert.equal(afterAppend.selected,'1',
+        'Background append must preserve the active fallback source');
+      assert.equal(afterAppend.options,4);
+      assert.equal(heldVideoRequests,0,
+        'The newly added server must not be requested while video is playing');
       assert.ok(actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration,'Short clip or wrong feature runtime');
       assert.ok(actual.decodedFrames>0);
@@ -217,7 +280,11 @@ try{
         title:film.title,tmdbId:film.id,
         backendResolveRequests:resolveCount,backgroundSearchRequests:extraStarted,
         realCardAndWatchButtonClicked:true,playToFrameMilliseconds:firstFrameMs,
-        offeredServerCount:issuedCount,sourcePickerEntries:selectOptions,
+        offeredServerCount:issuedCount,
+        sourcePickerEntries:afterAppend.options,
+        additionalVerifiedServerAddedAfterPlayback:true,
+        originalPlayingSourcePreserved:true,
+        videoFramesAdvancedAfterBackgroundAppend:true,
         firstServerFailureCount:outageCount,automaticallySelectedSourceIndex:1,
         fallbackActualWidth:actual.width,fallbackActualHeight:actual.height,
         decodedFrames:actual.decodedFrames,featureDurationSeconds:actual.duration,
