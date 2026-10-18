@@ -231,3 +231,66 @@ test('HubDrive follows only its same-host button and discovers destination host 
   assert.equal(result.videoVerified,false);
   assert.doesNotMatch(JSON.stringify(result),/\/film\/secret|\/next|\/player/);
 });
+
+test('HubCloud Inception cross-host gamerxyt landing is checked once without following media',async()=>{
+  const encoded=b64(b64(rot13(b64(JSON.stringify({
+    o:b64('https://hubcloud.ist/drive/verified-title')
+  })))));
+  const seen=[];
+  const actual=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/token">Start</a>',
+    fetchImpl:async(raw,options)=>{
+      const u=new URL(raw);seen.push(u.hostname);
+      assert.equal(options.redirect,'manual');
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/token'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+encoded+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist')
+        return new Response('<a id="download" href="https://gamerxyt.com/source/code">Open</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='gamerxyt.com')
+        return new Response('<a class="btn" href="https://cdn.example/video.mp4">FSL</a>'+
+          '<a class="btn" href="https://hubdrive.pics/entry">HubDrive</a>',{
+          headers:{'content-type':'text/html'}});
+      throw Error('unexpected host');
+    }
+  });
+  assert.deepEqual(seen,[
+    'greenmotors.club','greenmotors.cc','hubcloud.ist','gamerxyt.com'
+  ]);
+  assert.equal(actual.landings[0].nextPageStatus,'cross_host_reviewed');
+  assert.equal(actual.landings[0].gatewayPage.status,'page_accessible');
+  assert.equal(actual.landings[0].gatewayPage.serverButtons,2);
+  assert.deepEqual(actual.landings[0].gatewayPage.buttonHosts,
+    ['cdn.example','hubdrive.pics']);
+  assert.equal(actual.videoVerified,false);
+  assert.doesNotMatch(JSON.stringify(actual),/\/source\/|\/video\.mp4|\/entry|verified-title/);
+});
+test('gamerxyt off-host redirect is described, never followed',async()=>{
+  const encoded=b64(b64(rot13(b64(JSON.stringify({o:b64('https://hubcloud.ist/start')})))));
+  const visited=[];
+  const result=await probeStreamPlayRedirects({
+    postHtml:'<a href="https://greenmotors.club/a">Start</a>',
+    fetchImpl:async raw=>{
+      const u=new URL(raw);visited.push(u.hostname);
+      if(u.hostname==='greenmotors.club')
+        return new Response(null,{status:302,headers:{location:'https://greenmotors.cc/a'}});
+      if(u.hostname==='greenmotors.cc')
+        return new Response("<script>s('o','"+encoded+"')</script>",{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='hubcloud.ist')
+        return new Response('<a id="download" href="https://gamerxyt.com/continue">Go</a>',{
+          headers:{'content-type':'text/html'}});
+      if(u.hostname==='gamerxyt.com')
+        return new Response(null,{status:302,headers:{location:'https://external.example/token'}});
+      throw Error('unexpected host');
+    }
+  });
+  assert.deepEqual(visited,['greenmotors.club','greenmotors.cc',
+    'hubcloud.ist','gamerxyt.com']);
+  assert.equal(result.landings[0].gatewayPage.status,'redirect_not_followed');
+  assert.equal(result.landings[0].gatewayPage.nextHost,'external.example');
+  assert.equal(result.videoVerified,false);
+});
