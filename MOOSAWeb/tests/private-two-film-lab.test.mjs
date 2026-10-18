@@ -76,7 +76,7 @@ try{
     }
     const page=await fetch(base+'/source-discovery.html',{headers:auth});
     assert.equal(page.status,200);
-    assert.match(await page.text(),/modern-source-audit\\.js/);
+    assert.match(await page.text(),/modern-source-audit\.js/);
   });
   await test('Exact IMDb is present in each private movie details route',async()=>{
     for(const [id,imdb] of [[19,'tt0017136'],[832,'tt0022100'],
