@@ -34,6 +34,18 @@ test('only operator allowlisted source, dedupe and sort multiple quality labels'
   assert.ok(out.every(x=>x.advertisedQuality<=1080),
     'Do not probe deferred 4K variants');
 });
+test('second Chrome-tested CDN is allowed but other domains remain blocked',()=>{
+  const result=offeredVidlinkVariants({qualities:{
+    '1080':{url:'https://bcdn.hakunaymatata.com/film-1080.mp4',type:'mp4'},
+    '720':{url:'https://hcdn3.hakunaymatata.com/film-720.mp4',type:'mp4'},
+    '480':{url:'https://unapproved.example.net/film-480.mp4',type:'mp4'},
+    '2160':{url:'https://bcdn.hakunaymatata.com/film-4k.mp4',type:'mp4'}
+  }});
+  assert.deepEqual(result.map(x=>x.advertisedQuality),[1080,720]);
+  assert.deepEqual(result.map(x=>new URL(x.url).hostname),
+    ['bcdn.hakunaymatata.com','hcdn3.hakunaymatata.com']);
+});
+
 test('feature flag OFF or unreviewed content issues zero links',async()=>{
   let calls=0;
   const mediaGateway={issueIfBytesVerified:async()=>{
