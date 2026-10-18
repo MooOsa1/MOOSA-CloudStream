@@ -356,6 +356,12 @@ async function handle(req,res,mediaGateway=null) {
       }
     }
     if(url.pathname==='/api/resolve'){
+      // The default response can return verified pilot sources immediately.
+      // A second same-title request asks for ordinary providers in the
+      // background without delaying first video playback.
+      const phase=url.searchParams.get('phase');
+      if(phase!==null&&phase!=='extras')
+        return err(res,400,'Invalid source discovery phase');
       const media=url.searchParams.get('media');
       const id=cleanId(url.searchParams.get('id'));
       const episodeRequested=url.searchParams.has('season')||url.searchParams.has('episode');
@@ -381,16 +387,29 @@ async function handle(req,res,mediaGateway=null) {
         // providers once multiple byte-verified same-title sources are available.
         // If the pilot cannot deliver, continue to await the usual adapters.
         // Keep the public/disabled-pilot behavior unchanged.
+        // Source expansion reuses the normal resolver's per-title in-flight
+        // cache; it never runs unreviewed CineStream protocol requests.
+        if(phase==='extras'){
+          const sources=await resolveWebSources(meta);
+          return json(res,200,{
+            sources,providerMode:'server',count:sources.length,
+            cloudstreamEngineConfigured:!!configuredEngine()
+          });
+        }
         const usualPending=resolveWebSources(meta).catch(()=>[]);
         const [cinestream,multifilm]=await Promise.all([
           findNightFromCineStream({meta,mediaGateway}),
           findVerifiedMultiFilmVidlink({meta,mediaGateway})
         ]);
         const vetted=[...cinestream,...multifilm];
-        const usual=vetted.length>=2?[]:await usualPending;
+        const extrasAvailable=vetted.length>=2;
+        const usual=extrasAvailable?[]:await usualPending;
         const sources=[...vetted,...usual.filter(x=>
           !vetted.some(y=>y.url===x.url))];
-        return json(res,200,{sources,providerMode:'server',count:sources.length,cloudstreamEngineConfigured:!!configuredEngine()});
+        return json(res,200,{
+          sources,providerMode:'server',count:sources.length,extrasAvailable,
+          cloudstreamEngineConfigured:!!configuredEngine()
+        });
       } catch(e) {
         return err(res,e.status||502,e.message==='TMDB_NOT_CONFIGURED'?
           'Configure TMDB for automatic source matching':'Source lookup temporarily unavailable');
