@@ -31,7 +31,8 @@ process.env.CINESTREAM_MULTIFILM_PILOT='1';
 process.env.CINESTREAM_MULTIFILM_RIGHTS_APPROVED='1';
 delete process.env.CINESTREAM_NIGHT_PILOT;
 globalThis.fetch=async(input,init)=>{
-  const url=new URL(typeof input==='string'?input:input.url);
+  const url=new URL(input instanceof URL?input.href:
+    typeof input==='string'?input:input.url);
   if(url.hostname==='api.themoviedb.org'){
     tmdbCount++;
     const film=FILMS.find(x=>url.pathname.endsWith('/movie/'+x.id));
