@@ -5,6 +5,10 @@ const friendlyStatus={
   no_exact_movie_post:'No exact movie post in the upstream catalog',
   index_unavailable:'HDHub4u index unreachable from Render',
   index_http_403:'Upstream index refused request (HTTP 403)',
+  http_403:'Alternative directory also returned HTTP 403',
+  non_html_search:'Alternative directory returned no HTML',
+  no_exact_movie_card:'No exact title/year card found in alternate directory',
+  search_unavailable:'Alternative directory search unavailable',
   provider_access_restricted:'BingeBang blocked access from Render',
   page_no_direct_media:'Movie page loaded, no video file exposed',
   needs_verified_tmdb_id:'TMDB identity not resolved for BingeBang',
@@ -60,6 +64,9 @@ form.addEventListener('submit',async(e)=>{
         if(source.name==='HubCloud'){
           panel.append(make('p','Matching movie posts: '+Number(source.exactMoviePosts||0)));
           panel.append(make('p','HubCloud handoff pages: '+Number(source.hubcloudEntryPages||0)));
+          if(source.alternateStatus)
+            panel.append(make('p','Alternate directory: '+
+              (friendlyStatus[source.alternateStatus]||source.alternateStatus)));
         }
         if(Number.isInteger(source.searchHits))
           panel.append(make('p','MovieBox catalog matches: '+Number(source.searchHits)+
