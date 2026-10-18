@@ -77,13 +77,18 @@ jobs:
           MOOSA_FAILOVER_CHAIN: '1'
         timeout-minutes: 4
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
-      - name: Browser-decode Metropolis Caligari and M after real byte preflight
+      - name: Browser-decode feature-length Metropolis and M from real Vidlink
         env:
           MOOSA_NEW_CINESTREAM: '1'
         timeout-minutes: 5
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
-      - name: Validate midpoint seek and frame advance for three new films
+      - name: Validate midpoint seek and frame advance for two new films
         env:
           MOOSA_NEW_CINESTREAM_SEEK: '1'
         timeout-minutes: 5
+        run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
+      - name: Reject Caligari 440-second clip even though 720p frames decode
+        env:
+          MOOSA_SHORT_CLIP_REJECTION: '1'
+        timeout-minutes: 3
         run: cd MOOSAWeb && node tests/cinestream-high-res-five-films.e2e.mjs
