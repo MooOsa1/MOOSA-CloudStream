@@ -50,6 +50,7 @@ const seekOnly=process.env.MOOSA_SEEK_STRESS==='1';
 const midpointSeek=process.env.MOOSA_MIDPOINT_SEEK==='1';
 const failoverOnly=process.env.MOOSA_FAILOVER_TEST==='1';
 const chainOnly=process.env.MOOSA_FAILOVER_CHAIN==='1';
+const newChainOnly=process.env.MOOSA_NEW_FAILOVER_CHAIN==='1';
 const newOnly=process.env.MOOSA_NEW_CINESTREAM==='1';
 const newSeekOnly=process.env.MOOSA_NEW_CINESTREAM_SEEK==='1';
 const rejectShortOnly=process.env.MOOSA_SHORT_CLIP_REJECTION==='1';
@@ -59,14 +60,14 @@ if(newVariantQuality && ![360,480].includes(newVariantQuality))
 const otherQuality=Number(process.env.MOOSA_OTHER_QUALITY||0);
 if(otherQuality&&![360,480].includes(otherQuality))
   throw Error('Other-quality test must be 360 or 480');
-if([extraOnly,seekOnly,midpointSeek,failoverOnly,chainOnly,newOnly,
+if([extraOnly,seekOnly,midpointSeek,failoverOnly,chainOnly,newChainOnly,newOnly,
   newSeekOnly,rejectShortOnly,Boolean(newVariantQuality),Boolean(fallbackQuality),Boolean(otherQuality)]
   .filter(Boolean).length>1)
   throw Error('Choose only one experimental browser probe mode');
 const otherFilms=otherQuality===360?[FILMS[4]]:
   [...FILMS.slice(2),EXTRAS[1]];
 const filmsToTest=rejectShortOnly?SHORT_CLIPS:
-  ((newOnly||newSeekOnly||newVariantQuality)?NEW_FILMS:
+  ((newOnly||newSeekOnly||newVariantQuality||newChainOnly)?NEW_FILMS:
     ((failoverOnly||chainOnly)?FILMS.slice(0,2):
     (otherQuality?otherFilms:
       (seekOnly||midpointSeek?[...FILMS.slice(0,2),...EXTRAS]:
@@ -142,9 +143,9 @@ try{
       // Simulate a 1080p server dropping out after a successful preflight.
       // This validates the actual automatic retry logic, not a manual pick.
       const fallbackSources=[];
-      if(failoverOnly||chainOnly){
+      if(failoverOnly||chainOnly||newChainOnly){
         phase='verify_same_film_fallback';
-        for(const q of (chainOnly?[720,480]:[720])){
+        for(const q of (newChainOnly?[480,360]:(chainOnly?[720,480]:[720]))){
           const spare=variants.find(x=>x.quality===q);
           assert.ok(spare,'No '+q+'p fallback offered for '+film.title);
           const verified=await gateway.issueIfBytesVerified({
@@ -161,7 +162,7 @@ try{
       const urlToken=new URL(tested.source.url).pathname;
       const fallbackTokens=fallbackSources.map(x=>new URL(x.source.url).pathname);
       const allowedTokens=new Set([urlToken,...fallbackTokens]);
-      const brokenTokens=new Set((chainOnly?[urlToken,fallbackTokens[0]]:
+      const brokenTokens=new Set(((chainOnly||newChainOnly)?[urlToken,fallbackTokens[0]]:
         (failoverOnly?[urlToken]:[])).filter(Boolean));
       let outageCount=0;
       let rangeRequestCount=0;let rangeTotalBytes=0;
@@ -251,7 +252,7 @@ try{
         'Fixed MP4 source cannot offer artificial adaptive quality selection');
       const durationPlausible=actual.duration>=film.minDuration&&
         actual.duration<=film.maxDuration;
-      const activeClaim=chainOnly?540:(failoverOnly?720:target.quality);
+      const activeClaim=newChainOnly?360:(chainOnly?540:(failoverOnly?720:target.quality));
       const qualityClaimMatches=actual.height>=activeClaim-24 &&
         actual.height<=activeClaim+24;
       console.log('MOOSA_HIGH_RES_CINESTREAM_CHROME_PLAYBACK '+JSON.stringify({
@@ -282,17 +283,19 @@ try{
       }
       assert.ok(durationPlausible,film.title+' source likely wrong film by duration');
       assert.ok(actual.decodedFrames>0,'Chrome decoded no video frames');
-      if(failoverOnly||chainOnly){
+      if(failoverOnly||chainOnly||newChainOnly){
         phase='assert_automatic_failover';
         const picked=await page.locator('#player-source').inputValue();
-        const expectedIndex=chainOnly?'2':'1';
+        const expectedIndex=(chainOnly||newChainOnly)?'2':'1';
         assert.equal(picked,expectedIndex,'Player did not select intended fallback');
-        assert.ok(outageCount>=(chainOnly?2:1),'Not all failed variants attempted');
-        assert.equal(actual.height,chainOnly?540:720,'Wrong decoded fallback height');
+        assert.ok(outageCount>=((chainOnly||newChainOnly)?2:1),'Not all failed variants attempted');
+        assert.equal(actual.height,newChainOnly?360:(chainOnly?540:720),
+          'Wrong decoded fallback height');
         console.log('MOOSA_CINESTREAM_AUTOMATIC_FAILOVER_OK '+JSON.stringify({
           film:film.title,year:film.year,
-          failedAdvertised:chainOnly?[1080,720]:[1080],
-          fallbackAdvertised:chainOnly?480:720,
+          failedAdvertised:newChainOnly?[film.preferred,480]:
+            (chainOnly?[1080,720]:[1080]),
+          fallbackAdvertised:newChainOnly?360:(chainOnly?480:720),
           actualVideoWidth:actual.width,
           actualVideoHeight:actual.height,decodedFrames:actual.decodedFrames,
           outageRequests:outageCount,rangeRequestCount,
@@ -341,8 +344,8 @@ try{
   }
   console.log('MOOSA_HIGH_RES_FILMS_PROVEN '+JSON.stringify({
     tested:filmsToTest.length,requestedQualities:filmsToTest.map(f=>({
-      title:f.title,quality:chainOnly?480:(failoverOnly?720:
-        (fallbackQuality||otherQuality||newVariantQuality||f.preferred))})),
+      title:f.title,quality:newChainOnly?360:(chainOnly?480:(failoverOnly?720:
+        (fallbackQuality||otherQuality||newVariantQuality||f.preferred)))})),
     actuallyPlayedWithPlausibleDuration:acceptedFilms,
     browserErrorCount:browserErrors.length,siteProductionUnchanged:true
   }));
