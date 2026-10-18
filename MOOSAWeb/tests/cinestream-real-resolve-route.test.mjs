@@ -114,7 +114,7 @@ test('fast vetted Play response does not await unrelated slow provider services'
       return Response.json({response:{docs:[]}});
     };
     const gateway={issueIfBytesVerified:async({url})=>{
-      const q=url.match(/test-(\\d+)\\.mp4$/)?.[1];
+      const q=url.match(/test-(\d+)\.mp4$/)?.[1];
       if(!['720','480','360'].includes(q))
         return {source:null,reason:'invalid_source'};
       realProbes++;
