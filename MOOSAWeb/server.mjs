@@ -544,9 +544,36 @@ async function probePrivateFilmSources(port){
       });
       result.backendResponsive=response.ok;
       const body=await response.json();
-      result.verifiedSources=Array.isArray(body.sources)?
-        body.sources.filter(x=>x.gatewayIssued===true).length:0;
+      const verified=Array.isArray(body.sources)?
+        body.sources.filter(x=>x.gatewayIssued===true):[];
+      result.verifiedSources=verified.length;
       result.httpStatus=response.status;
+      result.gatewayRanges=[];
+      for(const source of verified.slice(0,3)){
+        // HTTP Range must work on the same server-issued capability the
+        // browser will request. Never include URL, token or query in logs.
+        const requestPath=new URL(source.url).pathname;
+        try{
+          const range=await fetch('http://127.0.0.1:'+port+requestPath,{
+            headers:{Authorization:auth,Range:'bytes=0-8191'},
+            signal:AbortSignal.timeout(17000)
+          });
+          const mime=range.headers.get('content-type')||'';
+          const length=Number(range.headers.get('content-length')||0);
+          const prefix=Buffer.from(await range.arrayBuffer());
+          const looksMp4=prefix.length>=12&&
+            ['ftyp','styp','moof'].includes(prefix.toString('latin1',4,8));
+          result.gatewayRanges.push({
+            httpStatus:range.status,partialContent:range.status===206,
+            contentTypeVideo:/video\\/mp4|octet-stream/i.test(mime),
+            contentRange:!!range.headers.get('content-range'),
+            size:prefix.length,looksMp4
+          });
+          if(length>2_000_000)break;
+        }catch{
+          result.gatewayRanges.push({error:'range_unavailable'});
+        }
+      }
       result.result=result.verifiedSources>0?'verified_capabilities_ready':
         'no_verified_capabilities';
     }catch(e){result.result='network_or_timeout';}
