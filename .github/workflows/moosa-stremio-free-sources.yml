@@ -1,0 +1,32 @@
+name: MOOSA Stremio free-source discovery (no playback claims)
+on:
+  push:
+    branches:
+      - experiment/moosa-hub-aiostreams-20261018
+    paths:
+      - 'AIOStreamsHost/**'
+      - '.github/workflows/moosa-stremio-free-sources.yml'
+  pull_request:
+    paths:
+      - 'AIOStreamsHost/**'
+      - '.github/workflows/moosa-stremio-free-sources.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  addon-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse and check the script
+        run: node --check AIOStreamsHost/source-diagnostics.mjs
+      - name: Source-classification regression tests
+        run: node --test AIOStreamsHost/source-diagnostics.test.mjs
+      - name: Check live addon manifests and source metadata (no video downloaded)
+        run: node AIOStreamsHost/source-diagnostics.mjs
