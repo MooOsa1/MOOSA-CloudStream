@@ -1,0 +1,23 @@
+:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:#101115;color:#eff3f5}
+*{box-sizing:border-box}body{margin:0}main{max-width:1020px;margin:0 auto;padding:22px clamp(12px,3vw,28px) 46px}
+nav{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:20px}
+a{color:#bcf4d8;text-decoration:none}a:hover{text-decoration:underline}.brand{font-size:20px;font-weight:850;letter-spacing:1px}
+.dot{color:#b4dac5}.navlinks{display:flex;gap:18px}.eyebrow{text-transform:uppercase;letter-spacing:1.6px;color:#a1a6b1;font-size:12px}
+h1{font-size:clamp(22px,4vw,35px);margin:10px 0}p{line-height:1.7;color:#b0b7bf;margin:8px 0}
+.panel{background:#1a1c21;border:1px solid #3b414a;border-radius:16px;padding:18px;margin:16px 0;box-shadow:0 8px 32px #0002}
+input,select{background:#282c32;border:1px solid #505965;border-radius:8px;color:white;padding:12px;font:inherit;min-width:0;width:100%}
+input:focus,select:focus,button:focus-visible{outline:2px solid #b7edca;outline-offset:2px}
+button,.button{font:inherit;border:1px solid #7c9c8c;background:#284033;color:#f5fff9;border-radius:9px;padding:12px 17px;cursor:pointer}
+button:hover{background:#3a624c}button[disabled]{cursor:wait;opacity:.6}
+label{display:block;font-size:13px;font-weight:600;margin:0 0 7px;color:#d9dfe3}
+.field{min-width:160px;flex:1}.row{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+.help{font-size:12px;color:#abb1bc}.status{background:#25292f;border:1px solid #454d56;padding:12px;border-radius:8px;line-height:1.55;margin-top:12px;font-size:13px}
+.playbox{aspect-ratio:16/9;background:#040506;border-radius:12px;overflow:hidden;position:relative}
+.playbox video{width:100%;height:100%;object-fit:contain;background:#050506}
+.screenhint{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;color:#aab1b7;text-align:center;padding:20px;background:#161b25a6}
+.bad{color:#ffbba9}.good{color:#b6f5cb}
+.choices{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0}
+.choices button{background:#252a2f;font-size:13px}
+.notice{font-size:12px;color:#aaa;padding:10px 0}.hidden{display:none!important}
+footer{margin-top:22px;font-size:12px;line-height:1.8;color:#929ba5}
+@media(max-width:570px){.row{flex-direction:column;align-items:stretch}.field{width:100%}.panel{padding:12px}.playbox{min-height:190px}}
