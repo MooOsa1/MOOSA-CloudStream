@@ -2046,7 +2046,7 @@ class MOOSAHubProvider : TmdbProvider() {
         } ?: return null
         val loaded = matched.response
 
-        val data = if (!isSeries || loaded is MovieLoadResponse) {
+        val dataCandidate = if (!isSeries || loaded is MovieLoadResponse) {
             (loaded as? MovieLoadResponse)?.dataUrl
         } else if (request.isAnime && loaded is AnimeLoadResponse) {
             nativeAnimeEpisodeData(loaded, request, matched.searchTitle, aliases)
@@ -2283,7 +2283,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 )
             }
             episodeData
-        }?.takeIf { it.isNotBlank() } ?: return null
+        }
+        val data = dataCandidate?.takeIf { it.isNotBlank() } ?: return null
 
         val target = ProviderTarget(
             providerName = api.name,
