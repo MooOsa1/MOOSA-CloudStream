@@ -26,5 +26,7 @@ jobs:
         run: node --test AIOStreamsHost/verify-http-only.test.mjs
       - name: Probe contemporary movies via public HTTP addon endpoints
         run: node AIOStreamsHost/verify-http-only.mjs
+      - name: Install required FFmpeg / FFprobe codecs
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - name: Decode real 2025 movies using direct HTTP media, no torrents
         run: node AIOStreamsHost/verify-hdhub-modern.mjs
