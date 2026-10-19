@@ -37,13 +37,16 @@ async function decodeOne(src,index,movie){
  const idx=Number.isInteger(src.fileIdx)&&src.fileIdx>=0?src.fileIdx:-1;
  const url=ENGINE+'/'+src.infoHash.toLowerCase()+'/'+idx;
  const cap=(movie.imdb==='tt16311594'?10:6)*1024*1024;  // bounded first 10 MiB for F1 audio; 6 MiB for Sinners
- let chunks=[], bytes=0, signature=Buffer.alloc(0), transportStatus=0;
+ let chunks=[], bytes=0, signature=Buffer.alloc(0), transportStatus=0, fileSize=0;
  try {
   const response=await fetch(url,{
     headers:{Range:'bytes=0-'+(cap-1)},
     signal:AbortSignal.timeout(65000)
   });
   transportStatus=response.status;
+  const contentRange=response.headers.get('content-range')||'';
+  const totalMatch=contentRange.match(/\/(\d+)$/);
+  fileSize=totalMatch?Number(totalMatch[1]):0;
   if(response.status!==206){
     await response.body?.cancel();
     return {ok:false,reason:'range_http_'+response.status};
@@ -102,8 +105,36 @@ async function decodeOne(src,index,movie){
     audioDecoded=times.some(x=>Number(x[1])>0);
    }catch{}
   }
+  let middleSeek=false,seekReason='not_run',seekBytes=0;
+  // Once frames and sound are confirmed, check real random access at 30% of
+  // the SAME torrent file. This is a bounded seek/RANGE transport test only:
+  // arbitrary middle bytes are not guaranteed to begin on a video keyframe.
+  if(audioDecoded && Number.isSafeInteger(fileSize) && fileSize>20*1024*1024){
+    const start=Math.floor(fileSize*0.3);
+    try {
+      const seek=await fetch(url,{headers:{Range:'bytes='+start+'-'+(start+65535)},
+        signal:AbortSignal.timeout(45000)});
+      const match=(seek.headers.get('content-range')||'').match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+      if(seek.status!==206 || !match || Number(match[1])!==start){
+        seekReason='unexpected_range_response';
+        await seek.body?.cancel();
+      }else{
+        const reader=seek.body.getReader();
+        try{
+          while(seekBytes<65536){
+            const chunk=await reader.read();
+            if(chunk.done)break;
+            seekBytes+=chunk.value.byteLength;
+          }
+        }finally{await reader.cancel().catch(()=>{});}
+        middleSeek=seekBytes>=65536;
+        seekReason=middleSeek?'verified':'partial_range';
+      }
+    }catch(e){seekReason=e.name==='TimeoutError'?'seek_timeout':'seek_network_error';}
+  }else if(audioDecoded){seekReason='size_unknown';}
   return {ok:true,bytes,status:transportStatus,codec:video.codec_name,
-   pixels:video.width+'x'+video.height,videoFrames:decodedFrames,audioTrack:audio,audioDecoded};
+   pixels:video.width+'x'+video.height,videoFrames:decodedFrames,audioTrack:audio,
+   audioDecoded,middleSeek,seekBytes,seekReason};
  }finally{
   await rm(folder,{force:true,recursive:true}).catch(()=>{});
  }
@@ -139,24 +170,25 @@ async function inspectMovie(base,movie){
  console.log('MOOSA_MODERN_INDEX movie='+movie.imdb+' year='+movie.year+' total='+all.length+
    ' validP2P='+p2p.length+' titleHintMatches='+titleMatched.length+' titleYearMatches='+correctYear.length+
    ' trialCount='+selected.length);
- let sawFrames=false, sawSound=false, succeeded=null;
+ let sawFrames=false, sawSound=false, sawSeek=false;
  for(let i=0;i<selected.length;i++){
   const result=await decodeOne(selected[i],i,movie);
   console.log('MOOSA_MODERN_TRIAL movie='+movie.imdb+' index='+i+
     ' status='+(result.status||'-')+' bytes='+(result.bytes||0)+' reason='+(result.reason||'none')+' diagnostic='+(result.diagnostic||'-')+
     ' videoFrames='+(result.videoFrames||0)+' audioTrack='+(result.audioTrack||false)+' audioDecoded='+(result.audioDecoded||false)+
-    ' pixels='+(result.pixels||'unknown'));
+    ' pixels='+(result.pixels||'unknown')+' seek30percent='+(result.middleSeek||false)+
+   ' seekReason='+(result.seekReason||'none')+' seekBytes='+(result.seekBytes||0));
   if(result.ok){
    sawFrames=true;
    sawSound=!!result.audioDecoded;
-   succeeded=result;
+   sawSeek=!!result.middleSeek;
    if(sawSound)break; // stop once both decoded without excessive fetching
   }
  }
  const ok=sawFrames&&sawSound;
  console.log('MOOSA_MODERN_RESULT movie='+movie.imdb+' year='+movie.year+
-   ' decodedVideo='+sawFrames+' decodedAudio='+sawSound+' fullPass='+ok);
- return {movie:movie.label,ok,video:sawFrames,audio:sawSound};
+   ' decodedVideo='+sawFrames+' decodedAudio='+sawSound+' seek30percent='+sawSeek+' fullPass='+ok);
+ return {movie:movie.label,ok,video:sawFrames,audio:sawSound,seek:sawSeek};
 }
 async function cleanup(){
  if(!account)return;
@@ -191,7 +223,7 @@ async function main(){
   }
   const passes=results.filter(x=>x.ok).length;
   console.log('MOOSA_MODERN_2025_FINAL '+JSON.stringify({tested:results.length,passed:passes,
-    results:results.map(x=>({movie:x.movie,video:!!x.video,audio:!!x.audio,pass:x.ok}))}));
+    results:results.map(x=>({movie:x.movie,video:!!x.video,audio:!!x.audio,seek:!!x.seek,pass:x.ok}))}));
   console.log('NOT_NATIVE_IPHONE_TEST: verifies real decoded video/audio via official Linux Stremio service only.');
   if(passes!==results.length)process.exitCode=1;
  }finally{await cleanup();}
