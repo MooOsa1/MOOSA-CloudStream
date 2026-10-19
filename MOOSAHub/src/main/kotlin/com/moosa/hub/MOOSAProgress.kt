@@ -173,11 +173,16 @@ object MOOSAProgress {
         update(97, "Preparing Arabic subtitles…", token)
     }
 
-    fun linkAvailable(token: Int) {
-        if (token != sessionId.get()) return
-        visibilityPolicy.linkAvailable(activeRequestKey)
+    fun linkAvailable(token: Int, requestKey: String) {
+        // Duplicate loadLinks() calls can overlap. An earlier job may deliver
+        // the first playable link AFTER a newer same-episode lookup starts.
+        // That verified link means video can begin now: hide the newer bar too.
+        // Never let an old episode hide progress for a different episode.
+        if (requestKey != activeRequestKey || token > sessionId.get()) return
+        visibilityPolicy.linkAvailable(requestKey)
         hiddenForPlayback = true
-        mainHandler.post { if (sessionId.get() == token) hide() }
+        val hideSession = sessionId.get()
+        mainHandler.post { if (sessionId.get() == hideSession) hide() }
     }
 
     fun finish(verified: Int, token: Int) {
