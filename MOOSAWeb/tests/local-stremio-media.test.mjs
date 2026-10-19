@@ -77,3 +77,29 @@ test('real local HTTP proxy rewrites master playlist and streams binary segment 
     assert.deepEqual(fetched.map(x=>new URL(x.url).hostname),['127.0.0.1','127.0.0.1']);
   }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+
+test('accepts real Stremio hlsv2 playlists and media while rejecting mismatched streams',()=>{
+  const id=hash+'-'+idx;
+  const original='http://127.0.0.1:11470/'+hash+'/'+idx;
+  const engineMaster='http://127.0.0.1:11470/hlsv2/'+id+'/master.m3u8?mediaURL='+encodeURIComponent(original);
+  const proxied=makeLocalMediaUrl(engineMaster,base);
+  assert.equal(proxied,MEDIA_PREFIX+'/hlsv2/'+id+'/master.m3u8?mediaURL='+encodeURIComponent(original));
+  assert.equal(localMediaPath(MEDIA_PREFIX+'/hlsv2/'+id+'/video0.m3u8'),'/hlsv2/'+id+'/video0.m3u8');
+  assert.equal(localMediaPath(MEDIA_PREFIX+'/hlsv2/'+id+'/audio0/segment12.m4s'),
+    '/hlsv2/'+id+'/audio0/segment12.m4s');
+  assert.equal(localMediaPath(MEDIA_PREFIX+'/hlsv2/'+id+'/video0/init.mp4'),
+    '/hlsv2/'+id+'/video0/init.mp4');
+  const playlist='#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3500000\n'+
+    engineMaster+'\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",URI="audio0.m3u8"\n';
+  const rewritten=rewriteStremioPlaylist(playlist,base);
+  assert.ok(rewritten?.includes(proxied));
+  assert.ok(rewritten?.includes(MEDIA_PREFIX+'/'+hash+'/'+idx+'/audio0.m3u8'));
+  for(const bad of [
+    'http://127.0.0.1:11470/hlsv2/'+id+'/master.m3u8?mediaURL=http://evil.test/private',
+    'http://127.0.0.1:11470/hlsv2/'+id+'/master.m3u8?mediaURL='+encodeURIComponent('http://127.0.0.1:11470/'+hash+'/4'),
+    'http://127.0.0.1:11470/hlsv2/'+id+'/master.m3u8?mediaURL='+encodeURIComponent(original)+'&x=evil',
+    'http://127.0.0.1:11470/hlsv2/'+id+'/destroy',
+    'http://127.0.0.1:11470/hlsv2/'+id+'/master.m3u8?mediaURL='+encodeURIComponent(original)+'&maxAudioChannels=999'
+  ])assert.equal(makeLocalMediaUrl(bad,base),null);
+});
