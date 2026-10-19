@@ -108,3 +108,39 @@ jobs:
       - name: Test installed addon using disposable AIOStreams config and delete it
         shell: powershell
         run: ./AIOStreamsHost/Install-MOOSA-Hub.ps1 -TestOnly -NoOpen
+  modern-sustained-decode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 21
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify FFmpeg dependencies
+        run: |
+          if ! command -v ffprobe || ! command -v ffmpeg; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          fi
+          ffprobe -version | head -n 1
+          ffmpeg -version | head -n 1
+      - name: Validate indexed-media test script
+        run: node --check AIOStreamsHost/modern-2025-engine.mjs
+      - name: Launch official Stremio Docker engine (loopback only)
+        run: |
+          docker run -d --rm --name moosa-stremio-server \
+            -p 127.0.0.1:11470:11470 stremio/server:v4.22.2
+          for i in $(seq 1 40); do
+            if curl -sf -m 3 http://127.0.0.1:11470/settings >/dev/null; then
+              echo "OFFICIAL_STREMIO_ENGINE_READY"
+              break
+            fi
+            sleep 2
+          done
+          curl -sSf -m 5 http://127.0.0.1:11470/settings >/dev/null
+      - name: Decode ten seconds of both audio and video from 2025 films
+        env:
+          MOOSA_CONTINUITY_SECONDS: '10'
+        run: node AIOStreamsHost/modern-2025-engine.mjs
+      - name: Stop ephemeral engine
+        if: always()
+        run: docker rm -f moosa-stremio-server || true
