@@ -18,6 +18,8 @@ import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.text.SimpleDateFormat
@@ -37,23 +39,48 @@ object MOOSACatalog {
 
     private data class CachedHomePage(val body: String, val createdAt: Long)
     private val homePages = ConcurrentHashMap<String, CachedHomePage>()
-    private const val HOME_CACHE_MS = 2 * 60 * 1000L
 
     private suspend fun homePageJson(path: String, params: Map<String, String>): String {
         val cacheKey = path + "?" + params.toSortedMap().entries
             .joinToString("&") { (key, value) -> "$key=$value" }
         val now = System.currentTimeMillis()
-        homePages[cacheKey]?.let { cached ->
-            if (now - cached.createdAt in 0 until HOME_CACHE_MS) return cached.body
-            homePages.remove(cacheKey, cached)
+        val cached = homePages[cacheKey]
+        if (cached != null &&
+            MOOSAHomeLoadPolicy.isFresh(now - cached.createdAt)
+        ) return cached.body
+
+        // TMDB can pause a carousel for many seconds on slow Wi-Fi.
+        // A limited network budget and a short-lived last-good response
+        // keep the home usable without inventing titles or random posters.
+        val fresh = withTimeoutOrNull(MOOSAHomeLoadPolicy.HOME_NETWORK_TIMEOUT_MS) {
+            try {
+                get(path, params)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
         }
-        val body = get(path, params)
-        // Do not keep failed HTTP/invalid JSON results in memory.
-        if (body.trimStart().startsWith("{") && body.contains("\"results\"")) {
-            if (homePages.size >= 36) homePages.clear()
-            homePages[cacheKey] = CachedHomePage(body, now)
+        val valid = fresh != null && fresh.trimStart().startsWith("{") &&
+            fresh.contains("\"results\"")
+        if (valid) {
+            if (homePages.size >= 36) {
+                MOOSACacheRetention.makeRoom(
+                    homePages, 36, now,
+                    MOOSAHomeLoadPolicy.STALE_HOME_CACHE_MS
+                ) { it.createdAt }
+            }
+            homePages[cacheKey] = CachedHomePage(fresh!!, System.currentTimeMillis())
+            return fresh
         }
-        return body
+
+        // Only reuse genuine earlier TMDB responses. Older cached results
+        // cannot grow indefinitely or mask a broken connection for days.
+        if (cached != null &&
+            MOOSAHomeLoadPolicy.mayUseStale(now - cached.createdAt)
+        ) return cached.body
+        if (cached != null) homePages.remove(cacheKey, cached)
+        return "{}"
     }
 
         data class Page(
