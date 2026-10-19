@@ -12,6 +12,7 @@ import {promisify} from 'node:util';
 import {isHttpsMediaCandidate,checkPreset} from './verify-http-only.mjs';
 import {probeMedia} from './probe-media-kind.mjs';
 const exec=promisify(execFile);
+console.log('HDHUB_FFMPEG_CHECK ffprobeExecutable='+(await exec('ffprobe',['-version']).then(()=>true).catch(()=>false)));
 const LIMIT=10*1024*1024;
 const BASE='https://hdhub.thevolecitor.qzz.io';
 const FILMS=[
@@ -78,7 +79,16 @@ async function checkTrack(src,film,i){
     'stream=codec_type,codec_name,width,height','-of','json',pathname],
     {timeout:12000,maxBuffer:500000});
    tracks=JSON.parse(r.stdout).streams||[];
-  }catch{return {pass:false,reason:'ffprobe_failed',bytes:data.buffer.length};}
+  }catch(e){
+    const err=String(e.stderr||'');
+    const category=/Invalid data found/i.test(err)?'invalid_media':
+     /EBML header parsing failed/i.test(err)?'ebml_error':
+     /truncat|end of file|partial file|File ended prematurely/i.test(err)?'truncated':
+     /Protocol not found/i.test(err)?'protocol':
+     e.code==='ENOENT'?'ffprobe_unavailable':
+     /Duration: N\/A/i.test(err)?'no_duration': 'other_decode_error';
+    return {pass:false,reason:'ffprobe_failed',detail:category,bytes:data.buffer.length};
+  }
   const video=tracks.find(s=>s.codec_type==='video'&&s.width>=640&&s.height>=360);
   const audio=tracks.some(s=>s.codec_type==='audio');
   if(!video||!audio)return {pass:false,reason:'missing_video_or_audio',
@@ -117,7 +127,7 @@ for(const film of FILMS){
      console.log('HDHUB_DECODE '+film.label+' trial='+i+
       ' pass='+r.pass+' video='+Boolean(r.video)+' audio='+Boolean(r.audio)+
       ' pixels='+(r.pixels||'-')+' codec='+(r.codec||'-')+
-      ' bytes='+(r.bytes||0)+' reason='+(r.reason||'-'));
+      ' bytes='+(r.bytes||0)+' reason='+(r.reason||'-')+' detail='+(r.detail||'-'));
      if(r.pass){ok=true;break;}
     }catch(e){console.log('HDHUB_DECODE '+film.label+' trial='+i+
      ' fail='+String(e.message).slice(0,45));}
