@@ -9,6 +9,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.withPermit
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
@@ -243,18 +244,22 @@ object MOOSAServerRegistry {
     ) = coroutineScope {
         val keys = snapshot().map { it.key }
         val total = keys.size
-        var done = 0
-
-        for (batch in keys.chunked(concurrency.coerceIn(2, 12))) {
-            batch.map { key ->
-                async {
-                    test(key)
+        if (total == 0) return@coroutineScope
+        // Refill a free slot immediately; a slow server used to hold
+        // an entire chunk of the Server Manager behind its last result.
+        val gate = kotlinx.coroutines.sync.Semaphore(concurrency.coerceIn(2, 12))
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val progressLock = Any()
+        keys.map { key ->
+            async {
+                gate.withPermit { test(key) }
+                val done = completed.incrementAndGet()
+                // UI progress consumers should not receive concurrent events.
+                synchronized(progressLock) {
+                    onProgress?.invoke(done, total)
                 }
-            }.awaitAll()
-
-            done += batch.size
-            onProgress?.invoke(done, total)
-        }
+            }
+        }.awaitAll()
     }
 
     private data class ProbeCheck(
