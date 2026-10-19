@@ -9,3 +9,8 @@ export function localStremioHls(stream){
 export function validMovieId(id){
   return typeof id==='string'&&/^tt[0-9]{7,10}$/.test(id);
 }
+
+export function localStremioProxyHls(stream){
+  const absolute=localStremioHls(stream);
+  return absolute?absolute.replace('http://127.0.0.1:11470','/api/stremio-local/media'):null;
+}
