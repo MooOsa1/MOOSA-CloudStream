@@ -38,6 +38,7 @@ async function serviceStatus(){
     const res=await fetch(localLab?'/api/stremio-local/status':'http://127.0.0.1:11470/settings',{
       cache:'no-store',signal:AbortSignal.timeout(3500)});
     if(!res.ok)throw Error('HTTP '+res.status);
+    if(localLab && !(await res.json()).online)throw Error('local service offline');
     status('#platform-note','Stremio Service detected locally. Ready to test browser playback.','good');
     return true;
   }catch{
