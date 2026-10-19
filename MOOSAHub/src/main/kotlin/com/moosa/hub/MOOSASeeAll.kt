@@ -311,7 +311,9 @@ object MOOSASeeAll {
 
         mainHandler.post {
             installObserver()
-            applyHeaders()
+            // Several home categories register together. Rebuild the
+            // action toolbar only once, instead of one full scan per row.
+            scheduleHeaderRefresh()
         }
     }
 
@@ -355,29 +357,19 @@ object MOOSASeeAll {
     }
 
     private fun collectHeaders(
-        view: View,
+        master: RecyclerView,
         output: MutableList<TextView>
     ) {
-        if (view is TextView) {
-            val entry = try {
-                if (view.id != View.NO_ID) {
-                    view.resources.getResourceEntryName(view.id)
-                } else {
-                    null
-                }
-            } catch (_: Throwable) {
-                null
-            }
-
-            if (entry == "home_child_more_info") {
-                output += view
-            }
-        }
-
-        if (view is ViewGroup) {
-            for (index in 0 until view.childCount) {
-                collectHeaders(view.getChildAt(index), output)
-            }
+        // Earlier this walked EVERY descendant view, including every poster
+        // in every nested horizontal RecyclerView, on each global layout.
+        // Only the attached VERTICAL home rows can contain a section title.
+        val headerId = master.resources.getIdentifier(
+            "home_child_more_info", "id", master.context.packageName
+        )
+        if (headerId == 0) return
+        for (index in 0 until master.childCount) {
+            val row = master.getChildAt(index)
+            row.findViewById<TextView>(headerId)?.let(output::add)
         }
     }
 
