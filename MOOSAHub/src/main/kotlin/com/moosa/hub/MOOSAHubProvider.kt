@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.DubStatus
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.Episode
+import com.lagradost.cloudstream3.AnimeSearchResponse
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.getImdbId
@@ -518,6 +519,7 @@ class MOOSAHubProvider : TmdbProvider() {
     ): Int? = when (result) {
         is MovieSearchResponse -> result.year
         is TvSeriesSearchResponse -> result.year
+        is AnimeSearchResponse -> result.year
         else -> null
     }
 
@@ -915,19 +917,6 @@ class MOOSAHubProvider : TmdbProvider() {
     ): Boolean =
         MOOSAMatchGuard.verifiedIdentity(
             identityClaim(request), loadedEvidence(result, searchYear), aliases
-        )
-
-    private fun candidateIdentityMatches(
-        result: SearchResponse,
-        request: HubPlaybackRequest,
-        aliases: List<String>
-    ): Boolean =
-        MOOSAMatchGuard.titleAndClaimCompatible(
-            identityClaim(request),
-            MOOSAMatchGuard.Evidence(
-                title = result.name, year = resultYear(result)
-            ),
-            aliases
         )
 
     private fun arabicSeasonWord(
