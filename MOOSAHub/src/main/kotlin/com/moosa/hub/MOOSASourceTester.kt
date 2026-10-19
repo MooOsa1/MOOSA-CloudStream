@@ -4,6 +4,8 @@ import com.lagradost.cloudstream3.APIHolder.apis
 import com.lagradost.cloudstream3.APIHolder.allProviders
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.AnimeLoadResponse
+import com.lagradost.cloudstream3.DubStatus
 import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.ProviderType
 import com.lagradost.cloudstream3.SearchResponse
@@ -106,6 +108,14 @@ object MOOSASourceTester {
         value.lowercase().filter { it.isLetterOrDigit() }
 
     private fun testQueries(api: MainAPI): List<String> = when {
+        TvType.Anime in api.supportedTypes ||
+            TvType.AnimeMovie in api.supportedTypes ||
+            TvType.OVA in api.supportedTypes -> listOf(
+            "Naruto",
+            "One Piece",
+            "Attack on Titan",
+            "Demon Slayer"
+        )
         api.lang.equals("ar", ignoreCase = true) -> listOf(
             "بيت الروبي",
             "جعفر العمدة",
@@ -124,13 +134,6 @@ object MOOSASourceTester {
             "The Last of Us",
             "Wednesday",
             "Game of Thrones"
-        )
-        TvType.Anime in api.supportedTypes ||
-            TvType.AnimeMovie in api.supportedTypes -> listOf(
-            "Naruto",
-            "One Piece",
-            "Attack on Titan",
-            "Demon Slayer"
         )
         else -> listOf("Inception", "Avatar")
     }
@@ -208,6 +211,15 @@ object MOOSASourceTester {
         is TvSeriesLoadResponse ->
             loaded.episodes
                 .mapNotNull { it.data?.takeIf(String::isNotBlank) }
+                .distinct()
+                .take(3)
+
+        is AnimeLoadResponse ->
+            listOf(DubStatus.Subbed, DubStatus.None, DubStatus.Dubbed)
+                .flatMap { status ->
+                    loaded.episodes[status].orEmpty()
+                        .mapNotNull { it.data.takeIf(String::isNotBlank) }
+                }
                 .distinct()
                 .take(3)
 
