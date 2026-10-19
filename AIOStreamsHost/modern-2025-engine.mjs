@@ -21,7 +21,8 @@ const MOVIES=[
   { imdb:'tt31193180', label:'Sinners (2025)', title:/\bsinners\b/i, year:'2025' },
   { imdb:'tt16311594', label:'F1: The Movie (2025)', title:/\bf1\b|\bformula.?1\b/i, year:'2025' }
 ];
-const trialCap=5; // automatic source fallback when audio/video fails
+const CONTINUITY_SECONDS=Number(process.env.MOOSA_CONTINUITY_SECONDS||0);
+const trialCap=CONTINUITY_SECONDS>0?3:5; // strict sustained check has a bounded three-source budget
 const configTemplate=JSON.parse(await readFile(new URL('./moosa-hub-template.json',import.meta.url),'utf8'));
 const config={...configTemplate.config, services:[], formatter:{id:'gdrive'},addonName:'MOOSA 2025 movie isolated integration'};
 const password=randomBytes(32).toString('hex');
@@ -36,7 +37,7 @@ async function fetchJSON(url,options={},timeout=40000){
 async function decodeOne(src,index,movie){
  const idx=Number.isInteger(src.fileIdx)&&src.fileIdx>=0?src.fileIdx:-1;
  const url=ENGINE+'/'+src.infoHash.toLowerCase()+'/'+idx;
- const cap=(movie.imdb==='tt16311594'?10:6)*1024*1024;  // bounded first 10 MiB for F1 audio; 6 MiB for Sinners
+ const cap=(CONTINUITY_SECONDS>0?32:(movie.imdb==='tt16311594'?10:6))*1024*1024; // 32 MiB only in optional sustained-playback test
  let chunks=[], bytes=0, signature=Buffer.alloc(0), transportStatus=0, fileSize=0;
  try {
   const response=await fetch(url,{
@@ -105,6 +106,27 @@ async function decodeOne(src,index,movie){
     audioDecoded=times.some(x=>Number(x[1])>0);
    }catch{}
   }
+  let sustainedSeconds=0,sustainedFrames=0;
+  if(audioDecoded && CONTINUITY_SECONDS>0){
+    try {
+      const long=await exec('ffmpeg',[...baseArgs,'-i',file,'-map','0:v:0',
+        '-map','0:a:0','-t',String(CONTINUITY_SECONDS),'-progress','pipe:1',
+        '-f','null','-'],{timeout:70000,maxBuffer:200000});
+      const outputTimes=[...long.stdout.matchAll(/^out_time_(?:us|ms)=([0-9]+)/gm)];
+      const outputFrames=[...long.stdout.matchAll(/^frame=([0-9]+)/gm)];
+      sustainedSeconds=Math.max(0,...outputTimes.map(x=>Number(x[1])/1e6));
+      sustainedFrames=Math.max(0,...outputFrames.map(x=>Number(x[1])));
+    }catch {
+      return {ok:false,reason:'sustained_decode_failed',bytes,status:transportStatus,
+        videoFrames:decodedFrames,audioDecoded,pixels:video.width+'x'+video.height};
+    }
+    if(sustainedSeconds < CONTINUITY_SECONDS*0.90 ||
+       sustainedFrames < Math.floor(CONTINUITY_SECONDS*15)){
+      return {ok:false,reason:'insufficient_sustained_playback',bytes,status:transportStatus,
+        sustainedSeconds,sustainedFrames,videoFrames:decodedFrames,audioDecoded,
+        pixels:video.width+'x'+video.height};
+    }
+  }
   let middleSeek=false,seekReason='not_run',seekBytes=0;
   // Once frames and sound are confirmed, check real random access at 30% of
   // the SAME torrent file. This is a bounded seek/RANGE transport test only:
@@ -134,7 +156,7 @@ async function decodeOne(src,index,movie){
   }else if(audioDecoded){seekReason='size_unknown';}
   return {ok:true,bytes,status:transportStatus,codec:video.codec_name,
    pixels:video.width+'x'+video.height,videoFrames:decodedFrames,audioTrack:audio,
-   audioDecoded,middleSeek,seekBytes,seekReason};
+   audioDecoded,middleSeek,seekBytes,seekReason,sustainedSeconds,sustainedFrames};
  }finally{
   await rm(folder,{force:true,recursive:true}).catch(()=>{});
  }
@@ -177,7 +199,8 @@ async function inspectMovie(base,movie){
     ' status='+(result.status||'-')+' bytes='+(result.bytes||0)+' reason='+(result.reason||'none')+' diagnostic='+(result.diagnostic||'-')+
     ' videoFrames='+(result.videoFrames||0)+' audioTrack='+(result.audioTrack||false)+' audioDecoded='+(result.audioDecoded||false)+
     ' pixels='+(result.pixels||'unknown')+' seek30percent='+(result.middleSeek||false)+
-   ' seekReason='+(result.seekReason||'none')+' seekBytes='+(result.seekBytes||0));
+   ' seekReason='+(result.seekReason||'none')+' seekBytes='+(result.seekBytes||0)+
+   ' decodedContinuousSeconds='+(result.sustainedSeconds||0)+' sustainedFrames='+(result.sustainedFrames||0));
   if(result.ok){
    sawFrames=true;
    sawSound=!!result.audioDecoded;
@@ -222,7 +245,7 @@ async function main(){
     }
   }
   const passes=results.filter(x=>x.ok).length;
-  console.log('MOOSA_MODERN_2025_FINAL '+JSON.stringify({tested:results.length,passed:passes,
+  console.log('MOOSA_MODERN_2025_FINAL '+JSON.stringify({mode:CONTINUITY_SECONDS>0?'sustained-'+CONTINUITY_SECONDS+'s':'startup-and-seek',tested:results.length,passed:passes,
     results:results.map(x=>({movie:x.movie,video:!!x.video,audio:!!x.audio,seek:!!x.seek,pass:x.ok}))}));
   console.log('NOT_NATIVE_IPHONE_TEST: verifies real decoded video/audio via official Linux Stremio service only.');
   if(passes!==results.length)process.exitCode=1;
