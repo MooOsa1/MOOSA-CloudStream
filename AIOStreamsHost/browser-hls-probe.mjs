@@ -7,6 +7,7 @@
 import {readFile} from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
 import {localStremioHls} from '../MOOSAWeb/public/local-stremio-client.js';
+import {parsePrivateAddonManifest,lookupAIOStreams} from '../MOOSAWeb/local-stremio-bridge.mjs';
 const BASE='https://aiostreams-nightly.fortheweak.cloud', ENGINE='http://127.0.0.1:11470';
 const template=JSON.parse(await readFile(new URL('./moosa-hub-template.json',import.meta.url),'utf8'));
 const config={...template.config,services:[],formatter:{id:'gdrive'},addonName:'MOOSA HLS Browser CI Test'};
@@ -21,6 +22,14 @@ try{
   headers:{'Content-Type':'application/json'},body:JSON.stringify({config,password:pw})});
  if(!r.ok||!r.body?.data?.uuid||!r.body?.data?.encryptedPassword)throw Error('AIOStreams disposable user unavailable');
  uuid=r.body.data.uuid;
+ const privateManifest=BASE+'/stremio/'+encodeURIComponent(uuid)+'/'+
+    encodeURIComponent(r.body.data.encryptedPassword)+'/manifest.json';
+ const parsed=parsePrivateAddonManifest(privateManifest);
+ console.log('MOOSA_BROWSER_PRIVATE_URL_ALLOWLIST_REAL='+!!parsed);
+ if(!parsed)throw Error('The real AIOStreams install token is incompatible with the site URL validator');
+ const websiteSources=await lookupAIOStreams({manifestUrl:privateManifest,imdbId:'tt31193180'});
+ console.log('MOOSA_BROWSER_SITE_SOURCE_LOOKUP='+websiteSources.sources.length);
+ if(websiteSources.sources.length===0)throw Error('MOOSA Web cannot retrieve any Sinners 2025 sources');
  const streams=await checkedJson(BASE+'/stremio/'+encodeURIComponent(uuid)+'/'+
   encodeURIComponent(r.body.data.encryptedPassword)+'/stream/movie/tt31193180.json');
  if(!streams.ok||!Array.isArray(streams.body.streams))throw Error('Sinners 2025 source lookup failed');
