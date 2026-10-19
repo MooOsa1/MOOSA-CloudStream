@@ -22,6 +22,9 @@ object MOOSAProgress {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val sessionId =
         java.util.concurrent.atomic.AtomicInteger(0)
+    private val visibilityPolicy = MOOSAProgressVisibilityPolicy()
+
+    @Volatile private var activeRequestKey = ""
 
     @Volatile
     private var lastPercent: Int = 0
@@ -44,18 +47,26 @@ object MOOSAProgress {
         }
     }
 
-    fun start(totalProviders: Int) {
+    @Synchronized
+    fun start(totalProviders: Int, requestKey: String): Int {
         val total =
             totalProviders.coerceAtLeast(1)
 
         val token =
             sessionId.incrementAndGet()
 
-        hiddenForPlayback = false
+        activeRequestKey = requestKey
+        hiddenForPlayback = !visibilityPolicy.begin(requestKey)
+        if (hiddenForPlayback) {
+            // CloudStream may reload links during active playback. This is
+            // NOT a fresh Play press: leave the video unobstructed.
+            mainHandler.post { hide() }
+            return token
+        }
 
         update(
             4,
-            "Checking servers • 0/$total • 0 verified"
+            "Checking servers • 0/$total • 0 verified", token
         )
 
         // Never leave a stale custom progress bar on screen forever,
@@ -68,13 +79,16 @@ object MOOSAProgress {
                 hide()
             }
         }, 120000L)
+        return token
     }
 
     fun providerProgress(
         done: Int,
         total: Int,
-        verified: Int
+        verified: Int,
+        token: Int
     ) {
+        if (token != sessionId.get() || hiddenForPlayback) return
         val safeTotal =
             total.coerceAtLeast(1)
 
@@ -89,7 +103,7 @@ object MOOSAProgress {
 
             update(
                 91,
-                "Servers checked • $verified ready • Finalizing…"
+                "Servers checked • $verified ready • Finalizing…", token
             )
 
             // Subtitle finalization is bounded separately. If Android keeps
@@ -117,30 +131,27 @@ object MOOSAProgress {
 
         update(
             percent,
-            "Checking servers • $checked/$safeTotal • $verified ready"
+            "Checking servers • $checked/$safeTotal • $verified ready", token
         )
     }
 
-    fun serversReady(verified: Int) {
-        update(
-            94,
-            "$verified servers ready"
-        )
+    fun serversReady(verified: Int, token: Int) {
+        update(94, "$verified servers ready", token)
     }
 
-    fun subtitles() {
-        update(
-            97,
-            "Preparing Arabic subtitles…"
-        )
+    fun subtitles(token: Int) {
+        update(97, "Preparing Arabic subtitles…", token)
     }
 
-    fun linkAvailable() {
+    fun linkAvailable(token: Int) {
+        if (token != sessionId.get()) return
+        visibilityPolicy.linkAvailable(activeRequestKey)
         hiddenForPlayback = true
         mainHandler.post { hide() }
     }
 
-    fun finish(verified: Int) {
+    fun finish(verified: Int, token: Int) {
+        if (token != sessionId.get()) return
         sessionId.incrementAndGet()
         lastPercent = 100
         lastText = "Ready • $verified servers"
@@ -166,10 +177,11 @@ object MOOSAProgress {
         }, 350L)
     }
 
-    private fun update(percent: Int, text: String) {
+    private fun update(percent: Int, text: String, token: Int) {
+        if (token != sessionId.get() || hiddenForPlayback) return
         lastPercent = percent.coerceIn(0, 100)
         lastText = text
-        mainHandler.post { render(retries = 10) }
+        mainHandler.post { render(retries = 10, token = token) }
     }
 
     private fun currentActivity(): Activity? {
@@ -184,15 +196,15 @@ object MOOSAProgress {
         }
     }
 
-    private fun render(retries: Int) {
-        if (hiddenForPlayback) {
+    private fun render(retries: Int, token: Int) {
+        if (token != sessionId.get() || hiddenForPlayback) {
             hide()
             return
         }
 
         val act = currentActivity()
         if (act == null) {
-            retry(retries)
+            retry(retries, token)
             return
         }
 
@@ -211,12 +223,12 @@ object MOOSAProgress {
             renderActivityFallback(act)
         }
 
-        if (!rendered) retry(retries)
+        if (!rendered) retry(retries, token)
     }
 
-    private fun retry(retries: Int) {
-        if (retries > 0) {
-            mainHandler.postDelayed({ render(retries - 1) }, 120)
+    private fun retry(retries: Int, token: Int) {
+        if (retries > 0 && !hiddenForPlayback && token == sessionId.get()) {
+            mainHandler.postDelayed({ render(retries - 1, token) }, 120)
         }
     }
 
