@@ -1,0 +1,49 @@
+name: MOOSA Hub failed-server fast-fail validation
+
+on:
+  push:
+    branches:
+      - fix/moosa-hub-failed-server-probes-20261019
+    paths:
+      - 'MOOSAHub/**'
+      - '.github/workflows/moosa-hub-fastfail-validation.yml'
+  pull_request:
+    paths:
+      - 'MOOSAHub/**'
+      - '.github/workflows/moosa-hub-fastfail-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hub-unit-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.12'
+      - name: Run actual MOOSA Hub retry unit tests
+        run: gradle :MOOSAHub:testReleaseUnitTest --no-daemon
+      - name: Build CloudStream plugins without publishing
+        run: gradle make --no-daemon
+      - name: Confirm 720p floor and existing two-plugin arrangement
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          policy = Path('MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAQualityPolicy.kt').read_text()
+          registry = Path('MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAServerRegistry.kt').read_text()
+          settings = Path('settings.gradle.kts').read_text()
+          assert 'const val MIN_HEIGHT = 720' in policy
+          assert 'MOOSALinkRetryPolicy.shouldRetry(first.reason)' in registry
+          assert 'include("MOOSAHub")' in settings and 'include("MOOSAArabic")' in settings
+          print('HD floor, fail-fast integration and both original plugins preserved')
+          PY
