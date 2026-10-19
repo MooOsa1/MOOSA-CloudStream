@@ -1,74 +1,39 @@
-# MOOSA Hub — Stremio for iPhone and PC
+# MOOSA Hub — Free Stremio add-on for iPhone + Windows
 
-**Current direction: the original AIOStreams application, not MOOSA Web or a CloudStream emulator.**
-The checked-in `moosa-hub-template.json` is an importable AIOStreams preset
-using automatically queried source indexes, with no paid debrid requirement. It is **not yet proven** to
-provide any particular modern copyrighted movie or a playable iPhone source.
+**Branch:** `experiment/moosa-hub-aiostreams-20261018` · **Draft PR:** [#73](https://github.com/MooOsa1/MOOSA-CloudStream/pull/73). The original CloudStream / MOOSA Web code on `main` is unchanged.
 
-## Quick start on the free community instance
+This experiment reuses **AIOStreams** to aggregate changing Torrentio + Comet indexes under one Stremio add-on. No paid debrid service, manual film-link lists, or custom Android emulator is required. It is **not** a guarantee every film works.
 
-[Open the MOOSA Hub setup in AIOStreams](https://aiostreams-nightly.fortheweak.cloud/stremio/configure?template=https%3A%2F%2Fraw.githubusercontent.com%2FMooOsa1%2FMOOSA-CloudStream%2Fexperiment%2Fmoosa-hub-aiostreams-20261018%2FAIOStreamsHost%2Fmoosa-hub-template.json)
+## What is actually proven — October 19, 2026
 
-Import the preset, review what the providers do, create a configuration,
-and choose **Install to Stremio Web** while logged into your Stremio account.
+1. [Live Chromium UI import](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/39159100503) passed: site and template HTTP 200, "MOOSA Hub" present, no page errors.
+2. [Installed Stremio add-on API end-to-end](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/39159538831) passed: disposable user created (201), real add-on manifest loaded (200), `stream/movie` returned actual source metadata (200); account deleted.
+3. **Modern actual media:** [Sinners (2025) and F1: The Movie (2025)](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/39193125979) **both successfully decoded video frames and audio** from real P2P sources via the official Stremio stream engine on a Linux test runner. Sinners: 1920×800; F1: 1920×804. F1 needed a different source after two candidates failed the short audio check.
+4. [Seek transport](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/39193534596) passed for both 2025 films: a request starting at 30% of the file returned 65,536 bytes as expected via HTTP 206. **Those middle frames were not decoded.**
+5. [Longer continuous decoding test](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/39194000714) checks >=9 reported output seconds and >=150 decoded video frames from the bounded beginning of each file. Check actual job logs before calling this pass or failure.
+6. Windows [automatic configuration installer](./Install-MOOSA-Hub.ps1) succeeded in a disposable Windows CI run. This checks the add-on manifest and available sources, **not a native Windows video window**.
 
-The template currently includes:
-- Official Cinemeta metadata catalogs (continuously updated movie/TV metadata).
-- Official OpenSubtitles v3 subtitle addon (availability/sync vary per movie).
-- Free/P2P mode by default; the debrid service prompt is skipped.\n- Two live-checked free P2P indexes (Torrentio and Comet) which query
-  their indexes for each title, *not* a static local list of videos.
-- Prefer direct HTTP candidates, then P2P; this does **not** guarantee any direct HTTPS results.\n- Sorting 4K → 1440p → 1080p → 720p; exclude sub-720p and CAM/TS/TC/SCR;
-  deduplicate repeated sources.
+**Never conflate** Linux FFmpeg test decoding with verified iOS/Windows viewing. Native app playback, film identity beyond source title/year hints, subtitle synchronization, hour-long playback and reliable automatic P2P failover **remain unverified**.
 
-**Caution:** Indexer results are *candidates*, not tested playable video.\nAn experimental GitHub Actions check at\n[`moosa-stremio-free-sources.yml`](../.github/workflows/moosa-stremio-free-sources.yml)\nqueries current manifests and source listings for two older public-domain film titles.\nIt classifies P2P versus HTTP *candidates*, downloads no video, and does not assert that the films play.\nThe test results reflect GitHub runner network access, not iPhone playback in Oman.
-Torrent/P2P streams will **not play in Stremio Web on standalone iPhone Safari**.
-A paid HTTPS debrid provider or a companion Stremio Service can provide
-different paths, but neither is included here, and license/region matters.
-Never infer that a metadata poster or torrent listing means the movie is
-available to stream.
+## Install the preset
 
-## Full native Stremio on iPhone (alternative to Safari)
+[**Open MOOSA Hub in AIOStreams (free community instance)**](https://aiostreams-nightly.fortheweak.cloud/stremio/configure?template=https%3A%2F%2Fraw.githubusercontent.com%2FMooOsa1%2FMOOSA-CloudStream%2Fexperiment%2Fmoosa-hub-aiostreams-20261018%2FAIOStreamsHost%2Fmoosa-hub-template.json)
 
-Stremio publishes its own fully featured sideloadable IPA, which it says
-supports torrent and Usenet playback. In Oman, the AltStore PAL regional
-store is not available; use SideStore or AltStore Classic to sideload the
-official IPA from Stremio's own download page.
+Load the template, review settings, **Save & Install**, then install the add-on in your Stremio account. Log into the same Stremio account on iPhone and PC to sync installed add-ons.
 
-- Official release: https://blog.stremio.com/stremio-fully-featured-sideloadable-ipa-release-for-ios-ipados-apple-tv-tvos/
-- Official Stremio release index (currently iOS 2.0.8 build 23, Sep 2026): https://dl.strem.io/apple/altstore/source.json\n- First-party Stremio CDN IPA for version 2.0.8 build 23: https://dl.strem.io/apple/2.0.8b23/ios/stremio_iOS.ipa\n- The main Downloads page currently emphasizes regional AltStore PAL, so use the official CDN release/source rather than an unknown mirror.
-- SideStore setup: https://docs.sidestore.io/docs/installation/install
+**Windows:** Alternatively download and review [`Install-MOOSA-Hub.ps1`](./Install-MOOSA-Hub.ps1), then execute locally in PowerShell. It creates a private AIOStreams user only after fetching the preset; verifies a current **2025 Sinners** Stremio stream listing; copies the **private manifest URL** to your clipboard for Stremio; and encrypts the saved API password with your Windows user's DPAPI. It reuses the same installation on future runs. Do not share this private URL. Only run code you have read and trust. No PowerShell execution policy bypass is required by the script itself.
 
-SideStore requires initial Apple-ID setup, normally a PC once, and
-re-signing every 7 days with a free account. It may ask for local VPN
-configuration and Developer Mode. Sideloading is optional and carries more
-setup/security risk than using the App Store or Safari. Do not enter an Apple
-account password into an unverified installer site.
+**iPhone:** Standalone iPhone Safari does **not** provide a P2P torrent engine. Stremio publishes a [first-party sideloadable IPA](https://blog.stremio.com/stremio-fully-featured-sideloadable-ipa-release-for-ios-ipados-apple-tv-tvos/) that supports native torrents. [First-party IPA](https://dl.strem.io/apple/2.0.8b23/ios/stremio_iOS.ipa) (verified available October 18). With a free Apple account, [SideStore setup](https://docs.sidestore.io/docs/installation/install) generally requires initial PC setup and re-signing; check current availability and security guidance. No iPhone physical-device test was performed here.
 
-## Reliability gate before claiming success
+## Current preset logic
 
-On iPhone and Windows, verify the SAME modern title opens with
-real video, audio, seeking, and subtitles. The Stremio app being
-able to display a source list is not proof of playback. Provider availability
-changes independently; **no software can guarantee every current movie
-for free**, even when the addon updates itself.
+- **Providers:** Torrentio + Comet (free P2P). Cinemeta catalog and OpenSubtitles v3 subtitle data.
+- **Quality:** ignore resolutions below 720p and CAM/TS/TC/SCR; resolution/seeders sorting; prefer HTTP if a source really exists, then P2P.
+- **Languages:** prefer Arabic/English subtitle metadata, Arabic first. **This is a preference, not a promise of properly synced Arabic subtitles.**
+- **Updates:** source providers search their own continually changing indexes; the GitHub preset file is *not* a hand-maintained film-link list.
+- **Weakness:** the upstream AIOStreams owned-stream failover system is built for debrid/usenet, **not arbitrary P2P torrents**. The GitHub test harness automatically tries multiple sources, but **native Stremio cannot be assumed to switch on stalls**.
+- **Hosting:** this uses a community nightly instance that MOOSA does not own; outages and free-instance restrictions are possible. No MOOSA-owned 24/7 hosted server is claimed.
 
-## Deployment
+For raw provider counts and individual failures consult [the actual CI logs](https://github.com/MooOsa1/MOOSA-CloudStream/actions/workflows/moosa-stremio-free-sources.yml). Counts of torrent candidates alone are not playback success.
 
-An isolated self-hosting wrapper is in this branch for future authorized
-deployment; the earlier Render API request failed/was blocked, so no live
-MOOSA-owned AIOStreams server has been created. The public instance is
-not controlled by MOOSA, and its operators can impose limits or outages.
-
-Source project (AGPL-3.0): https://github.com/Viren070/AIOStreams
-
-## Live source audits — Oct 18, 2026
-
-- [Torrentio/Comet provider audit](https://github.com/MooOsa1/MOOSA-CloudStream/actions/runs/39157369906) **PASS**. Four IMDb title lookups returned **324 Torrentio P2P candidates** and **2,036 Comet P2P candidates**. Both are now the only active stream providers in MOOSA Hub v1.3.0.
-- The same audit found zero MediaFusion P2P candidates for those four titles; its preset was removed, without claiming the provider is permanently offline.
-- StremThru Torz returned 404 on direct stream requests and is NOT activated.
-- All direct HTTP candidate counts were zero in this audit. On iPhone this means the full native IPA (torrent support) is needed for these candidates; iOS Safari cannot stream P2P unaided.
-- These are **source index listings only**. The count includes repeats and can contain dead torrents, wrong matches or non-playable formats. There has been NO actual playback of these titles in iOS/Windows verified by this experiment, and no copyrighted video downloaded.
-- Min-quality policy still excludes <720p candidates; HTTP is ranked before P2P when present, then resolution and seeders. OpenSubtitles v3 supplies the subtitle metadata endpoint, but per-film Arabic/English availability/sync is unproved.
-- [Latest diagnostics workflow](https://github.com/MooOsa1/MOOSA-CloudStream/actions/workflows/moosa-stremio-free-sources.yml) verifies source metadata, preset policy tests and Stremio's first-party iOS IPA on future branch commits. A workflow pass does NOT prove movie playback.
-
-Do not merge/deploy the old MOOSA Web project from this branch. Only install the AIOStreams preset when ready to test on real devices.
+Upstream project: [AIOStreams](https://github.com/Viren070/AIOStreams) (AGPL-3.0). Keep the experiment isolated until iOS and Windows physical-device playback is verified.
