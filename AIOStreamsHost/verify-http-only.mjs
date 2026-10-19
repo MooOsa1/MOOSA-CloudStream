@@ -16,7 +16,14 @@ export function isHttpsMediaCandidate(stream){
   if(typeof stream.url!=='string')return false;
   let u;try{u=new URL(stream.url);}catch{return false;}
   if(u.protocol!=='https:'||u.username||u.password)return false;
-  if(/^(localhost|.*\\.local|127\\.|10\\.|192\\.168\\.|169\\.254\\.|0\\.|172\\.(?:1[6-9]|2\\d|3[01])\\.)/i.test(u.hostname))return false;
+  const h=u.hostname.toLowerCase();
+  if(h==='localhost'||h.endsWith('.local')||h.includes(':')||h.includes('['))return false;
+  const v4=h.split('.');
+  if(v4.length===4 && v4.every(x=>/^\d{1,3}$/.test(x)&&Number(x)<=255)){
+    const a=Number(v4[0]),b=Number(v4[1]);
+    if(a===0||a===10||a===127||(a===169&&b===254)||(a===192&&b===168)||(a===172&&b>=16&&b<=31))return false;
+  }
+  if(u.pathname.toLowerCase().endsWith('.torrent'))return false;
   // Direct HTTPS URL is ONLY a candidate. HLS manifests, expiring cookies,
   // codec and file identity need a separate device/media verification.
   return true;
