@@ -431,6 +431,24 @@ object MOOSASeeAll {
         }
     }
 
+    fun registerCategories(api: MOOSAHubProvider) {
+        // CloudStream can reuse cached home rows before asynchronous home()
+        // callbacks register each category. Pre-register known MOOSA rows once
+        // so Show More cannot disappear while an otherwise valid row renders.
+        for (category in api.mainPage) {
+            states[category.name] = CategoryState(
+                api = api,
+                request = MainPageRequest(
+                    category.name, category.data, category.horizontalImages
+                )
+            )
+        }
+        mainHandler.post {
+            installObserver()
+            scheduleHeaderRefresh()
+        }
+    }
+
     fun register(
         api: MOOSAHubProvider,
         request: MainPageRequest,
