@@ -21,3 +21,5 @@ label{display:block;font-size:13px;font-weight:600;margin:0 0 7px;color:#d9dfe3}
 .notice{font-size:12px;color:#aaa;padding:10px 0}.hidden{display:none!important}
 footer{margin-top:22px;font-size:12px;line-height:1.8;color:#929ba5}
 @media(max-width:570px){.row{flex-direction:column;align-items:stretch}.field{width:100%}.panel{padding:12px}.playbox{min-height:190px}}
+
+.source-controls{margin-top:12px}
