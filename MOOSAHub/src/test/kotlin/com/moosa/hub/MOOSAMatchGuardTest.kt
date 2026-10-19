@@ -17,6 +17,11 @@ class MOOSAMatchGuardTest {
     @Test fun rejectsDifferentTitlesEvenWithHighTokenOverlap() {
         assertFalse(check(movie("Dune", 2021),
             MOOSAMatchGuard.Evidence("Dune Part Two", 2024)))
+        // Same-year near matches must fail purely on identity, not only year.
+        assertFalse(check(movie("Dune", 2021),
+            MOOSAMatchGuard.Evidence("Dune Part Two", 2021)))
+        assertFalse(check(movie("Scary Movie", 2000),
+            MOOSAMatchGuard.Evidence("Scary Movie 2", 2000)))
         assertFalse(check(movie("Scary Movie", 2000),
             MOOSAMatchGuard.Evidence("Scary Movie 2", 2001)))
         assertFalse(check(movie("The Lion King", 1994),
