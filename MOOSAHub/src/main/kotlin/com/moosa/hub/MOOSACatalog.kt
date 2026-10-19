@@ -259,7 +259,8 @@ object MOOSACatalog {
                 name = titleText,
                 url =
                     "https://www.themoviedb.org/movie/$contentId",
-                type = TvType.Movie,
+                type = if (MOOSAAnimePolicy.isAnime(originalLanguage, genreIds))
+                    TvType.AnimeMovie else TvType.Movie,
                 fix = false
             ) {
                 this.id = contentId
