@@ -41,6 +41,8 @@ class MOOSAMatchGuardTest {
             MOOSAMatchGuard.Evidence("Doraemon (1979)", null)))
         assertFalse(check(movie("Dune", 2021),
             MOOSAMatchGuard.Evidence("Dune", 1984)))
+        assertFalse(check(movie("Dune", 2021),
+            MOOSAMatchGuard.Evidence("Dune", 2022)))
     }
 
     @Test fun rejectsMissingYearWithoutCrossProviderIdentity() {
