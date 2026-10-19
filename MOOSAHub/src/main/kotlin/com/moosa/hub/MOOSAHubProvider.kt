@@ -3646,13 +3646,17 @@ class MOOSAHubProvider : TmdbProvider() {
         val providerBatchSize = if (fastArabic) 3
             else MOOSASettingsStore.providerConcurrency()
         val providerGate = kotlinx.coroutines.sync.Semaphore(providerBatchSize)
+        // A single global budget prevents 10 concurrent providers from
+        // opening 10 probes each (100 network connections on Fire TV).
+        val linkProbeGate = kotlinx.coroutines.sync.Semaphore(linkProbeBatchSize)
+        val scheduledKeys = ConcurrentHashMap.newKeySet<String>()
         val providerGroups = if (fastArabic) providers.chunked(providerBatchSize)
             else listOf(providers)
 
         for (batch in providerGroups) {
             batch.amap { api ->
                 providerGate.withPermit {
-                var providerWorked = false
+                val providerWorked = AtomicBoolean(false)
                 val candidateLinks =
                     Collections.synchronizedList(mutableListOf<ExtractorLink>())
                 val extracted = AtomicInteger(0)
@@ -3666,6 +3670,70 @@ class MOOSAHubProvider : TmdbProvider() {
                 val failedReasons = ConcurrentHashMap<String, AtomicInteger>()
                 val emittedAkwamMirrors =
                     ConcurrentHashMap.newKeySet<String>()
+                val acceptingCandidates = AtomicBoolean(true)
+                val candidateProbeJobs = Collections.synchronizedList(
+                    mutableListOf<kotlinx.coroutines.Job>()
+                )
+
+                // A provider may emit its first media URL immediately, then
+                // spend tens of seconds resolving its additional mirrors.
+                // Validate every callback as it arrives, instead of holding
+                // *all* candidates until api.loadLinks has returned.
+                fun scheduleProbe(link: ExtractorLink) {
+                    val key = linkKey(link)
+                    if (seenLinks.contains(key) || !scheduledKeys.add(key)) return
+                    val job = launch {
+                        linkProbeGate.withPermit {
+                            try {
+                                val verified =
+                                    (!MOOSASettingsStore.verifyLinks()) ||
+                                        verifyStreamingLink(link)
+                                val mirrorIdentity =
+                                    if (api.name.equals("Akwam", true)) {
+                                        val host = runCatching {
+                                            java.net.URI(link.url).host
+                                                ?.lowercase().orEmpty()
+                                        }.getOrDefault("")
+                                        if (host == "downet.net" ||
+                                            host.endsWith(".downet.net")
+                                        ) {
+                                            "${link.url.substringBefore("://").lowercase()}|$host|${inferQuality(link)}"
+                                        } else null
+                                    } else null
+
+                                if (verified &&
+                                    seenLinks.add(key) &&
+                                    (mirrorIdentity == null ||
+                                        emittedAkwamMirrors.add(mirrorIdentity))
+                                ) {
+                                    providerWorked.set(true)
+                                    acceptedLinks.incrementAndGet()
+                                    emittedLink.set(true)
+                                    shownLinks.incrementAndGet()
+                                    // The player can show this server without
+                                    // waiting for the other provider callbacks.
+                                    synchronized(callbackLock) {
+                                        MOOSAProgress.linkAvailable(progressToken, progressKey)
+                                        callback(link)
+                                    }
+                                } else if (!verified) {
+                                    failedProbes.incrementAndGet()
+                                    val reason =
+                                        MOOSAServerRegistry.lastProbeReason(link)
+                                            ?: "Unverified link"
+                                    failedReasons
+                                        .computeIfAbsent(reason) { AtomicInteger(0) }
+                                        .incrementAndGet()
+                                }
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                logError(error)
+                            }
+                        }
+                    }
+                    candidateProbeJobs.add(job)
+                }
 
                 try {
                     MOOSAPlaybackDiagnostics.update(
@@ -3723,7 +3791,9 @@ class MOOSAHubProvider : TmdbProvider() {
                                 disabledUrls.incrementAndGet()
                                 return
                             }
+                            if (!acceptingCandidates.get()) return
                             candidateLinks += link
+                            scheduleProbe(link)
                         }
 
                         timed(linksTimeoutFor(api, request)) {
@@ -3781,118 +3851,12 @@ class MOOSAHubProvider : TmdbProvider() {
                                 "${lowQualityUrls.get()} SD skipped, ${unknownQualityUrls.get()} unknown skipped"
                         )
 
-                        val allCandidates = candidateLinks
-                            .distinctBy(::linkKey)
-
-                        // Akwam Downet HTTPS still uses an untrusted TLS
-                        // certificate on the tested path. If Akwam also
-                        // supplied the exact HTTP mirror, don't spend up to
-                        // two 6.5-second TLS probes on the known-bad URL.
-                        // Keep HTTPS for every other host and for Downet
-                        // links with no HTTP alternative.
-                        val directHttpMirrors = allCandidates
-                            .asSequence()
-                            .filter {
-                                it.url.startsWith("http://", true) &&
-                                    it.url.contains(".downet.net/", true)
-                            }
-                            .map { it.url }
-                            .toSet()
-
-                        val candidates = allCandidates
-                            .filterNot { link ->
-                                link.url.startsWith("https://", true) &&
-                                    link.url.contains(".downet.net/", true) &&
-                                    link.url.replaceFirst(
-                                        "https://",
-                                        "http://",
-                                        ignoreCase = true
-                                    ) in directHttpMirrors
-                            }
-                            .sortedWith(
-                                compareByDescending<ExtractorLink>(::inferQuality)
-                                    // When equal-resolution mirrors exist,
-                                    // prefer servers that transferred the
-                                    // previous 64 KiB test faster on THIS
-                                    // device; never demote 4K below 1080p.
-                                    .thenByDescending {
-                                        MOOSAServerRegistry.sampledMbps(it)
-                                            ?: 0.0
-                                    }
-                            )
-
-                        // A blocked probe used to hold back the entire next
-                        // ten-link chunk. Start candidates in descending
-                        // quality order and refill free probe slots immediately
-                        // as they finish, without increasing parallel I/O.
-                        val linkProbeGate = kotlinx.coroutines.sync.Semaphore(linkProbeBatchSize)
-                        candidates.amap { link ->
-                            linkProbeGate.acquire()
-                            try {
-                                val key = linkKey(link)
-                                if (seenLinks.contains(key)) {
-                                    return@amap false
-                                }
-
-                                // Do not allow untested Arabic source mirrors:
-                                // fallback URLs previously bypassed verification,
-                                // then were shown even after the probe failed.
-                                val verified =
-                                    (
-                                        !request.originalLanguage.equals("ar", true) &&
-                                            !MOOSASettingsStore.verifyLinks()
-                                        ) ||
-                                        verifyStreamingLink(link)
-
-                                val mirrorIdentity =
-                                    if (api.name.equals("Akwam", true)) {
-                                        val host = runCatching {
-                                            java.net.URI(link.url).host
-                                                ?.lowercase()
-                                                .orEmpty()
-                                        }.getOrDefault("")
-                                        if (
-                                            host == "downet.net" ||
-                                            host.endsWith(".downet.net")
-                                        ) {
-                                            "${link.url.substringBefore("://").lowercase()}|$host|${inferQuality(link)}"
-                                        } else null
-                                    } else null
-
-                                if (
-                                    verified &&
-                                    seenLinks.add(key) &&
-                                    (
-                                        mirrorIdentity == null ||
-                                            emittedAkwamMirrors.add(mirrorIdentity)
-                                        )
-                                ) {
-                                    providerWorked = true
-                                    acceptedLinks.incrementAndGet()
-                                    emittedLink.set(true)
-                                    shownLinks.incrementAndGet()
-                                    MOOSAProgress.linkAvailable(progressToken, progressKey)
-
-                                    synchronized(callbackLock) {
-                                        callback(link)
-                                    }
-                                    true
-                                } else {
-                                    if (!verified) {
-                                        failedProbes.incrementAndGet()
-                                        val reason = MOOSAServerRegistry
-                                            .lastProbeReason(link)
-                                            ?: "Unverified link"
-                                        failedReasons
-                                            .computeIfAbsent(reason) { AtomicInteger(0) }
-                                            .incrementAndGet()
-                                    }
-                                    false
-                                }
-                            } finally {
-                                linkProbeGate.release()
-                            }
-                        }
+                        // api.loadLinks has now completed or timed out.
+                        // Keep all already-scheduled verification coroutines
+                        // alive until they report their results. Each was
+                        // emitted directly to CloudStream on completion.
+                        acceptingCandidates.set(false)
+                        candidateProbeJobs.toList().forEach { it.join() }
                     } else {
                         val lastStatus = MOOSAPlaybackDiagnostics.status(api)
                         if (
@@ -3907,7 +3871,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         }
                     }
 
-                    if (providerWorked) {
+                    if (providerWorked.get()) {
                         val measured = candidateLinks
                             .mapNotNull(MOOSAServerRegistry::sampledMbps)
                             .maxOrNull()
@@ -3986,7 +3950,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     )
                 }
 
-                providerWorked
+                providerWorked.get()
                 } // providerGate: released immediately for each finished provider
             }
 
