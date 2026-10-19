@@ -37,3 +37,17 @@ Load the template, review settings, **Save & Install**, then install the add-on 
 For raw provider counts and individual failures consult [the actual CI logs](https://github.com/MooOsa1/MOOSA-CloudStream/actions/workflows/moosa-stremio-free-sources.yml). Counts of torrent candidates alone are not playback success.
 
 Upstream project: [AIOStreams](https://github.com/Viren070/AIOStreams) (AGPL-3.0). Keep the experiment isolated until iOS and Windows physical-device playback is verified.
+
+## MOOSA preferences — HTTP first, torrent last
+
+AIOStreams configuration template: `AIOStreamsHost/moosa-http-first.template.json`.
+Import it into a running AIOStreams instance under Templates → Import. It sets
+`preferredStreamTypes` with `http` first and `p2p` last, and makes
+`streamType` the first global sort criterion. This **does not remove torrents**
+from results. 4K → 1080p → 720p is the quality preference *within each stream
+category*. On iPhone Safari, P2P/magnet links cannot play directly without an
+appropriate service or companion client; they remain visible as fallback, not
+as reliable in-browser playback.
+
+The JSON is a deployment artifact, not proof that any public instance has
+imported it. No independent instance was deployed successfully yet.
