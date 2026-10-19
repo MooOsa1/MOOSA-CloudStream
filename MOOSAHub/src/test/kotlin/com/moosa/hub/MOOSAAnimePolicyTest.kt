@@ -39,6 +39,18 @@ class MOOSAAnimePolicyTest {
             MOOSAAnimePolicy.displayEpisodeName("The Journey", 1, 1, 1))
     }
 
+    @Test fun sameTitleDifferentDoraemonGenerationsAreNotInterchangeable() {
+        assertFalse(MOOSAAnimePolicy.sameFirstSeasonGeneration(2005, 1979, 1))
+        assertFalse(MOOSAAnimePolicy.sameFirstSeasonGeneration(1979, 2005, 1))
+        assertTrue(MOOSAAnimePolicy.sameFirstSeasonGeneration(2005, 2006, 1))
+        assertTrue(MOOSAAnimePolicy.sameFirstSeasonGeneration(2005, 1979, 2))
+        assertTrue(MOOSAAnimePolicy.sameFirstSeasonGeneration(2005, null, 1))
+        assertTrue(MOOSAAnimePolicy.sameFirstSeasonGeneration(null, 1979, 1))
+        assertEquals(1979, MOOSAAnimePolicy.yearInTitle("Doraemon (1979)"))
+        assertEquals(2005, MOOSAAnimePolicy.yearInTitle("Doraemon 2005"))
+        assertNull(MOOSAAnimePolicy.yearInTitle("Doraemon S1E101"))
+    }
+
     @Test fun animeSeasonNamesCoverSequelNamingAndPreventWrongSeason() {
         assertEquals(2, MOOSAAnimePolicy.explicitAnimeSeason("Show 2nd Season"))
         assertEquals(3, MOOSAAnimePolicy.explicitAnimeSeason("Show 3rd Season"))

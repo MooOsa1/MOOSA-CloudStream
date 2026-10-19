@@ -67,6 +67,24 @@ internal object MOOSAAnimePolicy {
         )
     }
 
+    /** Disambiguate remakes with identical names (Doraemon 1979/2005).
+     * Only guard S1: later anime seasons can legitimately air years later.
+     * A missing/ambiguous provider year is never treated as an exact ID.
+     */
+    fun sameFirstSeasonGeneration(
+        requestedYear: Int?,
+        candidateYear: Int?,
+        season: Int?
+    ): Boolean {
+        if (season != 1 || requestedYear == null || candidateYear == null) return true
+        if (requestedYear !in 1900..2100 || candidateYear !in 1900..2100) return true
+        return kotlin.math.abs(requestedYear - candidateYear) < 10
+    }
+
+    fun yearInTitle(value: String): Int? =
+        Regex("""(?:^|[^\d])((?:19|20)\d{2})(?:[^\d]|$)""")
+            .find(value)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
     fun explicitAnimeSeason(title: String): Int? {
         val patterns = listOf(
             Regex("""\b(\d{1,2})(?:st|nd|rd|th)\s+season\b""", RegexOption.IGNORE_CASE),

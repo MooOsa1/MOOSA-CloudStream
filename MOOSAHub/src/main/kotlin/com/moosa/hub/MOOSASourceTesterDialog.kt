@@ -329,7 +329,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
 
         val all = MOOSASourceTester.sources()
         countText.text =
-            "${all.count { MOOSASourceTester.isEnabled(it) }} / ${all.size} enabled"
+            "${all.count { MOOSASourceTester.isEnabled(it) }} / ${all.size} enabled" +
+                " • ${MOOSAHubProvider().animeSourceCount()} anime"
 
         val visible = all.filter {
             query.isBlank() ||
@@ -473,7 +474,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
     private fun updateCountOnly() {
         val all = MOOSASourceTester.sources()
         countText.text =
-            "${all.count { MOOSASourceTester.isEnabled(it) }} / ${all.size} enabled"
+            "${all.count { MOOSASourceTester.isEnabled(it) }} / ${all.size} enabled" +
+                " • ${MOOSAHubProvider().animeSourceCount()} anime"
     }
 
     private fun runSingleTest(refs: RowRefs) {

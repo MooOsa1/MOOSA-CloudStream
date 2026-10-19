@@ -1413,6 +1413,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 val matchingEpisode = found.any { item ->
                     akwamSeasonConfirmed(api, item, request, wantSeries) &&
                         arabSeedEpisodeConfirmed(api, item, request, wantSeries) &&
+                        animeGenerationMatches(request, item.name, resultYear(item)) &&
                         strictSearchScore(
                             item,
                             aliases,
@@ -1494,6 +1495,18 @@ class MOOSAHubProvider : TmdbProvider() {
             loadedIdentityMatches(movie, request, aliases)
     }
 
+    private fun animeGenerationMatches(
+        request: HubPlaybackRequest,
+        title: String,
+        year: Int?
+    ): Boolean =
+        !request.isAnime ||
+            MOOSAAnimePolicy.sameFirstSeasonGeneration(
+                request.year,
+                year ?: MOOSAAnimePolicy.yearInTitle(title),
+                request.season
+            )
+
     private fun animeSeriesHasEpisode(
         series: TvSeriesLoadResponse,
         request: HubPlaybackRequest,
@@ -1502,6 +1515,9 @@ class MOOSAHubProvider : TmdbProvider() {
     ): Boolean {
         val season = request.season ?: return false
         val episode = request.episode ?: return false
+        if (!animeGenerationMatches(request, series.name, series.year) ||
+            !animeGenerationMatches(request, searchTitle, null)
+        ) return false
         fun number(item: Episode): Int? =
             item.episode?.takeIf { it > 0 }
                 ?: Regex("""(?i)\b(?:episode|ep)\s*[:#-]?\s*(\d{1,4})\b""")
@@ -1589,6 +1605,8 @@ class MOOSAHubProvider : TmdbProvider() {
             if (
                 direct != null &&
                 correctType(direct) &&
+                animeGenerationMatches(request, direct.name, direct.year) &&
+                loadedIdentityMatches(direct, request, aliases) &&
                 (!request.isAnime || direct !is TvSeriesLoadResponse ||
                     animeSeriesHasEpisode(direct, request, direct.name, aliases))
             ) {
@@ -1627,6 +1645,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         request,
                         aliases
                     ) &&
+                    animeGenerationMatches(request, direct.name, direct.year) &&
                     (!request.isAnime || direct !is TvSeriesLoadResponse ||
                         animeSeriesHasEpisode(direct, request, direct.name, aliases))
                 ) {
@@ -1653,7 +1672,8 @@ class MOOSAHubProvider : TmdbProvider() {
             .asSequence()
             .filter {
                 akwamSeasonConfirmed(api, it, request, wantSeries) &&
-                    arabSeedEpisodeConfirmed(api, it, request, wantSeries)
+                    arabSeedEpisodeConfirmed(api, it, request, wantSeries) &&
+                    animeGenerationMatches(request, it.name, resultYear(it))
             }
             .map {
                 it to strictSearchScore(
@@ -1690,6 +1710,7 @@ class MOOSAHubProvider : TmdbProvider() {
             ) {
                 api.load(match.url)
             } ?: continue
+            if (!animeGenerationMatches(request, loaded.name, loaded.year)) continue
 
             if (
                 wantSeries &&
@@ -1832,11 +1853,22 @@ class MOOSAHubProvider : TmdbProvider() {
             )
     }
 
+    /** Same live source eligibility used by the player, not just tester rows. */
+    internal fun animeSourceCount(): Int =
+        playbackProviders(
+            HubPlaybackRequest(
+                title = "Anime",
+                isTv = true,
+                originalLanguage = "ja",
+                isAnime = true
+            )
+        ).size
+
     private fun providerCacheKey(
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v16-anime",
+        "strict-v17-anime-year",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
