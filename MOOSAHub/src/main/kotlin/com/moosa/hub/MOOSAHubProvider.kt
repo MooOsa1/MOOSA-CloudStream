@@ -2,6 +2,9 @@ package com.moosa.hub
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.APIHolder.apis
+import com.lagradost.cloudstream3.APIHolder.allProviders
+import com.lagradost.cloudstream3.AnimeLoadResponse
+import com.lagradost.cloudstream3.DubStatus
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageResponse
@@ -940,6 +943,19 @@ class MOOSAHubProvider : TmdbProvider() {
                 aliases
             }
 
+        // Anime sources commonly expose a Japanese/romaji primary title
+        // and a separate English name plus synonyms. Check ALL official
+        // provider-supplied names before rejecting the matching episode.
+        if (request.isAnime && result is AnimeLoadResponse) {
+            val nativeNames = listOfNotNull(
+                result.name, result.engName, result.japName
+            ) + result.synonyms.orEmpty()
+            if (nativeNames.any { name ->
+                    safeTitleMatch(name, identityAliases, result.year, null)
+                }
+            ) return true
+        }
+
         val wantSeries =
             request.season != null &&
                 request.episode != null
@@ -1507,6 +1523,48 @@ class MOOSAHubProvider : TmdbProvider() {
                 request.season
             )
 
+    private fun nativeAnimeEpisodeData(
+        series: AnimeLoadResponse,
+        request: HubPlaybackRequest,
+        searchTitle: String,
+        aliases: List<String>
+    ): String? {
+        val season = request.season ?: return null
+        val episode = request.episode ?: return null
+        if (!animeGenerationMatches(request, series.name, series.year) ||
+            !animeGenerationMatches(request, searchTitle, null)
+        ) return null
+
+        val matchingSeasonPage = listOf(series.name, searchTitle).any { title ->
+            MOOSAAnimePolicy.explicitAnimeSeason(title) == season &&
+                seasonSpecificTitleMatch(title, aliases, season)
+        }
+        fun entries(status: DubStatus): List<MOOSAAnimeStreamEpisodePolicy.Item> =
+            series.episodes[status].orEmpty().map { item ->
+                val number = item.episode?.takeIf { it > 0 }
+                    ?: Regex("""(?i)\b(?:episode|ep)\s*[:#-]?\s*(\d{1,4})\b""")
+                        .find(item.name.orEmpty())
+                        ?.groupValues?.getOrNull(1)?.toIntOrNull()
+                val srcSeason = item.season?.takeIf { it > 0 }
+                    ?: MOOSAAnimePolicy.explicitAnimeSeason(item.name.orEmpty())
+                MOOSAAnimeStreamEpisodePolicy.Item(
+                    data = item.data, season = srcSeason, number = number
+                )
+            }
+        return MOOSAAnimeStreamEpisodePolicy.select(
+            season = season,
+            episode = episode,
+            absolute = request.absoluteEpisode,
+            sourceTitle = series.name,
+            pageProvesSeason = matchingSeasonPage,
+            tracks = MOOSAAnimeStreamEpisodePolicy.Tracks(
+                subbed = entries(DubStatus.Subbed),
+                unlabelled = entries(DubStatus.None),
+                dubbed = entries(DubStatus.Dubbed)
+            )
+        )
+    }
+
     private fun animeSeriesHasEpisode(
         series: TvSeriesLoadResponse,
         request: HubPlaybackRequest,
@@ -1570,7 +1628,8 @@ class MOOSAHubProvider : TmdbProvider() {
             response: LoadResponse?
         ): Boolean =
             if (wantSeries) {
-                response is TvSeriesLoadResponse
+                response is TvSeriesLoadResponse ||
+                    (request.isAnime && response is AnimeLoadResponse)
             } else {
                 response is MovieLoadResponse
             }
@@ -1607,8 +1666,13 @@ class MOOSAHubProvider : TmdbProvider() {
                 correctType(direct) &&
                 animeGenerationMatches(request, direct.name, direct.year) &&
                 loadedIdentityMatches(direct, request, aliases) &&
-                (!request.isAnime || direct !is TvSeriesLoadResponse ||
-                    animeSeriesHasEpisode(direct, request, direct.name, aliases))
+                (!request.isAnime || when (direct) {
+                    is AnimeLoadResponse ->
+                        nativeAnimeEpisodeData(direct, request, direct.name, aliases) != null
+                    is TvSeriesLoadResponse ->
+                        animeSeriesHasEpisode(direct, request, direct.name, aliases)
+                    else -> true
+                })
             ) {
                 return MatchedLoad(direct, direct.name)
             }
@@ -1646,8 +1710,13 @@ class MOOSAHubProvider : TmdbProvider() {
                         aliases
                     ) &&
                     animeGenerationMatches(request, direct.name, direct.year) &&
-                    (!request.isAnime || direct !is TvSeriesLoadResponse ||
-                        animeSeriesHasEpisode(direct, request, direct.name, aliases))
+                    (!request.isAnime || when (direct) {
+                        is AnimeLoadResponse ->
+                            nativeAnimeEpisodeData(direct, request, direct.name, aliases) != null
+                        is TvSeriesLoadResponse ->
+                            animeSeriesHasEpisode(direct, request, direct.name, aliases)
+                        else -> true
+                    })
                 ) {
                     return MatchedLoad(direct, direct.name)
                 }
@@ -1729,9 +1798,14 @@ class MOOSAHubProvider : TmdbProvider() {
             // A matching anime title is not proof that the requested
             // episode is on this provider page. Try the NEXT search result
             // before caching an unusable base-series target.
-            if (request.isAnime && loaded is TvSeriesLoadResponse &&
-                !animeSeriesHasEpisode(loaded, request, match.name, aliases)
-            ) continue
+            if (request.isAnime) {
+                if (loaded is TvSeriesLoadResponse &&
+                    !animeSeriesHasEpisode(loaded, request, match.name, aliases)
+                ) continue
+                if (loaded is AnimeLoadResponse &&
+                    nativeAnimeEpisodeData(loaded, request, match.name, aliases) == null
+                ) continue
+            }
 
             if (
                 loadedIdentityMatches(
@@ -1772,7 +1846,15 @@ class MOOSAHubProvider : TmdbProvider() {
                 false
             }
 
-        val available = apis
+        // Plugins can register in CloudStream's global provider registry
+        // without being present in its currently mapped UI provider list.
+        // Consider both for anime; never load other plugins recursively.
+        val registry = if (request.isAnime) {
+            (apis.toList() + allProviders.toList()).distinctBy { api ->
+                "${api.name}|${api.sourcePlugin.orEmpty()}|${api.mainUrl}"
+            }
+        } else apis.toList()
+        val available = registry
             .filter { api ->
                 // Arabic sites belong to the independent native provider.
                 (!isArabicProvider(api) || (request.isAnime &&
@@ -1868,7 +1950,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v17-anime-year",
+        "strict-v18-anime-native",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -1964,8 +2046,10 @@ class MOOSAHubProvider : TmdbProvider() {
         } ?: return null
         val loaded = matched.response
 
-        val data = if (!isSeries || loaded is MovieLoadResponse) {
+        val dataCandidate = if (!isSeries || loaded is MovieLoadResponse) {
             (loaded as? MovieLoadResponse)?.dataUrl
+        } else if (request.isAnime && loaded is AnimeLoadResponse) {
+            nativeAnimeEpisodeData(loaded, request, matched.searchTitle, aliases)
         } else {
             val series = loaded as? TvSeriesLoadResponse ?: return null
             val season = request.season ?: return null
@@ -2199,7 +2283,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 )
             }
             episodeData
-        }?.takeIf { it.isNotBlank() } ?: return null
+        }
+        val data = dataCandidate?.takeIf { it.isNotBlank() } ?: return null
 
         val target = ProviderTarget(
             providerName = api.name,
@@ -3654,10 +3739,10 @@ class MOOSAHubProvider : TmdbProvider() {
                 MOOSAProgress.failureReport(
                     MOOSAPlaybackDiagnostics.report() +
                         "\n\nThere are no eligible installed playback sources. " +
-                        "Adding a repository does not install its extensions. " +
-                        "Open Extensions and install a compatible Anime provider " +
-                        "(e.g. AnimePahe, HiAnime, or Kickassanime) from Phisher. " +
-                        "Also check disabled sources in MOOSA settings.",
+                        "Anime extensions may be installed but not registered " +
+                        "with CloudStream's active provider API. The search uses " +
+                        "registered providers only. Check the actual loaded names " +
+                        "in Source Tester and disabled sources in MOOSA settings.",
                     "MOOSA Anime • No sources"
                 )
             } else if (request.originalLanguage.equals("ar", ignoreCase = true)) {
@@ -4225,11 +4310,12 @@ class MOOSAHubProvider : TmdbProvider() {
                 MOOSAProgress.failureReport(
                     MOOSAPlaybackDiagnostics.report() +
                         "\n\nThis counter counts installed playback providers, " +
-                        "not repositories or video servers. A repository only " +
-                        "lists extensions; install AnimePahe, HiAnime, " +
-                        "Kickassanime (or other anime plugins) separately. " +
-                        "Unknown-quality and below-720p links stay excluded. " +
-                        "Check MOOSA settings for blocked sources.",
+                        "not repositories or individual server URLs. " +
+                        "MOOSA now reads native Subbed/Dubbed anime episode lists " +
+                        "from loaded anime extensions; only providers actually " +
+                        "registered in CloudStream can be queried. " +
+                        "Unknown-quality or below-720p links stay excluded. " +
+                        "Check Source Tester for loaded names and disabled sources.",
                     "MOOSA Anime • No verified servers"
                 )
             } else if (request.originalLanguage.equals("ar", ignoreCase = true)) {
