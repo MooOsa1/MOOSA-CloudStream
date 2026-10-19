@@ -107,6 +107,11 @@ test('accepts real Stremio hlsv2 playlists and media while rejecting mismatched 
   const rewritten=rewriteStremioPlaylist(playlist,base);
   assert.ok(rewritten?.includes(proxied));
   assert.ok(rewritten?.includes(MEDIA_PREFIX+'/'+hash+'/'+idx+'/audio0.m3u8'));
+  // Stremio sometimes forwards multiple codec hints on each HLSv2 track.
+  const withHints=engineMaster+'&videoCodecs=h264&videoCodecs=hevc&audioCodecs=aac&maxAudioChannels=2';
+  assert.ok(makeLocalMediaUrl(withHints,base));
+  assert.equal(makeLocalMediaUrl(withHints+'&videoCodecs=../../evil',base),null);
+  assert.equal(makeLocalMediaUrl(withHints+'&profile=bad%20token',base),null);
   for(const bad of [
     'http://127.0.0.1:11470/hlsv2/'+id+'/master.m3u8?mediaURL=http://evil.test/private',
     'http://127.0.0.1:11470/hlsv2/'+id+'/master.m3u8?mediaURL='+encodeURIComponent('http://127.0.0.1:11470/'+hash+'/4'),
