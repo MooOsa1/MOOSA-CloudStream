@@ -2,7 +2,7 @@
   "metadata": {
     "id": "moosa.http-only",
     "name": "MOOSA Hub — HTTP only (no torrents)",
-    "description": "Strict direct-HTTP-only source aggregation for iPhone/PC. No P2P, no torrents, no debrid. Queries current upstream add-ons automatically; zero working sources means zero streams, not a fake match.",
+    "description": "Strict no-torrent MOOSA Hub for iPhone/PC. Current HTTP addons: PenguPlay (public manifest v1.4.0 seen Oct 19) and Showbox (may require personal session). No availability/playback guaranteed.",
     "source": "external",
     "author": "MOOSA",
     "version": "1.0.0",
@@ -40,6 +40,24 @@
             "subtitles"
           ],
           "mediaTypes": []
+        }
+      },
+      {
+        "type": "custom",
+        "instanceId": "mpg1",
+        "enabled": true,
+        "options": {
+          "name": "PenguPlay — live HTTP index",
+          "manifestUrl": "https://pengu.uk/manifest.json",
+          "timeout": 13000,
+          "resources": [
+            "stream",
+            "subtitles"
+          ],
+          "mediaTypes": [
+            "movie",
+            "series"
+          ]
         }
       },
       {
