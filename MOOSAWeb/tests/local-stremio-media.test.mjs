@@ -90,6 +90,18 @@ test('accepts real Stremio hlsv2 playlists and media while rejecting mismatched 
     '/hlsv2/'+id+'/audio0/segment12.m4s');
   assert.equal(localMediaPath(MEDIA_PREFIX+'/hlsv2/'+id+'/video0/init.mp4'),
     '/hlsv2/'+id+'/video0/init.mp4');
+  // Real Stremio HLSv2 audio/video playlists AND media segments retain
+  // mediaURL in the query. Previously the proxy returned 502 for these.
+  for(const resource of ['video0.m3u8','audio0.m3u8','video0/init.mp4',
+      'audio0/segment1.m4s','video0/segment22.m4s']){
+    const originalURL='http://127.0.0.1:11470/hlsv2/'+id+'/'+resource+
+      '?mediaURL='+encodeURIComponent(original);
+    const proxiedURL=makeLocalMediaUrl(originalURL,base);
+    assert.ok(proxiedURL,resource+' must be accepted');
+    assert.equal(proxiedURL,MEDIA_PREFIX+'/hlsv2/'+id+'/'+resource+
+      '?mediaURL='+encodeURIComponent(original));
+  }
+
   const playlist='#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3500000\n'+
     engineMaster+'\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",URI="audio0.m3u8"\n';
   const rewritten=rewriteStremioPlaylist(playlist,base);
