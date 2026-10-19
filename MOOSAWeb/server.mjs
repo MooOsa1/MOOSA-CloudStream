@@ -165,6 +165,21 @@ async function handle(req,res,mediaGateway=null) {
       if(!mediaGateway)return err(res,404,'No operator-approved media gateway configured');
       return mediaGateway.handle(req,res,earlyUrl);
     }
+    if(earlyUrl.pathname==='/api/stremio-local/status'){
+      if(req.method!=='GET' ||
+          process.env.MOOSA_HOST!=='127.0.0.1' ||
+          req.socket.localAddress!=='127.0.0.1')
+        return err(res,404,'Local browser lab disabled');
+      try{
+        const service=await fetch('http://127.0.0.1:11470/settings',{
+          signal:AbortSignal.timeout(4000),redirect:'error'
+        });
+        await service.body?.cancel();
+        return json(res,200,{online:service.ok,mode:'loopback'});
+      }catch{
+        return json(res,200,{online:false,mode:'loopback'});
+      }
+    }
     if(earlyUrl.pathname.startsWith(MEDIA_PREFIX+'/')){
       // This media relay is NEVER enabled on the public Render website.
       // Requests and the underlying Stremio engine must both stay on loopback.
