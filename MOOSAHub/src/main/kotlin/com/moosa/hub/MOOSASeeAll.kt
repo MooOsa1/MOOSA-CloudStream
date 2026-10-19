@@ -702,10 +702,12 @@ object MOOSASeeAll {
     private fun applyHeaders() {
         val host = activity ?: return
         val master = homeMasterRecycler(host) ?: return
-        if (!master.isShown) return
         watchProvider(host)
         installHomeIdleListener(master)
         val ownsHome = isMoosaSelected(host)
+        // CloudStream may hide the old list during provider loading.
+        // Cleanup must still happen then, or the old button reappears later.
+        if (ownsHome && !master.isShown) return
         // Avoid changing wrappers during an ordinary MOOSA carousel fling.
         // On a provider switch, however, remove stale buttons promptly.
         if (ownsHome &&
