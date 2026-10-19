@@ -9,6 +9,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.withPermit
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
@@ -35,6 +36,7 @@ object MOOSAServerRegistry {
     }
 
     private val entries = ConcurrentHashMap<String, MutableEntry>()
+    private const val MAX_TRACKED_SERVERS = 512
 
     private fun normalize(value: String): String =
         value.lowercase()
@@ -107,6 +109,12 @@ object MOOSAServerRegistry {
         val key = keyFor(link)
         val now = System.currentTimeMillis()
 
+        // The app may be open for days; retain the most recently discovered
+        // servers instead of accumulating thousands of per-title mirrors.
+        if (entries.size >= MAX_TRACKED_SERVERS && !entries.containsKey(key)) {
+            entries.entries.minByOrNull { it.value.lastSeen }
+                ?.let { oldest -> entries.remove(oldest.key, oldest.value) }
+        }
         val item = entries.computeIfAbsent(key) {
             MutableEntry(
                 key = key,
@@ -243,18 +251,22 @@ object MOOSAServerRegistry {
     ) = coroutineScope {
         val keys = snapshot().map { it.key }
         val total = keys.size
-        var done = 0
-
-        for (batch in keys.chunked(concurrency.coerceIn(2, 12))) {
-            batch.map { key ->
-                async {
-                    test(key)
+        if (total == 0) return@coroutineScope
+        // Refill a free slot immediately; a slow server used to hold
+        // an entire chunk of the Server Manager behind its last result.
+        val gate = kotlinx.coroutines.sync.Semaphore(concurrency.coerceIn(2, 12))
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val progressLock = Any()
+        keys.map { key ->
+            async {
+                gate.withPermit { test(key) }
+                // Serializing the increment *with* the callback prevents a
+                // slower thread reporting 8/20 after another reported 9/20.
+                synchronized(progressLock) {
+                    onProgress?.invoke(completed.incrementAndGet(), total)
                 }
-            }.awaitAll()
-
-            done += batch.size
-            onProgress?.invoke(done, total)
-        }
+            }
+        }.awaitAll()
     }
 
     private data class ProbeCheck(

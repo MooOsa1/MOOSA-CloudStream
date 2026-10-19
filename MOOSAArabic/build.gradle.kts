@@ -2,8 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-version = 3
-
+version = 4
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

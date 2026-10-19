@@ -393,6 +393,12 @@ class MOOSAArabicProvider : MainAPI() {
         val pending = mutableListOf(PlayerPage(data, 0, mainUrl))
         val startedAt = System.nanoTime()
         val maxDurationMs = 22_000L
+        fun remainingBudgetMs(): Long =
+            (maxDurationMs - (System.nanoTime() - startedAt) / 1_000_000L)
+                .coerceAtLeast(0L)
+        // The same third-party iframe can occur in multiple page elements.
+        // Only repeat if its required Referer is different.
+        val extractorAttempts = hashSetOf<String>()
         var cursor = 0
         var emitted = false
         var foundDirectHdTransport = false
@@ -512,14 +518,16 @@ class MOOSAArabicProvider : MainAPI() {
 
             if (isHls) {
                 val variants = try {
-                    M3u8Helper().m3u8Generation(
-                        M3u8Helper.M3u8Stream(
-                            streamUrl = mediaUrl,
-                            quality = urlQuality,
-                            headers = headers
-                        ),
-                        false
-                    )
+                    withTimeoutOrNull(minOf(4_000L, remainingBudgetMs())) {
+                        M3u8Helper().m3u8Generation(
+                            M3u8Helper.M3u8Stream(
+                                streamUrl = mediaUrl,
+                                quality = urlQuality,
+                                headers = headers
+                            ),
+                            false
+                        )
+                    } ?: emptyList()
                 } catch (_: Exception) {
                     emptyList()
                 }
@@ -582,10 +590,11 @@ class MOOSAArabicProvider : MainAPI() {
             (System.nanoTime() - startedAt) / 1_000_000L < maxDurationMs &&
             !foundDirectHdTransport
         ) {
+            if (remainingBudgetMs() < 150L) break
             val (url, depth, referer, qualityHint) = pending[cursor++]
             if (!visited.add(url)) continue
             val response = try {
-                withTimeoutOrNull(6500L) {
+                withTimeoutOrNull(minOf(6_500L, remainingBudgetMs())) {
                     app.get(
                         url,
                         headers = mapOf(
@@ -644,7 +653,7 @@ class MOOSAArabicProvider : MainAPI() {
             val selectors = "li[data-link],a.watchBTn,a.link-show,a.aplr-link,a[data-link],a[href*='/watch/'],a[href*='/download/'],a[href*='serv='],a.link-download[href],a.link-btn[href],a[href*='downet.net'],a[href*='.mp4'],div.btn-loader > a[href],a.download-link[href],div.tab-content.quality a[href],iframe[src],iframe[data-src],iframe[data-lazy-src],video[src],video source[src],source[src]";
 
             for (element in page.select(selectors)) {
-                if (foundDirectHdTransport) break
+                if (foundDirectHdTransport || remainingBudgetMs() < 150L) break
                 val raw = element.attr("data-link")
                     .ifBlank { element.attr("data-src") }
                     .ifBlank { element.attr("data-lazy-src") }
@@ -692,8 +701,14 @@ class MOOSAArabicProvider : MainAPI() {
                     continue
                 }
 
+                // Skip the same extractor + Referer pair on repeat anchors.
+                // No arbitrary attempt count: useful later mirrors still run
+                // if the 22-second global page-crawl budget permits.
+                if (!extractorAttempts.add("$pageUrl|$absolute")) continue
+                val remaining = remainingBudgetMs()
+                if (remaining < 150L) break
                 try {
-                    withTimeoutOrNull(6000L) {
+                    withTimeoutOrNull(minOf(6_000L, remaining)) {
                         loadExtractor(absolute, pageUrl, subtitleCallback) { link ->
                             // Do not fabricate quality from film/episode names.
                             if (link.quality == Qualities.Unknown.value &&

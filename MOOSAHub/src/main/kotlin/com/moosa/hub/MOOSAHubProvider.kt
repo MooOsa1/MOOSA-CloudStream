@@ -282,6 +282,8 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private val cacheLifetimeMs = 20 * 60 * 1000L
     private val subtitleCacheLifetimeMs = 15 * 60 * 1000L
+    private val maxTargetCacheEntries = 512
+    private val maxSubtitleCacheEntries = 96
     private val successfulSubtitleCheckLifetimeMs = 6 * 60 * 1000L
     private val failedSubtitleCheckLifetimeMs = 30 * 1000L
     private val providerResolveTimeoutMs = 30000L
@@ -1761,6 +1763,15 @@ class MOOSAHubProvider : TmdbProvider() {
         api.mainUrl
     ).joinToString("|")
 
+    private fun cacheTarget(key: String, target: ProviderTarget) {
+        val now = System.currentTimeMillis()
+        MOOSACacheRetention.makeRoom(
+            targetCache, maxTargetCacheEntries, now,
+            cacheLifetimeMs, CachedTarget::createdAt
+        )
+        targetCache[key] = CachedTarget(now, target)
+    }
+
     private suspend fun resolveTargetForProvider(
         request: HubPlaybackRequest,
         api: MainAPI,
@@ -1810,12 +1821,7 @@ class MOOSAHubProvider : TmdbProvider() {
             }
 
             if (bridged != null) {
-                targetCache[cacheKey] =
-                    CachedTarget(
-                        createdAt =
-                            System.currentTimeMillis(),
-                        target = bridged
-                    )
+                cacheTarget(cacheKey, bridged)
 
                 return bridged
             }
@@ -2057,10 +2063,7 @@ class MOOSAHubProvider : TmdbProvider() {
             data = data
         )
 
-        targetCache[cacheKey] = CachedTarget(
-            createdAt = System.currentTimeMillis(),
-            target = target
-        )
+        cacheTarget(cacheKey, target)
 
         return target
     }
@@ -3037,6 +3040,11 @@ class MOOSAHubProvider : TmdbProvider() {
             .sortedByDescending(::subtitleScore)
 
         if (all.isNotEmpty()) {
+            MOOSACacheRetention.makeRoom(
+                subtitleCache, maxSubtitleCacheEntries,
+                System.currentTimeMillis(), subtitleCacheLifetimeMs,
+                CachedSubtitleList::createdAt
+            )
             subtitleCache[cacheKey] = CachedSubtitleList(
                 createdAt = System.currentTimeMillis(), items = all
             )
@@ -3074,8 +3082,28 @@ class MOOSAHubProvider : TmdbProvider() {
         }
         val result = inspectSubtitleContent(sub)
         if (subtitleCheckCache.size >= 256) {
-            subtitleCheckCache.clear()
-            verifiedSubtitleFormats.clear()
+            // Clearing the ENTIRE cache at 256 caused an avoidable storm of
+            // subtitle re-downloads on later episodes, plus erased known
+            // VTT/SRT formats. Evict only expired / oldest checks.
+            val nowMs = System.currentTimeMillis()
+            subtitleCheckCache.entries.forEach { entry ->
+                val ttl = if (entry.value.readable)
+                    successfulSubtitleCheckLifetimeMs
+                else failedSubtitleCheckLifetimeMs
+                if (nowMs - entry.value.checkedAt !in 0 until ttl) {
+                    if (subtitleCheckCache.remove(entry.key, entry.value)) {
+                        verifiedSubtitleFormats.remove(entry.key)
+                    }
+                }
+            }
+            if (subtitleCheckCache.size >= 256) {
+                subtitleCheckCache.entries.minByOrNull { it.value.checkedAt }
+                    ?.let { entry ->
+                        if (subtitleCheckCache.remove(entry.key, entry.value)) {
+                            verifiedSubtitleFormats.remove(entry.key)
+                        }
+                    }
+            }
         }
         subtitleCheckCache[cacheKey] = CachedSubtitleCheck(
             System.currentTimeMillis(), result
