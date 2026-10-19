@@ -17,6 +17,7 @@ class MOOSAHubPlugin : Plugin() {
         openSettings = { ctx ->
             MOOSASettingsDialog.show(ctx)
         }
+        MOOSASeeAll.observeHomeLifecycle(context)
         val provider = MOOSAHubProvider()
         MOOSASeeAll.registerCategories(provider)
         registerMainAPI(provider)
