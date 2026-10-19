@@ -24,7 +24,7 @@ async function getJSON(url,init={},ms=80000){
 }
 try{
  server=spawn(process.execPath,['MOOSAWeb/server.mjs'],{
-  env:{...process.env,PORT:'3000'},stdio:'ignore'
+  env:{...process.env,PORT:'3000',MOOSA_HOST:'127.0.0.1'},stdio:'ignore'
  });
  for(let i=0;i<50;i++){
   try{if((await fetch(SITE+'/healthz',{signal:AbortSignal.timeout(1000)})).ok)break;}
@@ -40,8 +40,26 @@ try{
  const privateManifest=AIO+'/stremio/'+encodeURIComponent(uuid)+'/'+encodeURIComponent(token)+'/manifest.json';
  browser=await chromium.launch({headless:true,args:['--autoplay-policy=no-user-gesture-required']});
  const page=await browser.newPage({viewport:{width:1280,height:800},permissions:[]});
- const errors=[];
+ const errors=[],remoteHlsStatuses={},relayStatuses={},networkFailures=[];
  page.on('pageerror',e=>{errors.push(e.name||'PageError');});
+ page.on('response',resp=>{
+   try{
+     const u=new URL(resp.url()),p=u.pathname;
+     if(u.hostname==='127.0.0.1' && u.port==='11470' && /\.m3u8$|\.ts$/.test(p)){
+       remoteHlsStatuses[String(resp.status())]=(remoteHlsStatuses[String(resp.status())]||0)+1;
+     }
+     if(u.hostname==='127.0.0.1' && u.port==='3000' && p.startsWith('/api/stremio-local/media/')){
+       relayStatuses[String(resp.status())]=(relayStatuses[String(resp.status())]||0)+1;
+     }
+   }catch{}
+ });
+ page.on('requestfailed',req=>{
+   try{
+     const u=new URL(req.url());
+     if(u.hostname==='127.0.0.1'&&['11470','3000'].includes(u.port))
+       networkFailures.push(u.port==='11470'?'direct-local-engine':'same-origin-relay');
+   }catch{}
+ });
  await page.goto(SITE+'/stremio-lab.html',{waitUntil:'domcontentloaded',timeout:30000});
  await page.fill('#addon-url',privateManifest);
  await page.fill('#imdb','tt31193180');
@@ -63,11 +81,20 @@ try{
  const stats=await page.evaluate(()=>{
    const v=document.querySelector('#stremio-video');
    return {width:v.videoWidth,height:v.videoHeight,playSeconds:Math.round(v.currentTime*10)/10,
-     status:document.querySelector('#play-status').textContent.slice(0,100)};
+     status:document.querySelector('#play-status').textContent.slice(0,170),
+     engineStatus:document.querySelector('#platform-note').textContent.slice(0,110),
+     videoError:v.error?.code||0,readyState:v.readyState,networkState:v.networkState};
  });
  console.log('MOOSA_BROWSER_SITE_VIDEO_STARTED='+accepted+' width='+stats.width+
    ' height='+stats.height+' playerTime='+stats.playSeconds+
-   ' jsErrors='+errors.length+' stall='+/stalled|failed|timeout/i.test(stats.status));
+   ' jsErrors='+errors.length+' stalled='+/stalled|failed|timeout/i.test(stats.status)+
+   ' videoErrorCode='+stats.videoError+' readyState='+stats.readyState+
+   ' networkState='+stats.networkState+
+   ' engineOnline='+/detected/i.test(stats.engineStatus)+
+   ' uiError='+/unavailable|failed|timed out|blocked|error/i.test(stats.status)+
+   ' hlsResponseCodes='+JSON.stringify(remoteHlsStatuses)+
+   ' relayResponseCodes='+JSON.stringify(relayStatuses)+
+   ' localFailures='+JSON.stringify(networkFailures.slice(0,12)));
  console.log('NOT_IPHONE: Chromium+Linux test only; a website with local P2P engine is not standalone iPhone playback.');
  if(!accepted||errors.length)process.exitCode=1;
 }catch(e){
