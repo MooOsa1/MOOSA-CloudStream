@@ -3738,10 +3738,10 @@ class MOOSAHubProvider : TmdbProvider() {
                 MOOSAProgress.failureReport(
                     MOOSAPlaybackDiagnostics.report() +
                         "\n\nThere are no eligible installed playback sources. " +
-                        "Adding a repository does not install its extensions. " +
-                        "Open Extensions and install a compatible Anime provider " +
-                        "(e.g. AnimePahe, HiAnime, or Kickassanime) from Phisher. " +
-                        "Also check disabled sources in MOOSA settings.",
+                        "Anime extensions may be installed but not registered " +
+                        "with CloudStream's active provider API. The search uses " +
+                        "registered providers only. Check the actual loaded names " +
+                        "in Source Tester and disabled sources in MOOSA settings.",
                     "MOOSA Anime • No sources"
                 )
             } else if (request.originalLanguage.equals("ar", ignoreCase = true)) {
@@ -4309,11 +4309,12 @@ class MOOSAHubProvider : TmdbProvider() {
                 MOOSAProgress.failureReport(
                     MOOSAPlaybackDiagnostics.report() +
                         "\n\nThis counter counts installed playback providers, " +
-                        "not repositories or video servers. A repository only " +
-                        "lists extensions; install AnimePahe, HiAnime, " +
-                        "Kickassanime (or other anime plugins) separately. " +
-                        "Unknown-quality and below-720p links stay excluded. " +
-                        "Check MOOSA settings for blocked sources.",
+                        "not repositories or individual server URLs. " +
+                        "MOOSA now reads native Subbed/Dubbed anime episode lists " +
+                        "from loaded anime extensions; only providers actually " +
+                        "registered in CloudStream can be queried. " +
+                        "Unknown-quality or below-720p links stay excluded. " +
+                        "Check Source Tester for loaded names and disabled sources.",
                     "MOOSA Anime • No verified servers"
                 )
             } else if (request.originalLanguage.equals("ar", ignoreCase = true)) {
