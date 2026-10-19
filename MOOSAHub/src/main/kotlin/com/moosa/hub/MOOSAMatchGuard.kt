@@ -85,7 +85,7 @@ internal object MOOSAMatchGuard {
     private fun statedReleaseYear(name: String): Int? {
         // A suffix (1979) is release metadata; '2001: A Space Odyssey'
         // contains a number in the actual title and is NOT a year hint.
-        return Regex("""(?:^|[\s(])((?:19|20)\d{2})\)?\s*$""")
+        return Regex("""(?:\s+|\()((?:19|20)\d{2})\)?\s*$""")
             .find(name)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }
 
