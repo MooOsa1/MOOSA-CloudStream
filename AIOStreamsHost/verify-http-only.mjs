@@ -5,6 +5,7 @@
  * No external movie/video URL is fetched. No private upstream URLs are logged.
  */
 import {readFile} from 'node:fs/promises';
+import {probeMedia} from './probe-media-kind.mjs';
 const titles=[['tt31193180','Sinners (2025)'],['tt16311594','F1: The Movie (2025)']];
 const sample=JSON.parse(await readFile(new URL('./moosa-direct-only.template.json',import.meta.url),'utf8'));
 export function isHttpsMediaCandidate(stream){
@@ -54,7 +55,7 @@ async function json(url,timeout){
 }
 export async function main(){
   const providers=checkPreset(sample);
-  let total=0,failures=0;
+  let total=0,failures=0,mediaProven=0,playlists=0;
   for(const p of providers){
     let base;try {
       const m=await json(p.options.manifestUrl,18000);
@@ -72,15 +73,29 @@ export async function main(){
           ' listed='+info.streams.length+' HTTPS_candidate='+candidates.length+
           ' rejected='+String(info.streams.length-candidates.length)+
           ' videoDecoded=NOT_TESTED audioDecoded=NOT_TESTED');
+        for(const src of candidates.slice(0,2)){
+          try{
+            const result=await probeMedia(src.url);
+            if(['mp4_container','webm_or_mkv_container','mpegts_segment'].includes(result.kind))mediaProven++;
+            if(result.kind==='hls_playlist_only')playlists++;
+            console.log('MOOSA_HTTP_MEDIA '+title+' provider='+p.instanceId+
+              ' status='+result.status+' kind='+result.kind+
+              ' bytes='+result.bytes+' videoDecoded=NOT_TESTED audioDecoded=NOT_TESTED');
+          }catch(e){
+            console.log('MOOSA_HTTP_MEDIA '+title+' provider='+p.instanceId+
+              ' failed='+String(e.message).slice(0,42));
+          }
+        }
       }catch(e){failures++;console.log('MOOSA_HTTP_FILM '+title+' provider='+p.instanceId+
         ' failed='+String(e.message).slice(0,70));}
     }
   }
   console.log('MOOSA_HTTP_ONLY_FINAL candidates='+total+' discoveryErrors='+failures+
+    ' mediaContainers='+mediaProven+' hlsPlaylists='+playlists+
     ' verifiedPlayableFilms=0');
   // This discovery does not establish playable movies; a user device or safe
   // end-to-end media probe must verify audio, frames, seeking and identity.
-  if(total===0)process.exitCode=1;
+  if(total===0||mediaProven+playlists===0)process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1]).href)
  main().catch(e=>{console.error('MOOSA_HTTP_ONLY_FATAL '+e.message);process.exitCode=1;});
