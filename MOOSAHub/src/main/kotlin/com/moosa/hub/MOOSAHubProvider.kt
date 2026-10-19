@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.AnimeLoadResponse
 import com.lagradost.cloudstream3.DubStatus
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.Episode
+import com.lagradost.cloudstream3.AnimeSearchResponse
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.getImdbId
@@ -518,6 +519,7 @@ class MOOSAHubProvider : TmdbProvider() {
     ): Int? = when (result) {
         is MovieSearchResponse -> result.year
         is TvSeriesSearchResponse -> result.year
+        is AnimeSearchResponse -> result.year
         else -> null
     }
 
@@ -779,6 +781,20 @@ class MOOSAHubProvider : TmdbProvider() {
         originalLanguage: String?,
         season: Int?
     ): Int {
+        // Fuzzy ranking is allowed *after* an exact official-title gate.
+        // A near-name is not proof of identity (Dune vs Dune Part Two,
+        // Scary Movie vs Scary Movie 2, Naruto vs Naruto Shippuden).
+        val strict = MOOSAMatchGuard.titleAndClaimCompatible(
+            MOOSAMatchGuard.Claim(
+                title = aliases.firstOrNull().orEmpty(),
+                year = year, season = season
+            ),
+            MOOSAMatchGuard.Evidence(
+                title = result.name, year = resultYear(result)
+            ),
+            aliases
+        )
+        if (!strict) return 0
         val candidateYear =
             resultYear(result)
 
@@ -866,130 +882,42 @@ class MOOSAHubProvider : TmdbProvider() {
             seasonBonus
     }
 
+    private fun identityClaim(request: HubPlaybackRequest) =
+        MOOSAMatchGuard.Claim(
+            title = request.title,
+            year = request.year,
+            imdbId = request.imdbId,
+            tmdbId = request.tmdbId,
+            season = request.season,
+            episode = request.episode,
+            isAnime = request.isAnime
+        )
+
+    private fun loadedEvidence(
+        result: LoadResponse,
+        searchYear: Int? = null
+    ): MOOSAMatchGuard.Evidence =
+        MOOSAMatchGuard.Evidence(
+            title = result.name,
+            year = result.year,
+            searchYear = searchYear,
+            imdbId = result.getImdbId(),
+            tmdbId = result.getTMDbId()?.toIntOrNull(),
+            additionalNames = if (result is AnimeLoadResponse) {
+                listOfNotNull(result.engName, result.japName) +
+                    result.synonyms.orEmpty()
+            } else emptyList()
+        )
+
     private fun loadedIdentityMatches(
         result: LoadResponse,
         request: HubPlaybackRequest,
-        aliases: List<String>
-    ): Boolean {
-        val loadedImdb =
-            result.getImdbId()
-
-        val loadedTmdb =
-            result.getTMDbId()
-                ?.toIntOrNull()
-
-        if (
-            !request.imdbId.isNullOrBlank() &&
-            !loadedImdb.isNullOrBlank() &&
-            !loadedImdb.equals(
-                request.imdbId,
-                ignoreCase = true
-            )
-        ) {
-            return false
-        }
-
-        if (
-            request.tmdbId != null &&
-            loadedTmdb != null &&
-            loadedTmdb != request.tmdbId
-        ) {
-            return false
-        }
-
-        val idMatched =
-            (
-                !request.imdbId.isNullOrBlank() &&
-                    !loadedImdb.isNullOrBlank() &&
-                    loadedImdb.equals(
-                        request.imdbId,
-                        ignoreCase = true
-                    )
-                ) ||
-                (
-                    request.tmdbId != null &&
-                        loadedTmdb != null &&
-                        loadedTmdb == request.tmdbId
-                    )
-
-        if (idMatched) {
-            return true
-        }
-
-        // Series premiere dates vary by season across Arabic providers.
-        // Match the series identity and exact requested episode instead.
-        val candidateHasArabic =
-            Regex("""[\u0600-\u06FF]""")
-                .containsMatchIn(result.name)
-
-        val identityAliases =
-            if (
-                request.originalLanguage.equals(
-                    "ar",
-                    ignoreCase = true
-                ) &&
-                candidateHasArabic
-            ) {
-                (
-                    listOf(request.title) +
-                        aliases.filter {
-                            Regex("""[\u0600-\u06FF]""")
-                                .containsMatchIn(it)
-                        }
-                    )
-                    .distinctBy(::canonicalTitle)
-                    .take(10)
-            } else {
-                aliases
-            }
-
-        // Anime sources commonly expose a Japanese/romaji primary title
-        // and a separate English name plus synonyms. Check ALL official
-        // provider-supplied names before rejecting the matching episode.
-        if (request.isAnime && result is AnimeLoadResponse) {
-            val nativeNames = listOfNotNull(
-                result.name, result.engName, result.japName
-            ) + result.synonyms.orEmpty()
-            if (nativeNames.any { name ->
-                    safeTitleMatch(name, identityAliases, result.year, null)
-                }
-            ) return true
-        }
-
-        val wantSeries =
-            request.season != null &&
-                request.episode != null
-
-        val wantedYear =
-            if (wantSeries) {
-                null
-            } else {
-                request.year
-            }
-
-        return if (
-            request.originalLanguage.equals(
-                "ar",
-                ignoreCase = true
-            )
-        ) {
-            strictArabicTitleMatch(
-                candidate = result.name,
-                aliases = identityAliases,
-                candidateYear = result.year,
-                wantedYear = wantedYear,
-                wantSeries = wantSeries,
-                season = request.season
-            )
-        } else {
-            safeTitleMatch(
-                candidate = result.name,
-                aliases = identityAliases,
-                candidateYear = result.year,
-                wantedYear = wantedYear
-            )
-        }
-    }
+        aliases: List<String>,
+        searchYear: Int? = null
+    ): Boolean =
+        MOOSAMatchGuard.verifiedIdentity(
+            identityClaim(request), loadedEvidence(result, searchYear), aliases
+        )
 
     private fun arabicSeasonWord(
         season: Int
@@ -1811,7 +1739,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 loadedIdentityMatches(
                     loaded,
                     request,
-                    aliases
+                    aliases,
+                    searchYear = resultYear(match)
                 )
             ) {
                 return MatchedLoad(loaded, match.name)
@@ -1821,7 +1750,7 @@ class MOOSAHubProvider : TmdbProvider() {
         if (candidates.isNotEmpty()) {
             MOOSAPlaybackDiagnostics.update(
                 api,
-                "Title matched, but loading/series identity failed"
+                "Strict identity rejected • missing/mismatched year, ID, title or episode"
             )
         }
 
@@ -1954,7 +1883,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v18-anime-native",
+        "strict-v19-failclosed-identity",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
