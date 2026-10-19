@@ -16,12 +16,8 @@ import com.lagradost.cloudstream3.utils.Qualities
 object MOOSAQualityPolicy {
     const val MIN_HEIGHT = 720
 
-    private val explicitResolution = Regex(
-        """(?i)(?:^|[\s._/=?&#-])(2160|1440|1080|720|576|540|480|360|240)p?(?=$|[\s._/=?&#-])"""
-    )
-
     fun labeledHeight(value: String): Int? =
-        explicitResolution.find(value)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        MOOSAResolutionLabels.claimedHeight(value)
 
     fun height(link: ExtractorLink): Int? {
         // A positive numeric quality from a provider always wins.

@@ -3638,13 +3638,20 @@ class MOOSAHubProvider : TmdbProvider() {
 
         val aliases = aliasesJob.await()
 
-        // Resolve up to three Arabic sources together; finish as soon as the
-        // initial batch has returned so no fourth slow source blocks playback.
+        // A fixed chunk queue made source 11 wait for the *slowest* source
+        // in the first ten, even after other slots had already finished.
+        // Use a fair, bounded semaphore: each completed provider immediately
+        // releases a slot for the next provider. Arabic fast mode retains its
+        // original three-provider first-batch behaviour.
         val providerBatchSize = if (fastArabic) 3
             else MOOSASettingsStore.providerConcurrency()
+        val providerGate = kotlinx.coroutines.sync.Semaphore(providerBatchSize)
+        val providerGroups = if (fastArabic) providers.chunked(providerBatchSize)
+            else listOf(providers)
 
-        for (batch in providers.chunked(providerBatchSize)) {
+        for (batch in providerGroups) {
             batch.amap { api ->
+                providerGate.withPermit {
                 var providerWorked = false
                 val candidateLinks =
                     Collections.synchronizedList(mutableListOf<ExtractorLink>())
@@ -3814,8 +3821,14 @@ class MOOSAHubProvider : TmdbProvider() {
                                     }
                             )
 
-                        for (linkBatch in candidates.chunked(linkProbeBatchSize)) {
-                            linkBatch.amap { link ->
+                        // A blocked probe used to hold back the entire next
+                        // ten-link chunk. Start candidates in descending
+                        // quality order and refill free probe slots immediately
+                        // as they finish, without increasing parallel I/O.
+                        val linkProbeGate = kotlinx.coroutines.sync.Semaphore(linkProbeBatchSize)
+                        candidates.amap { link ->
+                            linkProbeGate.acquire()
+                            try {
                                 val key = linkKey(link)
                                 if (seenLinks.contains(key)) {
                                     return@amap false
@@ -3876,6 +3889,8 @@ class MOOSAHubProvider : TmdbProvider() {
                                     }
                                     false
                                 }
+                            } finally {
+                                linkProbeGate.release()
                             }
                         }
                     } else {
@@ -3972,6 +3987,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 }
 
                 providerWorked
+                } // providerGate: released immediately for each finished provider
             }
 
             // Native CloudStream only finishes its loading UI when
