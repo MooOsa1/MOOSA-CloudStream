@@ -1,0 +1,26 @@
+name: MOOSA HTTP-only 2025 source audit
+on:
+  push:
+    branches:
+      - experiment/moosa-http-only-20261019
+    paths:
+      - 'AIOStreamsHost/moosa-direct-only.template.json'
+      - 'AIOStreamsHost/verify-http-only.mjs'
+      - 'AIOStreamsHost/verify-http-only.test.mjs'
+      - '.github/workflows/moosa-http-only-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Enforce strictly no torrent config (offline unit tests)
+        run: node --test AIOStreamsHost/verify-http-only.test.mjs
+      - name: Probe contemporary movies via public HTTP addon endpoints
+        run: node AIOStreamsHost/verify-http-only.mjs
