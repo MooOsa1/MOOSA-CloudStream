@@ -943,6 +943,19 @@ class MOOSAHubProvider : TmdbProvider() {
                 aliases
             }
 
+        // Anime sources commonly expose a Japanese/romaji primary title
+        // and a separate English name plus synonyms. Check ALL official
+        // provider-supplied names before rejecting the matching episode.
+        if (request.isAnime && result is AnimeLoadResponse) {
+            val nativeNames = listOfNotNull(
+                result.name, result.engName, result.japName
+            ) + result.synonyms.orEmpty()
+            if (nativeNames.any { name ->
+                    safeTitleMatch(name, identityAliases, result.year, null)
+                }
+            ) return true
+        }
+
         val wantSeries =
             request.season != null &&
                 request.episode != null
@@ -1529,7 +1542,7 @@ class MOOSAHubProvider : TmdbProvider() {
         fun entries(status: DubStatus): List<MOOSAAnimeStreamEpisodePolicy.Item> =
             series.episodes[status].orEmpty().map { item ->
                 val number = item.episode?.takeIf { it > 0 }
-                    ?: Regex("""(?i)\\b(?:episode|ep)\\s*[:#-]?\\s*(\\d{1,4})\\b""")
+                    ?: Regex("""(?i)\b(?:episode|ep)\s*[:#-]?\s*(\d{1,4})\b""")
                         .find(item.name.orEmpty())
                         ?.groupValues?.getOrNull(1)?.toIntOrNull()
                 val srcSeason = item.season?.takeIf { it > 0 }
