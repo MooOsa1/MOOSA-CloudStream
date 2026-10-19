@@ -71,6 +71,7 @@ object MOOSASeeAll {
     private val watchedAdapters = WeakHashMap<RecyclerView, AdapterWatch>()
     private val watchedFragments =
         WeakHashMap<FragmentManager, FragmentManager.FragmentLifecycleCallbacks>()
+    @Volatile private var lifecycleActive = false
     private var lifecycleApplication: Application? = null
     private var lifecycleCallbacks: Application.ActivityLifecycleCallbacks? = null
     private data class OriginalTitle(
@@ -84,6 +85,7 @@ object MOOSASeeAll {
     private var lastBrowseOpenAt = 0L
 
     private fun scheduleHeaderRefresh() {
+        if (!lifecycleActive) return
         // CloudStream dispatches many global-layout events while rows scroll.
         // Coalesce them; never modify TextView text on every layout callback.
         if (headerRefreshScheduled) return
@@ -162,6 +164,7 @@ object MOOSASeeAll {
 
     fun observeHomeLifecycle(context: Context) {
         val app = context.applicationContext as? Application ?: return
+        lifecycleActive = true
         if (lifecycleCallbacks != null) return
         val callback = object : Application.ActivityLifecycleCallbacks {
                 override fun onActivityCreated(
@@ -193,6 +196,7 @@ object MOOSASeeAll {
 
     /** Unregister observers when CloudStream hot-updates or disables this cs3. */
     fun stopHomeLifecycle() {
+        lifecycleActive = false
         lifecycleCallbacks?.let { callback ->
             lifecycleApplication?.unregisterActivityLifecycleCallbacks(callback)
         }
@@ -611,6 +615,7 @@ object MOOSASeeAll {
     }
 
     fun registerCategories(api: MOOSAHubProvider) {
+        if (!lifecycleActive) return
         // CloudStream can reuse cached home rows before asynchronous home()
         // callbacks register each category. Pre-register known MOOSA rows once
         // so Show More cannot disappear while an otherwise valid row renders.
@@ -651,6 +656,7 @@ object MOOSASeeAll {
     }
 
     private fun installObserver() {
+        if (!lifecycleActive) return
         val current = activity ?: return
         watchHomeFragment(current)
         watchProvider(current)
@@ -880,6 +886,7 @@ object MOOSASeeAll {
     }
 
     private fun applyHeaders() {
+        if (!lifecycleActive) return
         val host = activity ?: return
         val master = homeMasterRecycler(host) ?: return
         watchProvider(host)
