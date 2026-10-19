@@ -460,5 +460,6 @@ export function createServer({mediaGateway=null}={}){
 }
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const PORT = Number(process.env.PORT||3000);
-  createServer().listen(PORT,'0.0.0.0',()=>console.log(`MOOSA Web on http://localhost:${PORT}`));
+  const HOST=process.env.MOOSA_HOST||'0.0.0.0';
+  createServer().listen(PORT,HOST,()=>console.log(`MOOSA Web on http://${HOST}:${PORT}`));
 }
