@@ -41,6 +41,15 @@ class MOOSAProgressVisibilityPolicyTest {
     }
 
     @Test
+    fun playableLinkFromEarlierOverlappingLookupHidesRefreshForSameEpisode() {
+        val p = MOOSAProgressVisibilityPolicy()
+        assertTrue(p.begin("episode-1"))
+        assertTrue("Refresh starts before original lookup finishes", p.begin("episode-1"))
+        p.linkAvailable("episode-1")
+        assertFalse("First verified stream hides same-episode follow-up", p.begin("episode-1"))
+    }
+
+    @Test
     fun staleLinkCallbackDoesNotSuppressProgressForNewEpisode() {
         val p = MOOSAProgressVisibilityPolicy()
         p.begin("ep1")
