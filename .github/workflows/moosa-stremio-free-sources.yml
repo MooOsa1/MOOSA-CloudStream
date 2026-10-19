@@ -144,3 +144,30 @@ jobs:
       - name: Stop ephemeral engine
         if: always()
         run: docker rm -f moosa-stremio-server || true
+  browser-hls-2025:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate browser HLS probe
+        run: node --check AIOStreamsHost/browser-hls-probe.mjs
+      - name: Launch official local Stremio server
+        run: |
+          docker run -d --rm --name moosa-stremio-hls \
+            -p 127.0.0.1:11470:11470 stremio/server:v4.22.2
+          for i in $(seq 1 40); do
+            if curl -sf -m 3 http://127.0.0.1:11470/settings >/dev/null; then
+              echo "OFFICIAL_STREMIO_HLS_ENGINE_READY"
+              break
+            fi
+            sleep 2
+          done
+          curl -sSf -m 5 http://127.0.0.1:11470/settings >/dev/null
+      - name: Verify modern 2025 browser HLS playlist route
+        run: node AIOStreamsHost/browser-hls-probe.mjs
+      - name: Stop test engine
+        if: always()
+        run: docker rm -f moosa-stremio-hls || true
