@@ -77,7 +77,9 @@ class MOOSAHubProvider : TmdbProvider() {
         val originalLanguage: String? = null,
         val season: Int? = null,
         val episode: Int? = null,
-        val titleAliases: List<String> = emptyList()
+        val titleAliases: List<String> = emptyList(),
+        val isAnime: Boolean = false,
+        val absoluteEpisode: Int? = null
     )
 
     private data class CachedTarget(
@@ -179,7 +181,12 @@ class MOOSAHubProvider : TmdbProvider() {
         val seasonNumber: Int? = null
     )
 
+    private data class TmdbGenre(
+        @JsonProperty("id") val id: Int? = null
+    )
+
     private data class TmdbDetail(
+        @JsonProperty("genres") val genres: List<TmdbGenre> = emptyList(),
         @JsonProperty("overview")
         val overview: String? = null,
         @JsonProperty("title")
@@ -628,7 +635,7 @@ class MOOSAHubProvider : TmdbProvider() {
         return markers.findAll(text).mapNotNull { match ->
             val token = match.groupValues[1]
             token.toIntOrNull() ?: ordinals[token]
-        }.firstOrNull()
+        }.firstOrNull() ?: MOOSAAnimePolicy.explicitAnimeSeason(value)
     }
 
     private fun seasonSpecificTitleMatch(
@@ -992,11 +999,8 @@ class MOOSAHubProvider : TmdbProvider() {
         if (!request.isTv) return emptyList()
 
         return coroutineScope {
-            listOf(
-                "ar-SA",
-                "ar",
-                "en-US"
-            ).map { language ->
+            (if (request.isAnime) listOf("ja-JP", "en-US", "ar-SA")
+             else listOf("ar-SA", "ar", "en-US")).map { language ->
                 async {
                     timed(2200L) {
                         app.get(
@@ -1065,6 +1069,14 @@ class MOOSAHubProvider : TmdbProvider() {
         // generated "اللعبة الموسم 5" occupied the same canonical-title key
         // and removed the plain query before it reached any provider.
         val generated = buildList {
+            // Anime sites frequently index each cour/season under its own
+            // English/Romaji title, e.g. "2nd Season", not TMDB S2E1.
+            if (request.isAnime && season > 1) {
+                preferredBase.take(3).forEach { title ->
+                    addAll(MOOSAAnimePolicy.seasonQueries(title, season))
+                }
+                addAll(seasonNames)
+            }
             // Keep a few primary names first, then their season-specific forms.
             // Otherwise a long TMDB alias list consumes the entire search
             // budget before season 5 variants can run.
@@ -1095,8 +1107,10 @@ class MOOSAHubProvider : TmdbProvider() {
         return generated
             .map { it.trim() }
             .filter { it.isNotBlank() }
+            // Do not remove anime "Season 2" / "2nd Season" by the same
+            // canonical key as the base show: sources search them separately.
             .distinctBy { normalizeArabicOrthography(normalizeTitle(it)) }
-            .take(24)
+            .take(if (request.isAnime) 28 else 24)
     }
 
     private fun isStreamPlayProvider(
@@ -1318,7 +1332,15 @@ class MOOSAHubProvider : TmdbProvider() {
         // waste most of the resolver budget. Prioritize the requested
         // season's Arabic WORD alias, which matches Akwam's own titles.
         val orderedAliases =
-            if (
+            if (request.isAnime && wantSeries && season != null && season > 1) {
+                // Try sequel-season names first rather than spending the whole
+                // provider timeout on the base season's generic page.
+                val seasonSpecific = cleanAliases.filter { title ->
+                    MOOSAAnimePolicy.explicitAnimeSeason(title) == season
+                }
+                (seasonSpecific + cleanAliases.filterNot { it in seasonSpecific })
+                    .distinct()
+            } else if (
                 isAkwamProvider(api) &&
                 wantSeries &&
                 season != null &&
@@ -1726,6 +1748,8 @@ class MOOSAHubProvider : TmdbProvider() {
                         arabicRequest && it.name.equals("ShahidWBas", true) -> 5
                         arabicRequest && isArabSeedProvider(it) -> 4
                         isBundledArabicProvider(it) -> 3
+                        request.isAnime && (TvType.Anime in it.supportedTypes ||
+                            TvType.OVA in it.supportedTypes) -> 2
                         arabicRequest && MOOSAArabicBridge.supports(it) -> 2
                         arabicRequest && it.lang.equals("ar", true) -> 1
                         else -> 0
@@ -1751,7 +1775,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v15",
+        "strict-v16-anime",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -2042,10 +2066,37 @@ class MOOSAHubProvider : TmdbProvider() {
                     null
                 }
 
+            // If TMDB S2E3 is absolute episode 15, an anime source
+            // sometimes publishes only Season 1 episodes 1..N. Use E15
+            // solely when the entire continuous prefix is verified.
+            val continuous = if (
+                request.isAnime &&
+                exact == null && seasonless == null &&
+                firstSeasonFallback == null &&
+                MOOSAAnimePolicy.allowsContinuousNumbering(
+                    requestedSeason = season,
+                    localEpisode = episode,
+                    absoluteEpisode = request.absoluteEpisode,
+                    sourceTitle = series.name,
+                    sourceEpisodes = series.episodes.map { item ->
+                        MOOSAAnimePolicy.SourceIndex(
+                            season = providerSeason(item),
+                            episode = episodeNumber(item)
+                        )
+                    }
+                )
+            ) {
+                series.episodes.firstOrNull { item ->
+                    episodeNumber(item) == request.absoluteEpisode &&
+                        (providerSeason(item) == null || providerSeason(item) == 1)
+                }
+            } else null
+
             val episodeData = (
                 exact
                     ?: seasonless
                     ?: firstSeasonFallback
+                    ?: continuous
                 )?.data
 
             if (episodeData.isNullOrBlank()) {
@@ -2498,6 +2549,10 @@ class MOOSAHubProvider : TmdbProvider() {
                     "ar"
                 } else null
 
+        val anime = MOOSAAnimePolicy.isAnime(
+            detectedOriginalLanguage, detail?.genres?.mapNotNull { it.id }.orEmpty()
+        )
+
         // TMDB provides both the official original and official localized
         // names. Carry them as aliases instead of machine-translating.
         val sourceTitleAliases = listOfNotNull(
@@ -2516,13 +2571,35 @@ class MOOSAHubProvider : TmdbProvider() {
                     tmdbId = tmdbId,
                     isTv = false,
                     originalLanguage = detectedOriginalLanguage,
-                    titleAliases = sourceTitleAliases
+                    titleAliases = sourceTitleAliases,
+                    isAnime = anime
                 ).toJson()
                 base
             }
 
             is TvSeriesLoadResponse -> {
+                val absolutes = if (anime) {
+                    MOOSAAnimePolicy.absoluteEpisodes(
+                        base.episodes.mapNotNull { entry ->
+                            val season = entry.season ?: return@mapNotNull null
+                            val number = entry.episode ?: return@mapNotNull null
+                            MOOSAAnimePolicy.Index(season, number)
+                        }
+                    )
+                } else emptyMap()
                 base.episodes.forEach { episode ->
+                    val absolute = if (anime && episode.season != null &&
+                        episode.episode != null
+                    ) {
+                        absolutes[MOOSAAnimePolicy.Index(
+                            episode.season!!, episode.episode!!
+                        )]
+                    } else null
+                    if (anime) {
+                        episode.name = MOOSAAnimePolicy.displayEpisodeName(
+                            episode.name, episode.season, episode.episode, absolute
+                        )
+                    }
                     episode.data = HubPlaybackRequest(
                         title = base.name,
                         year = base.year,
@@ -2532,7 +2609,9 @@ class MOOSAHubProvider : TmdbProvider() {
                         originalLanguage = detectedOriginalLanguage,
                         titleAliases = sourceTitleAliases,
                         season = episode.season,
-                        episode = episode.episode
+                        episode = episode.episode,
+                        isAnime = anime,
+                        absoluteEpisode = absolute
                     ).toJson()
                 }
                 base
@@ -3523,7 +3602,10 @@ class MOOSAHubProvider : TmdbProvider() {
                 }
             } else {
                 (request.titleAliases + playbackAliases(request))
-                    .distinctBy(::canonicalTitle)
+                    .distinctBy { title ->
+                        if (request.isAnime) normalizeTitle(title)
+                        else canonicalTitle(title)
+                    }
             }
         }
 
