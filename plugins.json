@@ -1,10 +1,10 @@
 [
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=akwam.ss&sz=%size%",
-        "fileHash": "sha256-328732c8e9aa78cc9ecd4dc08d0694e90420888ed00d42c68d40aec6b654ae8e",
+        "fileHash": "sha256-eb49ed1861a19be9a13dd22f20a66c87390c9be619fcf80e9cc7469b1ef4ffe7",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 43493,
+        "fileSize": 45364,
         "status": 1,
         "language": "ar",
         "authors": [
@@ -14,7 +14,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 3,
+        "version": 4,
         "internalName": "MOOSAArabic",
         "description": "\u0623\u0643\u0648\u0627\u0645 \u0639\u0631\u0628\u064a \u0648\u0645\u062f\u0628\u0644\u062c: \u062a\u0635\u0646\u064a\u0641\u0627\u062a \u0623\u0635\u0644\u064a\u0629 \u062f\u0642\u064a\u0642\u0629 \u0648\u0631\u0648\u0627\u0628\u0637 HD \u0645\u0639 \u0628\u062f\u0627\u0626\u0644 HTTPS \u0648HTTP",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAArabic.cs3",
@@ -22,10 +22,10 @@
     },
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-a7f649d6855c6d8d3d145f83a4fef7f03996ab6904d05e61e6bcaf63831aa0ad",
+        "fileHash": "sha256-38faa3239f52ab8ede4ffd28fb37b511bdae63bd662530fd9b6613e890a373bf",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 348176,
+        "fileSize": 351104,
         "status": 1,
         "language": "en",
         "authors": [
@@ -35,7 +35,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 105,
+        "version": 106,
         "internalName": "MOOSAHub",
         "description": "Global movies and series with Arabic subtitles; Arabic originals in separate MOOSA Arabic plugin",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAHub.cs3",
