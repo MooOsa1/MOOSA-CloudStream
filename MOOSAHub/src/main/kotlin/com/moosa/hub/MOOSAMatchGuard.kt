@@ -110,7 +110,7 @@ internal object MOOSAMatchGuard {
         if (sequel) return false
         return listOfNotNull(item.year, item.searchYear,
             statedReleaseYear(item.title)).any { year ->
-            year in 1900..2100 && kotlin.math.abs(year - requested) > 1
+            year in 1900..2100 && year != requested
         }
     }
 
@@ -157,7 +157,7 @@ internal object MOOSAMatchGuard {
             item.year == null && item.searchYear == null) return false
         return listOfNotNull(item.year, item.searchYear,
             statedReleaseYear(item.title)).any {
-            it in 1900..2100 && kotlin.math.abs(it - year) <= 1
+            it in 1900..2100 && it == year
         }
     }
 }
