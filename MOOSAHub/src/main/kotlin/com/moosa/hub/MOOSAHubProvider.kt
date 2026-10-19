@@ -1750,7 +1750,7 @@ class MOOSAHubProvider : TmdbProvider() {
         if (candidates.isNotEmpty()) {
             MOOSAPlaybackDiagnostics.update(
                 api,
-                "Title matched, but loading/series identity failed"
+                "Strict identity rejected • missing/mismatched year, ID, title or episode"
             )
         }
 
