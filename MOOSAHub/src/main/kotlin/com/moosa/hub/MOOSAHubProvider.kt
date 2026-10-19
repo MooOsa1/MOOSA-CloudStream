@@ -3858,7 +3858,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                     acceptedLinks.incrementAndGet()
                                     emittedLink.set(true)
                                     shownLinks.incrementAndGet()
-                                    MOOSAProgress.linkAvailable(progressToken)
+                                    MOOSAProgress.linkAvailable(progressToken, progressKey)
 
                                     synchronized(callbackLock) {
                                         callback(link)
