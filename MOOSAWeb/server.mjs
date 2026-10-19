@@ -13,6 +13,7 @@ import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream
 import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
 import {createMediaGateway} from './verified-media-gateway.mjs';
 import {lookupAIOStreams} from './local-stremio-bridge.mjs';
+import {handleLocalMedia,MEDIA_PREFIX} from './local-stremio-media.mjs';
 import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -163,6 +164,14 @@ async function handle(req,res,mediaGateway=null) {
     if(earlyUrl.pathname.startsWith('/api/media/')){
       if(!mediaGateway)return err(res,404,'No operator-approved media gateway configured');
       return mediaGateway.handle(req,res,earlyUrl);
+    }
+    if(earlyUrl.pathname.startsWith(MEDIA_PREFIX+'/')){
+      // This media relay is NEVER enabled on the public Render website.
+      // Requests and the underlying Stremio engine must both stay on loopback.
+      if(process.env.MOOSA_HOST!=='127.0.0.1' ||
+          req.socket.localAddress!=='127.0.0.1')
+        return err(res,404,'Local Stremio media relay disabled');
+      return handleLocalMedia(req,res,earlyUrl);
     }
     if(earlyUrl.pathname==='/api/stremio-local/lookup'){
       if(req.method!=='POST')return err(res,405,'POST required');
