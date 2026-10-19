@@ -3074,8 +3074,28 @@ class MOOSAHubProvider : TmdbProvider() {
         }
         val result = inspectSubtitleContent(sub)
         if (subtitleCheckCache.size >= 256) {
-            subtitleCheckCache.clear()
-            verifiedSubtitleFormats.clear()
+            // Clearing the ENTIRE cache at 256 caused an avoidable storm of
+            // subtitle re-downloads on later episodes, plus erased known
+            // VTT/SRT formats. Evict only expired / oldest checks.
+            val nowMs = System.currentTimeMillis()
+            subtitleCheckCache.entries.forEach { entry ->
+                val ttl = if (entry.value.readable)
+                    successfulSubtitleCheckLifetimeMs
+                else failedSubtitleCheckLifetimeMs
+                if (nowMs - entry.value.checkedAt !in 0 until ttl) {
+                    if (subtitleCheckCache.remove(entry.key, entry.value)) {
+                        verifiedSubtitleFormats.remove(entry.key)
+                    }
+                }
+            }
+            if (subtitleCheckCache.size >= 256) {
+                subtitleCheckCache.entries.minByOrNull { it.value.checkedAt }
+                    ?.let { entry ->
+                        if (subtitleCheckCache.remove(entry.key, entry.value)) {
+                            verifiedSubtitleFormats.remove(entry.key)
+                        }
+                    }
+            }
         }
         subtitleCheckCache[cacheKey] = CachedSubtitleCheck(
             System.currentTimeMillis(), result
