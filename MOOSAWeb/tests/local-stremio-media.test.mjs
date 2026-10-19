@@ -45,3 +45,35 @@ test('rejects traversal, query string, non-loopback endpoints and host mismatche
  assert.equal(makeLocalMediaUrl('stream-q-720.m3u8',base),
   MEDIA_PREFIX+'/'+hash+'/'+idx+'/stream-q-720.m3u8');
 });
+
+
+import http from 'node:http';
+import {once} from 'node:events';
+import {handleLocalMedia} from '../local-stremio-media.mjs';
+test('real local HTTP proxy rewrites master playlist and streams binary segment from pinned host',async()=>{
+  const fetched=[];
+  const mockFetcher=async (url,options)=>{
+    fetched.push({url,method:options.method});
+    if(url.endsWith('.m3u8'))return new Response('#EXTM3U\n#EXTINF:8,\nstream-q-720/0.ts\n',{
+      status:200,headers:{'content-type':'application/vnd.apple.mpegurl'}});
+    if(url.endsWith('.ts'))return new Response(new Uint8Array([71,0,71,1,71]),{
+      status:200,headers:{'content-type':'video/mp2t','content-length':'5'}});
+    throw Error('invalid URL');
+  };
+  const server=http.createServer((req,res)=>
+    handleLocalMedia(req,res,new URL(req.url,'http://127.0.0.1'),{fetcher:mockFetcher}));
+  server.listen(0,'127.0.0.1');
+  await once(server,'listening');
+  const origin='http://127.0.0.1:'+server.address().port;
+  try{
+    const a=await fetch(origin+MEDIA_PREFIX+'/'+hash+'/2/hls.m3u8');
+    assert.equal(a.status,200);
+    const text=await a.text();
+    assert.ok(text.includes(MEDIA_PREFIX+'/'+hash+'/2/stream-q-720/0.ts'));
+    const b=await fetch(origin+MEDIA_PREFIX+'/'+hash+'/2/stream-q-720/0.ts');
+    assert.equal(b.status,200);
+    assert.deepEqual([...new Uint8Array(await b.arrayBuffer())],[71,0,71,1,71]);
+    assert.equal(fetched.length,2);
+    assert.deepEqual(fetched.map(x=>new URL(x.url).hostname),['127.0.0.1','127.0.0.1']);
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
