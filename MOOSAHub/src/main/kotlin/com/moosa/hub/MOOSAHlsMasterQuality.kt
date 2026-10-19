@@ -14,7 +14,7 @@ internal object MOOSAHlsMasterQuality {
     )
 
     fun highestVariantHeight(manifest: String): Int? {
-        val lines = manifest.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
+        val lines = manifest.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList()
         if (lines.firstOrNull()?.trimStart('\uFEFF') != "#EXTM3U") return null
         var result: Int? = null
         for (i in 0 until lines.lastIndex) {
