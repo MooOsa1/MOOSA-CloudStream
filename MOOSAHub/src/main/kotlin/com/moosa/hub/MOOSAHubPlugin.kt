@@ -31,6 +31,11 @@ class MOOSAHubPlugin : Plugin() {
         ).start()
     }
 
+    override fun beforeUnload() {
+        MOOSASeeAll.stopHomeLifecycle()
+        super.beforeUnload()
+    }
+
     private fun currentActivity(): Activity? {
         return try {
             val common = Class.forName(
