@@ -108,6 +108,8 @@ object MOOSAProgress {
                 sessionId.get() == token &&
                 lastPercent < 100
             ) {
+                // Don't let a late background probe make a timed-out bar flash.
+                hiddenForPlayback = true
                 hide()
             }
         }, 120000L)
@@ -244,10 +246,22 @@ object MOOSAProgress {
             return
         }
 
-        // Update every visible CloudStream loading surface. Previously the mere
-        // existence of player_loading_overlay short-circuited rendering even
-        // after that overlay became hidden, which could leave the visible
-        // progress UI frozen at 87%.
+        // CloudStream can prefetch another episode while video is already
+        // visible. When the *native player loading overlay* is hidden, a
+        // background server check must NEVER create a fallback bar over it.
+        // CloudStream keeps handling its own video buffer/loading UI.
+        val overlayId = act.resources.getIdentifier(
+            "player_loading_overlay", "id", act.packageName
+        )
+        val nativePlayerOverlay = if (overlayId != 0) {
+            act.findViewById<View>(overlayId)
+        } else null
+        if (nativePlayerOverlay != null && !nativePlayerOverlay.isShown) {
+            restoreNativeDialog()
+            hideFallback(act)
+            return
+        }
+
         val playerRendered = renderPlayerOverlay(act)
         val dialogRendered = renderResultLoadingDialog(act)
         val primaryRendered = playerRendered || dialogRendered
