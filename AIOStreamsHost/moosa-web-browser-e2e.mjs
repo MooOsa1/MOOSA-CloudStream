@@ -49,7 +49,7 @@ try{
  const choose=page.locator('#source-select');
  await choose.waitFor({state:'visible'});
  await page.waitForFunction(()=>document.querySelector('#source-select').options.length>0 &&
-   document.querySelector('#play').disabled===false,{timeout:65000});
+   document.querySelector('#play').disabled===false,null,{timeout:65000});
  const status=await page.locator('#lookup-status').textContent();
  const n=await choose.locator('option').count();
  console.log('MOOSA_BROWSER_REAL_SITE_OPEN=true privateAddonAccepted=true sourceChoices='+n+
@@ -59,7 +59,7 @@ try{
    const video=document.querySelector('#stremio-video');
    return (video.readyState>=2&&video.videoWidth>0&&video.videoHeight>0&&
      (video.currentTime>0.2 || !video.paused));
- },{timeout:160000}).then(()=>true).catch(()=>false);
+ },null,{timeout:160000}).then(()=>true).catch(()=>false);
  const stats=await page.evaluate(()=>{
    const v=document.querySelector('#stremio-video');
    return {width:v.videoWidth,height:v.videoHeight,playSeconds:Math.round(v.currentTime*10)/10,
