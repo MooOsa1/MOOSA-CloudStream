@@ -58,8 +58,8 @@ internal object MOOSAMatchGuard {
         if (isSeries) {
             value = value
                 .replace(Regex("""\s+s\d{1,2}\s*e\d{1,4}$"""), "")
-                .replace(Regex("""\s+(?:season|الموسم)\s*\d{1,2}$"""), "")
                 .replace(Regex("""\s+(?:episode|ep|الحلقه|حلقة|حلقه)\s*\d{1,4}$"""), "")
+                .replace(Regex("""\s+(?:season|الموسم)\s*\d{1,2}$"""), "")
                 .trim()
         }
         return value
