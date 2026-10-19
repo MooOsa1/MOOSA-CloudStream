@@ -82,7 +82,7 @@ internal object MOOSAAnimePolicy {
     }
 
     fun yearInTitle(value: String): Int? =
-        Regex("""(?:^|[^\\d])((?:19|20)\\d{2})(?:[^\\d]|$)""")
+        Regex("""(?:^|[^\d])((?:19|20)\d{2})(?:[^\d]|$)""")
             .find(value)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
     fun explicitAnimeSeason(title: String): Int? {
