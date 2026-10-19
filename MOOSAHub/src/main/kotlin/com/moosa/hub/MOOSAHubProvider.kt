@@ -1494,6 +1494,53 @@ class MOOSAHubProvider : TmdbProvider() {
             loadedIdentityMatches(movie, request, aliases)
     }
 
+    private fun animeSeriesHasEpisode(
+        series: TvSeriesLoadResponse,
+        request: HubPlaybackRequest,
+        searchTitle: String,
+        aliases: List<String>
+    ): Boolean {
+        val season = request.season ?: return false
+        val episode = request.episode ?: return false
+        fun number(item: Episode): Int? =
+            item.episode?.takeIf { it > 0 }
+                ?: Regex("""(?i)\b(?:episode|ep)\s*[:#-]?\s*(\d{1,4})\b""")
+                    .find(item.name.orEmpty())?.groupValues?.getOrNull(1)?.toIntOrNull()
+        fun sourceSeason(item: Episode): Int? =
+            item.season?.takeIf { it > 0 }
+                ?: MOOSAAnimePolicy.explicitAnimeSeason(item.name.orEmpty())
+
+        val explicitTitleSeasons = listOf(series.name, searchTitle)
+            .mapNotNull(MOOSAAnimePolicy::explicitAnimeSeason)
+        if (explicitTitleSeasons.any { it != season }) return false
+
+        if (series.episodes.any {
+                sourceSeason(it) == season && number(it) == episode
+            }) return true
+
+        val availableSeasons = series.episodes.mapNotNull(::sourceSeason).distinct()
+        val validSingleSeason =
+            availableSeasons.isEmpty() || availableSeasons == listOf(1)
+        val pageProvesSeason =
+            explicitTitleSeasons.contains(season) &&
+                listOf(series.name, searchTitle).any {
+                    seasonSpecificTitleMatch(it, aliases, season)
+                }
+        if (validSingleSeason && (season == 1 || pageProvesSeason) &&
+            series.episodes.any { number(it) == episode }
+        ) return true
+
+        return MOOSAAnimePolicy.allowsContinuousNumbering(
+            requestedSeason = season,
+            localEpisode = episode,
+            absoluteEpisode = request.absoluteEpisode,
+            sourceTitle = series.name,
+            sourceEpisodes = series.episodes.map { item ->
+                MOOSAAnimePolicy.SourceIndex(sourceSeason(item), number(item))
+            }
+        )
+    }
+
     private suspend fun loadBestMatch(
         api: MainAPI,
         request: HubPlaybackRequest,
@@ -1541,7 +1588,9 @@ class MOOSAHubProvider : TmdbProvider() {
 
             if (
                 direct != null &&
-                correctType(direct)
+                correctType(direct) &&
+                (!request.isAnime || direct !is TvSeriesLoadResponse ||
+                    animeSeriesHasEpisode(direct, request, direct.name, aliases))
             ) {
                 return MatchedLoad(direct, direct.name)
             }
@@ -1577,7 +1626,9 @@ class MOOSAHubProvider : TmdbProvider() {
                         direct,
                         request,
                         aliases
-                    )
+                    ) &&
+                    (!request.isAnime || direct !is TvSeriesLoadResponse ||
+                        animeSeriesHasEpisode(direct, request, direct.name, aliases))
                 ) {
                     return MatchedLoad(direct, direct.name)
                 }
@@ -1654,6 +1705,12 @@ class MOOSAHubProvider : TmdbProvider() {
             }
 
             if (!correctType(loaded)) continue
+            // A matching anime title is not proof that the requested
+            // episode is on this provider page. Try the NEXT search result
+            // before caching an unusable base-series target.
+            if (request.isAnime && loaded is TvSeriesLoadResponse &&
+                !animeSeriesHasEpisode(loaded, request, match.name, aliases)
+            ) continue
 
             if (
                 loadedIdentityMatches(
