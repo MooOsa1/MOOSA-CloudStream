@@ -43,8 +43,15 @@ async function serviceStatus(){
     return false;
   }
 }
+function updateNativeAppLink(){
+  const id=$('#imdb').value.trim(),link=$('#open-native-stremio');
+  if(!link)return;
+  if(!validMovieId(id)){link.removeAttribute('href');return;}
+  link.href='stremio:///detail/movie/'+id+'/'+id;
+}
 async function findSources(){
   const manifestUrl=$('#addon-url').value.trim(),imdbId=$('#imdb').value.trim();
+  updateNativeAppLink();
   if(!validMovieId(imdbId)){status('#lookup-status','Enter a real IMDb ID, for example tt31193180.','bad');return;}
   if(!/^(?:https|stremio):\/\/aiostreams-nightly\.fortheweak\.cloud\/stremio\/[^?#]+\/manifest\.json$/.test(manifestUrl)){
     status('#lookup-status','Paste the private AIOStreams Stremio manifest URL from your installed MOOSA Hub configuration.','bad');return;
@@ -176,9 +183,12 @@ $('#source-select').addEventListener('change',()=>{if(!video.paused||hls)void pl
 for(const button of document.querySelectorAll('[data-film]')){
   button.addEventListener('click',()=>{
     $('#imdb').value=button.dataset.film;
+    updateNativeAppLink();
     void findSources();
   });
 }
 const url=new URL(location.href);
 if(validMovieId(url.searchParams.get('imdb')))$('#imdb').value=url.searchParams.get('imdb');
+$('#imdb').addEventListener('input',updateNativeAppLink);
+updateNativeAppLink();
 void serviceStatus();
