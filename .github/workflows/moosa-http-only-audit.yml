@@ -6,6 +6,7 @@ on:
     paths:
       - 'AIOStreamsHost/moosa-direct-only.template.json'
       - 'AIOStreamsHost/verify-http-only.mjs'
+      - 'AIOStreamsHost/scout-http-providers.mjs'
       - 'AIOStreamsHost/probe-media-kind.mjs'
       - 'AIOStreamsHost/verify-http-only.test.mjs'
       - '.github/workflows/moosa-http-only-audit.yml'
@@ -25,3 +26,6 @@ jobs:
         run: node --test AIOStreamsHost/verify-http-only.test.mjs
       - name: Probe contemporary movies via public HTTP addon endpoints
         run: node AIOStreamsHost/verify-http-only.mjs
+        continue-on-error: true
+      - name: Explore WebStreamrMBG and Pipe without source promotion
+        run: node AIOStreamsHost/scout-http-providers.mjs
