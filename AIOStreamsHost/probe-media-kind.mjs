@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
 const MEDIA_MAX=131072;
@@ -52,7 +53,8 @@ export async function probeMedia(raw){
      }
    }finally{await reader.cancel().catch(()=>{});}
    return {status:r.status,kind:inspectPrefix(Buffer.concat(chunks,size),ct),
-     bytes:size,contentType:ct};
+     bytes:size,contentType:ct,
+     fingerprint:createHash('sha256').update(Buffer.concat(chunks,size)).digest('hex')};
  }
  throw Error('too-many-redirects');
 }
