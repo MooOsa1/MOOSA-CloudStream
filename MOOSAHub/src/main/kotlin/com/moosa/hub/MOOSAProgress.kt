@@ -98,7 +98,7 @@ object MOOSAProgress {
 
         update(
             4,
-            "Checking servers • 0/$total • 0 verified", token
+            "Checking sources • 0/$total • 0 verified", token
         )
 
         // Never leave a stale custom progress bar on screen forever,
@@ -135,7 +135,7 @@ object MOOSAProgress {
         if (checked >= safeTotal) {
             update(
                 91,
-                "Servers checked • $verified ready • Finalizing…", token
+                "Sources checked • $verified ready • Finalizing…", token
             )
 
             // Subtitle finalization is bounded separately. If Android keeps
@@ -196,7 +196,7 @@ object MOOSAProgress {
         mainHandler.post { if (sessionId.get() == finishedToken) hide() }
     }
 
-    fun failureReport(report: String) {
+    fun failureReport(report: String, title: String = "MOOSA Arabic diagnostics") {
         sessionId.incrementAndGet()
         hide()
 
@@ -205,7 +205,7 @@ object MOOSAProgress {
 
             try {
                 AlertDialog.Builder(act)
-                    .setTitle("MOOSA Arabic diagnostics")
+                    .setTitle(title)
                     .setMessage(report)
                     .setPositiveButton("OK", null)
                     .show()

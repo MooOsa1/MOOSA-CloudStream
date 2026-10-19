@@ -1756,6 +1756,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 // Arabic sites belong to the independent native provider.
                 (!isArabicProvider(api) || (request.isAnime &&
                     (TvType.Anime in api.supportedTypes ||
+                        TvType.AnimeMovie in api.supportedTypes ||
                         TvType.OVA in api.supportedTypes))) &&
                 api !== this &&
                     (
@@ -1808,6 +1809,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         arabicRequest && isArabSeedProvider(it) -> 4
                         isBundledArabicProvider(it) -> 3
                         request.isAnime && (TvType.Anime in it.supportedTypes ||
+                            TvType.AnimeMovie in it.supportedTypes ||
                             TvType.OVA in it.supportedTypes) -> 2
                         arabicRequest && MOOSAArabicBridge.supports(it) -> 2
                         arabicRequest && it.lang.equals("ar", true) -> 1
@@ -3616,15 +3618,18 @@ class MOOSAHubProvider : TmdbProvider() {
         )
 
         if (providers.isEmpty()) {
-            if (
-                request.originalLanguage.equals(
-                    "ar",
-                    ignoreCase = true
-                )
-            ) {
+            if (request.isAnime) {
                 MOOSAProgress.failureReport(
-                    MOOSAPlaybackDiagnostics.report()
+                    MOOSAPlaybackDiagnostics.report() +
+                        "\n\nThere are no eligible installed playback sources. " +
+                        "Adding a repository does not install its extensions. " +
+                        "Open Extensions and install a compatible Anime provider " +
+                        "(e.g. AnimePahe, HiAnime, or Kickassanime) from Phisher. " +
+                        "Also check disabled sources in MOOSA settings.",
+                    "MOOSA Anime • No sources"
                 )
+            } else if (request.originalLanguage.equals("ar", ignoreCase = true)) {
+                MOOSAProgress.failureReport(MOOSAPlaybackDiagnostics.report())
             }
             return@coroutineScope false
         }
@@ -4180,16 +4185,24 @@ class MOOSAHubProvider : TmdbProvider() {
 
         MOOSAProgress.finish(shownLinks.get(), progressToken)
 
-        if (
-            shownLinks.get() == 0 &&
-            request.originalLanguage.equals(
-                "ar",
-                ignoreCase = true
-            )
-        ) {
-            MOOSAProgress.failureReport(
-                MOOSAPlaybackDiagnostics.report()
-            )
+        if (shownLinks.get() == 0) {
+            if (request.isAnime) {
+                // Explain the 0/N denominator with actual provider names and
+                // separate missing episode matches from rejected/unknown-quality
+                // links. Never silently accept unknown resolution below 720p.
+                MOOSAProgress.failureReport(
+                    MOOSAPlaybackDiagnostics.report() +
+                        "\n\nThis counter counts installed playback providers, " +
+                        "not repositories or video servers. A repository only " +
+                        "lists extensions; install AnimePahe, HiAnime, " +
+                        "Kickassanime (or other anime plugins) separately. " +
+                        "Unknown-quality and below-720p links stay excluded. " +
+                        "Check MOOSA settings for blocked sources.",
+                    "MOOSA Anime • No verified servers"
+                )
+            } else if (request.originalLanguage.equals("ar", ignoreCase = true)) {
+                MOOSAProgress.failureReport(MOOSAPlaybackDiagnostics.report())
+            }
         }
 
         emittedLink.get()
