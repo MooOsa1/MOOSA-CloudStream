@@ -6,7 +6,7 @@ import {isHttpsMediaCandidate,checkPreset} from './verify-http-only.mjs';
 test('preset excludes torrent/P2P, paid services and unwanted providers',async()=>{
   const p=JSON.parse(await readFile(new URL('./moosa-direct-only.template.json',import.meta.url),'utf8'));
   const providers=checkPreset(p);
-  assert.deepEqual(providers.map(p=>p.instanceId),['mpg1','msh1']);
+  assert.deepEqual(providers.map(p=>p.instanceId),['mhd1']);
   assert.deepEqual(p.config.requiredStreamTypes,['http']);
   assert.ok(p.config.excludedStreamTypes.includes('p2p'));
   assert.ok(!p.config.presets.some(p=>['torrentio','comet'].includes(p.type)));
