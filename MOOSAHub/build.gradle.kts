@@ -18,7 +18,7 @@ tasks.withType<KotlinJvmCompile>().configureEach {
 
 cloudstream {
     language = "en"
-    description = "Global movies and series with Arabic subtitles; Arabic originals in separate MOOSA Arabic plugin"
+    description = "Global movies, series and anime with native anime episodes and Arabic subtitles; Arabic originals in MOOSA Arabic"
     authors = listOf("MOOSA")
     status = 1
     tvTypes = listOf("Movie", "TvSeries", "Anime", "AnimeMovie", "OVA")
