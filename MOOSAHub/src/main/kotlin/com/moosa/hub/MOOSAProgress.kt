@@ -92,7 +92,7 @@ object MOOSAProgress {
         if (hiddenForPlayback) {
             // CloudStream may reload links during active playback. This is
             // NOT a fresh Play press: leave the video unobstructed.
-            mainHandler.post { hide() }
+            mainHandler.post { if (sessionId.get() == token) hide() }
             return token
         }
 
@@ -131,8 +131,6 @@ object MOOSAProgress {
             )
 
         if (checked >= safeTotal) {
-            val token = sessionId.get()
-
             update(
                 91,
                 "Servers checked • $verified ready • Finalizing…", token
@@ -179,16 +177,16 @@ object MOOSAProgress {
         if (token != sessionId.get()) return
         visibilityPolicy.linkAvailable(activeRequestKey)
         hiddenForPlayback = true
-        mainHandler.post { hide() }
+        mainHandler.post { if (sessionId.get() == token) hide() }
     }
 
     fun finish(verified: Int, token: Int) {
         if (token != sessionId.get()) return
-        sessionId.incrementAndGet()
+        val finishedToken = sessionId.incrementAndGet()
         lastPercent = 100
         lastText = "Ready • $verified servers"
         hiddenForPlayback = true
-        mainHandler.post { hide() }
+        mainHandler.post { if (sessionId.get() == finishedToken) hide() }
     }
 
     fun failureReport(report: String) {
