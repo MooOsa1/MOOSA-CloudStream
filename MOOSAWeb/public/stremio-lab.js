@@ -1,6 +1,8 @@
-import {localStremioHls,validMovieId} from './local-stremio-client.js';
+import {localStremioHls,localStremioProxyHls,validMovieId} from './local-stremio-client.js';
 const $=selector=>document.querySelector(selector);
 const video=$('#stremio-video');
+const localLab=location.protocol==='http:'&&location.hostname==='127.0.0.1'&&location.port==='3000';
+const videoHlsUrl=stream=>localLab?localStremioProxyHls(stream):localStremioHls(stream);
 let sources=[],hls=null,sequence=0,startTimeout=null,stallTimeout=null,attempts=0,played=false;
 const MAX_AUTOMATIC_TRIES=5;
 const isIos=/iPhone|iPad|iPod/i.test(navigator.userAgent)||(/Macintosh/i.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
@@ -33,7 +35,7 @@ async function serviceStatus(){
   }
   status('#platform-note','Checking Stremio Service at 127.0.0.1:11470...');
   try{
-    const res=await fetch('http://127.0.0.1:11470/settings',{
+    const res=await fetch(localLab?'/api/stremio-local/status':'http://127.0.0.1:11470/settings',{
       cache:'no-store',signal:AbortSignal.timeout(3500)});
     if(!res.ok)throw Error('HTTP '+res.status);
     status('#platform-note','Stremio Service detected locally. Ready to test browser playback.','good');
@@ -67,7 +69,7 @@ async function findSources(){
     });
     const result=await response.json().catch(()=>({}));
     if(!response.ok)throw Error(result.error||'Source index returned HTTP '+response.status);
-    sources=(Array.isArray(result.sources)?result.sources:[]).filter(x=>localStremioHls(x));
+    sources=(Array.isArray(result.sources)?result.sources:[]).filter(x=>videoHlsUrl(x));
     if(!sources.length)throw Error('No P2P streams for this film. No playback is claimed.');
     const options=$('#source-select');
     options.replaceChildren();
@@ -104,7 +106,7 @@ async function playIndex(index,{automatic=false}={}){
  }
  clearPlayer();
  const myTurn=sequence;
- const source=sources[index],url=localStremioHls(source);
+ const source=sources[index],url=videoHlsUrl(source);
  if(!url)return;
  $('#source-select').value=String(index);
  status('#play-status','Requesting torrent stream '+(index+1)+' of '+sources.length+' from local Stremio Service...');
