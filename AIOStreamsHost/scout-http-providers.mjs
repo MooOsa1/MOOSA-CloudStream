@@ -6,7 +6,9 @@ import {isHttpsMediaCandidate} from './verify-http-only.mjs';
 import {probeMedia} from './probe-media-kind.mjs';
 const sources=[
   {id:'webstreamrmbg',base:'https://87d6a6ef6b58-webstreamrmbg.baby-beamup.club'},
-  {id:'pipe',base:'https://pipe.boringways.workers.dev'}
+  {id:'pipe',base:'https://pipe.boringways.workers.dev'},
+  {id:'hdhub',base:'https://hdhub.thevolecitor.qzz.io'},
+  {id:'sootio',base:'https://sooti.info'}
 ];
 const movies=[['tt31193180','Sinners-2025'],['tt16311594','F1-2025']];
 const get=async (url,timeout=18000)=>{
