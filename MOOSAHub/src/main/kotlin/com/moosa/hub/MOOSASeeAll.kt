@@ -41,6 +41,8 @@ object MOOSASeeAll {
         WeakHashMap<ViewGroup, ViewTreeObserver.OnGlobalLayoutListener>()
     private val observedHomeLists =
         WeakHashMap<RecyclerView, RecyclerView.OnScrollListener>()
+    private val observedRowAttachments =
+        WeakHashMap<RecyclerView, RecyclerView.OnChildAttachStateChangeListener>()
     private val headerRefs =
         ConcurrentHashMap<String, WeakReference<TextView>>()
     // The host adapter rewrites home_child_more_info.text on rebind.
@@ -319,40 +321,71 @@ object MOOSASeeAll {
 
     private fun installObserver() {
         val current = activity ?: return
+        // Never subscribe to EVERY layout frame after the home list exists.
+        // Poster loading and the Show More width animation otherwise keep
+        // waking the main thread every 240ms for the entire home session.
+        homeMasterRecycler(current)?.let { master ->
+            installHomeIdleListener(master)
+            scheduleHeaderRefresh()
+            return
+        }
         val root = current.findViewById<ViewGroup>(android.R.id.content)
             ?: return
-
         synchronized(observedRoots) {
-            if (!observedRoots.containsKey(root)) {
-                // Global layouts also happen for unrelated tabs and poster
-                // animations. The callback only schedules a coalesced refresh.
-                val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            if (observedRoots.containsKey(root)) return
+            // One-shot fallback only while CloudStream creates its home
+            // RecyclerView. Unregister immediately when the list exists.
+            val listener = object : ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    val master = homeMasterRecycler(current) ?: return
+                    if (root.viewTreeObserver.isAlive) {
+                        root.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                    }
+                    synchronized(observedRoots) { observedRoots.remove(root) }
+                    installHomeIdleListener(master)
                     scheduleHeaderRefresh()
                 }
-                observedRoots[root] = listener
-                root.viewTreeObserver.addOnGlobalLayoutListener(listener)
             }
+            observedRoots[root] = listener
+            root.viewTreeObserver.addOnGlobalLayoutListener(listener)
         }
-        homeMasterRecycler(current)?.let(::installHomeIdleListener)
     }
 
     private fun installHomeIdleListener(master: RecyclerView) {
         synchronized(observedHomeLists) {
-            if (observedHomeLists.containsKey(master)) return
-            val listener = object : RecyclerView.OnScrollListener() {
-                override fun onScrollStateChanged(
-                    recyclerView: RecyclerView,
-                    newState: Int
-                ) {
-                    if (newState == RecyclerView.SCROLL_STATE_IDLE) {
-                        // Install Show More on newly bound visible rows only
-                        // after the fling has settled, not mid-animation.
-                        scheduleHeaderRefresh()
+            if (!observedHomeLists.containsKey(master)) {
+                val listener = object : RecyclerView.OnScrollListener() {
+                    override fun onScrollStateChanged(
+                        recyclerView: RecyclerView,
+                        newState: Int
+                    ) {
+                        if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                            // Do not rewrite a row while the remote flings it.
+                            scheduleHeaderRefresh()
+                        }
                     }
                 }
+                observedHomeLists[master] = listener
+                master.addOnScrollListener(listener)
             }
-            observedHomeLists[master] = listener
-            master.addOnScrollListener(listener)
+        }
+        synchronized(observedRowAttachments) {
+            if (!observedRowAttachments.containsKey(master)) {
+                val listener = object : RecyclerView.OnChildAttachStateChangeListener {
+                    override fun onChildViewAttachedToWindow(view: View) {
+                        val recycler = view.parent as? RecyclerView ?: return
+                        if (recycler.scrollState == RecyclerView.SCROLL_STATE_IDLE) {
+                            // A newly bound home category needs Show More.
+                            // No refresh is needed for ordinary poster/layout frames.
+                            scheduleHeaderRefresh()
+                        }
+                    }
+
+                    override fun onChildViewDetachedFromWindow(view: View) = Unit
+                }
+                observedRowAttachments[master] = listener
+                master.addOnChildAttachStateChangeListener(listener)
+            }
         }
     }
 
