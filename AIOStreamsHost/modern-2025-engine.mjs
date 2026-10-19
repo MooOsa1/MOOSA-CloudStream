@@ -21,7 +21,7 @@ const MOVIES=[
   { imdb:'tt31193180', label:'Sinners (2025)', title:/\bsinners\b/i, year:'2025' },
   { imdb:'tt16311594', label:'F1: The Movie (2025)', title:/\bf1\b|\bformula.?1\b/i, year:'2025' }
 ];
-const trialCap=3;
+const trialCap=5; // automatic source fallback when audio/video fails
 const configTemplate=JSON.parse(await readFile(new URL('./moosa-hub-template.json',import.meta.url),'utf8'));
 const config={...configTemplate.config, services:[], formatter:{id:'gdrive'},addonName:'MOOSA 2025 movie isolated integration'};
 const password=randomBytes(32).toString('hex');
@@ -33,10 +33,10 @@ async function fetchJSON(url,options={},timeout=40000){
  return {ok:response.ok,status:response.status,body};
 }
 
-async function decodeOne(src,index){
+async function decodeOne(src,index,movie){
  const idx=Number.isInteger(src.fileIdx)&&src.fileIdx>=0?src.fileIdx:-1;
  const url=ENGINE+'/'+src.infoHash.toLowerCase()+'/'+idx;
- const cap=6*1024*1024;  // bounded 6MiB HEAD of a modern movie, no whole-film copy.
+ const cap=(movie.imdb==='tt16311594'?10:6)*1024*1024;  // bounded first 10 MiB for F1 audio; 6 MiB for Sinners
  let chunks=[], bytes=0, signature=Buffer.alloc(0), transportStatus=0;
  try {
   const response=await fetch(url,{
@@ -124,7 +124,9 @@ async function inspectMovie(base,movie){
  const all=reply.body.streams;
  const p2p=all.filter(s=>/^[a-f0-9]{40}$/i.test(s.infoHash||''));
  const titleMatched=p2p.filter(s=>movie.title.test(releaseHints(s)));
- const pool=(titleMatched.length?titleMatched:p2p)
+ const releaseYear=new RegExp('\\b'+movie.year+'\\b');
+ const correctYear=titleMatched.filter(s=>releaseYear.test(releaseHints(s)));
+ const pool=(correctYear.length?correctYear:(titleMatched.length?titleMatched:p2p))
    .filter(s=>!/CAM|TELESYNC|TRAILER|SAMPLE|TS-SCR/i.test(releaseHints(s)))
    .sort((a,b)=>rank(a)-rank(b));
  const uniq=new Set(), selected=[];
@@ -135,14 +137,14 @@ async function inspectMovie(base,movie){
    if(selected.length===trialCap)break;
  }
  console.log('MOOSA_MODERN_INDEX movie='+movie.imdb+' year='+movie.year+' total='+all.length+
-   ' validP2P='+p2p.length+' titleHintMatches='+titleMatched.length+
+   ' validP2P='+p2p.length+' titleHintMatches='+titleMatched.length+' titleYearMatches='+correctYear.length+
    ' trialCount='+selected.length);
  let sawFrames=false, sawSound=false, succeeded=null;
  for(let i=0;i<selected.length;i++){
-  const result=await decodeOne(selected[i],i);
+  const result=await decodeOne(selected[i],i,movie);
   console.log('MOOSA_MODERN_TRIAL movie='+movie.imdb+' index='+i+
     ' status='+(result.status||'-')+' bytes='+(result.bytes||0)+' reason='+(result.reason||'none')+' diagnostic='+(result.diagnostic||'-')+
-    ' videoFrames='+(result.videoFrames||0)+' audioDecoded='+(result.audioDecoded||false)+
+    ' videoFrames='+(result.videoFrames||0)+' audioTrack='+(result.audioTrack||false)+' audioDecoded='+(result.audioDecoded||false)+
     ' pixels='+(result.pixels||'unknown'));
   if(result.ok){
    sawFrames=true;
