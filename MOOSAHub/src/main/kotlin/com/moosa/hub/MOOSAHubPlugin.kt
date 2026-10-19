@@ -17,7 +17,9 @@ class MOOSAHubPlugin : Plugin() {
         openSettings = { ctx ->
             MOOSASettingsDialog.show(ctx)
         }
-        registerMainAPI(MOOSAHubProvider())
+        val provider = MOOSAHubProvider()
+        MOOSASeeAll.registerCategories(provider)
+        registerMainAPI(provider)
 
         // v62 inadvertently hid all playable sources on some devices.
         // Recover the host-wide profile settings once, asynchronously.
