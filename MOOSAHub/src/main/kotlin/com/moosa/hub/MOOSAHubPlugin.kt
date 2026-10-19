@@ -17,6 +17,7 @@ class MOOSAHubPlugin : Plugin() {
         openSettings = { ctx ->
             MOOSASettingsDialog.show(ctx)
         }
+        MOOSASeeAll.observeHomeLifecycle(context)
         val provider = MOOSAHubProvider()
         MOOSASeeAll.registerCategories(provider)
         registerMainAPI(provider)
@@ -28,6 +29,11 @@ class MOOSAHubPlugin : Plugin() {
             { MOOSAGlobalQualitySetup.restoreV62PrioritiesIfNeeded() },
             "MOOSA-v62-Playback-Recovery"
         ).start()
+    }
+
+    override fun beforeUnload() {
+        MOOSASeeAll.stopHomeLifecycle()
+        super.beforeUnload()
     }
 
     private fun currentActivity(): Activity? {

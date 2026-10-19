@@ -1,6 +1,13 @@
 package com.moosa.hub
 
 import android.animation.Animator
+import android.app.Activity
+import android.app.Application
+import android.content.Context
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.graphics.Color
@@ -62,6 +69,11 @@ object MOOSASeeAll {
         val observer: RecyclerView.AdapterDataObserver
     )
     private val watchedAdapters = WeakHashMap<RecyclerView, AdapterWatch>()
+    private val watchedFragments =
+        WeakHashMap<FragmentManager, FragmentManager.FragmentLifecycleCallbacks>()
+    @Volatile private var lifecycleActive = false
+    private var lifecycleApplication: Application? = null
+    private var lifecycleCallbacks: Application.ActivityLifecycleCallbacks? = null
     private data class OriginalTitle(
         val params: LinearLayout.LayoutParams,
         val clickable: Boolean,
@@ -73,6 +85,7 @@ object MOOSASeeAll {
     private var lastBrowseOpenAt = 0L
 
     private fun scheduleHeaderRefresh() {
+        if (!lifecycleActive) return
         // CloudStream dispatches many global-layout events while rows scroll.
         // Coalesce them; never modify TextView text on every layout callback.
         if (headerRefreshScheduled) return
@@ -81,6 +94,176 @@ object MOOSASeeAll {
             headerRefreshScheduled = false
             applyHeaders()
         }, 240L)
+    }
+
+    /**
+     * The CloudStream home Fragment view is destroyed on navigation to a
+     * movie/series and recreated on Back. No new MOOSA home() request is
+     * guaranteed: the ViewModel can restore its cached shelves.
+     *
+     * Observe the actual fragment-view lifecycle, not an Activity-wide
+     * OnGlobalLayoutListener or a TMDB request that might never run.
+     */
+    private fun watchHomeFragment(host: Activity) {
+        val manager = (host as? AppCompatActivity)?.supportFragmentManager
+            ?: return
+        synchronized(watchedFragments) {
+            if (watchedFragments.containsKey(manager)) return
+            val callback = object : FragmentManager.FragmentLifecycleCallbacks() {
+                override fun onFragmentViewCreated(
+                    fm: FragmentManager,
+                    fragment: Fragment,
+                    view: View,
+                    savedInstanceState: Bundle?
+                ) {
+                    if (!MOOSAHomeLifecyclePolicy.isHomeFragment(
+                            fragment.javaClass.name
+                        )
+                    ) return
+                    // Wait for CloudStream to attach the new home RecyclerView.
+                    mainHandler.post { installObserver() }
+                }
+
+                override fun onFragmentResumed(
+                    fm: FragmentManager,
+                    fragment: Fragment
+                ) {
+                    if (!MOOSAHomeLifecyclePolicy.isHomeFragment(
+                            fragment.javaClass.name
+                        )
+                    ) return
+                    // A cached home may have finished binding before Resume.
+                    // Refresh visible rows even if no TMDB call is issued.
+                    mainHandler.post { installObserver() }
+                }
+            }
+            manager.registerFragmentLifecycleCallbacks(callback, true)
+            watchedFragments[manager] = callback
+        }
+    }
+
+    private fun cleanupActivity(host: Activity) {
+        val root = host.findViewById<ViewGroup>(android.R.id.content)
+        if (root != null) {
+            synchronized(observedRoots) {
+                observedRoots.remove(root)?.let { callback ->
+                    if (root.viewTreeObserver.isAlive) {
+                        root.viewTreeObserver.removeOnGlobalLayoutListener(callback)
+                    }
+                }
+            }
+        }
+        (host as? AppCompatActivity)?.supportFragmentManager?.let { manager ->
+            synchronized(watchedFragments) {
+                watchedFragments.remove(manager)?.let { callback ->
+                    manager.unregisterFragmentLifecycleCallbacks(callback)
+                }
+            }
+        }
+    }
+
+    fun observeHomeLifecycle(context: Context) {
+        val app = context.applicationContext as? Application ?: return
+        lifecycleActive = true
+        if (lifecycleCallbacks != null) return
+        val callback = object : Application.ActivityLifecycleCallbacks {
+                override fun onActivityCreated(
+                    activity: Activity, savedInstanceState: Bundle?
+                ) = Unit
+                override fun onActivityStarted(activity: Activity) = Unit
+                override fun onActivityResumed(activity: Activity) {
+                    if (activity !== com.lagradost.cloudstream3.CommonActivity.activity)
+                        return
+                    watchHomeFragment(activity)
+                    installObserver()
+                }
+                override fun onActivityPaused(activity: Activity) = Unit
+                override fun onActivityStopped(activity: Activity) = Unit
+                override fun onActivitySaveInstanceState(
+                    activity: Activity, outState: Bundle
+                ) = Unit
+                override fun onActivityDestroyed(activity: Activity) {
+                    cleanupActivity(activity)
+                }
+        }
+        lifecycleApplication = app
+        lifecycleCallbacks = callback
+        app.registerActivityLifecycleCallbacks(callback)
+        // This listener can be installed after the first onResume event.
+        // Also handle the HomeFragment that is already currently displayed.
+        mainHandler.post { installObserver() }
+    }
+
+    /** Unregister observers when CloudStream hot-updates or disables this cs3. */
+    fun stopHomeLifecycle() {
+        lifecycleActive = false
+        lifecycleCallbacks?.let { callback ->
+            lifecycleApplication?.unregisterActivityLifecycleCallbacks(callback)
+        }
+        lifecycleCallbacks = null
+        lifecycleApplication = null
+
+        val cleanup = {
+            val host = activity
+            if (host != null) {
+                homeMasterRecycler(host)?.let { master ->
+                    val titles = mutableListOf<TextView>()
+                    collectHeaders(master, titles)
+                    titles.forEach(::removeAction)
+                }
+                cleanupActivity(host)
+            }
+            synchronized(watchedFragments) {
+                watchedFragments.entries.toList().forEach { (manager, callback) ->
+                    manager.unregisterFragmentLifecycleCallbacks(callback)
+                }
+                watchedFragments.clear()
+            }
+            synchronized(watchedAdapters) {
+                watchedAdapters.entries.toList().forEach { (_, watch) ->
+                    watch.adapter.get()?.unregisterAdapterDataObserver(watch.observer)
+                }
+                watchedAdapters.clear()
+            }
+            synchronized(observedHomeLists) {
+                observedHomeLists.entries.toList().forEach { (master, callback) ->
+                    master.removeOnScrollListener(callback)
+                }
+                observedHomeLists.clear()
+            }
+            synchronized(observedRowAttachments) {
+                observedRowAttachments.entries.toList().forEach { (master, callback) ->
+                    master.removeOnChildAttachStateChangeListener(callback)
+                }
+                observedRowAttachments.clear()
+            }
+            synchronized(watchedTitles) {
+                watchedTitles.entries.toList().forEach { (view, watcher) ->
+                    view.removeTextChangedListener(watcher)
+                }
+                watchedTitles.clear()
+            }
+            synchronized(watchedSelectors) {
+                watchedSelectors.entries.toList().forEach { (view, watcher) ->
+                    view.removeTextChangedListener(watcher)
+                }
+                watchedSelectors.clear()
+            }
+            synchronized(observedRoots) {
+                observedRoots.entries.toList().forEach { (root, callback) ->
+                    if (root.viewTreeObserver.isAlive) {
+                        root.viewTreeObserver.removeOnGlobalLayoutListener(callback)
+                    }
+                }
+                observedRoots.clear()
+            }
+            states.clear()
+            headerRefs.clear()
+            actionForTitle.clear()
+            headerRefreshScheduled = false
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) cleanup()
+        else mainHandler.post(cleanup)
     }
 
     private fun providerName(host: android.app.Activity): String? {
@@ -432,6 +615,7 @@ object MOOSASeeAll {
     }
 
     fun registerCategories(api: MOOSAHubProvider) {
+        if (!lifecycleActive) return
         // CloudStream can reuse cached home rows before asynchronous home()
         // callbacks register each category. Pre-register known MOOSA rows once
         // so Show More cannot disappear while an otherwise valid row renders.
@@ -472,7 +656,9 @@ object MOOSASeeAll {
     }
 
     private fun installObserver() {
+        if (!lifecycleActive) return
         val current = activity ?: return
+        watchHomeFragment(current)
         watchProvider(current)
         // Never subscribe to EVERY layout frame after the home list exists.
         // Poster loading and the Show More width animation otherwise keep
@@ -700,6 +886,7 @@ object MOOSASeeAll {
     }
 
     private fun applyHeaders() {
+        if (!lifecycleActive) return
         val host = activity ?: return
         val master = homeMasterRecycler(host) ?: return
         watchProvider(host)
