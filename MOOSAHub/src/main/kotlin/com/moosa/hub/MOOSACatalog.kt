@@ -559,7 +559,7 @@ object MOOSACatalog {
 
         newHomePageResponse(
             request,
-            allItems,
+            homeItems,
             hasNext = canLoadMore
         )
     }
