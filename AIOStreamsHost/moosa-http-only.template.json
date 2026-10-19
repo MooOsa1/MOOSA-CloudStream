@@ -1,8 +1,8 @@
 {
   "metadata": {
-    "id": "moosa.http-only",
-    "name": "MOOSA Hub — HTTP Only",
-    "description": "Direct browser-playable HTTP streaming only. Excludes torrents, magnet/P2P, debrid and usenet. Configure compatible independently licensed Stremio addons separately; this template does not supply movies.",
+    "id": "moosa.http-first",
+    "name": "MOOSA Hub — HTTP First, Torrent Last",
+    "description": "Prioritize direct HTTPS playable media and 4K / 1080p / 720p. Preserve torrent (P2P) sources only as the last resort; Safari cannot play magnet/P2P links without a compatible intermediary. This template contains no movie sources.",
     "source": "external",
     "author": "MOOSA",
     "version": "1.0.0",
@@ -52,6 +52,10 @@
     "sortCriteria": {
       "global": [
         {
+          "key": "streamType",
+          "direction": "desc"
+        },
+        {
           "key": "cached",
           "direction": "desc"
         },
@@ -65,10 +69,6 @@
         },
         {
           "key": "regexPatterns",
-          "direction": "desc"
-        },
-        {
-          "key": "streamType",
           "direction": "desc"
         },
         {
@@ -135,18 +135,19 @@
     "includedAudioTags": [],
     "requiredAudioTags": [],
     "preferredAudioTags": [],
-    "excludedStreamTypes": [
-      "p2p",
-      "debrid",
-      "usenet",
-      "stremio-usenet"
-    ],
+    "excludedStreamTypes": [],
     "includedStreamTypes": [],
-    "requiredStreamTypes": [
-      "http"
-    ],
+    "requiredStreamTypes": [],
     "preferredStreamTypes": [
-      "http"
+      "http",
+      "debrid",
+      "live",
+      "archive",
+      "external",
+      "youtube",
+      "usenet",
+      "stremio-usenet",
+      "p2p"
     ],
     "excludedEncodes": [],
     "includedEncodes": [],
