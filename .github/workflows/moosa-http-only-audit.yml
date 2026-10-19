@@ -6,6 +6,7 @@ on:
     paths:
       - 'AIOStreamsHost/moosa-direct-only.template.json'
       - 'AIOStreamsHost/verify-http-only.mjs'
+      - 'AIOStreamsHost/probe-media-kind.mjs'
       - 'AIOStreamsHost/verify-http-only.test.mjs'
       - '.github/workflows/moosa-http-only-audit.yml'
   workflow_dispatch:
