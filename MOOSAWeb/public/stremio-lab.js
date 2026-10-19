@@ -46,7 +46,7 @@ async function serviceStatus(){
 async function findSources(){
   const manifestUrl=$('#addon-url').value.trim(),imdbId=$('#imdb').value.trim();
   if(!validMovieId(imdbId)){status('#lookup-status','Enter a real IMDb ID, for example tt31193180.','bad');return;}
-  if(!/^https:\/\/aiostreams-nightly\.fortheweak\.cloud\/stremio\/[^?#]+\/manifest\.json$/.test(manifestUrl)){
+  if(!/^(?:https|stremio):\/\/aiostreams-nightly\.fortheweak\.cloud\/stremio\/[^?#]+\/manifest\.json$/.test(manifestUrl)){
     status('#lookup-status','Paste the private AIOStreams Stremio manifest URL from your installed MOOSA Hub configuration.','bad');return;
   }
   const button=$('#find');button.disabled=true;
