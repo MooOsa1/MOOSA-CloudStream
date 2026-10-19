@@ -2623,6 +2623,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         when (base) {
             is MovieLoadResponse -> {
+                if (anime) base.type = TvType.AnimeMovie
                 base.dataUrl = HubPlaybackRequest(
                     title = base.name,
                     year = base.year,
