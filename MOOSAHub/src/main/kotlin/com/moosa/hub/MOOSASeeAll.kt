@@ -71,7 +71,8 @@ object MOOSASeeAll {
     private val watchedAdapters = WeakHashMap<RecyclerView, AdapterWatch>()
     private val watchedFragments =
         WeakHashMap<FragmentManager, FragmentManager.FragmentLifecycleCallbacks>()
-    private var appLifecycleAttached = false
+    private var lifecycleApplication: Application? = null
+    private var lifecycleCallbacks: Application.ActivityLifecycleCallbacks? = null
     private data class OriginalTitle(
         val params: LinearLayout.LayoutParams,
         val clickable: Boolean,
@@ -161,10 +162,8 @@ object MOOSASeeAll {
 
     fun observeHomeLifecycle(context: Context) {
         val app = context.applicationContext as? Application ?: return
-        if (appLifecycleAttached) return
-        appLifecycleAttached = true
-        app.registerActivityLifecycleCallbacks(
-            object : Application.ActivityLifecycleCallbacks {
+        if (lifecycleCallbacks != null) return
+        val callback = object : Application.ActivityLifecycleCallbacks {
                 override fun onActivityCreated(
                     activity: Activity, savedInstanceState: Bundle?
                 ) = Unit
@@ -183,11 +182,84 @@ object MOOSASeeAll {
                 override fun onActivityDestroyed(activity: Activity) {
                     cleanupActivity(activity)
                 }
-            }
-        )
+        }
+        lifecycleApplication = app
+        lifecycleCallbacks = callback
+        app.registerActivityLifecycleCallbacks(callback)
         // This listener can be installed after the first onResume event.
         // Also handle the HomeFragment that is already currently displayed.
         mainHandler.post { installObserver() }
+    }
+
+    /** Unregister observers when CloudStream hot-updates or disables this cs3. */
+    fun stopHomeLifecycle() {
+        lifecycleCallbacks?.let { callback ->
+            lifecycleApplication?.unregisterActivityLifecycleCallbacks(callback)
+        }
+        lifecycleCallbacks = null
+        lifecycleApplication = null
+
+        val cleanup = {
+            val host = activity
+            if (host != null) {
+                homeMasterRecycler(host)?.let { master ->
+                    val titles = mutableListOf<TextView>()
+                    collectHeaders(master, titles)
+                    titles.forEach(::removeAction)
+                }
+                cleanupActivity(host)
+            }
+            synchronized(watchedFragments) {
+                watchedFragments.entries.toList().forEach { (manager, callback) ->
+                    manager.unregisterFragmentLifecycleCallbacks(callback)
+                }
+                watchedFragments.clear()
+            }
+            synchronized(watchedAdapters) {
+                watchedAdapters.entries.toList().forEach { (_, watch) ->
+                    watch.adapter.get()?.unregisterAdapterDataObserver(watch.observer)
+                }
+                watchedAdapters.clear()
+            }
+            synchronized(observedHomeLists) {
+                observedHomeLists.entries.toList().forEach { (master, callback) ->
+                    master.removeOnScrollListener(callback)
+                }
+                observedHomeLists.clear()
+            }
+            synchronized(observedRowAttachments) {
+                observedRowAttachments.entries.toList().forEach { (master, callback) ->
+                    master.removeOnChildAttachStateChangeListener(callback)
+                }
+                observedRowAttachments.clear()
+            }
+            synchronized(watchedTitles) {
+                watchedTitles.entries.toList().forEach { (view, watcher) ->
+                    view.removeTextChangedListener(watcher)
+                }
+                watchedTitles.clear()
+            }
+            synchronized(watchedSelectors) {
+                watchedSelectors.entries.toList().forEach { (view, watcher) ->
+                    view.removeTextChangedListener(watcher)
+                }
+                watchedSelectors.clear()
+            }
+            synchronized(observedRoots) {
+                observedRoots.entries.toList().forEach { (root, callback) ->
+                    if (root.viewTreeObserver.isAlive) {
+                        root.viewTreeObserver.removeOnGlobalLayoutListener(callback)
+                    }
+                }
+                observedRoots.clear()
+            }
+            states.clear()
+            headerRefs.clear()
+            actionForTitle.clear()
+            headerRefreshScheduled = false
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) cleanup()
+        else mainHandler.post(cleanup)
     }
 
     private fun providerName(host: android.app.Activity): String? {
