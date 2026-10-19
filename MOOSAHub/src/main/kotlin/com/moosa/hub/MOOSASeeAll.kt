@@ -4,6 +4,10 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.graphics.Color
+import android.content.res.ColorStateList
+import android.graphics.drawable.Drawable
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.TextUtils
 import android.view.animation.DecelerateInterpolator
 import android.graphics.drawable.GradientDrawable
@@ -49,6 +53,22 @@ object MOOSASeeAll {
     // Never mutate that text to add SHOW MORE: a separate persistent view
     // survives a recycled item's text reset without flickering.
     private val actionForTitle = WeakHashMap<TextView, WeakReference<TextView>>()
+    // The title and selected-provider text can change without an attach/detach
+    // event (RecyclerView rebind). Watch the few visible labels, not the layout.
+    private val watchedTitles = WeakHashMap<TextView, TextWatcher>()
+    private val watchedSelectors = WeakHashMap<TextView, TextWatcher>()
+    private data class AdapterWatch(
+        val adapter: RecyclerView.Adapter<*>,
+        val observer: RecyclerView.AdapterDataObserver
+    )
+    private val watchedAdapters = WeakHashMap<RecyclerView, AdapterWatch>()
+    private data class OriginalTitle(
+        val params: LinearLayout.LayoutParams,
+        val clickable: Boolean,
+        val focusable: Boolean,
+        val background: Drawable?,
+        val colors: ColorStateList
+    )
     private var headerRefreshScheduled = false
     private var lastBrowseOpenAt = 0L
 
@@ -61,6 +81,101 @@ object MOOSASeeAll {
             headerRefreshScheduled = false
             applyHeaders()
         }, 240L)
+    }
+
+    private fun providerName(host: android.app.Activity): String? {
+        // CloudStream's HomeFragment observes homeViewModel.apiName and writes
+        // this TextView on every provider switch. It stays in the view tree
+        // when the TV navigation header scrolls out of sight.
+        for (name in listOf("home_change_api", "home_api_fab")) {
+            val id = host.resources.getIdentifier(name, "id", host.packageName)
+            if (id == 0) continue
+            val selected = host.findViewById<TextView>(id)
+                ?.text?.toString()?.trim()
+            if (!selected.isNullOrBlank()) return selected
+        }
+        return null
+    }
+
+    private fun isMoosaSelected(host: android.app.Activity): Boolean =
+        MOOSAShowMorePolicy.shouldShow(providerName(host), true)
+
+    private fun watchText(view: TextView, selectors: Boolean) {
+        val watches = if (selectors) watchedSelectors else watchedTitles
+        synchronized(watches) {
+            if (watches.containsKey(view)) return
+            val watcher = object : TextWatcher {
+                override fun beforeTextChanged(
+                    s: CharSequence?, start: Int, count: Int, after: Int
+                ) = Unit
+                override fun onTextChanged(
+                    s: CharSequence?, start: Int, before: Int, count: Int
+                ) {
+                    scheduleHeaderRefresh()
+                }
+                override fun afterTextChanged(s: Editable?) = Unit
+            }
+            watches[view] = watcher
+            view.addTextChangedListener(watcher)
+        }
+    }
+
+    private fun watchProvider(host: android.app.Activity) {
+        for (name in listOf("home_change_api", "home_api_fab")) {
+            val id = host.resources.getIdentifier(name, "id", host.packageName)
+            if (id != 0) {
+                host.findViewById<TextView>(id)?.let { watchText(it, true) }
+            }
+        }
+    }
+
+    private fun removeAction(header: TextView) {
+        val toolbar = header.parent as? LinearLayout ?: return
+        val saved = toolbar.tag as? OriginalTitle ?: return
+        val parent = toolbar.parent as? LinearLayout ?: return
+        val index = parent.indexOfChild(toolbar)
+        if (index < 0) return
+        val action = actionFor(header)
+        val actionHadFocus = action?.hasFocus() == true
+        (action?.tag as? ValueAnimator)?.cancel()
+        action?.tag = null
+        header.setOnFocusChangeListener(null)
+        header.setOnClickListener(null)
+        header.setOnKeyListener(null)
+
+        toolbar.removeView(header)
+        parent.removeView(toolbar)
+        parent.addView(header, index, saved.params)
+        header.background = saved.background
+        header.setTextColor(saved.colors)
+        header.isClickable = saved.clickable
+        header.isFocusable = saved.focusable
+        actionForTitle.remove(header)
+        // Never leave native CloudStream's focus link pointed at a removed ID.
+        findHorizontalCarousel(parent)?.nextFocusUpId = header.id
+        if (actionHadFocus && header.isShown) header.requestFocus()
+    }
+
+    private fun watchAdapter(master: RecyclerView) {
+        val adapter = master.adapter ?: return
+        synchronized(watchedAdapters) {
+            val existing = watchedAdapters[master]
+            if (existing?.adapter === adapter) return
+            existing?.adapter?.unregisterAdapterDataObserver(existing.observer)
+            val watcher = object : RecyclerView.AdapterDataObserver() {
+                override fun onChanged() = scheduleHeaderRefresh()
+                override fun onItemRangeChanged(start: Int, count: Int) =
+                    scheduleHeaderRefresh()
+                override fun onItemRangeInserted(start: Int, count: Int) =
+                    scheduleHeaderRefresh()
+                override fun onItemRangeRemoved(start: Int, count: Int) =
+                    scheduleHeaderRefresh()
+                override fun onItemRangeMoved(from: Int, to: Int, count: Int) =
+                    scheduleHeaderRefresh()
+            }
+            adapter.registerAdapterDataObserver(watcher)
+            watchedAdapters[master] = AdapterWatch(adapter, watcher)
+        }
     }
 
     private fun styleAction(
@@ -137,11 +252,19 @@ object MOOSASeeAll {
         actionForTitle[header]?.get()?.takeIf { it.parent === header.parent }
 
     private fun installAction(header: TextView): TextView? {
-        actionFor(header)?.let { return it }
-
         val host = activity ?: return null
         val originalName = header.text?.toString()?.trim().orEmpty()
-        if (states[originalName] == null) return null
+        // RecyclerView reuses the same header when the user switches sources.
+        // First undo any MOOSA wrapper that now belongs to another provider
+        // or a different category, rather than trusting its old button.
+        if (!MOOSAShowMorePolicy.shouldShow(
+                providerName(host), states.containsKey(originalName)
+            )
+        ) {
+            removeAction(header)
+            return null
+        }
+        actionFor(header)?.let { return it }
 
         val oldParent = header.parent as? LinearLayout ?: return null
         // The host's TV row is a vertical LinearLayout; the action is
@@ -151,11 +274,19 @@ object MOOSASeeAll {
         val titleIndex = oldParent.indexOfChild(header)
         if (titleIndex < 0) return null
         val oldParams = header.layoutParams as? LinearLayout.LayoutParams ?: return null
+        val original = OriginalTitle(
+            params = LinearLayout.LayoutParams(oldParams),
+            clickable = header.isClickable,
+            focusable = header.isFocusable,
+            background = header.background,
+            colors = header.textColors
+        )
         val context = header.context
         val density = context.resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()
 
         val toolbar = LinearLayout(context).apply {
+            tag = original
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
@@ -284,6 +415,9 @@ object MOOSASeeAll {
             val now = SystemClock.uptimeMillis()
             val state = states[title.text?.toString()?.trim().orEmpty()]
                 ?: return@setOnClickListener
+            if (!isMoosaSelected(host) || state.api.name !=
+                MOOSAShowMorePolicy.OWNER_API_NAME
+            ) return@setOnClickListener
             if (now - lastBrowseOpenAt < 650L ||
                 !button.isAttachedToWindow || !button.isShown ||
                 !host.hasWindowFocus() ||
@@ -321,6 +455,7 @@ object MOOSASeeAll {
 
     private fun installObserver() {
         val current = activity ?: return
+        watchProvider(current)
         // Never subscribe to EVERY layout frame after the home list exists.
         // Poster loading and the Show More width animation otherwise keep
         // waking the main thread every 240ms for the entire home session.
@@ -352,6 +487,7 @@ object MOOSASeeAll {
     }
 
     private fun installHomeIdleListener(master: RecyclerView) {
+        watchAdapter(master)
         synchronized(observedHomeLists) {
             if (!observedHomeLists.containsKey(master)) {
                 val listener = object : RecyclerView.OnScrollListener() {
@@ -549,17 +685,27 @@ object MOOSASeeAll {
         val host = activity ?: return
         val master = homeMasterRecycler(host) ?: return
         if (!master.isShown) return
+        watchProvider(host)
         installHomeIdleListener(master)
-        // Scanning the entire activity's view tree during every carousel
-        // animation causes noticeable main-thread jank. Only scan the
-        // currently attached home rows, and not while the list is scrolling.
-        if (master.scrollState != RecyclerView.SCROLL_STATE_IDLE) return
+        val ownsHome = isMoosaSelected(host)
+        // Avoid changing wrappers during an ordinary MOOSA carousel fling.
+        // On a provider switch, however, remove stale buttons promptly.
+        if (ownsHome &&
+            master.scrollState != RecyclerView.SCROLL_STATE_IDLE
+        ) return
         val titles = mutableListOf<TextView>()
         collectHeaders(master, titles)
         titles.forEach { title ->
-            // The host owns title text; we only install a sibling button.
-            // Recycling does not toggle the button or revert its label.
-            installAction(title)
+            watchText(title, false)
+            if (MOOSAShowMorePolicy.shouldShow(
+                    providerName(host),
+                    states.containsKey(title.text?.toString()?.trim().orEmpty())
+                )
+            ) {
+                installAction(title)
+            } else {
+                removeAction(title)
+            }
         }
     }
 
