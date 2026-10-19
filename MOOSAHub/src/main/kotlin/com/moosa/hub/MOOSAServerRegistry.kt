@@ -486,13 +486,17 @@ object MOOSAServerRegistry {
 
     suspend fun testLink(link: ExtractorLink): Boolean {
         val first = probeOnce(link)
-        if (first.playable) {
-            probeReasons[linkKey(link)] = first.reason
-            return true
+        val key = linkKey(link)
+        if (first.playable || !MOOSALinkRetryPolicy.shouldRetry(first.reason)) {
+            // Preserve the actual failure reason for Source/Server Manager,
+            // even when we skip an expensive and pointless second request.
+            probeReasons[key] = first.reason
+            return first.playable
         }
+
         delay(300L)
         val second = probeOnce(link)
-        probeReasons[linkKey(link)] = second.reason
+        probeReasons[key] = second.reason
         return second.playable
     }
 }
