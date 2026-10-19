@@ -1697,7 +1697,9 @@ class MOOSAHubProvider : TmdbProvider() {
         val available = apis
             .filter { api ->
                 // Arabic sites belong to the independent native provider.
-                !isArabicProvider(api) &&
+                (!isArabicProvider(api) || (request.isAnime &&
+                    (TvType.Anime in api.supportedTypes ||
+                        TvType.OVA in api.supportedTypes))) &&
                 api !== this &&
                     (
                         api.providerType ==
@@ -2578,6 +2580,7 @@ class MOOSAHubProvider : TmdbProvider() {
             }
 
             is TvSeriesLoadResponse -> {
+                if (anime) base.type = TvType.Anime
                 val absolutes = if (anime) {
                     MOOSAAnimePolicy.absoluteEpisodes(
                         base.episodes.mapNotNull { entry ->
