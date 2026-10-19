@@ -60,33 +60,19 @@
         }
       }
     ],
-    "formatter": {
-      "id": "prism",
-      "definition": {
-        "name": "",
-        "description": ""
-      }
-    },
-    "preferredQualities": [
-      "BluRay REMUX",
-      "BluRay",
-      "WEB-DL",
-      "WEBRip",
-      "HDRip",
-      "HC HD-Rip",
-      "DVD REMUX",
-      "DVDRip",
-      "HDTV",
-      "CAM",
-      "TS",
-      "TC",
-      "SCR",
-      "Unknown"
-    ],
     "preferredResolutions": [
       "2160p",
+      "1440p",
       "1080p",
-      "720p"
+      "720p",
+      "Unknown"
+    ],
+    "excludedResolutions": [
+      "576p",
+      "480p",
+      "360p",
+      "240p",
+      "144p"
     ],
     "excludedQualities": [
       "CAM",
@@ -100,11 +86,19 @@
     "sortCriteria": {
       "global": [
         {
+          "key": "streamType",
+          "direction": "desc"
+        },
+        {
           "key": "resolution",
           "direction": "desc"
         },
         {
           "key": "quality",
+          "direction": "desc"
+        },
+        {
+          "key": "size",
           "direction": "desc"
         }
       ]
@@ -120,112 +114,18 @@
       "uncached": "per_service",
       "p2p": "single_result"
     },
-    "excludedResolutions": [
-      "576p",
-      "480p",
-      "360p",
-      "240p",
-      "144p"
-    ],
-    "includedResolutions": [],
-    "requiredResolutions": [
-      "2160p",
-      "1080p",
-      "720p"
-    ],
-    "includedQualities": [],
-    "requiredQualities": [],
-    "excludedLanguages": [],
-    "includedLanguages": [],
-    "requiredLanguages": [],
-    "preferredLanguages": [
-      "Arabic",
-      "English"
-    ],
-    "includedVisualTags": [],
-    "requiredVisualTags": [],
-    "preferredVisualTags": [],
-    "excludedAudioTags": [],
-    "includedAudioTags": [],
-    "requiredAudioTags": [],
-    "preferredAudioTags": [],
-    "excludedStreamTypes": [
-      "p2p",
-      "debrid",
-      "usenet",
-      "stremio-usenet"
-    ],
-    "includedStreamTypes": [],
-    "requiredStreamTypes": [
-      "http"
-    ],
     "preferredStreamTypes": [
       "http"
     ],
-    "excludedEncodes": [],
-    "includedEncodes": [],
-    "requiredEncodes": [],
-    "preferredEncodes": [],
-    "seederRangeTypes": [],
-    "digitalReleaseFilter": {
-      "enabled": true,
-      "tolerance": 0,
-      "requestTypes": [],
-      "addons": []
-    },
-    "excludeCachedFromAddons": [],
-    "excludeCachedFromServices": [],
-    "excludeCachedFromStreamTypes": [],
-    "excludeUncachedFromAddons": [],
-    "excludeUncachedFromServices": [],
-    "excludeUncachedFromStreamTypes": [],
-    "proxy": {
-      "proxiedAddons": [],
-      "proxiedServices": [],
-      "id": "builtin"
-    },
-    "hideErrorsForResources": [],
-    "statistics": {
-      "statsToShow": [
-        "addon",
-        "filter"
-      ]
-    },
-    "yearMatching": {
-      "enabled": false,
-      "requestTypes": [],
-      "addons": []
-    },
-    "titleMatching": {
-      "enabled": false,
-      "requestTypes": [],
-      "addons": []
-    },
-    "seasonEpisodeMatching": {
-      "enabled": false,
-      "requestTypes": [],
-      "addons": []
-    },
-    "autoPlay": {
-      "attributes": [
-        "service",
-        "proxied",
-        "resolution",
-        "quality",
-        "encode",
-        "audioTags",
-        "visualTags",
-        "languages",
-        "releaseGroup"
-      ]
-    },
-    "catalogModifications": [],
-    "cacheAndPlay": {
-      "enabled": false,
-      "streamTypes": []
-    },
-    "excludedStreamExpressions": [
-      "queryType == 'anime.series' ? resolution(streams, '2160p') : []"
+    "preferredSubtitles": [
+      "Arabic",
+      "English"
+    ],
+    "excludedStreamTypes": [
+      "p2p"
+    ],
+    "requiredStreamTypes": [
+      "http"
     ]
   }
 }
