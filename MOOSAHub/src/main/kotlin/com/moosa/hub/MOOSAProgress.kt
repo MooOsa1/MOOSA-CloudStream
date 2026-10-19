@@ -12,6 +12,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import java.lang.ref.WeakReference
 
 object MOOSAProgress {
     private const val CONTAINER_TAG = "moosa_server_progress_container"
@@ -22,6 +23,40 @@ object MOOSAProgress {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val sessionId =
         java.util.concurrent.atomic.AtomicInteger(0)
+    private val visibilityPolicy = MOOSAProgressVisibilityPolicy()
+
+    @Volatile private var activeRequestKey = ""
+
+    // CloudStream reuses its native loading dialog for buffering. Restore
+    // ALL native ProgressBar state and remove OUR injected label after link
+    // discovery, otherwise a stale "Checking servers" bar reappears mid-video.
+    private class NativeDialogSnapshot(
+        val progress: WeakReference<ProgressBar>,
+        val wasIndeterminate: Boolean,
+        val wasVisible: Int,
+        val wasMax: Int,
+        val wasProgress: Int,
+        var injectedLabel: WeakReference<TextView>? = null
+    )
+    private var dialogSnapshot: NativeDialogSnapshot? = null
+
+    private fun restoreNativeDialog() {
+        val snapshot = dialogSnapshot ?: return
+        dialogSnapshot = null
+        try {
+            snapshot.injectedLabel?.get()?.let { label ->
+                (label.parent as? ViewGroup)?.removeView(label)
+            }
+            snapshot.progress.get()?.apply {
+                max = snapshot.wasMax
+                progress = snapshot.wasProgress
+                isIndeterminate = snapshot.wasIndeterminate
+                visibility = snapshot.wasVisible
+            }
+        } catch (_: Throwable) {
+            // Native player windows can disappear while async sources finish.
+        }
+    }
 
     @Volatile
     private var lastPercent: Int = 0
@@ -44,18 +79,26 @@ object MOOSAProgress {
         }
     }
 
-    fun start(totalProviders: Int) {
+    @Synchronized
+    fun start(totalProviders: Int, requestKey: String): Int {
         val total =
             totalProviders.coerceAtLeast(1)
 
         val token =
             sessionId.incrementAndGet()
 
-        hiddenForPlayback = false
+        activeRequestKey = requestKey
+        hiddenForPlayback = !visibilityPolicy.begin(requestKey)
+        if (hiddenForPlayback) {
+            // CloudStream may reload links during active playback. This is
+            // NOT a fresh Play press: leave the video unobstructed.
+            mainHandler.post { if (sessionId.get() == token) hide() }
+            return token
+        }
 
         update(
             4,
-            "Checking servers • 0/$total • 0 verified"
+            "Checking servers • 0/$total • 0 verified", token
         )
 
         // Never leave a stale custom progress bar on screen forever,
@@ -65,16 +108,21 @@ object MOOSAProgress {
                 sessionId.get() == token &&
                 lastPercent < 100
             ) {
+                // Don't let a late background probe make a timed-out bar flash.
+                hiddenForPlayback = true
                 hide()
             }
         }, 120000L)
+        return token
     }
 
     fun providerProgress(
         done: Int,
         total: Int,
-        verified: Int
+        verified: Int,
+        token: Int
     ) {
+        if (token != sessionId.get() || hiddenForPlayback) return
         val safeTotal =
             total.coerceAtLeast(1)
 
@@ -85,11 +133,9 @@ object MOOSAProgress {
             )
 
         if (checked >= safeTotal) {
-            val token = sessionId.get()
-
             update(
                 91,
-                "Servers checked • $verified ready • Finalizing…"
+                "Servers checked • $verified ready • Finalizing…", token
             )
 
             // Subtitle finalization is bounded separately. If Android keeps
@@ -117,35 +163,37 @@ object MOOSAProgress {
 
         update(
             percent,
-            "Checking servers • $checked/$safeTotal • $verified ready"
+            "Checking servers • $checked/$safeTotal • $verified ready", token
         )
     }
 
-    fun serversReady(verified: Int) {
-        update(
-            94,
-            "$verified servers ready"
-        )
+    fun serversReady(verified: Int, token: Int) {
+        update(94, "$verified servers ready", token)
     }
 
-    fun subtitles() {
-        update(
-            97,
-            "Preparing Arabic subtitles…"
-        )
+    fun subtitles(token: Int) {
+        update(97, "Preparing Arabic subtitles…", token)
     }
 
-    fun linkAvailable() {
+    fun linkAvailable(token: Int, requestKey: String) {
+        // Duplicate loadLinks() calls can overlap. An earlier job may deliver
+        // the first playable link AFTER a newer same-episode lookup starts.
+        // That verified link means video can begin now: hide the newer bar too.
+        // Never let an old episode hide progress for a different episode.
+        if (requestKey != activeRequestKey || token > sessionId.get()) return
+        visibilityPolicy.linkAvailable(requestKey)
         hiddenForPlayback = true
-        mainHandler.post { hide() }
+        val hideSession = sessionId.get()
+        mainHandler.post { if (sessionId.get() == hideSession) hide() }
     }
 
-    fun finish(verified: Int) {
-        sessionId.incrementAndGet()
+    fun finish(verified: Int, token: Int) {
+        if (token != sessionId.get()) return
+        val finishedToken = sessionId.incrementAndGet()
         lastPercent = 100
         lastText = "Ready • $verified servers"
         hiddenForPlayback = true
-        mainHandler.post { hide() }
+        mainHandler.post { if (sessionId.get() == finishedToken) hide() }
     }
 
     fun failureReport(report: String) {
@@ -166,10 +214,11 @@ object MOOSAProgress {
         }, 350L)
     }
 
-    private fun update(percent: Int, text: String) {
+    private fun update(percent: Int, text: String, token: Int) {
+        if (token != sessionId.get() || hiddenForPlayback) return
         lastPercent = percent.coerceIn(0, 100)
         lastText = text
-        mainHandler.post { render(retries = 10) }
+        mainHandler.post { render(retries = 10, token = token) }
     }
 
     private fun currentActivity(): Activity? {
@@ -184,7 +233,8 @@ object MOOSAProgress {
         }
     }
 
-    private fun render(retries: Int) {
+    private fun render(retries: Int, token: Int) {
+        if (token != sessionId.get()) return
         if (hiddenForPlayback) {
             hide()
             return
@@ -192,14 +242,26 @@ object MOOSAProgress {
 
         val act = currentActivity()
         if (act == null) {
-            retry(retries)
+            retry(retries, token)
             return
         }
 
-        // Update every visible CloudStream loading surface. Previously the mere
-        // existence of player_loading_overlay short-circuited rendering even
-        // after that overlay became hidden, which could leave the visible
-        // progress UI frozen at 87%.
+        // CloudStream can prefetch another episode while video is already
+        // visible. When the *native player loading overlay* is hidden, a
+        // background server check must NEVER create a fallback bar over it.
+        // CloudStream keeps handling its own video buffer/loading UI.
+        val overlayId = act.resources.getIdentifier(
+            "player_loading_overlay", "id", act.packageName
+        )
+        val nativePlayerOverlay = if (overlayId != 0) {
+            act.findViewById<View>(overlayId)
+        } else null
+        if (nativePlayerOverlay != null && !nativePlayerOverlay.isShown) {
+            restoreNativeDialog()
+            hideFallback(act)
+            return
+        }
+
         val playerRendered = renderPlayerOverlay(act)
         val dialogRendered = renderResultLoadingDialog(act)
         val primaryRendered = playerRendered || dialogRendered
@@ -211,12 +273,12 @@ object MOOSAProgress {
             renderActivityFallback(act)
         }
 
-        if (!rendered) retry(retries)
+        if (!rendered) retry(retries, token)
     }
 
-    private fun retry(retries: Int) {
-        if (retries > 0) {
-            mainHandler.postDelayed({ render(retries - 1) }, 120)
+    private fun retry(retries: Int, token: Int) {
+        if (retries > 0 && !hiddenForPlayback && token == sessionId.get()) {
+            mainHandler.postDelayed({ render(retries - 1, token) }, 120)
         }
     }
 
@@ -394,6 +456,16 @@ object MOOSAProgress {
             if (progressId == 0) return false
 
             val progress = dialog.findViewById<ProgressBar>(progressId) ?: return false
+            if (dialogSnapshot?.progress?.get() !== progress) {
+                restoreNativeDialog()
+                dialogSnapshot = NativeDialogSnapshot(
+                    WeakReference(progress),
+                    progress.isIndeterminate,
+                    progress.visibility,
+                    progress.max,
+                    progress.progress
+                )
+            }
             progress.visibility = View.VISIBLE
             progress.isIndeterminate = false
             progress.max = 100
@@ -418,6 +490,7 @@ object MOOSAProgress {
                     )
                 )
             }
+            dialogSnapshot?.injectedLabel = WeakReference(label)
             label.text = "$lastText • $lastPercent%"
             label.visibility = View.VISIBLE
             true
@@ -439,6 +512,13 @@ object MOOSAProgress {
     }
 
     private fun hide() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { hide() }
+            return
+        }
+        // Restore before looking up the Activity: the dialog may belong
+        // to a just-disposed Activity that is no longer current.
+        restoreNativeDialog()
         val act = currentActivity() ?: return
         try {
             val overlayId = act.resources.getIdentifier(

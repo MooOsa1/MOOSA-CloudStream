@@ -33,6 +33,7 @@ dependencies {
     cloudstream("com.lagradost:cloudstream3:pre-release")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("com.google.android.material:material:1.14.0")
+    testImplementation("junit:junit:4.13.2")
 }
 
 // v66: real TMDB original names, correct MySeed Arabic episode/season indexing, HD Ajax discovery and verified fallback, local Downet CDN speed samples

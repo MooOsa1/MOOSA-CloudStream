@@ -3461,7 +3461,17 @@ class MOOSAHubProvider : TmdbProvider() {
             return@coroutineScope false
         }
 
-        MOOSAProgress.start(providers.size)
+        val progressKey = buildString {
+            append(request.imdbId ?: request.tmdbId?.toString() ?: request.title)
+            append(if (request.isTv) ":series" else ":movie")
+            if (request.isTv) {
+                append(":")
+                append(request.season ?: -1)
+                append(":")
+                append(request.episode ?: -1)
+            }
+        }
+        val progressToken = MOOSAProgress.start(providers.size, progressKey)
 
         val aliasesJob = async {
             // Skip four TMDB alias calls and season metadata when the
@@ -3848,7 +3858,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                     acceptedLinks.incrementAndGet()
                                     emittedLink.set(true)
                                     shownLinks.incrementAndGet()
-                                    MOOSAProgress.linkAvailable()
+                                    MOOSAProgress.linkAvailable(progressToken, progressKey)
 
                                     synchronized(callbackLock) {
                                         callback(link)
@@ -3956,7 +3966,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     MOOSAProgress.providerProgress(
                         completedProviders.incrementAndGet(),
                         providers.size,
-                        shownLinks.get()
+                        shownLinks.get(),
+                        progressToken
                     )
                 }
 
@@ -3971,8 +3982,8 @@ class MOOSAHubProvider : TmdbProvider() {
             }
         }
 
-        MOOSAProgress.serversReady(shownLinks.get())
-        MOOSAProgress.subtitles()
+        MOOSAProgress.serversReady(shownLinks.get(), progressToken)
+        MOOSAProgress.subtitles(progressToken)
 
         if (emittedLink.get()) {
             // Native verification already started during provider loadLinks.
@@ -3989,7 +4000,7 @@ class MOOSAHubProvider : TmdbProvider() {
             nativeProbeJobs.toList().forEach { it.join() }
         }
 
-        MOOSAProgress.finish(shownLinks.get())
+        MOOSAProgress.finish(shownLinks.get(), progressToken)
 
         if (
             shownLinks.get() == 0 &&
