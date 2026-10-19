@@ -52,22 +52,60 @@ try{
      }catch{return null;}
    }).filter(Boolean);
    const web=direct.filter(x=>!x.notWebReady&&x.extension);
-   let reachable=0,mediaLike=0,cors=0;
-   for(const x of web.slice(0,3)){
+   const opaque=direct.filter(x=>!x.notWebReady&&!x.extension);
+   let tried=0,reachable=0,mediaLike=0,cors=0,htmlPages=0,redirects=0,errors=0;
+   const typeCounts={};
+   for(const x of [...web,...opaque].slice(0,6)){
+     tried++;
      try{
-       const response=await delay(x.url,13000,{headers:{Range:'bytes=0-65535'}});
+       let target=x.url,response;
+       for(let hop=0;hop<3;hop++){
+         response=await fetch(target,{redirect:'manual',headers:{Range:'bytes=0-65535'},
+           signal:AbortSignal.timeout(13000)});
+         if(![301,302,303,307,308].includes(response.status))break;
+         redirects++;
+         const raw=response.headers.get('location');
+         if(!raw)throw Error('redirect_without_location');
+         const u=new URL(raw,target);
+         if(u.protocol!=='https:'||u.username||u.password||isPrivateHostname(u.hostname))
+           throw Error('blocked_redirect_host');
+         await response.body?.cancel();
+         target=u.href;
+       }
+       if(!response.ok)throw Error('HTTP_'+response.status);
        const type=String(response.headers.get('content-type')||'').toLowerCase();
        const allow=String(response.headers.get('access-control-allow-origin')||'');
-       const result=await response.arrayBuffer();
-       const hls=(type.includes('mpegurl')&&new TextDecoder().decode(result.slice(0,30)).startsWith('#EXTM3U'));
-       if(result.byteLength)reachable++;
-       if(hls||type.startsWith('video/'))mediaLike++;
-       if(allow==='*'||allow.includes(ROOT))cors++;
-     }catch{}
+       const reader=response.body?.getReader();
+       const chunks=[];let size=0;
+       if(reader){
+         try {
+           while(size<65536){
+             const part=await reader.read();
+             if(part.done)break;
+             const b=Buffer.from(part.value).subarray(0,65536-size);
+             chunks.push(b);size+=b.byteLength;
+           }
+         }finally{await reader.cancel().catch(()=>{});}
+       }
+       const head=Buffer.concat(chunks,size);
+       const hls=head.subarray(0,16).toString('utf8').startsWith('#EXTM3U');
+       const mp4=head.subarray(4,8).toString('ascii')==='ftyp';
+       const video=type.startsWith('video/') || mp4;
+       const kind=hls?'HLS':video?'VIDEO':/html/i.test(type)?'HTML':'OTHER';
+       typeCounts[kind]=(typeCounts[kind]||0)+1;
+       if(head.length>0)reachable++;
+       if(hls||video)mediaLike++;
+       if(kind==='HTML')htmlPages++;
+       if(allow==='*'||allow.includes('moosa-web.onrender.com'))cors++;
+     }catch{errors++;}
    }
    console.log('MOOSA_HTTP_2025 movie='+movie.id+' total='+all.length+
-     ' httpsDirect='+direct.length+' browserCandidate='+web.length+
-     ' probeResponses='+reachable+' mediaHeaders='+mediaLike+' corsPotential='+cors);
+     ' httpsDirect='+direct.length+' browserPathCandidate='+web.length+
+     ' opaqueHttps='+opaque.length+' tested='+tried+' reachable='+reachable+
+     ' actualMediaResponses='+mediaLike+' htmlResponses='+htmlPages+
+     ' redirectHops='+redirects+' corsPotential='+cors+' errors='+errors+
+     ' responseKinds='+JSON.stringify(typeCounts));
+
  }
 }catch(e){
  console.log('MOOSA_HTTP_FREE_DISCOVERY_ERROR='+String(e?.message||'unknown').slice(0,120));
