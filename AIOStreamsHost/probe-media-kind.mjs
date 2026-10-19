@@ -30,7 +30,7 @@ function publicIp(ip){
 export async function probeMedia(raw){
  let u=safeURL(raw);
  for(let hop=0;hop<3;hop++){
-   const addresses=await lookup(u.hostname,{all:true});
+   const addresses=await lookup(u.hostname,{all:true,family:4});
    if(!addresses.length||addresses.some(x=>!publicIp(x.address)))throw Error('blocked-dns');
    const r=await fetch(u.href,{method:'GET',redirect:'manual',
      headers:{Range:'bytes=0-'+String(MEDIA_MAX-1),Accept:'*/*'},
