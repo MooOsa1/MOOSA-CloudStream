@@ -777,6 +777,7 @@ object MOOSASeeAll {
         state: CategoryState,
         attempt: Int = 0
     ) {
+        if (!isMoosaSelected(activity)) return
         val master = homeMasterRecycler(activity) ?: return
         val position = state.parentAdapterPosition
 
@@ -835,6 +836,7 @@ object MOOSASeeAll {
     fun restoreFocus(categoryName: String) {
         val host = activity ?: return
         mainHandler.postDelayed({
+            if (!isMoosaSelected(host)) return@postDelayed
             val master = homeMasterRecycler(host) ?: return@postDelayed
             if (!master.isShown || !host.hasWindowFocus()) return@postDelayed
             val title = headerRefs[categoryName]?.get()
