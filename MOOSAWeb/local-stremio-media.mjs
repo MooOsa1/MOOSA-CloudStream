@@ -21,7 +21,7 @@ function validEnginePath(path){return LEGACY_PATH.test(path)||HLSV2_PATH.test(pa
 function safeHlsQuery(path,search){
  if(!search)return '';
  const match=HLSV2_PATH.exec(path);
- if(!match||!path.endsWith('/master.m3u8'))return null;
+ if(!match)return null; // Stremio forwards mediaURL to audio/video playlists and segments as well
  const q=new URLSearchParams(search);
  const allowed=new Set(['mediaURL','maxAudioChannels']);
  for(const key of q.keys())if(!allowed.has(key)||q.getAll(key).length!==1)return null;
