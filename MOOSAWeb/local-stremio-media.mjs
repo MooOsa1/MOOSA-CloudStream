@@ -23,12 +23,27 @@ function safeHlsQuery(path,search){
  const match=HLSV2_PATH.exec(path);
  if(!match)return null; // Stremio forwards mediaURL to audio/video playlists and segments as well
  const q=new URLSearchParams(search);
- const allowed=new Set(['mediaURL','maxAudioChannels']);
- for(const key of q.keys())if(!allowed.has(key)||q.getAll(key).length!==1)return null;
+ if(search.length>1200)return null;
+ const allowed=new Set(['mediaURL','maxAudioChannels','videoCodecs','audioCodecs',
+   'forceTranscoding','profile','maxWidth']);
+ for(const key of q.keys()){
+   if(!allowed.has(key))return null;
+   if(!['videoCodecs','audioCodecs'].includes(key)&&q.getAll(key).length!==1)
+     return null;
+   if(q.getAll(key).length>8)return null;
+ }
  if(!q.has('mediaURL'))return null;
  const media=q.get('mediaURL');
  if(media!=='http://127.0.0.1:11470/'+match[1]+'/'+match[2])return null;
- if(q.has('maxAudioChannels')&&!['1','2'].includes(q.get('maxAudioChannels')))return null;
+ if(q.has('maxAudioChannels')&&!['1','2','6','8'].includes(q.get('maxAudioChannels')))return null;
+ if(q.has('maxWidth')&&(!/^\\d{2,4}$/.test(q.get('maxWidth'))||
+    Number(q.get('maxWidth'))>4320))return null;
+ if(q.has('forceTranscoding')&&!['1','0','true','false'].includes(q.get('forceTranscoding')))return null;
+ if(q.has('profile')&&!/^[a-z0-9_-]{1,35}$/i.test(q.get('profile')))return null;
+ const videoCodecs=new Set(['h264','h265','hevc','vp9','av1']);
+ const audioCodecs=new Set(['aac','mp3','opus','ac3','eac3','flac']);
+ if(q.getAll('videoCodecs').some(c=>!videoCodecs.has(c.toLowerCase())))return null;
+ if(q.getAll('audioCodecs').some(c=>!audioCodecs.has(c.toLowerCase())))return null;
  return '?'+q.toString();
 }
 const PLAYLIST=/\.m3u8$/i;
