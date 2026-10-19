@@ -24,13 +24,37 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.ConcurrentHashMap
 
 object MOOSACatalog {
     private const val TMDB_API = "https://api.themoviedb.org/3"
     private const val TMDB_KEY = "e6333b32409e02a4a6eba6fb7ff866bb"
     private const val IMAGE = "https://image.tmdb.org/t/p/w500"
-    private const val PAGES_PER_BATCH = 1
+    // Home carousels render small posters, not full-detail images. Loading
+    // w500 into every shelf wasted bandwidth and image decode memory.
+    private const val HOME_IMAGE = "https://image.tmdb.org/t/p/w342"
     private val artworkSemaphore = Semaphore(4)
+
+    private data class CachedHomePage(val body: String, val createdAt: Long)
+    private val homePages = ConcurrentHashMap<String, CachedHomePage>()
+    private const val HOME_CACHE_MS = 2 * 60 * 1000L
+
+    private suspend fun homePageJson(path: String, params: Map<String, String>): String {
+        val cacheKey = path + "?" + params.toSortedMap().entries
+            .joinToString("&") { (key, value) -> "$key=$value" }
+        val now = System.currentTimeMillis()
+        homePages[cacheKey]?.let { cached ->
+            if (now - cached.createdAt in 0 until HOME_CACHE_MS) return cached.body
+            homePages.remove(cacheKey, cached)
+        }
+        val body = get(path, params)
+        // Do not keep failed HTTP/invalid JSON results in memory.
+        if (body.trimStart().startsWith("{") && body.contains("\"results\"")) {
+            if (homePages.size >= 36) homePages.clear()
+            homePages[cacheKey] = CachedHomePage(body, now)
+        }
+        return body
+    }
 
         data class Page(
         @JsonProperty("results")
@@ -196,7 +220,8 @@ object MOOSACatalog {
 
     private fun Item.toResponse(
         api: MainAPI,
-        forceTv: Boolean? = null
+        forceTv: Boolean? = null,
+        homePoster: Boolean = false
     ): SearchResponse? {
         // Arabic originals are listed natively by MOOSA Arabic, not TMDB.
         if (originalLanguage.equals("ar", ignoreCase = true)) return null
@@ -216,7 +241,7 @@ object MOOSACatalog {
                 ?: backdropPath?.takeIf { it.isNotBlank() }
 
         val poster =
-            artworkPath?.let { "$IMAGE$it" }
+            artworkPath?.let { "${if (homePoster) HOME_IMAGE else IMAGE}$it" }
 
         val reliableScore =
             voteAverage
@@ -398,15 +423,14 @@ object MOOSACatalog {
         extra: Map<String, String> = emptyMap(),
         resolveArtwork: Boolean = true
     ): CatalogPage {
+        val params = mapOf(
+            "page" to page.toString(),
+            "language" to (if (extra["with_original_language"] == "ar") "ar-SA" else "en-US"),
+            "include_adult" to "false"
+        ) + extra
         val body = try {
-            get(
-                path,
-                mapOf(
-                    "page" to page.toString(),
-                    "language" to (if (extra["with_original_language"] == "ar") "ar-SA" else "en-US"),
-                    "include_adult" to "false"
-                ) + extra
-            )
+            if (resolveArtwork) get(path, params)
+            else homePageJson(path, params)
         } catch (_: Throwable) {
             return CatalogPage(emptyList(), 1)
         }
@@ -439,7 +463,8 @@ object MOOSACatalog {
         }
 
         val responses = enriched.mapNotNull { item ->
-            item.toResponse(api, forceTv)?.let { it to item }
+            item.toResponse(api, forceTv, homePoster = !resolveArtwork)
+                ?.let { it to item }
         }
 
         return CatalogPage(
@@ -483,14 +508,10 @@ object MOOSACatalog {
         val isTv = path.contains("/tv/") || path == "/discover/tv"
         val options = queryOptions(path, extras)
 
-        // Offer a meaningful Indian selection on the home shelf instead
-        // of just 20 over-filtered results. Other home shelves stay light.
-        val pagesPerBatch = when (request.name) {
-            "Top Indian Movies" -> 3
-            "Trending Indian Movies" -> 2
-            else -> PAGES_PER_BATCH
-        }
-        val firstTmdbPage = ((page.coerceAtLeast(1) - 1) * pagesPerBatch) + 1
+        // Keep the Fire TV home lightweight: one TMDB request per shelf,
+        // not three pages of cards/poster work for Top Indian Movies.
+        // Show More loads the full catalog separately, in paged batches.
+        val firstTmdbPage = MOOSAHomeLoadPolicy.tmdbPage(page)
         val first = listPage(
             api, path, firstTmdbPage, isTv, options, resolveArtwork = false
         )
@@ -504,18 +525,7 @@ object MOOSACatalog {
             )
         }
 
-        val extraPages = ((firstTmdbPage + 1)..minOf(
-            firstTmdbPage + pagesPerBatch - 1,
-            maxPage
-        )).map { tmdbPage ->
-            async {
-                listPage(
-                    api, path, tmdbPage, isTv, options, resolveArtwork = false
-                )
-            }
-        }
-
-        val fetchedPages = listOf(first) + extraPages.map { it.await() }
+        val fetchedPages = listOf(first)
         val unsorted = fetchedPages.flatMap { it.items }.distinctBy { it.url }
         val allItems = when {
             isIndianTop(path, options) ->
@@ -525,13 +535,13 @@ object MOOSACatalog {
             else -> unsorted
         }
 
-        val lastFetchedPage = minOf(
-            firstTmdbPage + pagesPerBatch - 1,
-            maxPage
-        )
+        val lastFetchedPage = firstTmdbPage
 
         val canLoadMore =
             allItems.isNotEmpty() && lastFetchedPage < maxPage
+        // The home horizontal row needs a small working set. Show More
+        // remains unlimited/paged and is not subject to this UI-only cap.
+        val homeItems = allItems.take(MOOSAHomeLoadPolicy.MAX_HOME_CARDS)
 
         if (
             showMoreButton &&
@@ -541,7 +551,7 @@ object MOOSACatalog {
             MOOSASeeAll.register(
                 api = api,
                 request = request,
-                items = allItems,
+                items = homeItems,
                 hasNext = canLoadMore,
                 horizontal = request.horizontalImages
             )
@@ -549,7 +559,7 @@ object MOOSACatalog {
 
         newHomePageResponse(
             request,
-            allItems,
+            homeItems,
             hasNext = canLoadMore
         )
     }
