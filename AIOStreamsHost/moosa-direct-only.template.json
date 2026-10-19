@@ -1,11 +1,11 @@
 {
   "metadata": {
     "id": "moosa.http-only",
-    "name": "MOOSA Hub — HTTP only (no torrents)",
-    "description": "Strict no-torrent MOOSA Hub for iPhone/PC. Current HTTP addons: PenguPlay (public manifest v1.4.0 seen Oct 19) and Showbox (may require personal session). No availability/playback guaranteed.",
+    "name": "MOOSA Hub — Direct HTTP Only (HDHub pilot)",
+    "description": "Experimental no-torrent HTTP-only MOOSA Hub. HDHub public addon returned distinct MKV media bytes for Sinners and F1 (2025). Playback and film identity not yet fully established. No P2P or paid services.",
     "source": "external",
     "author": "MOOSA",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "category": "Browser",
     "serviceRequired": false,
     "services": [],
@@ -44,30 +44,12 @@
       },
       {
         "type": "custom",
-        "instanceId": "mpg1",
+        "instanceId": "mhd1",
         "enabled": true,
         "options": {
-          "name": "PenguPlay — live HTTP index",
-          "manifestUrl": "https://pengu.uk/manifest.json",
-          "timeout": 13000,
-          "resources": [
-            "stream",
-            "subtitles"
-          ],
-          "mediaTypes": [
-            "movie",
-            "series"
-          ]
-        }
-      },
-      {
-        "type": "custom",
-        "instanceId": "msh1",
-        "enabled": true,
-        "options": {
-          "name": "Showbox HTTP — may require personal FebBox session",
-          "manifestUrl": "https://showbox.codiv.dpdns.org/manifest.json",
-          "timeout": 12000,
+          "name": "HdHub — real distinct HTTP streams (2025 live audit)",
+          "manifestUrl": "https://hdhub.thevolecitor.qzz.io/manifest.json",
+          "timeout": 15000,
           "resources": [
             "stream"
           ],
