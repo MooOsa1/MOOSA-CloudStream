@@ -97,6 +97,7 @@ class MOOSAMatchGuardTest {
         assertEquals("scary movie 2", MOOSAMatchGuard.titleKey("Scary Movie 2", false))
         assertEquals("dune part two", MOOSAMatchGuard.titleKey("Dune Part Two", false))
         assertEquals("doraemon", MOOSAMatchGuard.titleKey("Doraemon (2005)", true))
+        assertEquals("the office", MOOSAMatchGuard.titleKey("The Office Season 2 Episode 3", true))
     }
 
     @Test fun refusesAnimeAliasIfSourceExplicitlyAdvertisesOtherSeason() {
