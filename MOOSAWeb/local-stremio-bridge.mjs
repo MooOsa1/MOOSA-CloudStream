@@ -11,16 +11,22 @@ const URL_PATH=/^\/stremio\/[0-9a-f-]{36}\/[a-zA-Z0-9_-]{15,1024}\/manifest\.jso
 export function parsePrivateAddonManifest(raw){
   if(typeof raw!=='string'||raw.length>1600)return null;
   let url;
-  try{url=new URL(raw);}catch{return null;}
+  try{url=new URL(raw.startsWith('stremio://')?'https://'+raw.slice(10):raw);}catch{return null;}
   if(url.protocol!=='https:'||url.hostname!==AIOSTREAMS_HOST||url.port||
     url.username||url.password||url.search||url.hash||!URL_PATH.test(url.pathname))return null;
   return url;
 }
 
-export function safeP2PSources(payload){
+export function safeP2PSources(payload,{imdbId=null}={}){
   const array=Array.isArray(payload?.streams)?payload.streams:[];
   const seen=new Set();
+  const expected=imdbId==='tt31193180'?/\bsinners\b/i:
+    imdbId==='tt16311594'?/\bf1\b|formula.?1/i:null;
   return array.filter(x=>x&&typeof x==='object'&&HASH.test(String(x.infoHash||'')))
+    .filter(x=>!expected||(()=>{
+      const release=[x.name,x.description,x.behaviorHints?.filename].join(' ');
+      return expected.test(release)&&/\b2025\b/.test(release);
+    })())
     .filter(x=>!(typeof x.name==='string'&&/\bCAM\b|\bTS\b|TELESYNC|TRAILER|\b480p\b|\b360p\b/i.test(x.name)))
     .map(x=>{
       const infoHash=String(x.infoHash).toLowerCase();
@@ -67,7 +73,7 @@ export async function lookupAIOStreams({manifestUrl,imdbId,fetcher=fetch,timeout
   }catch{
     const error=new Error('Invalid provider response');error.status=502;throw error;
   }
-  const sources=safeP2PSources(data);
+  const sources=safeP2PSources(data,{imdbId});
   return {sources,count:sources.length,requiresLocalEngine:true,
     note:'Only source metadata; video is played by a Stremio service on the viewer PC.'};
 }
