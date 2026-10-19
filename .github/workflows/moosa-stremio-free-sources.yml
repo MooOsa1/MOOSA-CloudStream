@@ -108,6 +108,14 @@ jobs:
       - name: Test installed addon using disposable AIOStreams config and delete it
         shell: powershell
         run: ./AIOStreamsHost/Install-MOOSA-Hub.ps1 -TestOnly -NoOpen
+      - name: Validate Windows local browser launcher
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'AIOStreamsHost/Start-MOOSA-Browser.ps1').Path, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          Write-Host 'MOOSA local PC launcher syntax passed.'
   modern-sustained-decode:
     runs-on: ubuntu-latest
     timeout-minutes: 21
