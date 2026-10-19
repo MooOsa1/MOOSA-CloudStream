@@ -58,7 +58,7 @@ object MOOSASeeAll {
     private val watchedTitles = WeakHashMap<TextView, TextWatcher>()
     private val watchedSelectors = WeakHashMap<TextView, TextWatcher>()
     private data class AdapterWatch(
-        val adapter: RecyclerView.Adapter<*>,
+        val adapter: WeakReference<RecyclerView.Adapter<*>>,
         val observer: RecyclerView.AdapterDataObserver
     )
     private val watchedAdapters = WeakHashMap<RecyclerView, AdapterWatch>()
@@ -160,8 +160,8 @@ object MOOSASeeAll {
         val adapter = master.adapter ?: return
         synchronized(watchedAdapters) {
             val existing = watchedAdapters[master]
-            if (existing?.adapter === adapter) return
-            existing?.adapter?.unregisterAdapterDataObserver(existing.observer)
+            if (existing?.adapter?.get() === adapter) return
+            existing?.adapter?.get()?.unregisterAdapterDataObserver(existing.observer)
             val watcher = object : RecyclerView.AdapterDataObserver() {
                 override fun onChanged() = scheduleHeaderRefresh()
                 override fun onItemRangeChanged(start: Int, count: Int) =
@@ -174,7 +174,7 @@ object MOOSASeeAll {
                     scheduleHeaderRefresh()
             }
             adapter.registerAdapterDataObserver(watcher)
-            watchedAdapters[master] = AdapterWatch(adapter, watcher)
+            watchedAdapters[master] = AdapterWatch(WeakReference(adapter), watcher)
         }
     }
 
