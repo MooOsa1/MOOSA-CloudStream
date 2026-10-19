@@ -64,6 +64,7 @@ try{
 }catch{}
 if(-not $siteReachable){
  $env:PORT='3000'
+ $env:MOOSA_HOST='127.0.0.1'
  $p=Start-Process -FilePath $node.Source -ArgumentList @('server.mjs') -WorkingDirectory (Join-Path $Web 'MOOSAWeb') -PassThru -WindowStyle Hidden
  $ready=$false
  for($i=0;$i -lt 40;$i++){
