@@ -1,0 +1,231 @@
+{
+  "metadata": {
+    "id": "moosa.http-only",
+    "name": "MOOSA Hub — HTTP only (no torrents)",
+    "description": "Strict direct-HTTP-only source aggregation for iPhone/PC. No P2P, no torrents, no debrid. Queries current upstream add-ons automatically; zero working sources means zero streams, not a fake match.",
+    "source": "external",
+    "author": "MOOSA",
+    "version": "1.0.0",
+    "category": "Browser",
+    "serviceRequired": false,
+    "services": [],
+    "sourceUrl": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/experiment/moosa-http-only-20261019/AIOStreamsHost/moosa-direct-only.template.json"
+  },
+  "config": {
+    "presets": [
+      {
+        "type": "custom",
+        "instanceId": "mcm1",
+        "enabled": true,
+        "options": {
+          "name": "Cinemeta",
+          "manifestUrl": "https://v3-cinemeta.strem.io/manifest.json",
+          "timeout": 6000,
+          "resources": [
+            "catalog",
+            "meta"
+          ],
+          "mediaTypes": []
+        }
+      },
+      {
+        "type": "custom",
+        "instanceId": "mos1",
+        "enabled": true,
+        "options": {
+          "name": "OpenSubtitles v3",
+          "manifestUrl": "https://opensubtitles-v3.strem.io/manifest.json",
+          "timeout": 7000,
+          "resources": [
+            "subtitles"
+          ],
+          "mediaTypes": []
+        }
+      },
+      {
+        "type": "custom",
+        "instanceId": "msh1",
+        "enabled": true,
+        "options": {
+          "name": "Showbox HTTP — may require personal FebBox session",
+          "manifestUrl": "https://showbox.codiv.dpdns.org/manifest.json",
+          "timeout": 12000,
+          "resources": [
+            "stream"
+          ],
+          "mediaTypes": [
+            "movie",
+            "series"
+          ]
+        }
+      }
+    ],
+    "formatter": {
+      "id": "prism",
+      "definition": {
+        "name": "",
+        "description": ""
+      }
+    },
+    "preferredQualities": [
+      "BluRay REMUX",
+      "BluRay",
+      "WEB-DL",
+      "WEBRip",
+      "HDRip",
+      "HC HD-Rip",
+      "DVD REMUX",
+      "DVDRip",
+      "HDTV",
+      "CAM",
+      "TS",
+      "TC",
+      "SCR",
+      "Unknown"
+    ],
+    "preferredResolutions": [
+      "2160p",
+      "1080p",
+      "720p"
+    ],
+    "excludedQualities": [
+      "CAM",
+      "SCR",
+      "TS",
+      "TC"
+    ],
+    "excludedVisualTags": [
+      "3D"
+    ],
+    "sortCriteria": {
+      "global": [
+        {
+          "key": "resolution",
+          "direction": "desc"
+        },
+        {
+          "key": "quality",
+          "direction": "desc"
+        }
+      ]
+    },
+    "deduplicator": {
+      "enabled": true,
+      "multiGroupBehaviour": "aggressive",
+      "keys": [
+        "filename",
+        "infoHash"
+      ],
+      "cached": "single_result",
+      "uncached": "per_service",
+      "p2p": "single_result"
+    },
+    "excludedResolutions": [
+      "576p",
+      "480p",
+      "360p",
+      "240p",
+      "144p"
+    ],
+    "includedResolutions": [],
+    "requiredResolutions": [
+      "2160p",
+      "1080p",
+      "720p"
+    ],
+    "includedQualities": [],
+    "requiredQualities": [],
+    "excludedLanguages": [],
+    "includedLanguages": [],
+    "requiredLanguages": [],
+    "preferredLanguages": [
+      "Arabic",
+      "English"
+    ],
+    "includedVisualTags": [],
+    "requiredVisualTags": [],
+    "preferredVisualTags": [],
+    "excludedAudioTags": [],
+    "includedAudioTags": [],
+    "requiredAudioTags": [],
+    "preferredAudioTags": [],
+    "excludedStreamTypes": [
+      "p2p",
+      "debrid",
+      "usenet",
+      "stremio-usenet"
+    ],
+    "includedStreamTypes": [],
+    "requiredStreamTypes": [
+      "http"
+    ],
+    "preferredStreamTypes": [
+      "http"
+    ],
+    "excludedEncodes": [],
+    "includedEncodes": [],
+    "requiredEncodes": [],
+    "preferredEncodes": [],
+    "seederRangeTypes": [],
+    "digitalReleaseFilter": {
+      "enabled": true,
+      "tolerance": 0,
+      "requestTypes": [],
+      "addons": []
+    },
+    "excludeCachedFromAddons": [],
+    "excludeCachedFromServices": [],
+    "excludeCachedFromStreamTypes": [],
+    "excludeUncachedFromAddons": [],
+    "excludeUncachedFromServices": [],
+    "excludeUncachedFromStreamTypes": [],
+    "proxy": {
+      "proxiedAddons": [],
+      "proxiedServices": [],
+      "id": "builtin"
+    },
+    "hideErrorsForResources": [],
+    "statistics": {
+      "statsToShow": [
+        "addon",
+        "filter"
+      ]
+    },
+    "yearMatching": {
+      "enabled": false,
+      "requestTypes": [],
+      "addons": []
+    },
+    "titleMatching": {
+      "enabled": false,
+      "requestTypes": [],
+      "addons": []
+    },
+    "seasonEpisodeMatching": {
+      "enabled": false,
+      "requestTypes": [],
+      "addons": []
+    },
+    "autoPlay": {
+      "attributes": [
+        "service",
+        "proxied",
+        "resolution",
+        "quality",
+        "encode",
+        "audioTags",
+        "visualTags",
+        "languages",
+        "releaseGroup"
+      ]
+    },
+    "catalogModifications": [],
+    "cacheAndPlay": {
+      "enabled": false,
+      "streamTypes": []
+    },
+    "excludedStreamExpressions": [
+      "queryType == 'anime.series' ? resolution(streams, '2160p') : []"
+    ]
+  }
+}
