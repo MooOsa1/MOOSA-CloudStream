@@ -1,0 +1,225 @@
+{
+  "metadata": {
+    "id": "moosa.http-only",
+    "name": "MOOSA Hub — HTTP Only",
+    "description": "Direct browser-playable HTTP streaming only. Excludes torrents, magnet/P2P, debrid and usenet. Configure compatible independently licensed Stremio addons separately; this template does not supply movies.",
+    "source": "external",
+    "author": "MOOSA",
+    "version": "1.0.0",
+    "category": "Browser",
+    "serviceRequired": false,
+    "services": []
+  },
+  "config": {
+    "presets": [],
+    "formatter": {
+      "id": "prism",
+      "definition": {
+        "name": "",
+        "description": ""
+      }
+    },
+    "preferredQualities": [
+      "BluRay REMUX",
+      "BluRay",
+      "WEB-DL",
+      "WEBRip",
+      "HDRip",
+      "HC HD-Rip",
+      "DVD REMUX",
+      "DVDRip",
+      "HDTV",
+      "CAM",
+      "TS",
+      "TC",
+      "SCR",
+      "Unknown"
+    ],
+    "preferredResolutions": [
+      "2160p",
+      "1080p",
+      "720p"
+    ],
+    "excludedQualities": [
+      "CAM",
+      "SCR",
+      "TS",
+      "TC"
+    ],
+    "excludedVisualTags": [
+      "3D"
+    ],
+    "sortCriteria": {
+      "global": [
+        {
+          "key": "cached",
+          "direction": "desc"
+        },
+        {
+          "key": "resolution",
+          "direction": "desc"
+        },
+        {
+          "key": "library",
+          "direction": "desc"
+        },
+        {
+          "key": "regexPatterns",
+          "direction": "desc"
+        },
+        {
+          "key": "streamType",
+          "direction": "desc"
+        },
+        {
+          "key": "visualTag",
+          "direction": "desc"
+        },
+        {
+          "key": "audioTag",
+          "direction": "desc"
+        },
+        {
+          "key": "audioChannel",
+          "direction": "desc"
+        },
+        {
+          "key": "encode",
+          "direction": "desc"
+        },
+        {
+          "key": "language",
+          "direction": "desc"
+        },
+        {
+          "key": "size",
+          "direction": "desc"
+        }
+      ]
+    },
+    "deduplicator": {
+      "enabled": true,
+      "multiGroupBehaviour": "aggressive",
+      "keys": [
+        "filename",
+        "infoHash"
+      ],
+      "cached": "single_result",
+      "uncached": "per_service",
+      "p2p": "single_result"
+    },
+    "excludedResolutions": [
+      "576p",
+      "480p",
+      "360p",
+      "240p",
+      "144p",
+      "Unknown"
+    ],
+    "includedResolutions": [],
+    "requiredResolutions": [
+      "2160p",
+      "1080p",
+      "720p"
+    ],
+    "includedQualities": [],
+    "requiredQualities": [],
+    "excludedLanguages": [],
+    "includedLanguages": [],
+    "requiredLanguages": [],
+    "preferredLanguages": [],
+    "includedVisualTags": [],
+    "requiredVisualTags": [],
+    "preferredVisualTags": [],
+    "excludedAudioTags": [],
+    "includedAudioTags": [],
+    "requiredAudioTags": [],
+    "preferredAudioTags": [],
+    "excludedStreamTypes": [
+      "p2p",
+      "debrid",
+      "usenet",
+      "stremio-usenet"
+    ],
+    "includedStreamTypes": [],
+    "requiredStreamTypes": [
+      "http"
+    ],
+    "preferredStreamTypes": [
+      "http"
+    ],
+    "excludedEncodes": [],
+    "includedEncodes": [],
+    "requiredEncodes": [],
+    "preferredEncodes": [],
+    "seederRangeTypes": [],
+    "digitalReleaseFilter": {
+      "enabled": true,
+      "tolerance": 0,
+      "requestTypes": [],
+      "addons": []
+    },
+    "excludeCachedFromAddons": [],
+    "excludeCachedFromServices": [],
+    "excludeCachedFromStreamTypes": [],
+    "excludeUncachedFromAddons": [],
+    "excludeUncachedFromServices": [],
+    "excludeUncachedFromStreamTypes": [],
+    "proxy": {
+      "proxiedAddons": [],
+      "proxiedServices": [],
+      "id": "builtin"
+    },
+    "hideErrorsForResources": [],
+    "statistics": {
+      "statsToShow": [
+        "addon",
+        "filter"
+      ]
+    },
+    "tmdbApiKey": "<template_placeholder>",
+    "yearMatching": {
+      "enabled": true,
+      "requestTypes": [],
+      "addons": []
+    },
+    "titleMatching": {
+      "similarityThreshold": 1,
+      "enabled": true,
+      "requestTypes": [
+        "movie",
+        "series"
+      ],
+      "addons": []
+    },
+    "seasonEpisodeMatching": {
+      "enabled": true,
+      "requestTypes": [
+        "movie",
+        "series"
+      ],
+      "addons": []
+    },
+    "autoPlay": {
+      "attributes": [
+        "service",
+        "proxied",
+        "resolution",
+        "quality",
+        "encode",
+        "audioTags",
+        "visualTags",
+        "languages",
+        "releaseGroup"
+      ]
+    },
+    "catalogModifications": [],
+    "cacheAndPlay": {
+      "enabled": false,
+      "streamTypes": []
+    },
+    "excludedStreamExpressions": [
+      "queryType == 'anime.series' ? resolution(streams, '2160p') : []"
+    ]
+  }
+}
