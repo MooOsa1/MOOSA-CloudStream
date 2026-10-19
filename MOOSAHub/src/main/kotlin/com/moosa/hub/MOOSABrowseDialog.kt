@@ -288,8 +288,14 @@ class MOOSABrowseDialog : DialogFragment() {
             AlertDialog.Builder(requireContext())
                 .setTitle("Genre • Real TMDB categories")
                 .setSingleChoiceItems(labels, index) { dialog, which ->
+                    val nextGenre = if (which == 0) null else genres[which - 1].key
                     draftFilters = current.copy(
-                        genreKey = if (which == 0) null else genres[which - 1].key
+                        genreKey = nextGenre,
+                        // Indian/US shelves should not accidentally return zero
+                        // matches when Anime is selected. The country chip can
+                        // still be changed independently after this.
+                        originCountry = if (nextGenre == "anime") "JP"
+                        else current.originCountry
                     )
                     updateFilterLabels()
                     dialog.dismiss()

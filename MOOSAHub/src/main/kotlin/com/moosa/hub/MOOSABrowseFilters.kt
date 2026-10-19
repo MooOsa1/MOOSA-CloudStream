@@ -29,6 +29,8 @@ internal object MOOSABrowseFilters {
         GenreChoice("adventure", "Adventure", movieId = 12),
         GenreChoice("action_adventure", "Action & Adventure", tvId = 10759),
         GenreChoice("animation", "Animation", 16, 16),
+        // Anime is Japanese-language animation, not generic worldwide cartoons.
+        GenreChoice("anime", "Anime", 16, 16),
         GenreChoice("comedy", "Comedy", 35, 35),
         GenreChoice("crime", "Crime", 80, 80),
         GenreChoice("documentary", "Documentary", 99, 99),
@@ -78,8 +80,18 @@ internal object MOOSABrowseFilters {
             it.startsWith("/tv/") || it == "/discover/tv" ||
                 it.startsWith("/trending/tv/")
         }
-        val country = if (raw.contains("with_origin_country=IN")) "IN" else ""
-        return Selection(isTv = isTv, originCountry = country)
+        val country = when {
+            raw.contains("with_origin_country=IN") -> "IN"
+            raw.contains("with_origin_country=JP") -> "JP"
+            else -> ""
+        }
+        val anime = raw.contains("with_genres=16") &&
+            raw.contains("with_original_language=ja")
+        return Selection(
+            isTv = isTv,
+            originCountry = country,
+            genreKey = if (anime) "anime" else null
+        )
     }
 
     fun availableGenres(isTv: Boolean): List<GenreChoice> =
@@ -105,6 +117,11 @@ internal object MOOSABrowseFilters {
             } else selectedSort.apiSort
         )
         genreId?.let { params["with_genres"] = it.toString() }
+        // TMDB has no native Anime genre: animation + Japanese original
+        // language separates anime from non-Japanese cartoons.
+        if (choice.genreKey == "anime") {
+            params["with_original_language"] = "ja"
+        }
         if (choice.originCountry in countries.map { it.code } &&
             choice.originCountry.isNotEmpty()
         ) params["with_origin_country"] = choice.originCountry
