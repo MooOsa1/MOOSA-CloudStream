@@ -12,6 +12,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import java.lang.ref.WeakReference
 
 object MOOSAProgress {
     private const val CONTAINER_TAG = "moosa_server_progress_container"
@@ -25,6 +26,37 @@ object MOOSAProgress {
     private val visibilityPolicy = MOOSAProgressVisibilityPolicy()
 
     @Volatile private var activeRequestKey = ""
+
+    // CloudStream reuses its native loading dialog for buffering. Restore
+    // ALL native ProgressBar state and remove OUR injected label after link
+    // discovery, otherwise a stale "Checking servers" bar reappears mid-video.
+    private class NativeDialogSnapshot(
+        val progress: WeakReference<ProgressBar>,
+        val wasIndeterminate: Boolean,
+        val wasVisible: Int,
+        val wasMax: Int,
+        val wasProgress: Int,
+        var injectedLabel: WeakReference<TextView>? = null
+    )
+    private var dialogSnapshot: NativeDialogSnapshot? = null
+
+    private fun restoreNativeDialog() {
+        val snapshot = dialogSnapshot ?: return
+        dialogSnapshot = null
+        try {
+            snapshot.injectedLabel?.get()?.let { label ->
+                (label.parent as? ViewGroup)?.removeView(label)
+            }
+            snapshot.progress.get()?.apply {
+                max = snapshot.wasMax
+                progress = snapshot.wasProgress
+                isIndeterminate = snapshot.wasIndeterminate
+                visibility = snapshot.wasVisible
+            }
+        } catch (_: Throwable) {
+            // Native player windows can disappear while async sources finish.
+        }
+    }
 
     @Volatile
     private var lastPercent: Int = 0
@@ -197,7 +229,8 @@ object MOOSAProgress {
     }
 
     private fun render(retries: Int, token: Int) {
-        if (token != sessionId.get() || hiddenForPlayback) {
+        if (token != sessionId.get()) return
+        if (hiddenForPlayback) {
             hide()
             return
         }
@@ -406,6 +439,16 @@ object MOOSAProgress {
             if (progressId == 0) return false
 
             val progress = dialog.findViewById<ProgressBar>(progressId) ?: return false
+            if (dialogSnapshot?.progress?.get() !== progress) {
+                restoreNativeDialog()
+                dialogSnapshot = NativeDialogSnapshot(
+                    WeakReference(progress),
+                    progress.isIndeterminate,
+                    progress.visibility,
+                    progress.max,
+                    progress.progress
+                )
+            }
             progress.visibility = View.VISIBLE
             progress.isIndeterminate = false
             progress.max = 100
@@ -430,6 +473,7 @@ object MOOSAProgress {
                     )
                 )
             }
+            dialogSnapshot?.injectedLabel = WeakReference(label)
             label.text = "$lastText • $lastPercent%"
             label.visibility = View.VISIBLE
             true
@@ -451,6 +495,13 @@ object MOOSAProgress {
     }
 
     private fun hide() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { hide() }
+            return
+        }
+        // Restore before looking up the Activity: the dialog may belong
+        // to a just-disposed Activity that is no longer current.
+        restoreNativeDialog()
         val act = currentActivity() ?: return
         try {
             val overlayId = act.resources.getIdentifier(
