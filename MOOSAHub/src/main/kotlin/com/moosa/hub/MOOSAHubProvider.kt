@@ -77,7 +77,9 @@ class MOOSAHubProvider : TmdbProvider() {
         val originalLanguage: String? = null,
         val season: Int? = null,
         val episode: Int? = null,
-        val titleAliases: List<String> = emptyList()
+        val titleAliases: List<String> = emptyList(),
+        val isAnime: Boolean = false,
+        val absoluteEpisode: Int? = null
     )
 
     private data class CachedTarget(
@@ -179,7 +181,12 @@ class MOOSAHubProvider : TmdbProvider() {
         val seasonNumber: Int? = null
     )
 
+    private data class TmdbGenre(
+        @JsonProperty("id") val id: Int? = null
+    )
+
     private data class TmdbDetail(
+        @JsonProperty("genres") val genres: List<TmdbGenre> = emptyList(),
         @JsonProperty("overview")
         val overview: String? = null,
         @JsonProperty("title")
@@ -628,7 +635,7 @@ class MOOSAHubProvider : TmdbProvider() {
         return markers.findAll(text).mapNotNull { match ->
             val token = match.groupValues[1]
             token.toIntOrNull() ?: ordinals[token]
-        }.firstOrNull()
+        }.firstOrNull() ?: MOOSAAnimePolicy.explicitAnimeSeason(value)
     }
 
     private fun seasonSpecificTitleMatch(
@@ -992,11 +999,8 @@ class MOOSAHubProvider : TmdbProvider() {
         if (!request.isTv) return emptyList()
 
         return coroutineScope {
-            listOf(
-                "ar-SA",
-                "ar",
-                "en-US"
-            ).map { language ->
+            (if (request.isAnime) listOf("ja-JP", "en-US", "ar-SA")
+             else listOf("ar-SA", "ar", "en-US")).map { language ->
                 async {
                     timed(2200L) {
                         app.get(
@@ -1065,6 +1069,14 @@ class MOOSAHubProvider : TmdbProvider() {
         // generated "اللعبة الموسم 5" occupied the same canonical-title key
         // and removed the plain query before it reached any provider.
         val generated = buildList {
+            // Anime sites frequently index each cour/season under its own
+            // English/Romaji title, e.g. "2nd Season", not TMDB S2E1.
+            if (request.isAnime && season > 1) {
+                preferredBase.take(3).forEach { title ->
+                    addAll(MOOSAAnimePolicy.seasonQueries(title, season))
+                }
+                addAll(seasonNames)
+            }
             // Keep a few primary names first, then their season-specific forms.
             // Otherwise a long TMDB alias list consumes the entire search
             // budget before season 5 variants can run.
@@ -1095,8 +1107,10 @@ class MOOSAHubProvider : TmdbProvider() {
         return generated
             .map { it.trim() }
             .filter { it.isNotBlank() }
+            // Do not remove anime "Season 2" / "2nd Season" by the same
+            // canonical key as the base show: sources search them separately.
             .distinctBy { normalizeArabicOrthography(normalizeTitle(it)) }
-            .take(24)
+            .take(if (request.isAnime) 28 else 24)
     }
 
     private fun isStreamPlayProvider(
@@ -1318,7 +1332,15 @@ class MOOSAHubProvider : TmdbProvider() {
         // waste most of the resolver budget. Prioritize the requested
         // season's Arabic WORD alias, which matches Akwam's own titles.
         val orderedAliases =
-            if (
+            if (request.isAnime && wantSeries && season != null && season > 1) {
+                // Try sequel-season names first rather than spending the whole
+                // provider timeout on the base season's generic page.
+                val seasonSpecific = cleanAliases.filter { title ->
+                    MOOSAAnimePolicy.explicitAnimeSeason(title) == season
+                }
+                (seasonSpecific + cleanAliases.filterNot { it in seasonSpecific })
+                    .distinct()
+            } else if (
                 isAkwamProvider(api) &&
                 wantSeries &&
                 season != null &&
@@ -1472,6 +1494,53 @@ class MOOSAHubProvider : TmdbProvider() {
             loadedIdentityMatches(movie, request, aliases)
     }
 
+    private fun animeSeriesHasEpisode(
+        series: TvSeriesLoadResponse,
+        request: HubPlaybackRequest,
+        searchTitle: String,
+        aliases: List<String>
+    ): Boolean {
+        val season = request.season ?: return false
+        val episode = request.episode ?: return false
+        fun number(item: Episode): Int? =
+            item.episode?.takeIf { it > 0 }
+                ?: Regex("""(?i)\b(?:episode|ep)\s*[:#-]?\s*(\d{1,4})\b""")
+                    .find(item.name.orEmpty())?.groupValues?.getOrNull(1)?.toIntOrNull()
+        fun sourceSeason(item: Episode): Int? =
+            item.season?.takeIf { it > 0 }
+                ?: MOOSAAnimePolicy.explicitAnimeSeason(item.name.orEmpty())
+
+        val explicitTitleSeasons = listOf(series.name, searchTitle)
+            .mapNotNull(MOOSAAnimePolicy::explicitAnimeSeason)
+        if (explicitTitleSeasons.any { it != season }) return false
+
+        if (series.episodes.any {
+                sourceSeason(it) == season && number(it) == episode
+            }) return true
+
+        val availableSeasons = series.episodes.mapNotNull(::sourceSeason).distinct()
+        val validSingleSeason =
+            availableSeasons.isEmpty() || availableSeasons == listOf(1)
+        val pageProvesSeason =
+            explicitTitleSeasons.contains(season) &&
+                listOf(series.name, searchTitle).any {
+                    seasonSpecificTitleMatch(it, aliases, season)
+                }
+        if (validSingleSeason && (season == 1 || pageProvesSeason) &&
+            series.episodes.any { number(it) == episode }
+        ) return true
+
+        return MOOSAAnimePolicy.allowsContinuousNumbering(
+            requestedSeason = season,
+            localEpisode = episode,
+            absoluteEpisode = request.absoluteEpisode,
+            sourceTitle = series.name,
+            sourceEpisodes = series.episodes.map { item ->
+                MOOSAAnimePolicy.SourceIndex(sourceSeason(item), number(item))
+            }
+        )
+    }
+
     private suspend fun loadBestMatch(
         api: MainAPI,
         request: HubPlaybackRequest,
@@ -1519,7 +1588,9 @@ class MOOSAHubProvider : TmdbProvider() {
 
             if (
                 direct != null &&
-                correctType(direct)
+                correctType(direct) &&
+                (!request.isAnime || direct !is TvSeriesLoadResponse ||
+                    animeSeriesHasEpisode(direct, request, direct.name, aliases))
             ) {
                 return MatchedLoad(direct, direct.name)
             }
@@ -1555,7 +1626,9 @@ class MOOSAHubProvider : TmdbProvider() {
                         direct,
                         request,
                         aliases
-                    )
+                    ) &&
+                    (!request.isAnime || direct !is TvSeriesLoadResponse ||
+                        animeSeriesHasEpisode(direct, request, direct.name, aliases))
                 ) {
                     return MatchedLoad(direct, direct.name)
                 }
@@ -1632,6 +1705,12 @@ class MOOSAHubProvider : TmdbProvider() {
             }
 
             if (!correctType(loaded)) continue
+            // A matching anime title is not proof that the requested
+            // episode is on this provider page. Try the NEXT search result
+            // before caching an unusable base-series target.
+            if (request.isAnime && loaded is TvSeriesLoadResponse &&
+                !animeSeriesHasEpisode(loaded, request, match.name, aliases)
+            ) continue
 
             if (
                 loadedIdentityMatches(
@@ -1675,7 +1754,9 @@ class MOOSAHubProvider : TmdbProvider() {
         val available = apis
             .filter { api ->
                 // Arabic sites belong to the independent native provider.
-                !isArabicProvider(api) &&
+                (!isArabicProvider(api) || (request.isAnime &&
+                    (TvType.Anime in api.supportedTypes ||
+                        TvType.OVA in api.supportedTypes))) &&
                 api !== this &&
                     (
                         api.providerType ==
@@ -1726,6 +1807,8 @@ class MOOSAHubProvider : TmdbProvider() {
                         arabicRequest && it.name.equals("ShahidWBas", true) -> 5
                         arabicRequest && isArabSeedProvider(it) -> 4
                         isBundledArabicProvider(it) -> 3
+                        request.isAnime && (TvType.Anime in it.supportedTypes ||
+                            TvType.OVA in it.supportedTypes) -> 2
                         arabicRequest && MOOSAArabicBridge.supports(it) -> 2
                         arabicRequest && it.lang.equals("ar", true) -> 1
                         else -> 0
@@ -1751,7 +1834,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v15",
+        "strict-v16-anime",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -2042,10 +2125,37 @@ class MOOSAHubProvider : TmdbProvider() {
                     null
                 }
 
+            // If TMDB S2E3 is absolute episode 15, an anime source
+            // sometimes publishes only Season 1 episodes 1..N. Use E15
+            // solely when the entire continuous prefix is verified.
+            val continuous = if (
+                request.isAnime &&
+                exact == null && seasonless == null &&
+                firstSeasonFallback == null &&
+                MOOSAAnimePolicy.allowsContinuousNumbering(
+                    requestedSeason = season,
+                    localEpisode = episode,
+                    absoluteEpisode = request.absoluteEpisode,
+                    sourceTitle = series.name,
+                    sourceEpisodes = series.episodes.map { item ->
+                        MOOSAAnimePolicy.SourceIndex(
+                            season = providerSeason(item),
+                            episode = episodeNumber(item)
+                        )
+                    }
+                )
+            ) {
+                series.episodes.firstOrNull { item ->
+                    episodeNumber(item) == request.absoluteEpisode &&
+                        (providerSeason(item) == null || providerSeason(item) == 1)
+                }
+            } else null
+
             val episodeData = (
                 exact
                     ?: seasonless
                     ?: firstSeasonFallback
+                    ?: continuous
                 )?.data
 
             if (episodeData.isNullOrBlank()) {
@@ -2498,6 +2608,10 @@ class MOOSAHubProvider : TmdbProvider() {
                     "ar"
                 } else null
 
+        val anime = MOOSAAnimePolicy.isAnime(
+            detectedOriginalLanguage, detail?.genres?.mapNotNull { it.id }.orEmpty()
+        )
+
         // TMDB provides both the official original and official localized
         // names. Carry them as aliases instead of machine-translating.
         val sourceTitleAliases = listOfNotNull(
@@ -2509,6 +2623,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         when (base) {
             is MovieLoadResponse -> {
+                if (anime) base.type = TvType.AnimeMovie
                 base.dataUrl = HubPlaybackRequest(
                     title = base.name,
                     year = base.year,
@@ -2516,13 +2631,36 @@ class MOOSAHubProvider : TmdbProvider() {
                     tmdbId = tmdbId,
                     isTv = false,
                     originalLanguage = detectedOriginalLanguage,
-                    titleAliases = sourceTitleAliases
+                    titleAliases = sourceTitleAliases,
+                    isAnime = anime
                 ).toJson()
                 base
             }
 
             is TvSeriesLoadResponse -> {
+                if (anime) base.type = TvType.Anime
+                val absolutes = if (anime) {
+                    MOOSAAnimePolicy.absoluteEpisodes(
+                        base.episodes.mapNotNull { entry ->
+                            val season = entry.season ?: return@mapNotNull null
+                            val number = entry.episode ?: return@mapNotNull null
+                            MOOSAAnimePolicy.Index(season, number)
+                        }
+                    )
+                } else emptyMap()
                 base.episodes.forEach { episode ->
+                    val absolute = if (anime && episode.season != null &&
+                        episode.episode != null
+                    ) {
+                        absolutes[MOOSAAnimePolicy.Index(
+                            episode.season!!, episode.episode!!
+                        )]
+                    } else null
+                    if (anime) {
+                        episode.name = MOOSAAnimePolicy.displayEpisodeName(
+                            episode.name, episode.season, episode.episode, absolute
+                        )
+                    }
                     episode.data = HubPlaybackRequest(
                         title = base.name,
                         year = base.year,
@@ -2532,7 +2670,9 @@ class MOOSAHubProvider : TmdbProvider() {
                         originalLanguage = detectedOriginalLanguage,
                         titleAliases = sourceTitleAliases,
                         season = episode.season,
-                        episode = episode.episode
+                        episode = episode.episode,
+                        isAnime = anime,
+                        absoluteEpisode = absolute
                     ).toJson()
                 }
                 base
@@ -3523,7 +3663,10 @@ class MOOSAHubProvider : TmdbProvider() {
                 }
             } else {
                 (request.titleAliases + playbackAliases(request))
-                    .distinctBy(::canonicalTitle)
+                    .distinctBy { title ->
+                        if (request.isAnime) normalizeTitle(title)
+                        else canonicalTitle(title)
+                    }
             }
         }
 

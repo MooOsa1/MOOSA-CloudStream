@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 111
+version = 112
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -21,7 +21,7 @@ cloudstream {
     description = "Global movies and series with Arabic subtitles; Arabic originals in separate MOOSA Arabic plugin"
     authors = listOf("MOOSA")
     status = 1
-    tvTypes = listOf("Movie", "TvSeries")
+    tvTypes = listOf("Movie", "TvSeries", "Anime", "AnimeMovie", "OVA")
     iconUrl = "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%"
     isCrossPlatform = false
 }
