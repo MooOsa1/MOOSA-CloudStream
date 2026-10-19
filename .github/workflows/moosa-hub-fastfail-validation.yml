@@ -55,6 +55,13 @@ jobs:
         run: gradle :MOOSAHub:testReleaseUnitTest --no-daemon
       - name: Build CloudStream plugins without publishing
         run: gradle make --no-daemon
+      - name: Upload isolated MOOSA Hub test package (NOT published)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MOOSAHub-Server-Progress-Test
+          path: MOOSAHub/build/MOOSAHub.cs3
+          if-no-files-found: error
+          retention-days: 7
       - name: Confirm 720p floor and existing two-plugin arrangement
         run: |
           python3 - <<'PY'
