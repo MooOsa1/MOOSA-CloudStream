@@ -56,6 +56,7 @@ async function json(url,timeout){
 export async function main(){
   const providers=checkPreset(sample);
   let total=0,failures=0,mediaProven=0,playlists=0;
+  const evidence=[];
   for(const p of providers){
     let base;try {
       const m=await json(p.options.manifestUrl,18000);
@@ -78,6 +79,7 @@ export async function main(){
             const result=await probeMedia(src.url);
             if(['mp4_container','webm_or_mkv_container','mpegts_segment'].includes(result.kind))mediaProven++;
             if(result.kind==='hls_playlist_only')playlists++;
+            if(result.fingerprint && ['mp4_container','webm_or_mkv_container'].includes(result.kind))evidence.push({movie:id,provider:p.instanceId,fingerprint:result.fingerprint});
             console.log('MOOSA_HTTP_MEDIA '+title+' provider='+p.instanceId+
               ' status='+result.status+' kind='+result.kind+
               ' bytes='+result.bytes+' videoDecoded=NOT_TESTED audioDecoded=NOT_TESTED');
@@ -88,6 +90,17 @@ export async function main(){
         }
       }catch(e){failures++;console.log('MOOSA_HTTP_FILM '+title+' provider='+p.instanceId+
         ' failed='+String(e.message).slice(0,70));}
+    }
+  }
+  for(const p of providers){
+    const perTitle=evidence.filter(e=>e.provider===p.instanceId);
+    const fingerprintsByMovie=new Map(perTitle.map(e=>[e.movie,e.fingerprint]));
+    if(fingerprintsByMovie.size===titles.length){
+      const unique=new Set(fingerprintsByMovie.values()).size;
+      console.log('MOOSA_HTTP_IDENTITY provider='+p.instanceId+
+        ' distinctContentPrefixes='+unique+' testedTitles='+titles.length+
+        ' sameSampleForBoth='+(unique===1));
+      if(unique===1)process.exitCode=1;
     }
   }
   console.log('MOOSA_HTTP_ONLY_FINAL candidates='+total+' discoveryErrors='+failures+
