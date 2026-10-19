@@ -1839,8 +1839,12 @@ class MOOSAHubProvider : TmdbProvider() {
 
         fun hasOwnLoadLinks(api: MainAPI): Boolean =
             try {
-                api.javaClass.declaredMethods.any {
-                    it.name == "loadLinks"
+                // Anime extensions may inherit loadLinks from a shared site
+                // base class rather than declare it on the concrete provider.
+                // Kotlin declaredMethods misses those valid providers.
+                api.javaClass.methods.any { method ->
+                    method.name == "loadLinks" &&
+                        method.declaringClass != MainAPI::class.java
                 }
             } catch (_: Throwable) {
                 false
