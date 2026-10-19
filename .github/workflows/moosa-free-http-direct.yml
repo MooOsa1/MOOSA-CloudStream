@@ -4,6 +4,10 @@ on:
     paths:
       - 'AIOStreamsHost/free-http-web-probe.mjs'
       - '.github/workflows/moosa-free-http-direct.yml'
+  pull_request:
+    paths:
+      - 'AIOStreamsHost/free-http-web-probe.mjs'
+      - '.github/workflows/moosa-free-http-direct.yml'
   workflow_dispatch:
 jobs:
   direct-http-2025:
