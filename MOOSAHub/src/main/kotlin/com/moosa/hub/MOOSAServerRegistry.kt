@@ -302,6 +302,14 @@ object MOOSAServerRegistry {
                                         body.contains("#EXT-X-STREAM-INF:") ||
                                         body.contains("#EXT-X-MAP:")
                                     )
+                            if (valid) {
+                                // The master playlist can expose a real 2160p
+                                // rendition even when an addon labels the
+                                // overall HLS URL merely 720p or Unknown.
+                                // Reuse THIS request; no second lookup.
+                                MOOSAHlsMasterQuality.highestVariantHeight(body)
+                                    ?.let { link.quality = it }
+                            }
                             ProbeCheck(
                                 valid,
                                 if (valid) "HLS manifest confirmed" else "No valid HLS playlist"
