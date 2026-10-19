@@ -19,6 +19,17 @@ class MOOSAHomeLoadPolicyTest {
     }
 
     @Test
+    fun homeCacheServesQuickReturnsAndKeepsLastGoodResultWhenTmdbStalls() {
+        assertTrue(MOOSAHomeLoadPolicy.isFresh(0L))
+        assertTrue(MOOSAHomeLoadPolicy.isFresh(7 * 60_000L))
+        assertTrue(!MOOSAHomeLoadPolicy.isFresh(8 * 60_000L))
+        assertTrue(MOOSAHomeLoadPolicy.mayUseStale(12 * 60_000L))
+        assertTrue(!MOOSAHomeLoadPolicy.mayUseStale(31 * 60_000L))
+        assertTrue(!MOOSAHomeLoadPolicy.mayUseStale(-1L))
+        assertTrue(MOOSAHomeLoadPolicy.HOME_NETWORK_TIMEOUT_MS in 2_000L..6_000L)
+    }
+
+    @Test
     fun homePosterWorkingSetIsSmall() {
         assertTrue(MOOSAHomeLoadPolicy.MAX_HOME_CARDS in 8..20)
     }
