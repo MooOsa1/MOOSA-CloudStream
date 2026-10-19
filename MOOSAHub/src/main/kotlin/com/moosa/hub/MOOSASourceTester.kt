@@ -55,7 +55,16 @@ object MOOSASourceTester {
         (apis.toList() + allProviders.toList())
             .filter {
                 it.name != "MOOSA Hub" &&
-                    it.providerType == ProviderType.DirectProvider
+                    (it.providerType == ProviderType.DirectProvider ||
+                        ((TvType.Anime in it.supportedTypes ||
+                            TvType.AnimeMovie in it.supportedTypes ||
+                            TvType.OVA in it.supportedTypes) &&
+                            runCatching {
+                                it.javaClass.methods.any { method ->
+                                    method.name == "loadLinks" &&
+                                        method.declaringClass != MainAPI::class.java
+                                }
+                            }.getOrDefault(false)))
             }
             .distinctBy { key(it) }
             .sortedBy { it.name.lowercase() }
