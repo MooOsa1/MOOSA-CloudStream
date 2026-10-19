@@ -151,6 +151,7 @@ object MOOSACatalog {
         @JsonProperty("name") val name: String? = null,
         @JsonProperty("original_name") val originalName: String? = null,
         @JsonProperty("original_language") val originalLanguage: String? = null,
+        @JsonProperty("genre_ids") val genreIds: List<Int> = emptyList(),
         @JsonProperty("poster_path") val posterPath: String? = null,
         @JsonProperty("backdrop_path") val backdropPath: String? = null,
         @JsonProperty("release_date") val releaseDate: String? = null,
@@ -244,7 +245,8 @@ object MOOSACatalog {
                 name = titleText,
                 url =
                     "https://www.themoviedb.org/tv/$contentId",
-                type = TvType.TvSeries,
+                type = if (MOOSAAnimePolicy.isAnime(originalLanguage, genreIds))
+                    TvType.Anime else TvType.TvSeries,
                 fix = false
             ) {
                 this.id = contentId
