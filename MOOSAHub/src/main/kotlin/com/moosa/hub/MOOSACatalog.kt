@@ -472,6 +472,9 @@ object MOOSACatalog {
         "/trending/tv/week" to "Trending Series",
         "/movie/top_rated" to "Top Rated Movies",
         "/tv/top_rated" to "Top Rated Series",
+        // Japanese-language animation (anime series). Filter can switch to
+        // Anime Movies in Show More without mixing in western cartoons.
+        "/discover/tv?with_genres=16&with_original_language=ja&with_origin_country=JP&sort_by=popularity.desc&vote_count.gte=10" to "Anime",
         // Popular Indian narrative films released within the previous 36
         // months, sorted by TMDB's live popularity (not randomized picks).
         // The date window is injected dynamically in queryOptions().
