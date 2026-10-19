@@ -31,7 +31,27 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.12'
-      - name: Run actual MOOSA Hub retry unit tests
+      - name: Verify Kotlin progress and retry policies independently of JitPack
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/moosa-jvm/src/main/kotlin/com/moosa/hub"
+          mkdir -p "$RUNNER_TEMP/moosa-jvm/src/test/kotlin/com/moosa/hub"
+          cp MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSALinkRetryPolicy.kt "$RUNNER_TEMP/moosa-jvm/src/main/kotlin/com/moosa/hub/"
+          cp MOOSAHub/src/main/kotlin/com/moosa/hub/MOOSAProgressVisibilityPolicy.kt "$RUNNER_TEMP/moosa-jvm/src/main/kotlin/com/moosa/hub/"
+          cp MOOSAHub/src/test/kotlin/com/moosa/hub/MOOSALinkRetryPolicyTest.kt "$RUNNER_TEMP/moosa-jvm/src/test/kotlin/com/moosa/hub/"
+          cp MOOSAHub/src/test/kotlin/com/moosa/hub/MOOSAProgressVisibilityPolicyTest.kt "$RUNNER_TEMP/moosa-jvm/src/test/kotlin/com/moosa/hub/"
+          cat > "$RUNNER_TEMP/moosa-jvm/settings.gradle.kts" <<'EOF'
+          pluginManagement { repositories { gradlePluginPortal(); mavenCentral() } }
+          rootProject.name = "MOOSAPolicyTests"
+          EOF
+          cat > "$RUNNER_TEMP/moosa-jvm/build.gradle.kts" <<'EOF'
+          plugins { kotlin("jvm") version "2.3.0" }
+          repositories { mavenCentral() }
+          dependencies { testImplementation("junit:junit:4.13.2") }
+          tasks.test { useJUnit() }
+          EOF
+          gradle --project-dir "$RUNNER_TEMP/moosa-jvm" test --no-daemon --console=plain
+      - name: Run actual MOOSA Hub plugin unit tests
         run: gradle :MOOSAHub:testReleaseUnitTest --no-daemon
       - name: Build CloudStream plugins without publishing
         run: gradle make --no-daemon
