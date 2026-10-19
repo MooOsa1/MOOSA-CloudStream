@@ -3665,6 +3665,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 val downloadNamesSkipped = AtomicInteger(0)
                 val lowQualityUrls = AtomicInteger(0)
                 val unknownQualityUrls = AtomicInteger(0)
+                val unknownHlsCandidates = AtomicInteger(0)
                 val failedProbes = AtomicInteger(0)
                 val acceptedLinks = AtomicInteger(0)
                 val failedReasons = ConcurrentHashMap<String, AtomicInteger>()
@@ -3685,9 +3686,21 @@ class MOOSAHubProvider : TmdbProvider() {
                     val job = launch {
                         linkProbeGate.withPermit {
                             try {
+                                // Unknown-quality HLS master playlists are
+                                // admissible ONLY after reading their real
+                                // variant heights; never bypass this check
+                                // even if the user disabled routine probing.
+                                val mustInspectHlsQuality =
+                                    link.isM3u8 &&
+                                        !MOOSAQualityPolicy.acceptsHeight(
+                                            MOOSAQualityPolicy.height(link)
+                                        )
                                 val verified =
-                                    (!MOOSASettingsStore.verifyLinks()) ||
+                                    (!mustInspectHlsQuality &&
+                                        !MOOSASettingsStore.verifyLinks()) ||
                                         verifyStreamingLink(link)
+                                val meetsHdFloor =
+                                    MOOSAQualityPolicy.accepts(link)
                                 val mirrorIdentity =
                                     if (api.name.equals("Akwam", true)) {
                                         val host = runCatching {
@@ -3701,7 +3714,7 @@ class MOOSAHubProvider : TmdbProvider() {
                                         } else null
                                     } else null
 
-                                if (verified &&
+                                if (verified && meetsHdFloor &&
                                     seenLinks.add(key) &&
                                     (mirrorIdentity == null ||
                                         emittedAkwamMirrors.add(mirrorIdentity))
@@ -3716,6 +3729,11 @@ class MOOSAHubProvider : TmdbProvider() {
                                         MOOSAProgress.linkAvailable(progressToken, progressKey)
                                         callback(link)
                                     }
+                                } else if (verified && !meetsHdFloor) {
+                                    // HLS media playlists with no verified
+                                    // resolution stay excluded rather than
+                                    // being misleadingly labeled HD or 4K.
+                                    unknownQualityUrls.incrementAndGet()
                                 } else if (!verified) {
                                     failedProbes.incrementAndGet()
                                     val reason =
@@ -3770,19 +3788,28 @@ class MOOSAHubProvider : TmdbProvider() {
                                 return
                             }
 
-                            // Reject SD and unknown links BEFORE probing them.
-                            // Displaying only HD is not enough: SD should not
-                            // consume time, network requests or source slots.
+                            // Never invent HD for unknown MP4 links.
+                            // HLS is special: a master playlist can state
+                            // genuine 720p/1080p/2160p renditions even if the
+                            // addon says "Unknown". Inspect at most THREE
+                            // such HLS links per source to avoid slow scans.
                             val height = MOOSAQualityPolicy.height(link)
+                            val inspectUnknownHls =
+                                link.isM3u8 && (height == null || height <= 0)
                             if (height == null || height <= 0) {
-                                unknownQualityUrls.incrementAndGet()
-                                return
-                            }
-                            if (!MOOSAQualityPolicy.acceptsHeight(height)) {
+                                if (!inspectUnknownHls ||
+                                    unknownHlsCandidates.incrementAndGet() > 3
+                                ) {
+                                    unknownQualityUrls.incrementAndGet()
+                                    return
+                                }
+                            } else if (!MOOSAQualityPolicy.acceptsHeight(height)) {
                                 lowQualityUrls.incrementAndGet()
                                 return
                             }
-                            if (link.quality <= 0) link.quality = height
+                            if (link.quality <= 0 && height != null && height > 0) {
+                                link.quality = height
+                            }
 
                             // Only eligible playback names and 720p+ streams
                             // reach network probing or the visible source list.
