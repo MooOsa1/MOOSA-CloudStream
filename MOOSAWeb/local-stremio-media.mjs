@@ -82,6 +82,11 @@ export async function handleLocalMedia(req,res,url,{fetcher=fetch}={}){
      return send(res,502,'Stremio segment exceeds local gateway size limit');
    }
    if(playlist){
+     if(req.method==='HEAD'){
+       res.writeHead(200,{'Content-Type':'application/vnd.apple.mpegurl',
+         'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+       return res.end();
+     }
      const body=await up.text();
      const rewritten=rewriteStremioPlaylist(body,source);
      if(rewritten===null)return send(res,502,'Local Stremio playlist has unsupported references');
@@ -103,6 +108,8 @@ export async function handleLocalMedia(req,res,url,{fetcher=fetch}={}){
    res.writeHead(up.status,headers);
    if(req.method==='HEAD'||!up.body)return res.end();
    const stream=Readable.fromWeb(up.body);
+   res.once('close',()=>clearTimeout(timer));
+   res.once('finish',()=>clearTimeout(timer));
    let count=0;
    stream.on('data',chunk=>{
      count+=chunk.length;
@@ -113,7 +120,7 @@ export async function handleLocalMedia(req,res,url,{fetcher=fetch}={}){
  }catch{
    if(!res.headersSent)return send(res,502,'Local Stremio engine unreachable or timed out');
    if(!res.destroyed)res.destroy();
- }finally{clearTimeout(timer);}
+ }finally{if(res.writableEnded || res.destroyed)clearTimeout(timer);}
 }
 function send(res,status,message){
  res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
