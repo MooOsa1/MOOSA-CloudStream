@@ -1,6 +1,7 @@
 package com.moosa.hub
 
 import com.lagradost.cloudstream3.APIHolder.apis
+import com.lagradost.cloudstream3.APIHolder.allProviders
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MovieLoadResponse
@@ -47,7 +48,9 @@ object MOOSASourceTester {
         "${api.name}|${api.mainUrl}".lowercase()
 
     fun sources(): List<MainAPI> =
-        apis
+        // Mirror the playback engine's registries. The CloudStream provider
+        // mapping and global registry can differ after plugin hot-loading.
+        (apis.toList() + allProviders.toList())
             .filter {
                 it.name != "MOOSA Hub" &&
                     it.providerType == ProviderType.DirectProvider
