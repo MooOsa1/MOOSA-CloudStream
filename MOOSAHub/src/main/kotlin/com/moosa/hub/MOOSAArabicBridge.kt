@@ -2,6 +2,10 @@ package com.moosa.hub
 
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.LoadResponse.Companion.getImdbId
+import com.lagradost.cloudstream3.LoadResponse.Companion.getTMDbId
+import com.lagradost.cloudstream3.MovieSearchResponse
+import com.lagradost.cloudstream3.TvSeriesSearchResponse
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.SearchResponse
@@ -343,6 +347,41 @@ internal object MOOSAArabicBridge {
             abs(candidateYear - wantedYear) <= 1
     }
 
+    private fun claim(
+        request: MOOSAHubProvider.HubPlaybackRequest
+    ) = MOOSAMatchGuard.Claim(
+        title = request.title,
+        year = request.year,
+        imdbId = request.imdbId,
+        tmdbId = request.tmdbId,
+        season = request.season,
+        episode = request.episode,
+        isAnime = request.isAnime
+    )
+
+    private fun resultYear(item: SearchResponse): Int? = when (item) {
+        is MovieSearchResponse -> item.year
+        is TvSeriesSearchResponse -> item.year
+        else -> null
+    }
+
+    private fun verifiedPage(
+        request: MOOSAHubProvider.HubPlaybackRequest,
+        aliases: List<String>,
+        candidate: SearchResponse,
+        loaded: LoadResponse
+    ): Boolean = MOOSAMatchGuard.verifiedIdentity(
+        claim(request),
+        MOOSAMatchGuard.Evidence(
+            title = loaded.name,
+            year = loaded.year,
+            searchYear = resultYear(candidate),
+            imdbId = loaded.getImdbId(),
+            tmdbId = loaded.getTMDbId()?.toIntOrNull()
+        ),
+        aliases
+    )
+
     suspend fun resolve(
         api: MainAPI,
         request: MOOSAHubProvider.HubPlaybackRequest,
@@ -376,6 +415,13 @@ internal object MOOSAArabicBridge {
                 results
                     .filter {
                         seenUrls.add(it.url) &&
+                            MOOSAMatchGuard.titleAndClaimCompatible(
+                                claim(request),
+                                MOOSAMatchGuard.Evidence(
+                                    title = it.name, year = resultYear(it)
+                                ),
+                                aliases
+                            ) &&
                             (
                                 !request.isTv ||
                                     explicitSeason(it.name) == null ||
@@ -434,10 +480,7 @@ internal object MOOSAArabicBridge {
                             explicitSeason(series.name) != null &&
                                 explicitSeason(series.name) != request.season
                         ) ||
-                        scoreTitle(
-                            series.name,
-                            aliases
-                        ) < 88
+                        !verifiedPage(request, aliases, candidate, series)
                     ) {
                         MOOSAPlaybackDiagnostics.update(
                             api,
@@ -493,7 +536,8 @@ internal object MOOSAArabicBridge {
                         movie,
                         request,
                         aliases
-                    )
+                    ) ||
+                        !verifiedPage(request, aliases, candidate, movie)
                 ) {
                     MOOSAPlaybackDiagnostics.update(
                         api,
