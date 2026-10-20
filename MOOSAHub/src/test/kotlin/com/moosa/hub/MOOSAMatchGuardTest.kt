@@ -109,6 +109,54 @@ class MOOSAMatchGuardTest {
         assertFalse(check(claim, item, listOf("Shingeki no Kyojin")))
     }
 
+    @Test fun recoverOnlyExactYearlessSearchAndLoadedPagesWithApproval() {
+        val claim = movie("Midnight Signal", 2023)
+        val same = MOOSAMatchGuard.Evidence(
+            "Midnight Signal", searchTitle = "Midnight Signal"
+        )
+        assertFalse(check(claim, same))
+        assertTrue(MOOSAMatchGuard.verifiedIdentity(
+            claim, same, emptyList(), allowCorroboratedTitleOnly = true
+        ))
+        assertFalse(MOOSAMatchGuard.verifiedIdentity(
+            claim, same.copy(searchTitle = "Midnight Signal Part 2"),
+            emptyList(), allowCorroboratedTitleOnly = true
+        ))
+        assertFalse(MOOSAMatchGuard.verifiedIdentity(
+            claim, same.copy(searchTitle = null),
+            emptyList(), allowCorroboratedTitleOnly = true
+        ))
+        assertFalse(MOOSAMatchGuard.verifiedIdentity(
+            claim, same.copy(year = 2022),
+            emptyList(), allowCorroboratedTitleOnly = true
+        ))
+    }
+
+    @Test fun catalogUniquenessRejectsSameNameRemakes() {
+        assertTrue(MOOSAMatchGuard.uniquelyIdentifiedInCatalog(123, listOf(123)))
+        assertFalse(MOOSAMatchGuard.uniquelyIdentifiedInCatalog(123, listOf(123, 456)))
+        assertFalse(MOOSAMatchGuard.uniquelyIdentifiedInCatalog(123, emptyList()))
+        assertFalse(MOOSAMatchGuard.uniquelyIdentifiedInCatalog(123, listOf(456)))
+    }
+
+    @Test fun mediaUrlRejectionOnlyForExplicitConflicts() {
+        val ep = show("The Office", 2005, 2, 3)
+        assertTrue(MOOSAMatchGuard.mediaFilenameContradicts(
+            ep, "https://cdn.example.com/The.Office.S02E04.1080p.mkv"))
+        assertFalse(MOOSAMatchGuard.mediaFilenameContradicts(
+            ep, "https://cdn.example.com/The.Office.S02E03.1080p.mkv"))
+        assertFalse(MOOSAMatchGuard.mediaFilenameContradicts(
+            ep, "https://cdn.example.com/1798/master.m3u8"))
+        assertFalse(MOOSAMatchGuard.mediaFilenameContradicts(
+            ep, "https://cdn.example.com/abcd1234.mp4"))
+        assertTrue(MOOSAMatchGuard.mediaFilenameContradicts(
+            movie("Midnight Signal", 2023),
+            "https://cdn.example.com/Midnight.Signal.2022.1080p.mp4"))
+        assertFalse(MOOSAMatchGuard.mediaFilenameContradicts(
+            movie("Midnight Signal", 2023),
+            "https://cdn.example.com/Midnight.Signal.2023.1080p.mp4"))
+    }
+
     @Test fun searchCandidateCanMatchTitleBeforeLoadedYearVerification() {
         val claim = movie("Dune", 2021)
         assertTrue(MOOSAMatchGuard.titleAndClaimCompatible(
