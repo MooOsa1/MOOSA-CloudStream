@@ -48,7 +48,14 @@ internal object MOOSAMediaIdentityPolicy {
     fun targetContradicts(claim: MOOSAMatchGuard.Claim, data: String): Boolean {
         val expectedS = claim.season ?: return false
         val expectedE = claim.episode ?: return false
-        return pairs(data).any { (s, e) -> s != expectedS || e != expectedE }
+        // A third-party plugin may serialize a complete JSON episode table
+        // as its target. Scanning that table for other episode numbers would
+        // falsely hide perfectly valid servers. Only interpret one direct
+        // episode URL here; opaque/provider-specific payloads remain eligible.
+        val target = data.trim()
+        if (!target.startsWith("https://", true) &&
+            !target.startsWith("http://", true)) return false
+        return pairs(target).any { (s, e) -> s != expectedS || e != expectedE }
     }
 
     /**
