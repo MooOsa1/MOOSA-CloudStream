@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 122
+version = 123
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -139,3 +139,6 @@ dependencies {
 // bound the Show More layout observer to idle, visible home rows.
 
 // v101: opt-in HTTPS CloudStream Web Bridge supporting installed playback providers.
+
+// v123: remove the fixed 1100ms movie-to-Show-More return delay; use
+// ready-state retries, faster close fade, and animation-free return focus.
