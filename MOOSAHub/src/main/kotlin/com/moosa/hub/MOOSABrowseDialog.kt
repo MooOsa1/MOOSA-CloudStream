@@ -111,8 +111,8 @@ class MOOSABrowseDialog : DialogFragment() {
 
     /**
      * Retain the already-laid-out Show More window behind a movie's details.
-     * Dialog.hide/show removes and reattaches the entire fullscreen window,
-     * forcing the large poster grid to be measured and drawn again on Back.
+     * Dialog.hide() marks the decor GONE, and showing it may relayout the
+     * entire poster grid. Parking keeps its measured geometry available.
      * A transparent, non-focusable, non-touchable attached window keeps the
      * grid state intact while CloudStream handles the content screen.
      */
@@ -832,10 +832,13 @@ class MOOSABrowseDialog : DialogFragment() {
         if (waitingForResult) parkForContent()
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
-            setLayout(
-                (metrics.widthPixels * 0.95f).toInt(),
-                (metrics.heightPixels * 0.94f).toInt()
-            )
+            val desiredWidth = (metrics.widthPixels * 0.95f).toInt()
+            val desiredHeight = (metrics.heightPixels * 0.94f).toInt()
+            // onStart can recur after a movie Back. Do not force a layout
+            // pass of the preserved poster grid if size is unchanged.
+            if (attributes.width != desiredWidth ||
+                attributes.height != desiredHeight
+            ) setLayout(desiredWidth, desiredHeight)
             setBackgroundDrawableResource(android.R.color.transparent)
         }
         if (!entryPlayed && ::browseRoot.isInitialized && !waitingForResult) {
