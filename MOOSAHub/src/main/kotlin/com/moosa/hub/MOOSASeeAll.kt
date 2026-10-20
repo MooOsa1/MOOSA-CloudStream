@@ -85,6 +85,8 @@ object MOOSASeeAll {
     private var lastBrowseOpenAt = 0L
     // Cancel a delayed return when the user opens another category.
     private var focusRestoreGeneration = 0
+    // Prevent width-layout animations from disturbing home focus on Back.
+    private var restoringHomeFocus = false
 
     private fun scheduleHeaderRefresh() {
         if (!lifecycleActive) return
@@ -528,7 +530,7 @@ object MOOSASeeAll {
             isFocusable = true
             isFocusableInTouchMode = false
             setOnFocusChangeListener { view, focused ->
-                styleAction(view as TextView, focused)
+                styleAction(view as TextView, focused, animate = !restoringHomeFocus)
             }
         }
         toolbar.addView(
@@ -1002,8 +1004,15 @@ object MOOSASeeAll {
         val header = findAttachedCategoryHeader(activity, master, state)
             ?: return false
         val button = actionFor(header) ?: installAction(header)
-        val focused = (button?.isShown == true && button.requestFocus()) ||
-            header.requestFocus()
+        // One instant focus update on Back, not 190ms of repeated width
+        // changes/re-layout that can pull focus through nearby shelves.
+        restoringHomeFocus = true
+        val focused = try {
+            (button?.isShown == true && button.requestFocus()) ||
+                header.requestFocus()
+        } finally {
+            restoringHomeFocus = false
+        }
         if (!focused) return false
         headerRefs[state.request.name] = WeakReference(header)
         captureParentPosition(activity, header, state)
