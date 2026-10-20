@@ -50,6 +50,22 @@ class MOOSAMediaIdentityPolicyTest {
             "https://cdn.example/1917/master.m3u8", "Provider", "1080p"))
     }
 
+    @Test fun rejectCrossTitleCatalogIdsForMoviesSeriesAnime() {
+        val dune = MOOSAMatchGuard.Claim("Dune", 2021, imdbId = "tt1160419", tmdbId = 438631)
+        assertTrue(MOOSAMediaIdentityPolicy.linkContradicts(dune,
+            "https://cdn.example/movie/imdb/tt0087182/stream.m3u8", "Provider", "1080p"))
+        assertFalse(MOOSAMediaIdentityPolicy.linkContradicts(dune,
+            "https://cdn.example/movie/imdb/tt1160419/stream.m3u8", "Provider", "1080p"))
+        assertTrue(MOOSAMediaIdentityPolicy.linkContradicts(dune,
+            "https://cdn.example/stream.m3u8?tmdb=9999", "Provider", "1080p"))
+        assertFalse(MOOSAMediaIdentityPolicy.linkContradicts(dune,
+            "https://cdn.example/stream.m3u8?tmdb=438631", "Provider", "1080p"))
+        assertTrue(MOOSAMediaIdentityPolicy.targetContradicts(dune,
+            "https://source.example/load?tmdb_id=12345"))
+        assertFalse(MOOSAMediaIdentityPolicy.targetContradicts(dune,
+            """{"episodes":[{"season":1,"episode":1},{"season":2,"episode":3}]}"""))
+    }
+
     @Test fun rejectContradictoryMetadataButNotServerOrdinalTwo() {
         val doraemon = MOOSAMatchGuard.Claim("Doraemon", 2005, season = 1, episode = 1, isAnime = true)
         assertTrue(MOOSAMediaIdentityPolicy.linkContradicts(doraemon,
