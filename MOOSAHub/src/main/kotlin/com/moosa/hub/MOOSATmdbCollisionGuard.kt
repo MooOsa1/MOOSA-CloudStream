@@ -71,7 +71,7 @@ internal object MOOSATmdbCollisionGuard {
                     )
                     collect(JSONObject(other.text))
                 }
-                matches.size == 1 && matches.single() == id
+                MOOSAMatchGuard.uniquelyIdentifiedInCatalog(id, matches)
             } catch (_: Throwable) {
                 false
             }
