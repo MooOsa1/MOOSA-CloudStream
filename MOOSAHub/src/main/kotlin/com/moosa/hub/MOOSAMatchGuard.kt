@@ -157,9 +157,9 @@ internal object MOOSAMatchGuard {
             val path = java.net.URI(url).rawPath.orEmpty()
             java.net.URLDecoder.decode(path.substringAfterLast('/'), "UTF-8")
         } catch (_: Throwable) { return false }
-        if (!Regex("""(?i)\.(?:mp4|mkv|avi|webm)$""").containsMatchIn(basename))
+        if (!Regex("""(?i)\.(?:mp4|mkv|avi|webm|m3u8)$""").containsMatchIn(basename))
             return false
-        val raw = basename.replace(Regex("""(?i)\.(?:mp4|mkv|avi|webm)$"""), "")
+        val raw = basename.replace(Regex("""(?i)\.(?:mp4|mkv|avi|webm|m3u8)$"""), "")
         if (raw.length < 7) return false
         val statedSeason = explicitSeason(raw)
         val statedEpisode = explicitEpisode(raw)
