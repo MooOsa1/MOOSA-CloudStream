@@ -2241,6 +2241,15 @@ class MOOSAHubProvider : TmdbProvider() {
             episodeData
         }
         val data = dataCandidate?.takeIf { it.isNotBlank() } ?: return null
+        // Verify explicit SxxExx / season+episode hints inside upstream
+        // episode data before caching a provider target. This applies to
+        // every movie/series/anime provider, not only reported bad servers.
+        if (MOOSAMediaIdentityPolicy.targetContradicts(identityClaim(request), data)) {
+            MOOSAPlaybackDiagnostics.update(
+                api, "Provider episode payload contradicts requested season/episode"
+            )
+            return null
+        }
 
         val target = ProviderTarget(
             providerName = api.name,
@@ -3963,11 +3972,15 @@ class MOOSAHubProvider : TmdbProvider() {
                                         } else null
                                     } else null
 
-                                if (verified && meetsHdFloor &&
+                                val candidateCanEmit = verified && meetsHdFloor &&
                                     seenLinks.add(key) &&
                                     (mirrorIdentity == null ||
                                         emittedAkwamMirrors.add(mirrorIdentity))
-                                ) {
+                                val uniqueEpisodeStream = !candidateCanEmit ||
+                                    MOOSAEpisodeLinkReuseGuard.accepts(
+                                        api.name, identityClaim(request), key
+                                    )
+                                if (candidateCanEmit && uniqueEpisodeStream) {
                                     providerWorked.set(true)
                                     acceptedLinks.incrementAndGet()
                                     emittedLink.set(true)
@@ -3978,6 +3991,14 @@ class MOOSAHubProvider : TmdbProvider() {
                                         MOOSAProgress.linkAvailable(progressToken, progressKey)
                                         callback(link)
                                     }
+                                } else if (candidateCanEmit && !uniqueEpisodeStream) {
+                                    // A provider served the exact same URL,
+                                    // referer and headers to a different
+                                    // movie/episode during this app session.
+                                    // Do not suppress its other unique servers.
+                                    MOOSAPlaybackDiagnostics.update(
+                                        api, "Duplicate media across different titles/episodes • skipped"
+                                    )
                                 } else if (verified && !meetsHdFloor) {
                                     // HLS media playlists with no verified
                                     // resolution stay excluded rather than
@@ -4030,17 +4051,32 @@ class MOOSAHubProvider : TmdbProvider() {
                                 invalidUrls.incrementAndGet()
                                 return
                             }
-                            // An extractor may return a playable but DIFFERENT
-                            // episode. Only block explicit conflicting S/E or
-                            // year in a readable direct video filename; ignore
-                            // opaque CDNs/HLS links instead of guessing.
-                            if (MOOSAMatchGuard.mediaFilenameContradicts(
-                                    identityClaim(request), link.url
+                            // A confirmed wrong-video report can quarantine one
+                            // named server on one episode without hiding other
+                            // Anikoto links or working servers from other shows.
+                            if (MOOSAReportedMediaMismatch.rejects(
+                                    identityClaim(request), api.name,
+                                    link.name, link.source
                                 )
                             ) {
                                 invalidUrls.incrementAndGet()
                                 MOOSAPlaybackDiagnostics.update(
-                                    api, "Wrong work/episode in video filename • skipped"
+                                    api, "Reported wrong-video server for this episode • skipped"
+                                )
+                                return
+                            }
+                            // An extractor may return a playable but DIFFERENT
+                            // episode. Only block explicit conflicting S/E or
+                            // year in a readable direct video filename; ignore
+                            // opaque CDNs/HLS links instead of guessing.
+                            if (MOOSAMediaIdentityPolicy.linkContradicts(
+                                    identityClaim(request), link.url,
+                                    link.source, link.name
+                                )
+                            ) {
+                                invalidUrls.incrementAndGet()
+                                MOOSAPlaybackDiagnostics.update(
+                                    api, "Contradictory video/episode identity • skipped"
                                 )
                                 return
                             }
