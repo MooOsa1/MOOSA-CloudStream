@@ -19,7 +19,7 @@ internal object MOOSATmdbCollisionGuard {
         aliases: List<String>
     ): Boolean {
         val id = request.tmdbId ?: return false
-        val key = "\${request.isTv}|$id|\${request.title}"
+        val key = "${request.isTv}|$id|${request.title}"
         val now = System.currentTimeMillis()
         cache[key]?.let { cached ->
             if (now - cached.at < if (cached.value) ttlPositive else ttlNegative)
