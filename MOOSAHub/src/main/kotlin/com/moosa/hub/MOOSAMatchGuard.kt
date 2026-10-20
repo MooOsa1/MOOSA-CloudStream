@@ -182,7 +182,7 @@ internal object MOOSAMatchGuard {
             // year is evidence ONLY when the filename actually identifies
             // this work or an explicitly numbered sequel of it.
             val relevantTitle = expected.isNotBlank() &&
-                (title == expected || title.startsWith("$"+"expected "))
+                (title == expected || title.startsWith("$expected "))
             if (relevantTitle && years.last() != claim.year) return true
         }
         return false
