@@ -155,10 +155,7 @@ class MOOSASettingsDialog : DialogFragment() {
             text(value, 48f, primary, true).apply {
                 letterSpacing = -0.065f
                 maxLines = 1
-                // Keeps metrics readable when Android TV font scaling changes.
-                setAutoSizeTextTypeUniformWithConfiguration(
-                    22, 48, 2, android.util.TypedValue.COMPLEX_UNIT_SP
-                )
+                // Avoid API-26-only autosize calls on Fire TV API 25.
             },
             LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
@@ -234,7 +231,7 @@ class MOOSASettingsDialog : DialogFragment() {
             isClickable = true
             isFocusable = true
             isFocusableInTouchMode = false
-            setOnClickListener(onClick.let { action -> View.OnClickListener { action() } })
+            setOnClickListener { onClick() }
             setOnFocusChangeListener { view, focused ->
                 view.background = rounded(
                     if (focused) Color.WHITE else Color.rgb(235, 235, 235),
@@ -436,9 +433,9 @@ class MOOSASettingsDialog : DialogFragment() {
             setPadding(dp(31), dp(30), dp(31), dp(27))
             setBackgroundColor(bg)
         }
-        rightScroll.addView(detailColumn, ScrollView.LayoutParams(
+        rightScroll.addView(detailColumn, android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
+            ViewGroup.LayoutParams.WRAP_CONTENT
         ))
         columns.addView(rightScroll, LinearLayout.LayoutParams(
             0, ViewGroup.LayoutParams.MATCH_PARENT, 70f
@@ -486,63 +483,6 @@ class MOOSASettingsDialog : DialogFragment() {
             }
         }
     }
-
-    private fun sourceSummary(): String {
-        val all = MOOSASourceTester.sources()
-        val enabled = all.count {
-            MOOSASourceTester.isEnabled(it)
-        }
-        return "$enabled / ${all.size} enabled"
-    }
-
-    private fun serverSummary(): String {
-        val all = MOOSAServerRegistry.snapshot()
-        if (all.isEmpty()) {
-            return "No scan yet"
-        }
-
-        val online = all.count {
-            it.lastResult == true
-        }
-        return "${all.size} servers • $online online"
-    }
-
-    private fun playbackSummary(): String {
-        val verify =
-            if (MOOSASettingsStore.verifyLinks()) {
-                "Verify on"
-            } else {
-                "Verify off"
-            }
-
-        val arabic =
-            if (MOOSASettingsStore.arabicFastMode()) {
-                "Arabic fast"
-            } else {
-                "Arabic normal"
-            }
-
-        return "$verify • $arabic"
-    }
-
-    private fun subtitleSummary(): String {
-        val wyzie =
-            if (MOOSASettingsStore.wyzieKey() != null) {
-                "Wyzie on"
-            } else {
-                "Wyzie off"
-            }
-
-        val subDl =
-            if (MOOSASettingsStore.subdlKey() != null) {
-                "SubDL on"
-            } else {
-                "SubDL off"
-            }
-
-        return "OpenSubs on • $wyzie • $subDl"
-    }
-
 
     private fun openWebBridge() {
         val input = EditText(requireContext()).apply {
