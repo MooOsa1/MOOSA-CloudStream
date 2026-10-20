@@ -613,6 +613,9 @@ class MOOSABrowseDialog : DialogFragment() {
                 metadataPreviewRequested = false
                 genuineHomeReturnObserved = false
                 dialog?.show()
+                // Home is visible again, but still covered by Show More.
+                // Restore its shelf position in advance, not after closing.
+                MOOSASeeAll.prepareReturnOrigin(request.name) {}
                 recycler.post {
                     val position = returnPosition.coerceIn(
                         0, (adapter.itemCount - 1).coerceAtLeast(0)
@@ -874,15 +877,24 @@ class MOOSABrowseDialog : DialogFragment() {
             filtersScrim.animate().cancel()
             filtersScrim.visibility = View.GONE
         }
-        browseRoot.animate().cancel()
-        browseRoot.animate()
-            .alpha(0f).scaleX(0.985f).scaleY(0.985f)
-            .setDuration(145L)
-            .setInterpolator(DecelerateInterpolator())
-            .withEndAction {
-                if (isAdded) dismissAllowingStateLoss()
+        // Prepare the home row BEFORE the dialog starts to fade. Otherwise
+        // Android can briefly focus a different shelf after dismissal, then
+        // v121's delayed restoration visibly drags focus back to origin.
+        val fadeAndDismiss: () -> Unit = {
+            if (isAdded && ::browseRoot.isInitialized) {
+                browseRoot.animate().cancel()
+                browseRoot.animate()
+                    .alpha(0f).scaleX(0.985f).scaleY(0.985f)
+                    .setDuration(145L)
+                    .setInterpolator(DecelerateInterpolator())
+                    .withEndAction {
+                        if (isAdded) dismissAllowingStateLoss()
+                    }
+                    .start()
             }
-            .start()
+        }
+        if (waitingForResult) fadeAndDismiss()
+        else MOOSASeeAll.prepareReturnOrigin(request.name, fadeAndDismiss)
     }
 
     private fun focusFirstVisiblePoster(): Boolean {

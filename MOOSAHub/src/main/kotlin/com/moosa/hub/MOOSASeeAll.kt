@@ -974,31 +974,108 @@ object MOOSASeeAll {
      * Find the original shelf by its ACTUAL bound title, not by a recycled
      * home row's adapter position or stale View reference.
      */
+    private fun findAttachedCategoryHeader(
+        activity: android.app.Activity,
+        master: RecyclerView,
+        state: CategoryState
+    ): TextView? {
+        val headerId = activity.resources.getIdentifier(
+            "home_child_more_info", "id", activity.packageName
+        )
+        if (headerId == 0) return null
+        for (index in 0 until master.childCount) {
+            val row = master.getChildAt(index)
+            val header = row.findViewById<TextView>(headerId) ?: continue
+            if (MOOSAShowMoreReturnPolicy.sameCategory(
+                    state.request.name, header.text?.toString()
+                ) && header.isAttachedToWindow && header.isShown
+            ) return header
+        }
+        return null
+    }
+
     private fun focusAttachedCategory(
         activity: android.app.Activity,
         master: RecyclerView,
         state: CategoryState
     ): Boolean {
-        val headerId = activity.resources.getIdentifier(
-            "home_child_more_info", "id", activity.packageName
-        )
-        if (headerId == 0) return false
-        for (index in 0 until master.childCount) {
-            val row = master.getChildAt(index)
-            val header = row.findViewById<TextView>(headerId) ?: continue
-            if (!MOOSAShowMoreReturnPolicy.sameCategory(
-                    state.request.name, header.text?.toString()
-                ) || !header.isAttachedToWindow || !header.isShown
-            ) continue
-            val button = actionFor(header) ?: installAction(header)
-            val focused = (button?.isShown == true && button.requestFocus()) ||
-                header.requestFocus()
-            if (!focused) continue
-            headerRefs[state.request.name] = WeakReference(header)
-            captureParentPosition(activity, header, state)
-            return true
+        val header = findAttachedCategoryHeader(activity, master, state)
+            ?: return false
+        val button = actionFor(header) ?: installAction(header)
+        val focused = (button?.isShown == true && button.requestFocus()) ||
+            header.requestFocus()
+        if (!focused) return false
+        headerRefs[state.request.name] = WeakReference(header)
+        captureParentPosition(activity, header, state)
+        return true
+    }
+
+    /**
+     * Position the underlying home shelf WHILE the modal dialog still owns
+     * the TV focus. The user must not see Android focus a random neighboring
+     * row and then watch the home RecyclerView scroll back after dismissal.
+     * No requestFocus() here; actual focus changes only after dialog closes.
+     *
+     * Bounded to a single sweep of the attached/rebound home categories.
+     * The callback always runs, including when the category is unavailable.
+     */
+    fun prepareReturnOrigin(categoryName: String, onReady: () -> Unit) {
+        val host = activity
+        val state = states[categoryName]
+        if (host == null || state == null ||
+            host.isFinishing || host.isDestroyed || !isMoosaSelected(host)
+        ) {
+            onReady()
+            return
         }
-        return false
+        val master = homeMasterRecycler(host)
+        val manager = master?.layoutManager as? LinearLayoutManager
+        if (master == null || manager == null || !master.isShown) {
+            onReady()
+            return
+        }
+        val generation = ++focusRestoreGeneration
+        val positions = MOOSAShowMoreReturnPolicy.candidatePositions(
+            state.parentAdapterPosition, master.adapter?.itemCount ?: 0
+        )
+        var finished = false
+        fun finish() {
+            if (finished) return
+            finished = true
+            onReady()
+        }
+        fun scan(attempt: Int) {
+            if (generation != focusRestoreGeneration ||
+                host.isFinishing || host.isDestroyed || !master.isAttachedToWindow
+            ) {
+                finish()
+                return
+            }
+            val matching = findAttachedCategoryHeader(host, master, state)
+            if (matching != null) {
+                headerRefs[state.request.name] = WeakReference(matching)
+                finish()
+                return
+            }
+            if (attempt >= positions.size) {
+                finish()
+                return
+            }
+            manager.scrollToPositionWithOffset(
+                positions[attempt],
+                if (attempt == 0) state.parentTopOffset else 0
+            )
+            master.post {
+                val found = findAttachedCategoryHeader(host, master, state)
+                if (found != null) {
+                    headerRefs[state.request.name] = WeakReference(found)
+                    finish()
+                } else {
+                    mainHandler.postDelayed({ scan(attempt + 1) }, 16L)
+                }
+            }
+        }
+        scan(0)
     }
 
     private fun focusExactParentRow(
@@ -1015,13 +1092,22 @@ object MOOSASeeAll {
         val master = homeMasterRecycler(activity)
         // The home fragment can be recreated after entering an item. Wait
         // until it actually exists, rather than using a stale category View.
-        if (master == null || !master.isShown || !activity.hasWindowFocus()) {
+        if (master == null || !master.isShown) {
             if (attempt < 20) mainHandler.postDelayed({
                 focusExactParentRow(activity, state, generation, attempt + 1)
-            }, 95L)
+            }, 24L)
             return
         }
+        // Request the prepared header focus even before the home window
+        // regains focus from the dismissed dialog. This makes it Android's
+        // pending home focus target instead of flashing the previous shelf.
         if (focusAttachedCategory(activity, master, state)) return
+        if (!activity.hasWindowFocus()) {
+            if (attempt < 20) mainHandler.postDelayed({
+                focusExactParentRow(activity, state, generation, attempt + 1)
+            }, 24L)
+            return
+        }
 
         val manager = master.layoutManager as? LinearLayoutManager ?: return
         val positions = MOOSAShowMoreReturnPolicy.candidatePositions(
@@ -1049,7 +1135,7 @@ object MOOSASeeAll {
             if (attempt < positions.size + 3) {
                 mainHandler.postDelayed({
                     focusExactParentRow(activity, state, generation, attempt + 1)
-                }, 95L)
+                }, 24L)
             }
         }
     }
@@ -1057,10 +1143,10 @@ object MOOSASeeAll {
     fun restoreFocus(categoryName: String) {
         val host = activity ?: return
         val state = states[categoryName] ?: return
-        // One restoration only; opening another Show More invalidates it.
+        // The shelf was prepositioned under the opaque dialog. Claim its
+        // focus immediately after dismissal, before a stray TV focus frame.
+        // Only retry if Android has not returned window focus yet.
         val generation = ++focusRestoreGeneration
-        mainHandler.postDelayed({
-            focusExactParentRow(host, state, generation)
-        }, 100L)
+        focusExactParentRow(host, state, generation)
     }
 }
