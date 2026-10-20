@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 124
+version = 125
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -145,3 +145,6 @@ dependencies {
 
 // v124: park Show More without detaching its poster window while viewing
 // movie details; skip unnecessary home and grid scrolling on return.
+
+// v125: OLED-black Control Center settings panel, real left section rail,
+// in-place right-side details, safe TV margins and preserved advanced tools.
