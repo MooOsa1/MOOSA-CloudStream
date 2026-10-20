@@ -591,30 +591,40 @@ class MOOSABrowseDialog : DialogFragment() {
 
     private fun scheduleVerifiedHomeReturn(host: AppCompatActivity, controller: Any) {
         cancelPendingReturn()
+        // No fixed 1.1-second Back delay: try immediately and wait only if
+        // Android has not actually restored the HomeFragment yet.
+        var checks = 0
         val action = object : Runnable {
             override fun run() {
                 pendingReturn = null
+                if (!waitingForResult || !resultDestinationSeen) return
                 val current = try {
                     controller.javaClass.methods.firstOrNull {
                         it.name == "getCurrentDestination" && it.parameterCount == 0
                     }?.invoke(controller)
                 } catch (_: Throwable) { null }
-                // Never restore just because the Activity resumed from a
-                // screen saver. A real content -> home transition must have
-                // been observed AND the home UI must now be foreground.
-                if (!waitingForResult || !resultDestinationSeen ||
-                    !isHome(destinationName(host, current)) ||
-                    !homeActuallyVisible(host) ||
+                if (!isHome(destinationName(host, current))) return
+
+                if (!homeActuallyVisible(host) ||
                     host.supportFragmentManager.isStateSaved
-                ) return
+                ) {
+                    // Yield to layout/navigation without needlessly imposing
+                    // a long pause on fast TV devices. Stop after 1.6 seconds
+                    // rather than polling forever when Home is unavailable.
+                    if (++checks < 40) {
+                        pendingReturn = this
+                        returnHandler.postDelayed(this, 40L)
+                    }
+                    return
+                }
 
                 waitingForResult = false
                 resultDestinationSeen = false
                 metadataPreviewRequested = false
                 genuineHomeReturnObserved = false
                 dialog?.show()
-                // Home is visible again, but still covered by Show More.
-                // Restore its shelf position in advance, not after closing.
+                // Find the same named shelf under the preserved modal so
+                // dismissing later does not focus another category.
                 MOOSASeeAll.prepareReturnOrigin(request.name) {}
                 recycler.post {
                     val position = returnPosition.coerceIn(
@@ -630,7 +640,7 @@ class MOOSABrowseDialog : DialogFragment() {
             }
         }
         pendingReturn = action
-        returnHandler.postDelayed(action, 1100L)
+        returnHandler.post(action)
     }
 
     private fun installNavigationReturnWatcher() {
@@ -885,7 +895,7 @@ class MOOSABrowseDialog : DialogFragment() {
                 browseRoot.animate().cancel()
                 browseRoot.animate()
                     .alpha(0f).scaleX(0.985f).scaleY(0.985f)
-                    .setDuration(145L)
+                    .setDuration(95L)
                     .setInterpolator(DecelerateInterpolator())
                     .withEndAction {
                         if (isAdded) dismissAllowingStateLoss()
