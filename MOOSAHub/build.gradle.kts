@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 123
+version = 124
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -142,3 +142,6 @@ dependencies {
 
 // v123: remove the fixed 1100ms movie-to-Show-More return delay; use
 // ready-state retries, faster close fade, and animation-free return focus.
+
+// v124: park Show More without detaching its poster window while viewing
+// movie details; skip unnecessary home and grid scrolling on return.
