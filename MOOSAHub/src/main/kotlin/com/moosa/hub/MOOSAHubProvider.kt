@@ -3972,11 +3972,15 @@ class MOOSAHubProvider : TmdbProvider() {
                                         } else null
                                     } else null
 
-                                if (verified && meetsHdFloor &&
+                                val candidateCanEmit = verified && meetsHdFloor &&
                                     seenLinks.add(key) &&
                                     (mirrorIdentity == null ||
                                         emittedAkwamMirrors.add(mirrorIdentity))
-                                ) {
+                                val uniqueEpisodeStream = !candidateCanEmit ||
+                                    MOOSAEpisodeLinkReuseGuard.accepts(
+                                        api.name, identityClaim(request), key
+                                    )
+                                if (candidateCanEmit && uniqueEpisodeStream) {
                                     providerWorked.set(true)
                                     acceptedLinks.incrementAndGet()
                                     emittedLink.set(true)
@@ -3987,6 +3991,14 @@ class MOOSAHubProvider : TmdbProvider() {
                                         MOOSAProgress.linkAvailable(progressToken, progressKey)
                                         callback(link)
                                     }
+                                } else if (candidateCanEmit && !uniqueEpisodeStream) {
+                                    // A provider served the exact same URL,
+                                    // referer and headers to a different
+                                    // movie/episode during this app session.
+                                    // Do not suppress its other unique servers.
+                                    MOOSAPlaybackDiagnostics.update(
+                                        api, "Duplicate media across different titles/episodes • skipped"
+                                    )
                                 } else if (verified && !meetsHdFloor) {
                                     // HLS media playlists with no verified
                                     // resolution stay excluded rather than
