@@ -365,22 +365,28 @@ internal object MOOSAArabicBridge {
         else -> null
     }
 
-    private fun verifiedPage(
+    private suspend fun verifiedPage(
         request: MOOSAHubProvider.HubPlaybackRequest,
         aliases: List<String>,
         candidate: SearchResponse,
         loaded: LoadResponse
-    ): Boolean = MOOSAMatchGuard.verifiedIdentity(
-        claim(request),
-        MOOSAMatchGuard.Evidence(
+    ): Boolean {
+        val identity = claim(request)
+        val evidence = MOOSAMatchGuard.Evidence(
             title = loaded.name,
             year = loaded.year,
             searchYear = resultYear(candidate),
+            searchTitle = candidate.name,
             imdbId = loaded.getImdbId(),
             tmdbId = loaded.getTMDbId()?.toIntOrNull()
-        ),
-        aliases
-    )
+        )
+        if (MOOSAMatchGuard.verifiedIdentity(identity, evidence, aliases)) return true
+        if (!MOOSAMatchGuard.verifiedIdentity(
+                identity, evidence, aliases, allowCorroboratedTitleOnly = true
+            )
+        ) return false
+        return MOOSATmdbCollisionGuard.hasSingleExactTitle(request, aliases)
+    }
 
     suspend fun resolve(
         api: MainAPI,

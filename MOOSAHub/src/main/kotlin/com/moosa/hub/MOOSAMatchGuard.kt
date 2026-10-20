@@ -25,6 +25,8 @@ internal object MOOSAMatchGuard {
         val title: String,
         val year: Int? = null,
         val searchYear: Int? = null,
+        // Name of the search result which led to this LOADED provider page.
+        val searchTitle: String? = null,
         val imdbId: String? = null,
         val tmdbId: Int? = null,
         val additionalNames: List<String> = emptyList()
@@ -141,23 +143,85 @@ internal object MOOSAMatchGuard {
         }
     }
 
+    /** Pure catalog decision. No fuzzy aliases or vote-based title estimates. */
+    fun uniquelyIdentifiedInCatalog(requestedId: Int, candidates: Collection<Int>): Boolean =
+        candidates.toSet() == setOf(requestedId)
+
+    /**
+     * Only reject explicit, readable media-file contradictions. Generic
+     * CDN hashes/master.m3u8 paths have no identity evidence and pass.
+     * A network probe proves link viability, NOT video identity.
+     */
+    fun mediaFilenameContradicts(claim: Claim, url: String): Boolean {
+        val basename = try {
+            val path = java.net.URI(url).rawPath.orEmpty()
+            java.net.URLDecoder.decode(path.substringAfterLast('/'), "UTF-8")
+        } catch (_: Throwable) { return false }
+        if (!Regex("""(?i)\.(?:mp4|mkv|avi|webm)$""").containsMatchIn(basename))
+            return false
+        val raw = basename.replace(Regex("""(?i)\.(?:mp4|mkv|avi|webm)$"""), "")
+        if (raw.length < 7) return false
+        val statedSeason = explicitSeason(raw)
+        val statedEpisode = explicitEpisode(raw)
+        if (claim.season != null && statedSeason != null &&
+            statedSeason != claim.season) return true
+        if (claim.episode != null && statedEpisode != null &&
+            statedEpisode != claim.episode) return true
+
+        // Only a release suffix on a readable file may contradict the year:
+        // 1917.2019.mkv is the title "1917" released in 2019, not 1917.
+        val words = normalized(raw)
+        val years = Regex("""\b(?:19|20)\d{2}\b""")
+            .findAll(words).mapNotNull { it.value.toIntOrNull() }.toList()
+        if (claim.year != null && years.isNotEmpty() &&
+            words.any(Char::isLetter) && words.split(' ').size >= 3
+        ) {
+            val title = titleKey(raw, claim.season != null)
+            val expected = titleKey(claim.title, claim.season != null)
+            // Generic CDN filenames can contain timestamps. A conflicting
+            // year is evidence ONLY when the filename actually identifies
+            // this work or an explicitly numbered sequel of it.
+            val relevantTitle = expected.isNotBlank() &&
+                (title == expected || title.startsWith("$expected "))
+            if (relevantTitle && years.last() != claim.year) return true
+        }
+        return false
+    }
+
     /** Call only after loading the actual provider page, never for search alone. */
     fun verifiedIdentity(
         claim: Claim,
         item: Evidence,
-        officialAliases: List<String>
+        officialAliases: List<String>,
+        allowCorroboratedTitleOnly: Boolean = false
     ): Boolean {
         if (!titleAndClaimCompatible(claim, item, officialAliases)) return false
         if (matchingId(claim, item)) return true
 
-        val year = claim.year ?: return false
-        // A year that neither the result page nor the search result publishes
-        // is not evidence. Exact names alone confuse remakes/reboots.
-        if (claim.isAnime && (claim.season ?: 0) > 1 &&
-            item.year == null && item.searchYear == null) return false
-        return listOfNotNull(item.year, item.searchYear,
-            statedReleaseYear(item.title)).any {
-            it in 1900..2100 && it == year
-        }
+        val year = claim.year
+        val knownYears = listOfNotNull(
+            item.year, item.searchYear, statedReleaseYear(item.title)
+        ).filter { it in 1900..2100 }
+        if (year != null && knownYears.any { it == year } &&
+            !(claim.isAnime && (claim.season ?: 0) > 1 &&
+                item.year == null && item.searchYear == null)
+        ) return true
+
+        // Controlled recovery for otherwise-valid yearless sources:
+        // exact official name on *both* search and loaded page AND
+        // a separate TMDB lookup confirming there is no same-name remake.
+        // Never grant this to direct load() (which has no search page).
+        if (!allowCorroboratedTitleOnly || knownYears.isNotEmpty()) return false
+        val searched = item.searchTitle ?: return false
+        if (searched.isBlank()) return false
+        val keys = (listOf(claim.title) + officialAliases)
+            .map { titleKey(it, claim.season != null) }
+            .filter { it.isNotBlank() }.toSet()
+        val searchKey = titleKey(searched, claim.season != null)
+        val loadedKey = titleKey(item.title, claim.season != null)
+        return searchKey.isNotBlank() &&
+            searchKey in keys &&
+            loadedKey in keys &&
+            searchKey == loadedKey
     }
 }

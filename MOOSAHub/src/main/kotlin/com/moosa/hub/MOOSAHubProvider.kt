@@ -919,6 +919,27 @@ class MOOSAHubProvider : TmdbProvider() {
             identityClaim(request), loadedEvidence(result, searchYear), aliases
         )
 
+    /** The only yearless recovery path: same exact official title in
+     * search AND loaded page, plus TMDB proves no other same-name work.
+     * Conflicting IDs, years and episode numbers still reject before I/O.
+     */
+    private suspend fun verifiedSearchLoadedIdentity(
+        loaded: LoadResponse,
+        search: SearchResponse,
+        request: HubPlaybackRequest,
+        aliases: List<String>
+    ): Boolean {
+        val evidence = loadedEvidence(loaded, resultYear(search))
+            .copy(searchTitle = search.name)
+        val claim = identityClaim(request)
+        if (MOOSAMatchGuard.verifiedIdentity(claim, evidence, aliases)) return true
+        if (!MOOSAMatchGuard.verifiedIdentity(
+                claim, evidence, aliases, allowCorroboratedTitleOnly = true
+            )
+        ) return false
+        return MOOSATmdbCollisionGuard.hasSingleExactTitle(request, aliases)
+    }
+
     private fun arabicSeasonWord(
         season: Int
     ): String? = when (season) {
@@ -1335,8 +1356,12 @@ class MOOSAHubProvider : TmdbProvider() {
         }.distinct().take(if (isArabSeedProvider(api)) 6 else if (isEpisodeIndex) 8 else 12)
 
         val results = mutableListOf<SearchResponse>()
+        var firstCandidateQuery: Int? = null
 
         for ((index, query) in queryVariants.withIndex()) {
+            // First searchable title is NOT evidence the matching episode
+            // exists. Check two additional query variants for other pages.
+            if (firstCandidateQuery?.let { index > it + 2 } == true) break
             val maxPages = when {
                 // Akwam ignores pagination; its search already finds seasons.
                 isAkwamProvider(api) -> 1
@@ -1375,7 +1400,8 @@ class MOOSAHubProvider : TmdbProvider() {
                     }
                 } else matchingEpisode
                 if (confirmedEpisode) {
-                    return results.distinctBy { it.url }
+                    if (firstCandidateQuery == null) firstCandidateQuery = index
+                    break
                 }
                 if (found.isEmpty()) break
             }
@@ -1736,11 +1762,8 @@ class MOOSAHubProvider : TmdbProvider() {
             }
 
             if (
-                loadedIdentityMatches(
-                    loaded,
-                    request,
-                    aliases,
-                    searchYear = resultYear(match)
+                verifiedSearchLoadedIdentity(
+                    loaded, match, request, aliases
                 )
             ) {
                 return MatchedLoad(loaded, match.name)
@@ -1883,7 +1906,7 @@ class MOOSAHubProvider : TmdbProvider() {
         request: HubPlaybackRequest,
         api: MainAPI
     ): String = listOf(
-        "strict-v19-failclosed-identity",
+        "strict-v20-collision-aware",
         request.imdbId.orEmpty(),
         request.tmdbId?.toString().orEmpty(),
         request.originalLanguage.orEmpty(),
@@ -4005,6 +4028,20 @@ class MOOSAHubProvider : TmdbProvider() {
                             extracted.incrementAndGet()
                             if (!validStreamingUrl(link.url)) {
                                 invalidUrls.incrementAndGet()
+                                return
+                            }
+                            // An extractor may return a playable but DIFFERENT
+                            // episode. Only block explicit conflicting S/E or
+                            // year in a readable direct video filename; ignore
+                            // opaque CDNs/HLS links instead of guessing.
+                            if (MOOSAMatchGuard.mediaFilenameContradicts(
+                                    identityClaim(request), link.url
+                                )
+                            ) {
+                                invalidUrls.incrementAndGet()
+                                MOOSAPlaybackDiagnostics.update(
+                                    api, "Wrong work/episode in video filename • skipped"
+                                )
                                 return
                             }
                             // Source/server display names, never the URL path:
