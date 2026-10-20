@@ -20,7 +20,7 @@ internal object MOOSAMediaIdentityPolicy {
     private val querySeason = Regex("""(?i)(?:[?&])(?:season|season_number)=(\d{1,3})(?:&|$)""")
     private val queryEpisode = Regex("""(?i)(?:[?&])(?:episode|episode_number)=(\d{1,4})(?:&|$)""")
     private val releaseFile = Regex("""(?i)\.(?:mp4|mkv|avi|webm|m3u8)(?:\?.*)?$""")
-    private val namedImdbId = Regex("""(?i)(?:^|[?&/_.=\-\\s])(?:imdb(?:id)?[:=/\-_ ]*)?(tt\d{7,10})(?!\d)""")
+    private val namedImdbId = Regex("""(?i)(?:^|[?&/_.=\-\s])(?:imdb(?:id)?[:=/\-_ ]*)?(tt\d{7,10})(?!\d)""")
     private val namedTmdbId = Regex("""(?i)(?:[?&])tmdb(?:_id|id)?=(\d{1,10})(?:&|$)|(?:^|[/])tmdb[/=](\d{1,10})(?:[/?.]|$)""")
 
     private fun decode(input: String): String =
@@ -62,8 +62,6 @@ internal object MOOSAMediaIdentityPolicy {
      * providers use continuous numbering rather than TMDB's local index.
      */
     fun targetContradicts(claim: MOOSAMatchGuard.Claim, data: String): Boolean {
-        val expectedS = claim.season ?: return false
-        val expectedE = claim.episode ?: return false
         // A third-party plugin may serialize a complete JSON episode table
         // as its target. Scanning that table for other episode numbers would
         // falsely hide perfectly valid servers. Only interpret one direct
@@ -71,8 +69,10 @@ internal object MOOSAMediaIdentityPolicy {
         val target = data.trim()
         if (!target.startsWith("https://", true) &&
             !target.startsWith("http://", true)) return false
-        return identifierContradicts(claim, target) ||
-            pairs(target).any { (s, e) -> s != expectedS || e != expectedE }
+        if (identifierContradicts(claim, target)) return true
+        val expectedS = claim.season ?: return false
+        val expectedE = claim.episode ?: return false
+        return pairs(target).any { (s, e) -> s != expectedS || e != expectedE }
     }
 
     /**
