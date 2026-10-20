@@ -3922,6 +3922,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 val disabledUrls = AtomicInteger(0)
                 val downloadNamesSkipped = AtomicInteger(0)
                 val lowQualityUrls = AtomicInteger(0)
+                val unsafeAnimeSourcesSkipped = AtomicInteger(0)
                 val unknownQualityUrls = AtomicInteger(0)
                 val unknownHlsCandidates = AtomicInteger(0)
                 val failedProbes = AtomicInteger(0)
@@ -4047,6 +4048,23 @@ class MOOSAHubProvider : TmdbProvider() {
                         )
                         fun collectLink(link: ExtractorLink) {
                             extracted.incrementAndGet()
+                            // An anime meta-provider can correctly identify
+                            // the series in its catalog but then resolve the
+                            // FIRST unrelated search result in an embedded
+                            // extractor. Reject only proven-unsafe extractor
+                            // families within CineStream. Other anime
+                            // providers/servers are still independently tried.
+                            val unsafeAnimeEngine = MOOSAAnimeExtractorSafety.unsafeEngine(
+                                request.isAnime, api.name, api.javaClass.name,
+                                link.source, link.name
+                            )
+                            if (unsafeAnimeEngine != null) {
+                                unsafeAnimeSourcesSkipped.incrementAndGet()
+                                MOOSAPlaybackDiagnostics.update(
+                                    api, "Unsafe anime title lookup ($unsafeAnimeEngine) • skipped"
+                                )
+                                return
+                            }
                             if (!validStreamingUrl(link.url)) {
                                 invalidUrls.incrementAndGet()
                                 return
@@ -4174,7 +4192,8 @@ class MOOSAHubProvider : TmdbProvider() {
                                 "${candidateLinks.size} candidates, " +
                                 "${invalidUrls.get()} invalid, ${disabledUrls.get()} disabled, " +
                                 "${downloadNamesSkipped.get()} downloads skipped, " +
-                                "${lowQualityUrls.get()} SD skipped, ${unknownQualityUrls.get()} unknown skipped"
+                                "${lowQualityUrls.get()} SD skipped, ${unknownQualityUrls.get()} unknown skipped, " +
+                                "${unsafeAnimeSourcesSkipped.get()} unsafe anime extractors skipped"
                         )
 
                         // api.loadLinks has now completed or timed out.
