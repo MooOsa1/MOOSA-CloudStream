@@ -176,8 +176,14 @@ internal object MOOSAMatchGuard {
         if (claim.year != null && years.isNotEmpty() &&
             words.any(Char::isLetter) && words.split(' ').size >= 3
         ) {
-            val lastYear = years.last()
-            if (lastYear != claim.year) return true
+            val title = titleKey(raw, claim.season != null)
+            val expected = titleKey(claim.title, claim.season != null)
+            // Generic CDN filenames can contain timestamps. A conflicting
+            // year is evidence ONLY when the filename actually identifies
+            // this work or an explicitly numbered sequel of it.
+            val relevantTitle = expected.isNotBlank() &&
+                (title == expected || title.startsWith("$"+"expected "))
+            if (relevantTitle && years.last() != claim.year) return true
         }
         return false
     }
