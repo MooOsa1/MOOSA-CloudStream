@@ -264,6 +264,7 @@ object MOOSASeeAll {
             actionForTitle.clear()
             headerRefreshScheduled = false
             focusRestoreGeneration++
+            Unit
         }
         if (Looper.myLooper() == Looper.getMainLooper()) cleanup()
         else mainHandler.post(cleanup)
