@@ -1092,13 +1092,22 @@ object MOOSASeeAll {
         val master = homeMasterRecycler(activity)
         // The home fragment can be recreated after entering an item. Wait
         // until it actually exists, rather than using a stale category View.
-        if (master == null || !master.isShown || !activity.hasWindowFocus()) {
+        if (master == null || !master.isShown) {
             if (attempt < 20) mainHandler.postDelayed({
                 focusExactParentRow(activity, state, generation, attempt + 1)
             }, 24L)
             return
         }
+        // Request the prepared header focus even before the home window
+        // regains focus from the dismissed dialog. This makes it Android's
+        // pending home focus target instead of flashing the previous shelf.
         if (focusAttachedCategory(activity, master, state)) return
+        if (!activity.hasWindowFocus()) {
+            if (attempt < 20) mainHandler.postDelayed({
+                focusExactParentRow(activity, state, generation, attempt + 1)
+            }, 24L)
+            return
+        }
 
         val manager = master.layoutManager as? LinearLayoutManager ?: return
         val positions = MOOSAShowMoreReturnPolicy.candidatePositions(
