@@ -83,6 +83,8 @@ object MOOSASeeAll {
     )
     private var headerRefreshScheduled = false
     private var lastBrowseOpenAt = 0L
+    // Cancel a delayed return when the user opens another category.
+    private var focusRestoreGeneration = 0
 
     private fun scheduleHeaderRefresh() {
         if (!lifecycleActive) return
@@ -261,6 +263,8 @@ object MOOSASeeAll {
             headerRefs.clear()
             actionForTitle.clear()
             headerRefreshScheduled = false
+            focusRestoreGeneration++
+            Unit
         }
         if (Looper.myLooper() == Looper.getMainLooper()) cleanup()
         else mainHandler.post(cleanup)
@@ -608,6 +612,7 @@ object MOOSASeeAll {
             ) return@setOnClickListener
 
             lastBrowseOpenAt = now
+            focusRestoreGeneration++
             headerRefs[state.request.name] = WeakReference(title)
             captureParentPosition(host, title, state)
             MOOSABrowseDialog.show(host, state.api, state.request)
@@ -620,12 +625,16 @@ object MOOSASeeAll {
         // callbacks register each category. Pre-register known MOOSA rows once
         // so Show More cannot disappear while an otherwise valid row renders.
         for (category in api.mainPage) {
-            states[category.name] = CategoryState(
-                api = api,
-                request = MainPageRequest(
-                    category.name, category.data, category.horizontalImages
-                )
+            val request = MainPageRequest(
+                category.name, category.data, category.horizontalImages
             )
+            // Returning from a movie can re-register all home shelves.
+            // Preserve the originating row's saved vertical anchor.
+            val existing = states[category.name]
+            states[category.name] = if (existing != null &&
+                existing.request.data == request.data
+            ) existing.copy(api = api, request = request)
+            else CategoryState(api = api, request = request)
         }
         mainHandler.post {
             installObserver()
@@ -961,77 +970,97 @@ object MOOSASeeAll {
         }
     }
 
+    /**
+     * Find the original shelf by its ACTUAL bound title, not by a recycled
+     * home row's adapter position or stale View reference.
+     */
+    private fun focusAttachedCategory(
+        activity: android.app.Activity,
+        master: RecyclerView,
+        state: CategoryState
+    ): Boolean {
+        val headerId = activity.resources.getIdentifier(
+            "home_child_more_info", "id", activity.packageName
+        )
+        if (headerId == 0) return false
+        for (index in 0 until master.childCount) {
+            val row = master.getChildAt(index)
+            val header = row.findViewById<TextView>(headerId) ?: continue
+            if (!MOOSAShowMoreReturnPolicy.sameCategory(
+                    state.request.name, header.text?.toString()
+                ) || !header.isAttachedToWindow || !header.isShown
+            ) continue
+            val button = actionFor(header) ?: installAction(header)
+            val focused = (button?.isShown == true && button.requestFocus()) ||
+                header.requestFocus()
+            if (!focused) continue
+            headerRefs[state.request.name] = WeakReference(header)
+            captureParentPosition(activity, header, state)
+            return true
+        }
+        return false
+    }
+
     private fun focusExactParentRow(
         activity: android.app.Activity,
         state: CategoryState,
+        generation: Int,
         attempt: Int = 0
     ) {
-        if (!isMoosaSelected(activity)) return
-        val master = homeMasterRecycler(activity) ?: return
-        val position = state.parentAdapterPosition
+        if (generation != focusRestoreGeneration ||
+            activity.isFinishing || activity.isDestroyed ||
+            !isMoosaSelected(activity)
+        ) return
 
-        if (position == RecyclerView.NO_POSITION) {
-            applyHeaders()
-            headerRefs[state.request.name]
-                ?.get()
-                ?.takeIf { it.isAttachedToWindow }
-                ?.requestFocus()
+        val master = homeMasterRecycler(activity)
+        // The home fragment can be recreated after entering an item. Wait
+        // until it actually exists, rather than using a stale category View.
+        if (master == null || !master.isShown || !activity.hasWindowFocus()) {
+            if (attempt < 20) mainHandler.postDelayed({
+                focusExactParentRow(activity, state, generation, attempt + 1)
+            }, 95L)
+            return
+        }
+        if (focusAttachedCategory(activity, master, state)) return
+
+        val manager = master.layoutManager as? LinearLayoutManager ?: return
+        val positions = MOOSAShowMoreReturnPolicy.candidatePositions(
+            state.parentAdapterPosition, master.adapter?.itemCount ?: 0
+        )
+        if (positions.isEmpty()) {
+            if (attempt < 20) mainHandler.postDelayed({
+                focusExactParentRow(activity, state, generation, attempt + 1)
+            }, 95L)
             return
         }
 
-        val manager = master.layoutManager as? LinearLayoutManager
-        manager?.scrollToPositionWithOffset(
-            position,
-            state.parentTopOffset
+        // First revisit the saved row+offset. If the category moved, search
+        // other row positions until its bound title matches; NEVER focus the
+        // wrong category at the old numerical adapter position.
+        val index = (attempt - 2).coerceIn(0, positions.lastIndex)
+        manager.scrollToPositionWithOffset(
+            positions[index],
+            if (index == 0) state.parentTopOffset else 0
         )
-
         master.post {
-            applyHeaders()
-
-            val holder = master.findViewHolderForAdapterPosition(position)
-            val itemView = holder?.itemView
-
-            val headerId = activity.resources.getIdentifier(
-                "home_child_more_info",
-                "id",
-                activity.packageName
-            )
-
-            val exactHeader = if (
-                itemView != null &&
-                headerId != 0
-            ) {
-                itemView.findViewById<TextView>(headerId)
-            } else {
-                null
-            }
-
-            if (exactHeader != null && exactHeader.isAttachedToWindow) {
-                headerRefs[state.request.name] =
-                    WeakReference(exactHeader)
-                exactHeader.requestFocus()
-            } else if (attempt < 8) {
+            if (generation != focusRestoreGeneration) return@post
+            // Wait for RecyclerView to finish binding before checking title.
+            if (focusAttachedCategory(activity, master, state)) return@post
+            if (attempt < positions.size + 3) {
                 mainHandler.postDelayed({
-                    focusExactParentRow(
-                        activity,
-                        state,
-                        attempt + 1
-                    )
-                }, 90L)
+                    focusExactParentRow(activity, state, generation, attempt + 1)
+                }, 95L)
             }
         }
     }
 
     fun restoreFocus(categoryName: String) {
         val host = activity ?: return
+        val state = states[categoryName] ?: return
+        // One restoration only; opening another Show More invalidates it.
+        val generation = ++focusRestoreGeneration
         mainHandler.postDelayed({
-            if (!isMoosaSelected(host)) return@postDelayed
-            val master = homeMasterRecycler(host) ?: return@postDelayed
-            if (!master.isShown || !host.hasWindowFocus()) return@postDelayed
-            val title = headerRefs[categoryName]?.get()
-            if (title?.isShown == true && title.isAttachedToWindow) {
-                actionFor(title)?.requestFocus()
-            }
+            focusExactParentRow(host, state, generation)
         }, 100L)
     }
 }
