@@ -4030,6 +4030,20 @@ class MOOSAHubProvider : TmdbProvider() {
                                 invalidUrls.incrementAndGet()
                                 return
                             }
+                            // An extractor may return a playable but DIFFERENT
+                            // episode. Only block explicit conflicting S/E or
+                            // year in a readable direct video filename; ignore
+                            // opaque CDNs/HLS links instead of guessing.
+                            if (MOOSAMatchGuard.mediaFilenameContradicts(
+                                    identityClaim(request), link.url
+                                )
+                            ) {
+                                invalidUrls.incrementAndGet()
+                                MOOSAPlaybackDiagnostics.update(
+                                    api, "Wrong work/episode in video filename • skipped"
+                                )
+                                return
+                            }
                             // Source/server display names, never the URL path:
                             // Akwam's valid MP4 can be hosted via /download/.
                             if (MOOSAQualityPolicy.hasForbiddenLabel(link)) {
