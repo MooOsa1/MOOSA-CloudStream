@@ -2241,6 +2241,15 @@ class MOOSAHubProvider : TmdbProvider() {
             episodeData
         }
         val data = dataCandidate?.takeIf { it.isNotBlank() } ?: return null
+        // Verify explicit SxxExx / season+episode hints inside upstream
+        // episode data before caching a provider target. This applies to
+        // every movie/series/anime provider, not only reported bad servers.
+        if (MOOSAMediaIdentityPolicy.targetContradicts(identityClaim(request), data)) {
+            MOOSAPlaybackDiagnostics.update(
+                api, "Provider episode payload contradicts requested season/episode"
+            )
+            return null
+        }
 
         val target = ProviderTarget(
             providerName = api.name,
@@ -4048,13 +4057,14 @@ class MOOSAHubProvider : TmdbProvider() {
                             // episode. Only block explicit conflicting S/E or
                             // year in a readable direct video filename; ignore
                             // opaque CDNs/HLS links instead of guessing.
-                            if (MOOSAMatchGuard.mediaFilenameContradicts(
-                                    identityClaim(request), link.url
+                            if (MOOSAMediaIdentityPolicy.linkContradicts(
+                                    identityClaim(request), link.url,
+                                    link.source, link.name
                                 )
                             ) {
                                 invalidUrls.incrementAndGet()
                                 MOOSAPlaybackDiagnostics.update(
-                                    api, "Wrong work/episode in video filename • skipped"
+                                    api, "Contradictory video/episode identity • skipped"
                                 )
                                 return
                             }
