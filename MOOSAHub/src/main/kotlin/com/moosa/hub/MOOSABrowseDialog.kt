@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -65,6 +66,11 @@ class MOOSABrowseDialog : DialogFragment() {
     private lateinit var browseRoot: LinearLayout
     private var entryPlayed = false
     private var closingAnimated = false
+    // Keep the dialog window attached while opening movie details, so Back
+    // does not need to recreate the complete poster-grid window.
+    private var contentParked = false
+    private var parkedHadDim = false
+    private var parkedDimAmount = 0f
     private var focusFilterId = View.NO_ID
     private var stayOnFilterAfterReload = false
 
@@ -102,6 +108,74 @@ class MOOSABrowseDialog : DialogFragment() {
     private var destinationListener: Any? = null
     private val returnHandler = Handler(Looper.getMainLooper())
     private var pendingReturn: Runnable? = null
+
+    /**
+     * Retain the already-laid-out Show More window behind a movie's details.
+     * Dialog.hide/show removes and reattaches the entire fullscreen window,
+     * forcing the large poster grid to be measured and drawn again on Back.
+     * A transparent, non-focusable, non-touchable attached window keeps the
+     * grid state intact while CloudStream handles the content screen.
+     */
+    private fun parkForContent() {
+        if (contentParked) return
+        val currentDialog = dialog ?: return
+        val window = currentDialog.window ?: return
+        val flags = window.attributes.flags
+        parkedHadDim = flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0
+        parkedDimAmount = window.attributes.dimAmount
+        contentParked = true
+        window.decorView.animate().cancel()
+        window.decorView.alpha = 0f
+        window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        )
+    }
+
+    private fun resumeFromContent() {
+        val currentDialog = dialog ?: return
+        val window = currentDialog.window
+        if (contentParked && window != null) {
+            // Restore interactivity before the next rendered frame.
+            window.clearFlags(
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            )
+            if (parkedHadDim) {
+                window.setDimAmount(parkedDimAmount)
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            }
+            window.decorView.alpha = 1f
+            contentParked = false
+        }
+        // Android DialogFragment.onStop can still automatically hide the
+        // dialog after an Activity transition. Recover only in that case.
+        if (!currentDialog.isShowing) currentDialog.show()
+    }
+
+    private fun restoreSelectedPoster() {
+        if (!::recycler.isInitialized || !::adapter.isInitialized) return
+        val position = returnPosition.coerceIn(
+            0, (adapter.itemCount - 1).coerceAtLeast(0)
+        )
+        recycler.post {
+            if (waitingForResult || !isAdded) return@post
+            val manager = recycler.layoutManager as? GridLayoutManager ?: return@post
+            val visible = manager.findViewByPosition(position)
+            if (visible != null && visible.isShown) {
+                if (!visible.hasFocus()) visible.requestFocus()
+            } else {
+                // Only scroll/rebind if the chosen poster was actually recycled.
+                manager.scrollToPositionWithOffset(position, 0)
+                recycler.post {
+                    if (!waitingForResult && isAdded) {
+                        manager.findViewByPosition(position)?.requestFocus()
+                    }
+                }
+            }
+        }
+    }
 
     private fun cancelPendingReturn() {
         pendingReturn?.let(returnHandler::removeCallbacks)
@@ -430,7 +504,7 @@ class MOOSABrowseDialog : DialogFragment() {
                 resultDestinationSeen = false
                 genuineHomeReturnObserved = false
                 cancelPendingReturn()
-                dialog?.hide()
+                parkForContent()
             }
 
             handleSearchClickCallback(callback)
@@ -622,21 +696,10 @@ class MOOSABrowseDialog : DialogFragment() {
                 resultDestinationSeen = false
                 metadataPreviewRequested = false
                 genuineHomeReturnObserved = false
-                dialog?.show()
-                // Find the same named shelf under the preserved modal so
-                // dismissing later does not focus another category.
-                MOOSASeeAll.prepareReturnOrigin(request.name) {}
-                recycler.post {
-                    val position = returnPosition.coerceIn(
-                        0, (adapter.itemCount - 1).coerceAtLeast(0)
-                    )
-                    (recycler.layoutManager as? GridLayoutManager)
-                        ?.scrollToPositionWithOffset(position, 0)
-                    recycler.post {
-                        recycler.layoutManager?.findViewByPosition(position)
-                            ?.requestFocus()
-                    }
-                }
+                resumeFromContent()
+                // Leave the home list alone while Show More is open: its
+                // shelf restoration belongs only to the eventual close.
+                restoreSelectedPoster()
             }
         }
         pendingReturn = action
@@ -676,14 +739,14 @@ class MOOSABrowseDialog : DialogFragment() {
                     resultDestinationSeen = true
                     genuineHomeReturnObserved = false
                     cancelPendingReturn()
-                    dialog?.hide()
+                    parkForContent()
                 } else if (waitingForResult) {
                     when {
                         isContent(name) -> {
                             resultDestinationSeen = true
                         genuineHomeReturnObserved = false
                         cancelPendingReturn()
-                            dialog?.hide()
+                            parkForContent()
                         }
                         resultDestinationSeen && isHome(name) -> {
                             genuineHomeReturnObserved = true
@@ -712,6 +775,7 @@ class MOOSABrowseDialog : DialogFragment() {
     }
 
     override fun onDestroy() {
+        contentParked = false
         if (::browseRoot.isInitialized) browseRoot.animate().cancel()
         // CloudStream may ship an older kotlinx.coroutines runtime without
         // Job.cancel$default. Explicit cause invokes the Job interface method.
@@ -765,7 +829,7 @@ class MOOSABrowseDialog : DialogFragment() {
         super.onStart()
         // DialogFragment.show() runs on every lifecycle start even when the
         // dialog was explicitly hidden. Keep it hidden over an active player.
-        if (waitingForResult) dialog?.hide()
+        if (waitingForResult) parkForContent()
         val metrics = resources.displayMetrics
         dialog?.window?.apply {
             setLayout(
