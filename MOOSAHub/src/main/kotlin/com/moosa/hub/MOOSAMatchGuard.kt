@@ -143,6 +143,45 @@ internal object MOOSAMatchGuard {
         }
     }
 
+    /** Pure catalog decision. No fuzzy aliases or vote-based title estimates. */
+    fun uniquelyIdentifiedInCatalog(requestedId: Int, candidates: Collection<Int>): Boolean =
+        candidates.toSet() == setOf(requestedId)
+
+    /**
+     * Only reject explicit, readable media-file contradictions. Generic
+     * CDN hashes/master.m3u8 paths have no identity evidence and pass.
+     * A network probe proves link viability, NOT video identity.
+     */
+    fun mediaFilenameContradicts(claim: Claim, url: String): Boolean {
+        val basename = try {
+            val path = java.net.URI(url).rawPath.orEmpty()
+            java.net.URLDecoder.decode(path.substringAfterLast('/'), "UTF-8")
+        } catch (_: Throwable) { return false }
+        if (!Regex("""(?i)\.(?:mp4|mkv|avi|webm)$""").containsMatchIn(basename))
+            return false
+        val raw = basename.replace(Regex("""(?i)\.(?:mp4|mkv|avi|webm)$"""), "")
+        if (raw.length < 7) return false
+        val statedSeason = explicitSeason(raw)
+        val statedEpisode = explicitEpisode(raw)
+        if (claim.season != null && statedSeason != null &&
+            statedSeason != claim.season) return true
+        if (claim.episode != null && statedEpisode != null &&
+            statedEpisode != claim.episode) return true
+
+        // Only a release suffix on a readable file may contradict the year:
+        // 1917.2019.mkv is the title "1917" released in 2019, not 1917.
+        val words = normalized(raw)
+        val years = Regex("""\b(?:19|20)\d{2}\b""")
+            .findAll(words).mapNotNull { it.value.toIntOrNull() }.toList()
+        if (claim.year != null && years.isNotEmpty() &&
+            words.any(Char::isLetter) && words.split(' ').size >= 3
+        ) {
+            val lastYear = years.last()
+            if (lastYear != claim.year) return true
+        }
+        return false
+    }
+
     /** Call only after loading the actual provider page, never for search alone. */
     fun verifiedIdentity(
         claim: Claim,
