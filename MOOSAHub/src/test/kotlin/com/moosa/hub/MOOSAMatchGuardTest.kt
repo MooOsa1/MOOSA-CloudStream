@@ -149,6 +149,9 @@ class MOOSAMatchGuardTest {
             ep, "https://cdn.example.com/1798/master.m3u8"))
         assertFalse(MOOSAMatchGuard.mediaFilenameContradicts(
             ep, "https://cdn.example.com/abcd1234.mp4"))
+        assertFalse(MOOSAMatchGuard.mediaFilenameContradicts(
+            movie("Midnight Signal", 2023),
+            "https://cdn.example.com/cache.release.generated.2025.1080p.mp4"))
         assertTrue(MOOSAMatchGuard.mediaFilenameContradicts(
             movie("Midnight Signal", 2023),
             "https://cdn.example.com/Midnight.Signal.2022.1080p.mp4"))
