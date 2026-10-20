@@ -4030,6 +4030,20 @@ class MOOSAHubProvider : TmdbProvider() {
                                 invalidUrls.incrementAndGet()
                                 return
                             }
+                            // A confirmed wrong-video report can quarantine one
+                            // named server on one episode without hiding other
+                            // Anikoto links or working servers from other shows.
+                            if (MOOSAReportedMediaMismatch.rejects(
+                                    identityClaim(request), api.name,
+                                    link.name, link.source
+                                )
+                            ) {
+                                invalidUrls.incrementAndGet()
+                                MOOSAPlaybackDiagnostics.update(
+                                    api, "Reported wrong-video server for this episode • skipped"
+                                )
+                                return
+                            }
                             // An extractor may return a playable but DIFFERENT
                             // episode. Only block explicit conflicting S/E or
                             // year in a readable direct video filename; ignore
