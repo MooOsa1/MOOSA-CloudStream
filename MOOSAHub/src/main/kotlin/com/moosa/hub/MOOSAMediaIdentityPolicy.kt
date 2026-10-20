@@ -20,10 +20,26 @@ internal object MOOSAMediaIdentityPolicy {
     private val querySeason = Regex("""(?i)(?:[?&])(?:season|season_number)=(\d{1,3})(?:&|$)""")
     private val queryEpisode = Regex("""(?i)(?:[?&])(?:episode|episode_number)=(\d{1,4})(?:&|$)""")
     private val releaseFile = Regex("""(?i)\.(?:mp4|mkv|avi|webm|m3u8)(?:\?.*)?$""")
+    private val namedImdbId = Regex("""(?i)(?:^|[?&/_.=\-\\s])(?:imdb(?:id)?[:=/\-_ ]*)?(tt\d{7,10})(?!\d)""")
+    private val namedTmdbId = Regex("""(?i)(?:[?&])tmdb(?:_id|id)?=(\d{1,10})(?:&|$)|(?:^|[/])tmdb[/=](\d{1,10})(?:[/?.]|$)""")
 
     private fun decode(input: String): String =
         runCatching { URLDecoder.decode(input, "UTF-8") }.getOrDefault(input)
             .take(2048)
+
+    /** Only explicit, differently-valued movie/TV catalog identifiers count. */
+    private fun identifierContradicts(claim: MOOSAMatchGuard.Claim, raw: String): Boolean {
+        val value = decode(raw)
+        val imdb = claim.imdbId?.lowercase()
+        if (imdb != null && namedImdbId.findAll(value).any {
+                it.groupValues[1].lowercase() != imdb
+            }) return true
+        val tmdb = claim.tmdbId
+        if (tmdb != null && namedTmdbId.findAll(value).any {
+                (it.groupValues[1].ifBlank { it.groupValues[2] }).toIntOrNull() != tmdb
+            }) return true
+        return false
+    }
 
     private fun pairs(value: String): List<Pair<Int, Int>> {
         val decoded = decode(value)
@@ -55,7 +71,8 @@ internal object MOOSAMediaIdentityPolicy {
         val target = data.trim()
         if (!target.startsWith("https://", true) &&
             !target.startsWith("http://", true)) return false
-        return pairs(target).any { (s, e) -> s != expectedS || e != expectedE }
+        return identifierContradicts(claim, target) ||
+            pairs(target).any { (s, e) -> s != expectedS || e != expectedE }
     }
 
     /**
@@ -69,6 +86,10 @@ internal object MOOSAMediaIdentityPolicy {
         source: String,
         name: String
     ): Boolean {
+        if (identifierContradicts(claim, url) ||
+            identifierContradicts(claim, source) ||
+            identifierContradicts(claim, name)
+        ) return true
         val season = claim.season
         val episode = claim.episode
         if (season != null && episode != null) {
