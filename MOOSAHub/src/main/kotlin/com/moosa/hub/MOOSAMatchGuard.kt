@@ -25,6 +25,8 @@ internal object MOOSAMatchGuard {
         val title: String,
         val year: Int? = null,
         val searchYear: Int? = null,
+        // Name of the search result which led to this LOADED provider page.
+        val searchTitle: String? = null,
         val imdbId: String? = null,
         val tmdbId: Int? = null,
         val additionalNames: List<String> = emptyList()
@@ -145,19 +147,36 @@ internal object MOOSAMatchGuard {
     fun verifiedIdentity(
         claim: Claim,
         item: Evidence,
-        officialAliases: List<String>
+        officialAliases: List<String>,
+        allowCorroboratedTitleOnly: Boolean = false
     ): Boolean {
         if (!titleAndClaimCompatible(claim, item, officialAliases)) return false
         if (matchingId(claim, item)) return true
 
-        val year = claim.year ?: return false
-        // A year that neither the result page nor the search result publishes
-        // is not evidence. Exact names alone confuse remakes/reboots.
-        if (claim.isAnime && (claim.season ?: 0) > 1 &&
-            item.year == null && item.searchYear == null) return false
-        return listOfNotNull(item.year, item.searchYear,
-            statedReleaseYear(item.title)).any {
-            it in 1900..2100 && it == year
-        }
+        val year = claim.year
+        val knownYears = listOfNotNull(
+            item.year, item.searchYear, statedReleaseYear(item.title)
+        ).filter { it in 1900..2100 }
+        if (year != null && knownYears.any { it == year } &&
+            !(claim.isAnime && (claim.season ?: 0) > 1 &&
+                item.year == null && item.searchYear == null)
+        ) return true
+
+        // Controlled recovery for otherwise-valid yearless sources:
+        // exact official name on *both* search and loaded page AND
+        // a separate TMDB lookup confirming there is no same-name remake.
+        // Never grant this to direct load() (which has no search page).
+        if (!allowCorroboratedTitleOnly || knownYears.isNotEmpty()) return false
+        val searched = item.searchTitle ?: return false
+        if (searched.isBlank()) return false
+        val keys = (listOf(claim.title) + officialAliases)
+            .map { titleKey(it, claim.season != null) }
+            .filter { it.isNotBlank() }.toSet()
+        val searchKey = titleKey(searched, claim.season != null)
+        val loadedKey = titleKey(item.title, claim.season != null)
+        return searchKey.isNotBlank() &&
+            searchKey in keys &&
+            loadedKey in keys &&
+            searchKey == loadedKey
     }
 }
