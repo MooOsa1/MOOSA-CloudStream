@@ -22,6 +22,8 @@ class MOOSASettingsDialog : DialogFragment() {
     private val ui = MOOSATVSettingsStyle
     private lateinit var shell: MOOSATVSettingsStyle.Shell
     private var page = "home"
+    // Saved by stable option key, never by position in a rebuilt ViewGroup.
+    private val focusByPage = mutableMapOf<String, String>()
     private var verify = true
     private var arabicFast = true
     private var concurrency = 10
@@ -48,8 +50,10 @@ class MOOSASettingsDialog : DialogFragment() {
         return body
     }
 
-    private fun actionRow(name: String, subtitle: String = "",
-                          action: () -> Unit): View {
+    private fun actionRow(
+        name: String, subtitle: String = "",
+        focusKey: String = name, action: () -> Unit
+    ): View {
         val row = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -67,7 +71,9 @@ class MOOSASettingsDialog : DialogFragment() {
         row.addView(txt("›", 23f, ui.white).apply {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
         }, LinearLayout.LayoutParams(dp(25), -2))
-        ui.focus(row)
+        val owner = page
+        row.tag = focusKey
+        ui.focus(row, onFocused = { focusByPage[owner] = focusKey })
         row.setOnClickListener { action() }
         return row
     }
@@ -80,7 +86,11 @@ class MOOSASettingsDialog : DialogFragment() {
 
     private fun action(body: LinearLayout, name: String,
                        primary: Boolean = true, onPress: () -> Unit) {
-        val button = ui.button(requireContext(), name, primary)
+        val owner = page
+        val key = "action:" + name
+        val button = ui.button(requireContext(), name, primary,
+            onFocused = { focusByPage[owner] = key })
+        button.tag = key
         button.setOnClickListener { onPress() }
         body.addView(button, LinearLayout.LayoutParams(-1, dp(50)).apply {
             topMargin = dp(15)
@@ -133,18 +143,17 @@ class MOOSASettingsDialog : DialogFragment() {
     }
 
     private fun overview(body: LinearLayout) {
-        heading(body, "SETTINGS / OVERVIEW", "Everything, organized.",
-                "Choose a section. Every tool uses the same interface.")
+        heading(body, "SETTINGS / OVERVIEW", "Settings",
+                "Manage providers, server testing, playback, and subtitles.")
         val sourceList = MOOSASourceTester.sources()
         val activeSources = sourceList.count { MOOSASourceTester.isEnabled(it) }
         val sections = listOf(
-            Triple("Sources", activeSources.toString() + " / " +
+            Triple("Providers", activeSources.toString() + " / " +
                 sourceList.size + " enabled · manage and test", "sources"),
-            Triple("Servers", "Discover and test streaming links", "servers"),
-            Triple("Playback", "Verification and Arabic fast mode", "playback"),
-            Triple("Performance", "Parallel searches", "performance"),
-            Triple("Subtitles", "Arabic and English settings", "subtitles"),
-            Triple("Advanced", "Optional Web Bridge", "advanced")
+            Triple("Server Manager", "Scan and verify streaming servers", "servers"),
+            Triple("Playback", "Link verification and Arabic fast mode", "playback"),
+            Triple("Search Performance", "Simultaneous provider searches", "performance"),
+            Triple("Subtitle Settings", "Arabic and English subtitles", "subtitles")
         )
         for (index in sections.indices step 2) {
             val pair = LinearLayout(requireContext()).apply {
@@ -167,12 +176,12 @@ class MOOSASettingsDialog : DialogFragment() {
     private fun sources(body: LinearLayout) {
         val all = MOOSASourceTester.sources()
         val enabled = all.count { MOOSASourceTester.isEnabled(it) }
-        heading(body, "DISCOVERY / PROVIDERS", "Sources",
-            "Manage installed CloudStream providers and test them.")
+        heading(body, "DISCOVERY / PROVIDERS", "Providers",
+            "Enable, disable, and test installed content providers.")
         stat(body, "$enabled / " + all.size, "Enabled sources")
         setting(body, "Enabled sources", "$enabled active")
         setting(body, "Source diagnostics", "Available")
-        action(body, "Open source manager  ↗") {
+        action(body, "Manage Providers  ↗") {
             MOOSASourceTesterDialog.show(requireContext())
         }
     }
@@ -186,8 +195,8 @@ class MOOSASettingsDialog : DialogFragment() {
             setting(body, "Verified online", all.count { it.lastResult == true }.toString())
             setting(body, "Offline / untested", all.count { it.lastResult != true }.toString())
         }
-        action(body, if (all.isEmpty()) "Discover & Test Servers  ↗"
-                     else "Open server manager  ↗") {
+        action(body, if (all.isEmpty()) "Scan & Test Servers  ↗"
+                     else "Manage Servers  ↗") {
             MOOSAServerManagerDialog.show(requireContext())
         }
         if (all.isEmpty()) note(body,
@@ -217,8 +226,8 @@ class MOOSASettingsDialog : DialogFragment() {
     }
 
     private fun performance(body: LinearLayout) {
-        heading(body, "ENGINE / PERFORMANCE", "Performance",
-            "Set how many providers search simultaneously.")
+        heading(body, "ENGINE / PERFORMANCE", "Search Performance",
+            "Choose how many providers are searched at the same time.")
         stat(body, concurrency.toString(), "Simultaneous providers")
         body.addView(txt("CONCURRENCY PRESET", 11f, ui.gray), LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = dp(19)
@@ -227,7 +236,16 @@ class MOOSASettingsDialog : DialogFragment() {
         val grid = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
         presets.forEachIndexed { i, value ->
             val b = ui.button(requireContext(), value.toString(), value == concurrency)
-            b.setOnClickListener { concurrency = value; render() }
+            val owner = page
+            val key = "preset:$value"
+            b.tag = key
+            ui.focus(b, value == concurrency, onFocused = {
+                focusByPage[owner] = key
+            })
+            b.setOnClickListener {
+                concurrency = value
+                rerenderWithoutLosingFocus()
+            }
             grid.addView(b, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
                 if (i > 0) marginStart = dp(6)
             })
@@ -241,35 +259,34 @@ class MOOSASettingsDialog : DialogFragment() {
     }
 
     private fun subtitles(body: LinearLayout) {
-        heading(body, "LANGUAGE / SOURCES", "Subtitles",
-            "Arabic and English subtitle providers and synchronization tools.")
-        addRow(body, actionRow("OpenSubtitles", "Built-in subtitle discovery") {
-            showPage("subtitle-info")
+        heading(body, "LANGUAGE / SUBTITLES", "Subtitle Settings",
+            "Configure providers and review subtitles from your last playback.")
+        // A built-in status is not a fake selectable settings action.
+        setting(body, "OpenSubtitles Status", "Built-in")
+        addRow(body, actionRow("Wyzie API Key", if (MOOSASettingsStore.wyzieKey() != null)
+            "Key configured" else "Not configured", "wyzie") {
+            showPage("subtitle-wyzie")
         })
-        addRow(body, actionRow("Wyzie", if (MOOSASettingsStore.wyzieKey() != null)
-            "Key configured" else "Not configured") { showPage("subtitle-wyzie") })
-        addRow(body, actionRow("SubDL", if (MOOSASettingsStore.subdlKey() != null)
-            "Key configured" else "Not configured") { showPage("subtitle-subdl") })
-        addRow(body, actionRow("Subtitle diagnostics", "Last playback report") {
+        addRow(body, actionRow("SubDL API Key", if (MOOSASettingsStore.subdlKey() != null)
+            "Key configured" else "Not configured", "subdl") {
+            showPage("subtitle-subdl")
+        })
+        addRow(body, actionRow("Subtitle Diagnostics",
+            "Last playback search results", "diagnostics") {
             showPage("subtitle-diagnostics")
         })
-        addRow(body, actionRow("Sync guidance", "Match source release and timing") {
-            showPage("subtitle-sync")
-        })
-        addRow(body, actionRow("Arabic subtitle priority", "Subtitle selection policy") {
-            showPage("subtitle-priority")
-        })
-        addRow(body, actionRow("Find more Arabic subtitles", "On-demand search") {
-            showPage("subtitle-more")
+        addRow(body, actionRow("Subtitle Help",
+            "Synchronization, priority and finding more subtitles", "help") {
+            showPage("subtitle-help")
         })
     }
 
     private fun editKey(body: LinearLayout, subdl: Boolean) {
         val name = if (subdl) "SubDL" else "Wyzie"
-        heading(body, "SUBTITLES / PROVIDERS", name + " Key",
-            "Configure the optional subtitle source.")
+        heading(body, "SUBTITLES / PROVIDERS", name + " API Key",
+            "Configure the optional subtitle provider.")
         val input = EditText(requireContext()).apply {
-            hint = "Enter " + name + " key"
+            hint = "Enter " + name + " API Key"
             setSingleLine(true)
             setText(if (subdl) MOOSASettingsStore.subdlKey()
                     else MOOSASettingsStore.wyzieKey())
@@ -282,14 +299,14 @@ class MOOSASettingsDialog : DialogFragment() {
             setPadding(dp(16), dp(11), dp(16), dp(11))
         }
         body.addView(input, LinearLayout.LayoutParams(-1, dp(51)))
-        action(body, "Save key  ✓") {
+        action(body, "Save API Key  ✓") {
             val key = input.text.toString().trim().takeIf { it.isNotEmpty() }
             if (subdl) MOOSASettingsStore.setSubdlKey(key)
             else MOOSASettingsStore.setWyzieKey(key)
             notifyUser(name + " saved")
             showPage("subtitles")
         }
-        action(body, "Clear key", false) {
+        action(body, "Remove Saved Key", false) {
             if (subdl) MOOSASettingsStore.setSubdlKey(null)
             else MOOSASettingsStore.setWyzieKey(null)
             showPage("subtitles")
@@ -297,87 +314,69 @@ class MOOSASettingsDialog : DialogFragment() {
     }
 
     private fun help(body: LinearLayout) {
-        val title: String
-        val details: String
-        when(page) {
-            "subtitle-sync" -> {
-                title = "Subtitle synchronization"
-                details = "Match WEB-DL, WEBRip or BluRay subtitle releases to the video. For fixed offsets, use the player's Subtitle delay. If delay grows throughout the film, choose a matching release."
-            }
-            "subtitle-priority" -> {
-                title = "Arabic subtitle priority"
-                details = "Only Arabic and English subtitles are returned. Arabic has selection priority; arrival order can vary with network response."
-            }
-            "subtitle-more" -> {
-                title = "More Arabic subtitles"
-                details = "In the CloudStream player, open Subtitles → Load from Internet, select SubSource or SubDL, then choose a release matching the video."
-            }
-            "subtitle-diagnostics" -> {
-                title = "Subtitle diagnostics"
-                details = MOOSASubtitleHealth.report()
-            }
-            else -> {
-                title = "OpenSubtitles"
-                details = "OpenSubtitles discovery is built in. Arabic and English tracks are selected individually."
-            }
+        val diagnostics = page == "subtitle-diagnostics"
+        heading(body, "SUBTITLES / " + if (diagnostics) "DIAGNOSTICS" else "HELP",
+            if (diagnostics) "Subtitle Diagnostics" else "Subtitle Help",
+            if (diagnostics) "Last playback subtitle search results."
+            else "Synchronization, language priority, and finding more subtitles.")
+        if (diagnostics) {
+            note(body, MOOSASubtitleHealth.report())
+        } else {
+            note(body, "Sync: match WEB-DL, WEBRip or BluRay subtitle releases. " +
+                "For a fixed offset, adjust Subtitle delay inside the player. " +
+                "If the gap grows, select a matching release.")
+            note(body, "Arabic priority: Arabic tracks are preferred to English, " +
+                "but network results may arrive in a different order.")
+            note(body, "More subtitles: in the CloudStream player open " +
+                "Subtitles > Load from Internet and try SubSource or SubDL.")
         }
-        heading(body, "SUBTITLES / HELP", title, "Information and diagnostics")
-        note(body, details)
-        action(body, "Back to subtitles  ←", false) { showPage("subtitles") }
+        action(body, "Back to Subtitle Settings  ←", false) { showPage("subtitles") }
     }
 
-    private fun advanced(body: LinearLayout) {
-        heading(body, "OPTIONAL / INTEGRATIONS", "Advanced",
-            "Additional features that do not need space in your main settings.")
-        setting(body, "MOOSA Web Bridge", MOOSACloudStreamBridge.status)
-        note(body, "Only connect if you use MOOSA Web. The pairing code is shown on the website.")
-        val input = EditText(requireContext()).apply {
-            hint = "Enter 14-character pairing code"
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-            setTextColor(ui.white)
-            setHintTextColor(ui.gray)
-            textSize = 14f
-            background = ui.shape(requireContext(), ui.panel, 5, ui.separator)
-            setPadding(dp(16), dp(11), dp(16), dp(11))
-        }
-        body.addView(input, LinearLayout.LayoutParams(-1, dp(51)).apply {
-            topMargin = dp(14)
-        })
-        action(body, "Connect Web Bridge  ↗") {
-            val code = input.text.toString().trim()
-            if (code.isEmpty()) notifyUser("Enter the pairing code first")
-            else {
-                MOOSACloudStreamBridge.connect(requireContext(), code)
-                render()
+    private fun findTaggedAction(view: View, key: String): View? {
+        if (view.tag == key && view.isFocusable && view.visibility == View.VISIBLE)
+            return view
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                findTaggedAction(view.getChildAt(i), key)?.let { return it }
             }
         }
-        action(body, "Disconnect Web Bridge", false) {
-            MOOSACloudStreamBridge.disconnect(requireContext())
-            render()
+        return null
+    }
+
+    private fun restorePageFocus(expectedPage: String) {
+        shell.content.post {
+            if (!isAdded || page != expectedPage || dialog?.isShowing != true)
+                return@post
+            val key = focusByPage[expectedPage]
+            val target = key?.let { findTaggedAction(shell.content, it) }
+                ?: firstAction(shell.content)
+                ?: shell.back
+            target.requestFocus()
         }
     }
 
     private fun rerenderWithoutLosingFocus() {
-        // Rebuilding a selected setting previously moved remote focus to the
-        // top bar. Remember its ordinal and restore it on the next layout.
-        val before = shell.content.getFocusables(View.FOCUS_FORWARD)
-        val index = before.indexOf(shell.content.findFocus())
+        val current = shell.content.findFocus()?.tag as? String
+        if (current != null) focusByPage[page] = current
         render()
-        shell.content.post {
-            if (!isAdded) return@post
-            val after = shell.content.getFocusables(View.FOCUS_FORWARD)
-            if (after.isNotEmpty()) {
-                after[index.coerceIn(0, after.lastIndex)].requestFocus()
-            }
-        }
+        restorePageFocus(page)
     }
 
     private fun render() {
         if (!::shell.isInitialized) return
-        val target = if (page == "home") "OVERVIEW" else
-            page.removePrefix("subtitle-").uppercase(java.util.Locale.US)
+        val target = when (page) {
+            "home" -> "OVERVIEW"
+            "sources" -> "PROVIDERS"
+            "servers" -> "SERVER MANAGER"
+            "performance" -> "SEARCH PERFORMANCE"
+            "subtitles" -> "SUBTITLE SETTINGS"
+            "subtitle-wyzie" -> "SUBTITLES / WYZIE API KEY"
+            "subtitle-subdl" -> "SUBTITLES / SUBDL API KEY"
+            "subtitle-help" -> "SUBTITLES / HELP"
+            "subtitle-diagnostics" -> "SUBTITLES / DIAGNOSTICS"
+            else -> page.uppercase(java.util.Locale.US)
+        }
         shell.path("SETTINGS / " + target)
         val body = newPage()
         when(page) {
@@ -387,7 +386,6 @@ class MOOSASettingsDialog : DialogFragment() {
             "playback" -> playback(body)
             "performance" -> performance(body)
             "subtitles" -> subtitles(body)
-            "advanced" -> advanced(body)
             "subtitle-wyzie" -> editKey(body, false)
             "subtitle-subdl" -> editKey(body, true)
             else -> help(body)
@@ -412,9 +410,7 @@ class MOOSASettingsDialog : DialogFragment() {
         }
         if (page == "performance") concurrency = MOOSASettingsStore.providerConcurrency()
         render()
-        shell.content.post {
-            if (isAdded) (firstAction(shell.content) ?: shell.back).requestFocus()
-        }
+        restorePageFocus(page)
     }
 
     private fun back() {
@@ -452,7 +448,9 @@ class MOOSASettingsDialog : DialogFragment() {
         ui.window(dialog, resources.displayMetrics)
         shell.content.post {
             if (isAdded && dialog?.isShowing == true) {
-                firstAction(shell.content)?.requestFocus()
+                val key = focusByPage[page]
+                (key?.let { findTaggedAction(shell.content, it) }
+                    ?: firstAction(shell.content))?.requestFocus()
             }
         }
     }
