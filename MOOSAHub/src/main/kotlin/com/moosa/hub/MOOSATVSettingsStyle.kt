@@ -17,7 +17,7 @@ import android.widget.TextView
 /**
  * One TV-native visual language shared by the top-level settings and the
  * Sources/Server Manager screens. Designed around the approved mock:
- * black canvas, gray separators, white DPAD focus, breadcrumb, no artwork.
+ * black canvas, gray separators, white-to-charcoal focused primary buttons, breadcrumb, no artwork.
  *
  * All dimensions are inset inside a centered 80% × 82% TV-safe window.
  */
@@ -49,7 +49,11 @@ internal object MOOSATVSettingsStyle {
             if (bold) setTypeface(typeface, Typeface.BOLD)
         }
 
-    fun focus(view: View, primary: Boolean = false) {
+    fun focus(
+        view: View,
+        primary: Boolean = false,
+        onFocused: (() -> Unit)? = null
+    ) {
         view.id = if (view.id == View.NO_ID) View.generateViewId() else view.id
         view.isClickable = true
         view.isFocusable = true
@@ -59,20 +63,31 @@ internal object MOOSATVSettingsStyle {
         val stroke = if (primary) white else separator
         view.background = shape(view.context, color, 5, stroke)
         view.setOnFocusChangeListener { target, selected ->
-            target.background = shape(
-                target.context,
-                if (selected && !primary) Color.rgb(37, 37, 37) else color,
-                5,
-                if (selected) white else stroke
-            )
-            if (target is TextView) {
-                target.setTextColor(if (primary) Color.BLACK else white)
+            val shade = when {
+                selected && primary -> Color.rgb(65, 65, 65)
+                selected -> Color.rgb(37, 37, 37)
+                else -> color
             }
-            // No DPAD focus scaling: scaling clipped the edges on Fire TV.
+            target.background = GradientDrawable().apply {
+                setColor(shade)
+                cornerRadius = dp(target.context, 5).toFloat()
+                setStroke(dp(target.context, if (selected) 2 else 1),
+                    if (selected) white else stroke)
+            }
+            if (target is TextView) {
+                target.setTextColor(if (primary && !selected) Color.BLACK else white)
+            }
+            if (selected) onFocused?.invoke()
+            // Never scale focused controls or crop their edges.
         }
     }
 
-    fun button(context: Context, title: String, primary: Boolean = false): Button =
+    fun button(
+        context: Context,
+        title: String,
+        primary: Boolean = false,
+        onFocused: (() -> Unit)? = null
+    ): Button =
         Button(context).apply {
             text = title
             isAllCaps = false
@@ -84,7 +99,7 @@ internal object MOOSATVSettingsStyle {
             setPadding(dp(context, 11), dp(context, 9),
                        dp(context, 11), dp(context, 9))
             setTextColor(if (primary) Color.BLACK else white)
-            focus(this, primary)
+            focus(this, primary, onFocused)
         }
 
     fun divider(context: Context): View =
