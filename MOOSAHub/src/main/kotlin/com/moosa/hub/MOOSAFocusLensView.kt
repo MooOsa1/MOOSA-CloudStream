@@ -167,6 +167,7 @@ internal class MOOSAFocusLensView(
         side.addView(text("FIRST PAGE · TITLES LOADED", 10f), LayoutParams(-1, dp(33)))
         side.addView(View(context).apply { setBackgroundColor(border) }, LayoutParams(-1, dp(1)))
         side.addView(previewNote, LayoutParams(-1, dp(43)))
+        preview.orientation = VERTICAL
         side.addView(preview, LayoutParams(-1, 0, 1f))
         side.addView(text("TMDB sample · availability may change", 10f))
         body.addView(side, LayoutParams(0, -1, 25f))
@@ -209,6 +210,22 @@ internal class MOOSAFocusLensView(
                 if (selected) Color.WHITE else border
             )
             b.setTextColor(if (selected) Color.BLACK else Color.WHITE)
+            b.setOnFocusChangeListener { view, focused ->
+                val active = section == index
+                view.background = GradientDrawable().apply {
+                    setColor(when {
+                        focused -> Color.rgb(62, 62, 62)
+                        active -> Color.rgb(235, 235, 235)
+                        else -> Color.rgb(27, 27, 27)
+                    })
+                    cornerRadius = dp(7).toFloat()
+                    setStroke(dp(if (focused) 2 else 1),
+                        if (focused || active) Color.WHITE else border)
+                }
+                (view as Button).setTextColor(
+                    if (!focused && active) Color.BLACK else Color.WHITE
+                )
+            }
         }
         heading.text = listOf("Where to watch.", "What feels right.", "From where.", "Your order.")[section]
         description.text = listOf(
