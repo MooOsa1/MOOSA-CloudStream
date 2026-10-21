@@ -306,10 +306,15 @@ class MOOSASettingsDialog : DialogFragment() {
             notifyUser(name + " saved")
             showPage("subtitles")
         }
-        action(body, "Remove Saved Key", false) {
-            if (subdl) MOOSASettingsStore.setSubdlKey(null)
-            else MOOSASettingsStore.setWyzieKey(null)
-            showPage("subtitles")
+        // Don't show a destructive action when there is no saved key.
+        val hasSavedKey = if (subdl) MOOSASettingsStore.subdlKey() != null
+            else MOOSASettingsStore.wyzieKey() != null
+        if (hasSavedKey) {
+            action(body, "Remove Saved Key", false) {
+                if (subdl) MOOSASettingsStore.setSubdlKey(null)
+                else MOOSASettingsStore.setWyzieKey(null)
+                showPage("subtitles")
+            }
         }
     }
 
