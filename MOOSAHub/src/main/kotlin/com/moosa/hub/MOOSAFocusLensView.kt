@@ -45,7 +45,7 @@ internal class MOOSAFocusLensView(
     private var tab = 0
     private val tabNames = listOf("Platform", "Genre", "Year", "Rating", "Sort")
     private val yearModes = listOf(
-        "any" to "Any year", "current" to "This year",
+        "any" to "Any year", "current" to MOOSABrowseFilters.currentYear().toString(),
         "last3" to "Last 3 years", "last5" to "Last 5 years",
         "last10" to "Last 10 years"
     )
@@ -272,6 +272,8 @@ internal class MOOSAFocusLensView(
                         renderOptions("platform:" + key)
                     }
                 }, 4)
+                content.addView(muted("Streaming availability powered by JustWatch"),
+                    LayoutParams(-1, dp(23)))
             }
             1 -> {
                 val names = MOOSABrowseFilters.availableGenres(s.isTv)
@@ -322,7 +324,17 @@ internal class MOOSAFocusLensView(
         val s = current()
         row(yearModes.map { (key, label) ->
             cell(label, s.yearMode == key, "year:" + key) {
-                update(current().copy(yearMode = key))
+                val now = MOOSABrowseFilters.currentYear()
+                val from = when (key) {
+                    "current" -> now
+                    "last3" -> now - 2
+                    "last5" -> now - 4
+                    "last10" -> now - 9
+                    else -> now - 8
+                }
+                update(current().copy(
+                    yearMode = key, yearFrom = from, yearTo = now
+                ))
                 renderOptions("year:" + key)
             }
         }, 5)
