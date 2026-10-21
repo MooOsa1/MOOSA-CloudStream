@@ -36,6 +36,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
         val test: Button
     )
 
+    private lateinit var selectionControls: LinearLayout
     private lateinit var listContainer: LinearLayout
     private lateinit var countText: TextView
     private lateinit var progressBar: ProgressBar
@@ -80,74 +81,50 @@ class MOOSAServerManagerDialog : DialogFragment() {
         if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
     }
 
-    private fun styleFocusable(
-        view: View,
-        baseColor: Int,
-        radius: Int = 10
-    ) {
-        view.id = View.generateViewId()
-        view.isFocusable = true
-        view.isFocusableInTouchMode = false
-        view.background = rounded(
-            baseColor,
-            radius,
-            Color.argb(85, 255, 255, 255)
-        )
-
-        view.setOnFocusChangeListener { focused, hasFocus ->
-            focused.scaleX = if (hasFocus) 1.012f else 1f
-            focused.scaleY = if (hasFocus) 1.012f else 1f
-            focused.background = rounded(
-                if (hasFocus) Color.rgb(38, 91, 135) else baseColor,
-                radius,
-                if (hasFocus) Color.WHITE
-                else Color.argb(85, 255, 255, 255),
-                if (hasFocus) 2 else 1
-            )
-        }
+    private fun styleFocusable(view: View, baseColor: Int, radius: Int = 5) {
+        // Shared native black/white TV focus; never scale children offscreen.
+        MOOSATVSettingsStyle.focus(view)
     }
 
     private fun actionButton(text: String, color: Int): Button =
-        Button(requireContext()).apply {
-            this.text = text
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            minWidth = 0
-            minimumWidth = 0
-            styleFocusable(this, color)
-        }
+        MOOSATVSettingsStyle.button(
+            requireContext(), text,
+            text.startsWith("Discover") || text.startsWith("Test All")
+        )
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
 
-        val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(16))
-            background = rounded(
-                Color.rgb(10, 20, 31),
-                18,
-                Color.rgb(56, 102, 137),
-                2
-            )
-        }
+        val shell = MOOSATVSettingsStyle.shell(
+            context, "SETTINGS / SERVERS",
+            backAction = { dismiss() },
+            closeAction = { dismiss() }
+        )
+        val root = shell.root
+        val content = shell.content
+        MOOSATVSettingsStyle.heading(
+            context, content, "STREAMING / SERVER MANAGER",
+            "Server Manager",
+            "Discover, validate and manage streaming links."
+        )
 
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         header.addView(
-            label("Server Manager", 23f, Color.WHITE, true),
+            label("Enabled", 15f, MOOSATVSettingsStyle.gray, true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
-        countText = label("", 13f, Color.rgb(174, 191, 207), true)
+        countText = label("", 27f, Color.WHITE, true)
         header.addView(countText)
-        root.addView(header)
+        content.addView(header)
 
-        root.addView(
+        content.addView(
             label(
                 "DISCOVER scans sources in the background. ONLINE means the final stream link passed two probes.",
                 12f,
-                Color.rgb(174, 191, 207)
+                MOOSATVSettingsStyle.gray
             ).apply {
                 setPadding(0, dp(4), 0, dp(10))
             }
@@ -156,8 +133,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
         val controls1 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        selectAll = actionButton("SELECT ALL", Color.rgb(38, 104, 78))
-        selectNone = actionButton("SELECT NONE", Color.rgb(116, 58, 66))
+        selectAll = actionButton("Select All", Color.rgb(53, 53, 53))
+        selectNone = actionButton("Select None", Color.rgb(53, 53, 53))
         controls1.addView(
             selectAll,
             LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) }
@@ -166,19 +143,21 @@ class MOOSAServerManagerDialog : DialogFragment() {
             selectNone,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
-        root.addView(controls1)
+        selectionControls = controls1
+        content.addView(controls1)
+        controls1.visibility = View.GONE
 
         val controls2 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(7), 0, 0)
         }
         discoverButton = actionButton(
-            "DISCOVER & TEST SERVERS",
-            Color.rgb(31, 91, 143)
+            "Discover & Test Servers",
+            Color.rgb(53, 53, 53)
         )
         disableOffline = actionButton(
-            "DISABLE OFFLINE",
-            Color.rgb(58, 65, 78)
+            "Disable Offline",
+            Color.rgb(53, 53, 53)
         )
         controls2.addView(
             discoverButton,
@@ -188,7 +167,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
             disableOffline,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
-        root.addView(controls2)
+        content.addView(controls2)
+        disableOffline.visibility = View.GONE
 
         progressBar = ProgressBar(
             context,
@@ -199,7 +179,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             progress = 0
             visibility = View.GONE
         }
-        root.addView(
+        content.addView(
             progressBar,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -211,10 +191,11 @@ class MOOSAServerManagerDialog : DialogFragment() {
             visibility = View.GONE
             setPadding(0, dp(3), 0, dp(7))
         }
-        root.addView(progressText)
+        content.addView(progressText)
 
-        searchButton = actionButton("SEARCH SERVERS…", Color.rgb(30, 42, 56))
-        root.addView(
+        searchButton = actionButton("Search Servers…", Color.rgb(53, 53, 53))
+        searchButton.visibility = View.GONE
+        content.addView(
             searchButton,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -238,7 +219,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
-        root.addView(
+        content.addView(
             scroll,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -294,14 +275,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
 
     override fun onStart() {
         super.onStart()
-        val metrics = resources.displayMetrics
-        dialog?.window?.apply {
-            setLayout(
-                (metrics.widthPixels * 0.78f).toInt(),
-                (metrics.heightPixels * 0.82f).toInt()
-            )
-            setBackgroundDrawableResource(android.R.color.transparent)
-        }
+        MOOSATVSettingsStyle.window(dialog, resources.displayMetrics)
     }
 
     private fun wireTopFocus() {
@@ -327,6 +301,9 @@ class MOOSAServerManagerDialog : DialogFragment() {
         rows.clear()
 
         val all = MOOSAServerRegistry.snapshot()
+        selectionControls.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+        searchButton.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
+        disableOffline.visibility = if (all.any { it.lastResult == false }) View.VISIBLE else View.GONE
         countText.text =
             "${all.count { !MOOSAServerRegistry.isDisabled(it.key) }} / ${all.size} enabled"
 
@@ -377,14 +354,14 @@ class MOOSAServerManagerDialog : DialogFragment() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), dp(5), dp(8), dp(5))
             isClickable = true
-            styleFocusable(this, Color.rgb(21, 32, 45), 9)
+            styleFocusable(this, MOOSATVSettingsStyle.panel, 9)
         }
 
         val check = CheckBox(context).apply {
             isChecked = !MOOSAServerRegistry.isDisabled(entry.key)
             isFocusable = false
             isClickable = false
-            buttonTintList = ColorStateList.valueOf(Color.rgb(45, 145, 255))
+            buttonTintList = ColorStateList.valueOf(Color.rgb(225, 225, 225))
         }
         row.addView(
             check,
@@ -415,7 +392,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             ).apply { marginEnd = dp(10) }
         )
 
-        val test = actionButton("TEST", Color.rgb(39, 50, 62))
+        val test = actionButton("TEST", Color.rgb(53, 53, 53))
         row.addView(
             test,
             LinearLayout.LayoutParams(dp(82), dp(40))
@@ -448,9 +425,9 @@ class MOOSAServerManagerDialog : DialogFragment() {
     private fun refreshRow(refs: RowRefs) {
         val entry = currentEntry(refs.key) ?: return
         val (text, color) = when (entry.lastResult) {
-            true -> "ONLINE" to Color.rgb(34, 158, 104)
-            false -> "OFFLINE" to Color.rgb(190, 72, 78)
-            null -> "UNKNOWN" to Color.rgb(82, 96, 112)
+            true -> "ONLINE" to Color.rgb(53, 53, 53)
+            false -> "OFFLINE" to Color.rgb(53, 53, 53)
+            null -> "UNKNOWN" to Color.rgb(53, 53, 53)
         }
 
         refs.status.text =
@@ -459,7 +436,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             } else {
                 text
             }
-        refs.status.background = rounded(color, 8)
+        refs.status.background = rounded(MOOSATVSettingsStyle.panel, 5, MOOSATVSettingsStyle.separator)
     }
 
     private fun wireRows() {
@@ -497,7 +474,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
 
         refs.test.text = "…"
         refs.status.text = "• TESTING…"
-        refs.status.background = rounded(Color.rgb(45, 105, 190), 8)
+        refs.status.background = rounded(MOOSATVSettingsStyle.panel, 5, MOOSATVSettingsStyle.separator)
 
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
