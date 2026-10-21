@@ -33,7 +33,8 @@ internal object MOOSABrowseFilters {
         PlatformChoice("Apple TV+", "350"),
         PlatformChoice("Hulu", "15"),
         PlatformChoice("Crunchyroll", "283"),
-        PlatformChoice("Paramount+", "2303|2616")
+        PlatformChoice("Paramount+", "2303|2616"),
+        PlatformChoice("MUBI", "11")
     )
     val watchRegions = listOf(
         CountryChoice("Oman", "OM"),
@@ -97,8 +98,8 @@ internal object MOOSABrowseFilters {
         val watchRegion: String = "OM",
         val genreKeys: List<String> = emptyList(),
         val yearMode: String = "any",
-        val yearFrom: Int = 2018,
-        val yearTo: Int = 2026,
+        val yearFrom: Int = MOOSABrowseFilters.currentYear() - 8,
+        val yearTo: Int = MOOSABrowseFilters.currentYear(),
         val minimumRating: Int = 0
     )
 
