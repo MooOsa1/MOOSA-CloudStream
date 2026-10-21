@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 126
+version = 127
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -151,3 +151,6 @@ dependencies {
 
 // v126: approved TV Native 01 black monochrome settings and unified
 // Sources/Server Manager pages, functional in-page settings controls.
+
+ // v127: white primary buttons darken on focus; stable page-item return focus,
+ // more useful settings labels, obsolete Web Bridge removal.
