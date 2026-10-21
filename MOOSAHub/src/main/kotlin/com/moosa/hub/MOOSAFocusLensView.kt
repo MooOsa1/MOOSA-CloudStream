@@ -169,7 +169,7 @@ internal class MOOSAFocusLensView(
         side.addView(previewNote, LayoutParams(-1, dp(43)))
         preview.orientation = VERTICAL
         side.addView(preview, LayoutParams(-1, 0, 1f))
-        side.addView(text("TMDB sample · availability may change", 10f))
+        side.addView(text("Watch availability: JustWatch via TMDB", 10f))
         body.addView(side, LayoutParams(0, -1, 25f))
         addView(body, LayoutParams(-1, 0, 1f))
 
