@@ -69,7 +69,7 @@ jobs:
           assert 'searchButton.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE' in servers
           assert 'firstAction(shell.content)' in s
           assert not any('Color.rgb(64, 151, 220)' in x for x in (s,c,sources,servers))
-                    lens=(root/'MOOSAFocusLensView.kt').read_text()
+          lens=(root/'MOOSAFocusLensView.kt').read_text()
           browse=(root/'MOOSABrowseDialog.kt').read_text()
           policy=(root/'MOOSABrowseFilters.kt').read_text()
           assert 'MOOSAFocusLensView(' in browse
