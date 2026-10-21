@@ -80,16 +80,17 @@ internal object MOOSABrowseFilters {
     )
 
     val sorts = listOf(
-        SortChoice("Most popular", "popularity.desc"),
+        SortChoice("Shelf order", "shelf"),
         SortChoice("Highest rated", "vote_average.desc"),
-        SortChoice("Most votes", "vote_count.desc"),
-        SortChoice("Newest", "date.desc")
+        SortChoice("Most popular", "popularity.desc"),
+        SortChoice("Newest", "date.desc"),
+        SortChoice("Oldest", "date.asc")
     )
 
     data class Selection(
         val isTv: Boolean,
         val genreKey: String? = null,
-        val sort: String = "popularity.desc",
+        val sort: String = "shelf",
         val originCountry: String = "",
         val platformNames: List<String> = emptyList(),
         // Keep the default Oman region internal; no unnecessary region control.
@@ -164,14 +165,24 @@ internal object MOOSABrowseFilters {
         val keys = selectedGenres(choice)
         val genreIds = genres.filter { it.key in keys }
             .mapNotNull { it.id(choice.isTv) }.distinct()
-        val selectedSort = sorts.firstOrNull { it.apiSort == choice.sort }
-            ?: sorts.first()
-        val params = linkedMapOf(
-            "sort_by" to if (selectedSort.apiSort == "date.desc") {
-                if (choice.isTv) "first_air_date.desc"
+        val shelfOrder = when {
+            "sort_by=vote_average.desc" in original.data ||
+                original.data.startsWith("/movie/top_rated") ||
+                original.data.startsWith("/tv/top_rated") -> "vote_average.desc"
+            "sort_by=vote_count.desc" in original.data -> "vote_count.desc"
+            "sort_by=primary_release_date.desc" in original.data ||
+                "sort_by=first_air_date.desc" in original.data -> "date.desc"
+            else -> "popularity.desc"
+        }
+        val selectedSort = if (choice.sort == "shelf") shelfOrder else choice.sort
+        val tmdbSort = when (selectedSort) {
+            "date.desc" -> if (choice.isTv) "first_air_date.desc"
                 else "primary_release_date.desc"
-            } else selectedSort.apiSort
-        )
+            "date.asc" -> if (choice.isTv) "first_air_date.asc"
+                else "primary_release_date.asc"
+            else -> selectedSort
+        }
+        val params = linkedMapOf("sort_by" to tmdbSort)
         if (genreIds.isNotEmpty()) {
             params["with_genres"] = genreIds.joinToString("|")
         }
@@ -197,7 +208,7 @@ internal object MOOSABrowseFilters {
 
         // Without a vote floor, TMDB's top-rated sort puts obscure
         // one-vote titles first instead of meaningful highest-rated results.
-        if (choice.sort == "vote_average.desc") {
+        if (selectedSort == "vote_average.desc") {
             params["vote_count.gte"] = if (choice.isTv) "50" else "100"
         }
 
@@ -221,7 +232,7 @@ internal object MOOSABrowseFilters {
             params["$datePrefix.lte"] =
                 minOf("${years.second}-12-31", today)
             if (choice.isTv) params["include_null_first_air_dates"] = "false"
-        } else if (choice.sort == "date.desc") {
+        } else if (selectedSort == "date.desc") {
             params["$datePrefix.lte"] = today
             if (choice.isTv) params["include_null_first_air_dates"] = "false"
         }
