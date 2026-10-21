@@ -455,6 +455,13 @@ class MOOSASourceTesterDialog : DialogFragment() {
         }
     }
 
+    private fun updateOfflineAction() {
+        val all = MOOSASourceTester.sources()
+        disableOffline.visibility = if (all.any {
+            MOOSASourceTester.snapshot(it).status == MOOSASourceTester.Status.OFFLINE
+        }) View.VISIBLE else View.GONE
+    }
+
     private fun updateCountOnly() {
         val all = MOOSASourceTester.sources()
         countText.text =
@@ -487,6 +494,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             if (isAdded) {
                 refs.test.text = "TEST"
                 refreshRow(refs)
+                updateOfflineAction()
             }
         }
     }
@@ -543,6 +551,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             if (isAdded) {
                 scanRunning = false
                 testAllButton.text = "TEST ALL SOURCES"
+                updateOfflineAction()
                 progressBar.progress = total
                 progressText.text =
                     "Finished • Online ${online.get()} • Unverified ${unverified.get()} • Offline ${offline.get()}"
