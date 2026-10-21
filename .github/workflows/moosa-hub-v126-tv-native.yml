@@ -41,7 +41,7 @@ jobs:
           assert 'Color.rgb(8, 8, 8)' in c
           assert 'isFocusable = true' in c and 'setOnFocusChangeListener' in c
           assert 'SETTINGS / OVERVIEW' in s
-          assert all(t in s for t in ('render()', 'source manager','server manager','Playback', 'Performance','Subtitles','focusByPage','restorePageFocus','Subtitle Help','rerenderWithoutLosingFocus'))
+          assert all(t in s for t in ('render()', 'Manage Providers','Manage Servers','Playback', 'Performance','Subtitles','focusByPage','restorePageFocus','Subtitle Help','rerenderWithoutLosingFocus'))
           assert 'MOOSASourceTesterDialog.show(requireContext())' in s
           assert 'MOOSAServerManagerDialog.show(requireContext())' in s
           assert 'MOOSASettingsStore.setVerifyLinks(verify)' in s
@@ -67,7 +67,7 @@ jobs:
           assert 'selectionControls.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE' in servers
           assert 'disableOffline.visibility = if (all.any { it.lastResult == false })' in servers
           assert 'searchButton.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE' in servers
-          assert 'View.FOCUS_FORWARD' in s
+          assert 'firstAction(shell.content)' in s
           assert not any('Color.rgb(64, 151, 220)' in x for x in (s,c,sources,servers))
           print('PASS: v127 TV focus memory, darker focused white buttons, cleaned tools, full build')
           PY
