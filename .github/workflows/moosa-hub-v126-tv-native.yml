@@ -1,4 +1,4 @@
-name: MOOSA Hub v127 focus and settings verification
+name: MOOSA Hub v128 Focus Lens and settings verification
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==127,versions
+          assert versions['MOOSAHub']==128,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -69,5 +69,21 @@ jobs:
           assert 'searchButton.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE' in servers
           assert 'firstAction(shell.content)' in s
           assert not any('Color.rgb(64, 151, 220)' in x for x in (s,c,sources,servers))
-          print('PASS: v127 TV focus memory, darker focused white buttons, cleaned tools, full build')
+                    lens=(root/'MOOSAFocusLensView.kt').read_text()
+          browse=(root/'MOOSABrowseDialog.kt').read_text()
+          policy=(root/'MOOSABrowseFilters.kt').read_text()
+          assert 'MOOSAFocusLensView(' in browse
+          assert 'private fun updateLensPreview(' in browse
+          assert 'lensPreviewJob?.cancel(CancellationException(' in browse
+          assert 'focusLens.trapDpad(direction)' in browse
+          assert 'onDraftChanged' in lens and 'onApply' in lens and 'onClose' in lens
+          assert 'showPreview(rows: List<SearchResponse>' in lens
+          assert 'MOOSACatalog.browseBatch(' in browse
+          assert 'with_watch_providers' in policy
+          assert 'with_watch_monetization_types' in policy
+          assert 'watch_region' in policy
+          assert 'platformNames: List<String>' in policy
+          assert 'watchRegions = listOf(' in policy
+          assert 'AlertDialog.Builder(requireContext())' not in browse
+          print('PASS: v128 TV settings + Focus Lens + real TMDB watch providers and previews')
           PY
