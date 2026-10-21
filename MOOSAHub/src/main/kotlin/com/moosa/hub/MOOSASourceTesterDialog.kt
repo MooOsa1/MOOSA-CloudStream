@@ -104,8 +104,22 @@ class MOOSASourceTesterDialog : DialogFragment() {
         )
         val root = shell.root
         val content = shell.content
+        val page = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val pageScroll = ScrollView(context).apply {
+            isFocusable = false
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        }
+        pageScroll.addView(page, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        content.addView(pageScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
         MOOSATVSettingsStyle.heading(
-            context, content, "DISCOVERY / PROVIDERS",
+            context, page, "DISCOVERY / PROVIDERS",
             "Sources",
             "Manage installed providers and test them."
         )
@@ -120,9 +134,9 @@ class MOOSASourceTesterDialog : DialogFragment() {
         )
         countText = label("", 27f, Color.WHITE, true)
         header.addView(countText)
-        content.addView(header)
+        page.addView(header)
 
-        content.addView(
+        page.addView(
             label(
                 "ONLINE = verified playable link • UNVERIFIED = source responded but playback could not be confirmed",
                 12f,
@@ -145,7 +159,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             selectNone,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
-        content.addView(controls1)
+        page.addView(controls1)
 
         val controls2 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -161,7 +175,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             disableOffline,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
-        content.addView(controls2)
+        page.addView(controls2)
         disableOffline.visibility = View.GONE
 
         progressBar = ProgressBar(
@@ -173,7 +187,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             progress = 0
             visibility = View.GONE
         }
-        content.addView(
+        page.addView(
             progressBar,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -185,10 +199,10 @@ class MOOSASourceTesterDialog : DialogFragment() {
             visibility = View.GONE
             setPadding(0, dp(3), 0, dp(7))
         }
-        content.addView(progressText)
+        page.addView(progressText)
 
         searchButton = actionButton("Search Sources…", Color.rgb(53, 53, 53))
-        content.addView(
+        page.addView(
             searchButton,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -196,10 +210,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
             ).apply { topMargin = dp(8) }
         )
 
-        val scroll = ScrollView(context).apply {
-            isFillViewport = true
-            isFocusable = false
-            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        val scroll = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
         }
         listContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -212,12 +224,11 @@ class MOOSASourceTesterDialog : DialogFragment() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
-        content.addView(
+        page.addView(
             scroll,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
 
