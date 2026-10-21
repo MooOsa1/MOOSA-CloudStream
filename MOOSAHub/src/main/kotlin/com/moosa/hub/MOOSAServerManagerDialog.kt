@@ -102,8 +102,22 @@ class MOOSAServerManagerDialog : DialogFragment() {
         )
         val root = shell.root
         val content = shell.content
+        val page = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val pageScroll = ScrollView(context).apply {
+            isFocusable = false
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        }
+        pageScroll.addView(page, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        content.addView(pageScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
         MOOSATVSettingsStyle.heading(
-            context, content, "STREAMING / SERVER MANAGER",
+            context, page, "STREAMING / SERVER MANAGER",
             "Server Manager",
             "Discover, validate and manage streaming links."
         )
@@ -118,9 +132,9 @@ class MOOSAServerManagerDialog : DialogFragment() {
         )
         countText = label("", 27f, Color.WHITE, true)
         header.addView(countText)
-        content.addView(header)
+        page.addView(header)
 
-        content.addView(
+        page.addView(
             label(
                 "DISCOVER scans sources in the background. ONLINE means the final stream link passed two probes.",
                 12f,
@@ -144,7 +158,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
         selectionControls = controls1
-        content.addView(controls1)
+        page.addView(controls1)
         controls1.visibility = View.GONE
 
         val controls2 = LinearLayout(context).apply {
@@ -167,7 +181,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             disableOffline,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
-        content.addView(controls2)
+        page.addView(controls2)
         disableOffline.visibility = View.GONE
 
         progressBar = ProgressBar(
@@ -179,7 +193,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             progress = 0
             visibility = View.GONE
         }
-        content.addView(
+        page.addView(
             progressBar,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -191,11 +205,11 @@ class MOOSAServerManagerDialog : DialogFragment() {
             visibility = View.GONE
             setPadding(0, dp(3), 0, dp(7))
         }
-        content.addView(progressText)
+        page.addView(progressText)
 
         searchButton = actionButton("Search Servers…", Color.rgb(53, 53, 53))
         searchButton.visibility = View.GONE
-        content.addView(
+        page.addView(
             searchButton,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -203,10 +217,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
             ).apply { topMargin = dp(8) }
         )
 
-        val scroll = ScrollView(context).apply {
-            isFillViewport = true
-            isFocusable = false
-            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        val scroll = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
         }
         listContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -219,12 +231,11 @@ class MOOSAServerManagerDialog : DialogFragment() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
-        content.addView(
+        page.addView(
             scroll,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
 
