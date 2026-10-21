@@ -32,6 +32,7 @@ internal object MOOSABrowseFilters {
         PlatformChoice("Prime Video", "9"),
         PlatformChoice("Apple TV+", "350"),
         PlatformChoice("Hulu", "15"),
+        PlatformChoice("Crunchyroll", "283"),
         PlatformChoice("Paramount+", "2303|2616")
     )
     val watchRegions = listOf(
