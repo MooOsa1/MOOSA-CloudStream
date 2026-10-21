@@ -482,14 +482,6 @@ internal class MOOSAFocusLensView(
         return coords[0] + view.width / 2
     }
 
-    private fun closestInRow(reference: View, row: List<Button>): Button {
-        // Horizontal alignment is used only between ADJACENT semantic rows,
-        // never to jump between arbitrary options several rows away.
-        val x = horizontalCenter(reference)
-        return row.minByOrNull { kotlin.math.abs(horizontalCenter(it) - x) }
-            ?: reference as Button
-    }
-
     /**
      * Controlled navigation for old Fire TV/Android 7 remotes:
      * Type ←→ Type, Tabs ←→ Tabs, options ←→ within same row,
@@ -509,28 +501,15 @@ internal class MOOSAFocusLensView(
             focusFirst()
             return true
         }
-        val row = rows[rowIndex]
-        val index = row.indexOf(focused)
-        val destination: Button? = when (direction) {
-            KeyEvent.KEYCODE_DPAD_LEFT ->
-                row.getOrNull(index - 1)
-            KeyEvent.KEYCODE_DPAD_RIGHT ->
-                row.getOrNull(index + 1)
-            KeyEvent.KEYCODE_DPAD_UP -> {
-                when {
-                    rowIndex == 0 -> null
-                    rowIndex == 2 -> tabs[tab] // Options -> selected tab.
-                    else -> closestInRow(focused!!, rows[rowIndex - 1])
-                }
-            }
-            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                when {
-                    rowIndex == rows.lastIndex -> null
-                    rowIndex == 0 -> tabs[tab]
-                    else -> closestInRow(focused!!, rows[rowIndex + 1])
-                }
-            }
-            else -> null
+        val index = rows[rowIndex].indexOf(focused)
+        val centers = rows.map { buttons ->
+            buttons.map { horizontalCenter(it) }
+        }
+        val next = MOOSARefineDpadPlanner.next(
+            centers, rowIndex, index, direction, tab
+        )
+        val destination = next?.let { (r, column) ->
+            rows[r].getOrNull(column)
         }
         if (destination != null && destination !== focused) {
             if (destination in dynamic) focusInsideList(destination)
