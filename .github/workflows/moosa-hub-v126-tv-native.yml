@@ -1,4 +1,4 @@
-name: MOOSA Hub v130 Top Refine and TV settings verification
+name: MOOSA Hub v131 Fire TV DPAD navigation and TV settings verification
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==130,versions
+          assert versions['MOOSAHub']==131,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -91,6 +91,18 @@ jobs:
           assert 'scroll.isVerticalScrollBarEnabled = true' in lens
           assert 'private val dismiss = button("×")' not in lens
           assert 'LayoutParams(-1, dp(41))' in lens
+          assert 'private val optionRows = mutableListOf<List<Button>>()' in lens
+          assert 'optionRows.add(group)' in lens
+          assert 'optionRows.add(listOf(fromMinus, fromPlus, toMinus, toPlus))' in lens
+          assert 'focusInsideList(destination)' in lens
+          assert 'scroll.scrollTo(0, next)' in lens
+          assert 'MOOSARefineDpadPlanner.next(' in lens
+          planner=(root/'MOOSARefineDpadPlanner.kt').read_text()
+          assert 'currentRow + 1' in planner and 'currentRow - 1' in planner
+          assert 'currentRow == 2 && key == UP' in planner
+          assert 'currentRow == 0 && key == DOWN' in planner
+          assert 'return targetRow to desired.coerceIn(target.indices)' in planner
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSARefineDpadPlannerTest.kt').exists()
           assert 'withGenreToggle(' in lens
           assert 'with_watch_providers' in policy
           assert 'minimumRating' in policy and 'first_air_date' in policy
@@ -103,5 +115,5 @@ jobs:
           assert 'platformNames: List<String>' in policy
           assert 'watchRegions = listOf(' in policy
           assert 'AlertDialog.Builder(requireContext())' not in browse
-          print('PASS: v130 TV settings + compact top Refine + actual window sizing, DPAD, and preserved filters')
+          print('PASS: v131 TV navigation semantic DPAD rows, scroll visibility, and existing settings')
           PY

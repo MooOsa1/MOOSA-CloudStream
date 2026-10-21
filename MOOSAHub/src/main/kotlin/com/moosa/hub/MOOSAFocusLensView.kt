@@ -34,6 +34,9 @@ internal class MOOSAFocusLensView(
     private val whites = mutableSetOf<Button>()
     private val tabs = mutableListOf<Button>()
     private val dynamic = mutableListOf<Button>()
+    // Semantic option rows, including rows that are below the ScrollView viewport.
+    // DPAD must navigate one row at a time, not chase nearest global coordinates.
+    private val optionRows = mutableListOf<List<Button>>()
     private val typeMovie = button("Movies")
     private val typeSeries = button("Series")
     private val tabUnderlines = mutableListOf<View>()
@@ -285,12 +288,15 @@ internal class MOOSAFocusLensView(
                 line.addView(View(context), LayoutParams(0, dp(36), 1f))
             }
             content.addView(line, LayoutParams(-1, dp(41)))
+            optionRows.add(group)
         }
     }
 
     private fun renderOptions(focusKey: String? = null) {
         content.removeAllViews()
         dynamic.clear()
+        optionRows.clear()
+        if (focusKey == null) scroll.scrollTo(0, 0)
         val s = current()
         when (tab) {
             0 -> {
@@ -352,8 +358,11 @@ internal class MOOSAFocusLensView(
         }
         if (focusKey != null) {
             dynamic.firstOrNull { it.tag == focusKey }?.let { button ->
+                // Focus the replacement immediately; a delayed-only focus
+                // allows a rapid next remote press to move to an old view.
+                button.requestFocus()
                 button.post {
-                    if (isAttachedToWindow && isShown) button.requestFocus()
+                    if (isAttachedToWindow && isShown) focusInsideList(button)
                 }
             }
         }
@@ -396,6 +405,7 @@ internal class MOOSAFocusLensView(
         range.addView(yearText(s.yearTo), LayoutParams(0, dp(38), 1f))
         range.addView(toPlus, LayoutParams(dp(37), dp(38)))
         content.addView(range, LayoutParams(-1, dp(54)))
+        optionRows.add(listOf(fromMinus, fromPlus, toMinus, toPlus))
     }
 
     private fun yearText(value: Int) = TextView(context).apply {
@@ -426,41 +436,87 @@ internal class MOOSAFocusLensView(
     }
 
     fun focusFirst() {
-        tabs.getOrNull(tab)?.post {
-            if (isAttachedToWindow && isShown) tabs[tab].requestFocus()
+        // Focus the currently selected tab, as in the approved prototype.
+        val first = tabs.getOrNull(tab) ?: typeMovie
+        if (isAttachedToWindow && isShown) {
+            first.requestFocus()
+        } else {
+            first.post {
+                if (isAttachedToWindow && isShown) first.requestFocus()
+            }
         }
     }
 
-    /** Deterministic DPAD trap; posters underneath cannot receive focus. */
+    /**
+     * The footer is *outside* the ScrollView. Scroll its actual content row
+     * into view before requesting focus, otherwise Fire OS 6 may land focus on
+     * an off-screen button, apparently trapping or skipping the remote.
+     */
+    private fun focusInsideList(target: Button) {
+        if (target !in dynamic) return
+        val parent = target.parent as? View ?: return
+        if (scroll.height <= 0 || parent.height <= 0) {
+            target.requestRectangleOnScreen(
+                android.graphics.Rect(0, 0, target.width, target.height), true
+            )
+            return
+        }
+        val margin = dp(7)
+        val top = parent.top
+        val bottom = parent.bottom
+        val first = scroll.scrollY
+        val last = first + scroll.height
+        val next = when {
+            top < first + margin -> (top - margin).coerceAtLeast(0)
+            bottom > last - margin -> (bottom - scroll.height + margin)
+                .coerceAtLeast(0)
+            else -> first
+        }
+        if (next != first) scroll.scrollTo(0, next)
+        target.requestFocus()
+    }
+
+    private fun horizontalCenter(view: View): Int {
+        val coords = IntArray(2)
+        view.getLocationOnScreen(coords)
+        return coords[0] + view.width / 2
+    }
+
+    /**
+     * Controlled navigation for old Fire TV/Android 7 remotes:
+     * Type ←→ Type, Tabs ←→ Tabs, options ←→ within same row,
+     * Up/Down moves ONE adjacent row, and bottom options → footer.
+     * All off-screen option rows remain reachable, with explicit scrolling.
+     */
     fun trapDpad(direction: Int): Boolean {
-        val focusables = (listOf(typeMovie, typeSeries) + tabs +
-            dynamic + listOf(reset, apply)).filter { it.isShown && it.isFocusable }
-        val current = findFocus()
-        if (current == null || current !in focusables) {
+        val rows = mutableListOf<List<Button>>()
+        rows.add(listOf(typeMovie, typeSeries))
+        rows.add(tabs.toList())
+        rows.addAll(optionRows)
+        rows.add(listOf(reset, apply))
+
+        val focused = findFocus() as? Button
+        val rowIndex = rows.indexOfFirst { focused != null && focused in it }
+        if (rowIndex < 0) {
             focusFirst()
             return true
         }
-        val pos = IntArray(2)
-        current.getLocationOnScreen(pos)
-        val horizontal = direction == KeyEvent.KEYCODE_DPAD_LEFT ||
-            direction == KeyEvent.KEYCODE_DPAD_RIGHT
-        val sign = if (direction == KeyEvent.KEYCODE_DPAD_RIGHT ||
-            direction == KeyEvent.KEYCODE_DPAD_DOWN) 1 else -1
-        val a = if (horizontal) pos[0] + current.width / 2
-            else pos[1] + current.height / 2
-        val b = if (horizontal) pos[1] + current.height / 2
-            else pos[0] + current.width / 2
-        val next = focusables.filter { it !== current }.mapNotNull { other ->
-            val loc = IntArray(2)
-            other.getLocationOnScreen(loc)
-            val along = (if (horizontal) loc[0] + other.width / 2
-                         else loc[1] + other.height / 2) - a
-            val across = (if (horizontal) loc[1] + other.height / 2
-                          else loc[0] + other.width / 2) - b
-            if (along * sign <= 3) null
-            else other to (abs(along) + abs(across) * 3)
-        }.minByOrNull { it.second }?.first
-        next?.requestFocus()
+        val index = rows[rowIndex].indexOf(focused)
+        val centers = rows.map { buttons ->
+            buttons.map { horizontalCenter(it) }
+        }
+        val next = MOOSARefineDpadPlanner.next(
+            centers, rowIndex, index, direction, tab
+        )
+        val destination = next?.let { (r, column) ->
+            rows[r].getOrNull(column)
+        }
+        if (destination != null && destination !== focused) {
+            if (destination in dynamic) focusInsideList(destination)
+            else destination.requestFocus()
+        }
+        // Also consume at every edge; no focus leaks onto covered posters.
         return true
     }
+
 }
