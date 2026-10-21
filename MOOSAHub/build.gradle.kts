@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 129
+version = 130
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -161,3 +161,7 @@ dependencies {
 // v129: compact top slide-down Refine; preserve original category title, TV
 // Movies/Series switch, five focused tabs and true rolling release-year
 // presets/range, genre/streaming multi-select, rating and sort TMDB queries.
+
+// v130: real-TV layout correction: dynamic Show More panel height from actual
+// dialog bounds, compact option rows, underline active tab, one close button,
+// visible scroll hint and fixed footer; no backend or shelf-content changes.
