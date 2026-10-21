@@ -1,4 +1,4 @@
-name: MOOSA Hub v126 TV Native settings verification
+name: MOOSA Hub v127 focus and settings verification
 on:
   pull_request:
     branches: [main]
@@ -35,25 +35,39 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==126,versions
+          assert versions['MOOSAHub']==127,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
           assert 'isFocusable = true' in c and 'setOnFocusChangeListener' in c
           assert 'SETTINGS / OVERVIEW' in s
-          assert all(t in s for t in ('render()', 'source manager','server manager','Playback', 'Performance','Subtitles','Advanced','Web Bridge','rerenderWithoutLosingFocus'))
+          assert all(t in s for t in ('render()', 'Manage Providers','Manage Servers','Playback', 'Performance','Subtitles','focusByPage','restorePageFocus','Subtitle Help','rerenderWithoutLosingFocus'))
           assert 'MOOSASourceTesterDialog.show(requireContext())' in s
           assert 'MOOSAServerManagerDialog.show(requireContext())' in s
           assert 'MOOSASettingsStore.setVerifyLinks(verify)' in s
           assert 'MOOSASettingsStore.setProviderConcurrency(concurrency)' in s
           assert 'MOOSASettingsStore.setSubdlKey(key)' in s
-          assert 'MOOSACloudStreamBridge.connect(requireContext(), code)' in s
+          assert 'MOOSACloudStreamBridge' not in s
+          assert 'MOOSACloudStreamBridge.start(context)' not in (root/'MOOSAHubPlugin.kt').read_text()
+          assert not (root/'MOOSACloudStreamBridge.kt').exists()
+          assert 'Everything, organized.' not in s
+          assert 'subtitle-sync' not in s and 'subtitle-priority' not in s
+          assert 'subtitle-more' not in s and 'subtitle-info' not in s
+          assert 'focusByPage[owner] = focusKey' in s
+          assert 'focusByPage[expectedPage]' in s
+          assert 'findTaggedAction(shell.content, it)' in s
+          assert 'Color.rgb(65, 65, 65)' in c
+          assert 'if (primary && !selected) Color.BLACK else white' in c
+          assert all(x in s for x in ('Providers','Search Performance','Subtitle Settings','Wyzie API Key','SubDL API Key'))
+          assert all(x in sources for x in ('Enable All', 'Disable All', 'Test All Providers'))
+          assert all(x in servers for x in ('Enable All', 'Disable All', 'Scan & Test Servers'))
+          assert 'Web Bridge' not in s
           assert 'MOOSASourceTester.testAll(' in sources
           assert 'MOOSAServerRegistry.testAll(' in servers
           assert 'selectionControls.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE' in servers
           assert 'disableOffline.visibility = if (all.any { it.lastResult == false })' in servers
           assert 'searchButton.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE' in servers
-          assert 'View.FOCUS_FORWARD' in s
+          assert 'firstAction(shell.content)' in s
           assert not any('Color.rgb(64, 151, 220)' in x for x in (s,c,sources,servers))
-          print('PASS: unified monochrome TV-native layout, source/server tools preserved, full build')
+          print('PASS: v127 TV focus memory, darker focused white buttons, cleaned tools, full build')
           PY

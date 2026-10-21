@@ -11,7 +11,6 @@ import com.lagradost.cloudstream3.plugins.Plugin
 class MOOSAHubPlugin : Plugin() {
     override fun load(context: Context) {
         MOOSASettingsStore.attach(context)
-        MOOSACloudStreamBridge.start(context)
         forceTvLayoutOnce(context)
         MOOSAProgress.setArabicSubtitleDefault()
         openSettings = { ctx ->
