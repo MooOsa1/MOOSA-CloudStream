@@ -83,74 +83,50 @@ class MOOSASourceTesterDialog : DialogFragment() {
         if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
     }
 
-    private fun styleFocusable(
-        view: View,
-        baseColor: Int,
-        radius: Int = 10
-    ) {
-        view.id = View.generateViewId()
-        view.isFocusable = true
-        view.isFocusableInTouchMode = false
-        view.background = rounded(
-            baseColor,
-            radius,
-            Color.argb(85, 255, 255, 255)
-        )
-
-        view.setOnFocusChangeListener { focused, hasFocus ->
-            focused.scaleX = if (hasFocus) 1.025f else 1f
-            focused.scaleY = if (hasFocus) 1.025f else 1f
-            focused.background = rounded(
-                if (hasFocus) Color.rgb(38, 91, 135) else baseColor,
-                radius,
-                if (hasFocus) Color.WHITE
-                else Color.argb(85, 255, 255, 255),
-                if (hasFocus) 2 else 1
-            )
-        }
+    private fun styleFocusable(view: View, baseColor: Int, radius: Int = 5) {
+        // Shared native black/white TV focus; never scale children offscreen.
+        MOOSATVSettingsStyle.focus(view)
     }
 
     private fun actionButton(text: String, color: Int): Button =
-        Button(requireContext()).apply {
-            this.text = text
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            minWidth = 0
-            minimumWidth = 0
-            styleFocusable(this, color)
-        }
+        MOOSATVSettingsStyle.button(
+            requireContext(), text,
+            text.startsWith("Discover") || text.startsWith("Test All")
+        )
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
 
-        val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(16))
-            background = rounded(
-                Color.rgb(10, 20, 31),
-                18,
-                Color.rgb(56, 102, 137),
-                2
-            )
-        }
+        val shell = MOOSATVSettingsStyle.shell(
+            context, "SETTINGS / SOURCES",
+            backAction = { dismiss() },
+            closeAction = { dismiss() }
+        )
+        val root = shell.root
+        val content = shell.content
+        MOOSATVSettingsStyle.heading(
+            context, content, "DISCOVERY / PROVIDERS",
+            "Sources",
+            "Manage installed providers and test them."
+        )
 
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         header.addView(
-            label("Source Tester", 23f, Color.WHITE, true),
+            label("Enabled", 15f, MOOSATVSettingsStyle.gray, true),
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
-        countText = label("", 13f, Color.rgb(174, 191, 207), true)
+        countText = label("", 27f, Color.WHITE, true)
         header.addView(countText)
-        root.addView(header)
+        content.addView(header)
 
-        root.addView(
+        content.addView(
             label(
                 "ONLINE = verified playable link • UNVERIFIED = source responded but playback could not be confirmed",
                 12f,
-                Color.rgb(174, 191, 207)
+                MOOSATVSettingsStyle.gray
             ).apply {
                 setPadding(0, dp(4), 0, dp(10))
             }
@@ -159,8 +135,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
         val controls1 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        selectAll = actionButton("SELECT ALL", Color.rgb(38, 104, 78))
-        selectNone = actionButton("SELECT NONE", Color.rgb(116, 58, 66))
+        selectAll = actionButton("Select All", Color.rgb(53, 53, 53))
+        selectNone = actionButton("Select None", Color.rgb(53, 53, 53))
         controls1.addView(
             selectAll,
             LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) }
@@ -169,14 +145,14 @@ class MOOSASourceTesterDialog : DialogFragment() {
             selectNone,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
-        root.addView(controls1)
+        content.addView(controls1)
 
         val controls2 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(7), 0, 0)
         }
-        testAllButton = actionButton("TEST ALL SOURCES", Color.rgb(31, 91, 143))
-        disableOffline = actionButton("DISABLE OFFLINE", Color.rgb(58, 65, 78))
+        testAllButton = actionButton("Test All Sources", Color.rgb(53, 53, 53))
+        disableOffline = actionButton("Disable Offline", Color.rgb(53, 53, 53))
         controls2.addView(
             testAllButton,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) }
@@ -185,7 +161,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
             disableOffline,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(6) }
         )
-        root.addView(controls2)
+        content.addView(controls2)
+        disableOffline.visibility = View.GONE
 
         progressBar = ProgressBar(
             context,
@@ -196,7 +173,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             progress = 0
             visibility = View.GONE
         }
-        root.addView(
+        content.addView(
             progressBar,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -208,10 +185,10 @@ class MOOSASourceTesterDialog : DialogFragment() {
             visibility = View.GONE
             setPadding(0, dp(3), 0, dp(7))
         }
-        root.addView(progressText)
+        content.addView(progressText)
 
-        searchButton = actionButton("SEARCH SOURCES…", Color.rgb(30, 42, 56))
-        root.addView(
+        searchButton = actionButton("Search Sources…", Color.rgb(53, 53, 53))
+        content.addView(
             searchButton,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -235,7 +212,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
-        root.addView(
+        content.addView(
             scroll,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -294,14 +271,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
 
     override fun onStart() {
         super.onStart()
-        val metrics = resources.displayMetrics
-        dialog?.window?.apply {
-            setLayout(
-                (metrics.widthPixels * 0.78f).toInt(),
-                (metrics.heightPixels * 0.82f).toInt()
-            )
-            setBackgroundDrawableResource(android.R.color.transparent)
-        }
+        MOOSATVSettingsStyle.window(dialog, resources.displayMetrics)
     }
 
     private fun wireTopFocus() {
@@ -351,6 +321,9 @@ class MOOSASourceTesterDialog : DialogFragment() {
             )
         }
 
+        disableOffline.visibility = if (all.any {
+            MOOSASourceTester.snapshot(it).status == MOOSASourceTester.Status.OFFLINE
+        }) View.VISIBLE else View.GONE
         wireRows()
     }
 
@@ -362,14 +335,14 @@ class MOOSASourceTesterDialog : DialogFragment() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), dp(5), dp(8), dp(5))
             isClickable = true
-            styleFocusable(this, Color.rgb(21, 32, 45), 9)
+            styleFocusable(this, MOOSATVSettingsStyle.panel, 9)
         }
 
         val check = CheckBox(context).apply {
             isChecked = MOOSASourceTester.isEnabled(api)
             isFocusable = false
             isClickable = false
-            buttonTintList = ColorStateList.valueOf(Color.rgb(45, 145, 255))
+            buttonTintList = ColorStateList.valueOf(Color.rgb(225, 225, 225))
         }
         row.addView(
             check,
@@ -377,7 +350,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
         )
 
         row.addView(
-            label(api.name, 15.5f, Color.WHITE, true),
+            label(api.name, 14f, Color.WHITE, true).apply { maxLines = 2 },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
 
@@ -396,7 +369,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             ).apply { marginEnd = dp(10) }
         )
 
-        val test = actionButton("TEST", Color.rgb(39, 50, 62))
+        val test = actionButton("TEST", Color.rgb(53, 53, 53))
         row.addView(
             test,
             LinearLayout.LayoutParams(dp(82), dp(40))
@@ -427,21 +400,21 @@ class MOOSASourceTesterDialog : DialogFragment() {
         val state = MOOSASourceTester.snapshot(refs.api)
         val (text, color) = when (state.status) {
             MOOSASourceTester.Status.ONLINE ->
-                "• ONLINE" to Color.rgb(25, 165, 82)
+                "• ONLINE" to Color.rgb(53, 53, 53)
             MOOSASourceTester.Status.UNVERIFIED ->
-                "• UNVERIFIED" to Color.rgb(205, 140, 35)
+                "• UNVERIFIED" to Color.rgb(53, 53, 53)
             MOOSASourceTester.Status.OFFLINE ->
-                "• OFFLINE" to Color.rgb(205, 58, 62)
+                "• OFFLINE" to Color.rgb(53, 53, 53)
             MOOSASourceTester.Status.TESTING ->
-                "• TESTING" to Color.rgb(45, 105, 190)
+                "• TESTING" to Color.rgb(53, 53, 53)
             MOOSASourceTester.Status.UNKNOWN ->
-                "• UNKNOWN" to Color.rgb(90, 100, 112)
+                "• UNKNOWN" to Color.rgb(53, 53, 53)
         }
 
         refs.status.text =
             if (state.serverCount > 0) "$text  ${state.serverCount}"
             else text
-        refs.status.background = rounded(color, 8)
+        refs.status.background = rounded(MOOSATVSettingsStyle.panel, 5, MOOSATVSettingsStyle.separator)
     }
 
     private fun wireRows() {
@@ -485,7 +458,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
 
         lifecycleScope.launch {
             refs.status.text = "• TESTING"
-            refs.status.background = rounded(Color.rgb(45, 105, 190), 8)
+            refs.status.background = rounded(MOOSATVSettingsStyle.panel, 5, MOOSATVSettingsStyle.separator)
 
             withContext(Dispatchers.IO) {
                 MOOSASourceTester.test(
