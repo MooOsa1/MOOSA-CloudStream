@@ -43,6 +43,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
     private lateinit var progressText: TextView
     private lateinit var discoverButton: Button
     private lateinit var searchButton: Button
+    private lateinit var searchPanel: LinearLayout
+    private lateinit var searchInput: EditText
     private lateinit var selectAll: Button
     private lateinit var selectNone: Button
     private lateinit var disableOffline: Button
@@ -216,6 +218,53 @@ class MOOSAServerManagerDialog : DialogFragment() {
                 dp(48)
             ).apply { topMargin = dp(8) }
         )
+        searchPanel = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+        }
+        searchInput = EditText(context).apply {
+            hint = "Search Servers by name"
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setHintTextColor(MOOSATVSettingsStyle.gray)
+            background = MOOSATVSettingsStyle.shape(
+                context, MOOSATVSettingsStyle.panel, 5, MOOSATVSettingsStyle.separator
+            )
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        searchPanel.addView(searchInput, LinearLayout.LayoutParams(
+            0, dp(45), 1f
+        ).apply { marginEnd = dp(6) })
+        val applySearch = MOOSATVSettingsStyle.button(context, "Apply", true)
+        val clearSearch = MOOSATVSettingsStyle.button(context, "Clear")
+        searchPanel.addView(applySearch, LinearLayout.LayoutParams(
+            dp(86), dp(45)
+        ).apply { marginEnd = dp(6) })
+        searchPanel.addView(clearSearch, LinearLayout.LayoutParams(
+            dp(85), dp(45)
+        ))
+        page.addView(searchPanel, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(8)
+        })
+        applySearch.setOnClickListener {
+            query = searchInput.text?.toString()?.trim().orEmpty()
+            searchButton.text = if (query.isBlank()) "Search Servers…"
+                else "Search: " + query
+            rebuildList()
+            searchPanel.visibility = View.GONE
+            searchButton.requestFocus()
+        }
+        clearSearch.setOnClickListener {
+            query = ""
+            searchInput.setText("")
+            searchButton.text = "Search Servers…"
+            rebuildList()
+            searchPanel.visibility = View.GONE
+            searchButton.requestFocus()
+        }
+
 
         val scroll = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -595,32 +644,10 @@ class MOOSAServerManagerDialog : DialogFragment() {
     }
 
     private fun openSearchDialog() {
-        val input = EditText(requireContext()).apply {
-            hint = "Server name"
-            setSingleLine(true)
-            setText(query)
-        }
-
-        AlertDialog.Builder(requireContext())
-            .setTitle("Search Servers")
-            .setView(input)
-            .setPositiveButton("Search") { _, _ ->
-                query = input.text?.toString()?.trim().orEmpty()
-                searchButton.text = if (query.isBlank()) {
-                    "SEARCH SERVERS…"
-                } else {
-                    "SEARCH: $query"
-                }
-                rebuildList()
-                searchButton.requestFocus()
-            }
-            .setNeutralButton("Clear") { _, _ ->
-                query = ""
-                searchButton.text = "SEARCH SERVERS…"
-                rebuildList()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        // Search in the same TV Native page; no mismatched AlertDialog.
+        searchInput.setText(query)
+        searchPanel.visibility = View.VISIBLE
+        searchInput.requestFocus()
     }
 
     companion object {
