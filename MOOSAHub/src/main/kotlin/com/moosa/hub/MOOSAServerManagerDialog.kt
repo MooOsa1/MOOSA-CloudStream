@@ -91,7 +91,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
     private fun actionButton(text: String, color: Int): Button =
         MOOSATVSettingsStyle.button(
             requireContext(), text,
-            text.startsWith("Discover") || text.startsWith("Test All")
+            text.startsWith("Scan & Test") || text.startsWith("Test All")
         )
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -149,8 +149,8 @@ class MOOSAServerManagerDialog : DialogFragment() {
         val controls1 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        selectAll = actionButton("Select All", Color.rgb(53, 53, 53))
-        selectNone = actionButton("Select None", Color.rgb(53, 53, 53))
+        selectAll = actionButton("Enable All", Color.rgb(53, 53, 53))
+        selectNone = actionButton("Disable All", Color.rgb(53, 53, 53))
         controls1.addView(
             selectAll,
             LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) }
@@ -168,11 +168,11 @@ class MOOSAServerManagerDialog : DialogFragment() {
             setPadding(0, dp(7), 0, 0)
         }
         discoverButton = actionButton(
-            "Discover & Test Servers",
+            "Scan & Test Servers",
             Color.rgb(53, 53, 53)
         )
         disableOffline = actionButton(
-            "Disable Offline",
+            "Disable Offline Servers",
             Color.rgb(53, 53, 53)
         )
         controls2.addView(
@@ -563,7 +563,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
         progressBar.visibility = View.VISIBLE
         progressText.visibility = View.VISIBLE
         progressText.text = "Discovering sources 0/$sourceTotal"
-        discoverButton.text = "DISCOVERING…"
+        discoverButton.text = "SCANNING…"
 
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
@@ -617,7 +617,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
             if (isAdded) {
                 scanRunning = false
                 discoverButton.text =
-                    "DISCOVER & TEST SERVERS"
+                    "Scan & Test Servers"
 
                 val all = MOOSAServerRegistry.snapshot()
                 val online =
