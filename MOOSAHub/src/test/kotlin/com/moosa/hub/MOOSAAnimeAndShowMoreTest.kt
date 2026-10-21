@@ -69,4 +69,42 @@ class MOOSAAnimeAndShowMoreTest {
         // Back to MOOSA must re-enable the button for its valid rows.
         assertTrue(MOOSAShowMorePolicy.shouldShow("MOOSA Hub", true))
     }
+    @Test
+    fun watchPlatformFiltersUseRealTmdbProvidersWithSubscriptionRegion() {
+        val selection = MOOSABrowseFilters.Selection(
+            isTv = true,
+            platformNames = listOf("Netflix", "HBO Max"),
+            watchRegion = "OM"
+        )
+        val data = MOOSABrowseFilters.toRequest(anime, selection).data
+        assertTrue(data.startsWith("/discover/tv?"))
+        assertTrue(data.contains("watch_region=OM"))
+        assertTrue(data.contains("with_watch_providers=8|1899"))
+        assertTrue(data.contains("with_watch_monetization_types=flatrate"))
+    }
+
+    @Test
+    fun noPlatformSelectedDoesNotInventStreamingAvailability() {
+        val data = MOOSABrowseFilters.toRequest(
+            anime,
+            MOOSABrowseFilters.Selection(isTv = false, watchRegion = "AE")
+        ).data
+        assertFalse(data.contains("with_watch_providers"))
+        assertFalse(data.contains("watch_region"))
+        assertTrue(data.startsWith("/discover/movie?"))
+    }
+
+    @Test
+    fun invalidWatchRegionFallsBackToOmanAndUnknownProvidersAreIgnored() {
+        val selection = MOOSABrowseFilters.Selection(
+            isTv = false,
+            platformNames = listOf("Netflix", "Imaginary service"),
+            watchRegion = "XX"
+        )
+        val data = MOOSABrowseFilters.toRequest(anime, selection).data
+        assertTrue(data.contains("watch_region=OM"))
+        assertTrue(data.contains("with_watch_providers=8"))
+        assertFalse(data.contains("Imaginary"))
+    }
+
 }
