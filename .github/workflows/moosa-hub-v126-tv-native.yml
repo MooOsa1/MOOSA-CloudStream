@@ -1,4 +1,4 @@
-name: MOOSA Hub v129 Top Refine and TV settings verification
+name: MOOSA Hub v130 Top Refine and TV settings verification
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==129,versions
+          assert versions['MOOSAHub']==130,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -82,7 +82,15 @@ jobs:
           assert 'fun trapDpad(direction: Int)' in lens
           assert 'setChosen(typeMovie' in lens and 'setChosen(typeSeries' in lens
           assert 'categoryTitle.text = request.name' in browse
-          assert 'panelPixels = minOf(dp(335)' in browse
+          assert 'container.addOnLayoutChangeListener {' in browse
+          assert '(height * 0.49f).toInt()' in browse
+          assert 'dp(275)' in browse
+          assert 'dp(335)' not in browse
+          assert 'paintTab(button: Button, index: Int)' in lens
+          assert 'tabUnderlines' in lens
+          assert 'scroll.isVerticalScrollBarEnabled = true' in lens
+          assert 'private val dismiss = button("×")' not in lens
+          assert 'LayoutParams(-1, dp(41))' in lens
           assert 'withGenreToggle(' in lens
           assert 'with_watch_providers' in policy
           assert 'minimumRating' in policy and 'first_air_date' in policy
@@ -95,5 +103,5 @@ jobs:
           assert 'platformNames: List<String>' in policy
           assert 'watchRegions = listOf(' in policy
           assert 'AlertDialog.Builder(requireContext())' not in browse
-          print('PASS: v129 TV settings + compact top Refine + true range and catalog filters')
+          print('PASS: v130 TV settings + compact top Refine + actual window sizing, DPAD, and preserved filters')
           PY

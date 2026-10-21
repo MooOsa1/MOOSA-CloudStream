@@ -433,16 +433,30 @@ class MOOSABrowseDialog : DialogFragment() {
         filterPanel = focusLens
         filterPanel.visibility = View.GONE
         filterPanel.elevation = dp(16).toFloat()
-        // Cover the top of Show More without pushing/recreating the poster grid.
-        // For low-resolution Android TVs, shrink rather than clipping controls.
-        val windowPixels = (resources.displayMetrics.heightPixels * 0.94f).toInt()
-        val panelPixels = minOf(dp(335),
-            (windowPixels - dp(90)).coerceAtLeast(dp(205)))
-        container.addView(filterPanel, FrameLayout.LayoutParams(-1, panelPixels).apply {
+        // Size the drop-down from the ACTUAL Show More window height,
+        // not resources.displayMetrics (TV overscan, scaling and dialog
+        // insets can make that value misleading). Keep more posters visible.
+        container.addView(filterPanel, FrameLayout.LayoutParams(-1, dp(262)).apply {
             topMargin = dp(57)
             leftMargin = dp(12)
             rightMargin = dp(12)
         })
+        container.addOnLayoutChangeListener {
+            _, _, top, _, bottom, _, _, _, _ ->
+            val height = bottom - top
+            if (height > 0) {
+                val wanted = minOf(
+                    dp(275),
+                    (height * 0.49f).toInt(),
+                    (height - dp(80)).coerceAtLeast(dp(175))
+                )
+                val params = filterPanel.layoutParams as FrameLayout.LayoutParams
+                if (params.height != wanted) {
+                    params.height = wanted
+                    filterPanel.layoutParams = params
+                }
+            }
+        }
         filterToggleButton.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN &&
                 event.action == KeyEvent.ACTION_DOWN

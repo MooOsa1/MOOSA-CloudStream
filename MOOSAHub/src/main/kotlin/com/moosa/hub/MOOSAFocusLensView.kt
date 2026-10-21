@@ -36,7 +36,7 @@ internal class MOOSAFocusLensView(
     private val dynamic = mutableListOf<Button>()
     private val typeMovie = button("Movies")
     private val typeSeries = button("Series")
-    private val dismiss = button("×")
+    private val tabUnderlines = mutableListOf<View>()
     private val reset = button("Reset")
     private val apply = button("Show Results  →", primary = true)
     private val scroll = ScrollView(context)
@@ -59,21 +59,52 @@ internal class MOOSAFocusLensView(
             setStroke(dp(1), line)
         }
 
+    // Selection is a discreet dark chip with a thin outline; bright white
+    // is reserved for Show Results only. This matches the approved TV mock.
     private fun paint(button: Button) {
         val focused = button.isFocused
-        val light = button.isSelected || button in whites
-        val color = when {
-            focused -> Color.rgb(69, 69, 69)
-            light -> chosen
-            else -> neutral
+        val primary = button in whites
+        val selected = button.isSelected
+        val fill = when {
+            focused -> Color.rgb(65, 65, 65)
+            primary -> Color.rgb(236, 236, 236)
+            selected -> Color.rgb(53, 53, 53)
+            else -> Color.rgb(32, 32, 32)
         }
-        button.background = GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(5).toFloat()
+        button.background = background(
+            fill,
+            when {
+                focused -> Color.WHITE
+                selected -> Color.rgb(180, 180, 180)
+                primary -> Color.WHITE
+                else -> edge
+            }
+        ).apply {
             setStroke(dp(if (focused) 2 else 1),
-                if (focused) Color.WHITE else if (light) chosen else edge)
+                when {
+                    focused -> Color.WHITE
+                    selected -> Color.rgb(175, 175, 175)
+                    primary -> Color.WHITE
+                    else -> edge
+                })
         }
-        button.setTextColor(if (light && !focused) Color.BLACK else Color.WHITE)
+        button.setTextColor(if (primary && !focused) Color.BLACK else Color.WHITE)
+    }
+
+    private fun paintTab(button: Button, index: Int) {
+        val focused = button.isFocused
+        val selected = tab == index
+        button.background = background(
+            if (focused) Color.rgb(57, 57, 57) else Color.TRANSPARENT,
+            if (focused) Color.WHITE else Color.TRANSPARENT,
+            3
+        )
+        button.setTextColor(
+            if (selected || focused) Color.WHITE else Color.rgb(151, 151, 151)
+        )
+        tabUnderlines.getOrNull(index)?.setBackgroundColor(
+            if (selected) Color.WHITE else Color.TRANSPARENT
+        )
     }
 
     private fun button(label: String, primary: Boolean = false): Button =
@@ -87,9 +118,10 @@ internal class MOOSAFocusLensView(
             minimumHeight = 0
             minWidth = 0
             minimumWidth = 0
-            textSize = 12f
+            textSize = 11.5f
+            includeFontPadding = false
             setSingleLine(true)
-            setPadding(dp(8), 0, dp(8), 0)
+            setPadding(dp(7), 0, dp(7), 0)
             stateListAnimator = null
             if (primary) whites.add(this)
             setOnFocusChangeListener { view, _ -> paint(view as Button) }
@@ -120,58 +152,67 @@ internal class MOOSAFocusLensView(
 
     init {
         orientation = VERTICAL
-        setPadding(dp(17), dp(9), dp(17), dp(10))
+        setPadding(dp(14), dp(7), dp(14), dp(7))
         background = background(black, Color.rgb(91, 91, 91), 7)
         isFocusable = false
 
+        // One real × already exists in Show More's header. Do not repeat
+        // it inside the Refine panel (the remote Back / Refine button closes).
         val header = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val type = LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        type.addView(typeMovie, LayoutParams(dp(114), dp(37)).apply {
-            marginEnd = dp(6)
-        })
-        type.addView(typeSeries, LayoutParams(dp(114), dp(37)))
         typeMovie.setOnClickListener { chooseType(false) }
         typeSeries.setOnClickListener { chooseType(true) }
-        header.addView(type, LayoutParams(0, dp(43), 1f))
-        dismiss.textSize = 25f
-        dismiss.setOnClickListener { onClose() }
-        header.addView(dismiss, LayoutParams(dp(38), dp(36)))
-        addView(header, LayoutParams(-1, dp(46)))
+        header.addView(typeMovie, LayoutParams(dp(95), dp(33)).apply {
+            marginEnd = dp(7)
+        })
+        header.addView(typeSeries, LayoutParams(dp(95), dp(33)))
+        addView(header, LayoutParams(-1, dp(37)))
 
+        // Selected tab = white underline, not a big white rectangle.
         val tabsRow = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         tabNames.forEachIndexed { index, label ->
             val b = button(label)
+            val underline = View(context)
+            tabs.add(b)
+            tabUnderlines.add(underline)
+            b.setOnFocusChangeListener { view, _ ->
+                paintTab(view as Button, index)
+            }
             b.setOnClickListener {
                 tab = index
                 renderTabs()
                 renderOptions()
                 b.requestFocus()
             }
-            tabs.add(b)
-            tabsRow.addView(b, LayoutParams(0, dp(39), 1f).apply {
-                marginEnd = if (index == 4) 0 else dp(6)
+            val cell = LinearLayout(context).apply {
+                orientation = VERTICAL
+                gravity = Gravity.CENTER
+                addView(b, LayoutParams(-1, dp(30)))
+                addView(underline, LayoutParams(-1, dp(2)))
+            }
+            tabsRow.addView(cell, LayoutParams(0, dp(36), 1f).apply {
+                marginEnd = if (index == 4) 0 else dp(4)
             })
         }
-        addView(tabsRow, LayoutParams(-1, dp(45)))
+        addView(tabsRow, LayoutParams(-1, dp(38)))
         addView(View(context).apply { setBackgroundColor(edge) },
             LayoutParams(-1, dp(1)))
 
-        scroll.isVerticalScrollBarEnabled = false
+        // Always show a thin scrollbar so more genre choices are discoverable.
+        scroll.isVerticalScrollBarEnabled = true
+        scroll.isScrollbarFadingEnabled = false
         scroll.isFocusable = false
         scroll.isFillViewport = false
         scroll.overScrollMode = View.OVER_SCROLL_NEVER
         content.orientation = VERTICAL
-        content.setPadding(0, dp(11), 0, dp(2))
+        content.setPadding(0, dp(9), dp(4), dp(5))
         scroll.addView(content, ViewGroup.LayoutParams(-1, -2))
+        scroll.clipToPadding = true
         addView(scroll, LayoutParams(-1, 0, 1f))
 
         addView(View(context).apply { setBackgroundColor(edge) },
@@ -187,11 +228,11 @@ internal class MOOSAFocusLensView(
         }
         apply.setOnClickListener { onApply(draft) }
         footer.addView(View(context), LayoutParams(0, dp(46), 1f))
-        footer.addView(reset, LayoutParams(dp(105), dp(41)).apply {
-            marginEnd = dp(10)
+        footer.addView(reset, LayoutParams(dp(90), dp(37)).apply {
+            marginEnd = dp(9)
         })
-        footer.addView(apply, LayoutParams(dp(168), dp(41)))
-        addView(footer, LayoutParams(-1, dp(48)))
+        footer.addView(apply, LayoutParams(dp(158), dp(37)))
+        addView(footer, LayoutParams(-1, dp(43)))
         renderAll()
     }
 
@@ -216,9 +257,7 @@ internal class MOOSAFocusLensView(
     }
 
     private fun renderTabs() {
-        tabs.forEachIndexed { index, btn ->
-            setChosen(btn, tab == index)
-        }
+        tabs.forEachIndexed { index, btn -> paintTab(btn, index) }
     }
 
     private fun cell(label: String, selected: Boolean, key: String,
@@ -238,14 +277,14 @@ internal class MOOSAFocusLensView(
                 gravity = Gravity.TOP
             }
             group.forEachIndexed { i, b ->
-                line.addView(b, LayoutParams(0, dp(42), 1f).apply {
+                line.addView(b, LayoutParams(0, dp(36), 1f).apply {
                     marginEnd = if (i < group.lastIndex) dp(7) else 0
                 })
             }
             repeat((columns - group.size).coerceAtLeast(0)) {
-                line.addView(View(context), LayoutParams(0, dp(42), 1f))
+                line.addView(View(context), LayoutParams(0, dp(36), 1f))
             }
-            content.addView(line, LayoutParams(-1, dp(48)))
+            content.addView(line, LayoutParams(-1, dp(41)))
         }
     }
 
@@ -394,7 +433,7 @@ internal class MOOSAFocusLensView(
 
     /** Deterministic DPAD trap; posters underneath cannot receive focus. */
     fun trapDpad(direction: Int): Boolean {
-        val focusables = (listOf(typeMovie, typeSeries, dismiss) + tabs +
+        val focusables = (listOf(typeMovie, typeSeries) + tabs +
             dynamic + listOf(reset, apply)).filter { it.isShown && it.isFocusable }
         val current = findFocus()
         if (current == null || current !in focusables) {
