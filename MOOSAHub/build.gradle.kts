@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 127
+version = 128
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -154,3 +154,6 @@ dependencies {
 
  // v127: white primary buttons darken on focus; stable page-item return focus,
  // more useful settings labels, obsolete Web Bridge removal.
+
+// v128: Focus Lens Show More filter panel with true region-scoped TMDB watch
+// providers and cancellable live preview; keep original-shelf reset semantics.
