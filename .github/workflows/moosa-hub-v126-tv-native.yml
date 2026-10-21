@@ -1,0 +1,59 @@
+name: MOOSA Hub v126 TV Native settings verification
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAHub/**'
+      - '.github/workflows/moosa-hub-v126-tv-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-settings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.12'
+      - name: Build Android plugins and unit tests
+        run: |
+          gradle :MOOSAHub:testReleaseUnitTest :MOOSAHub:make :MOOSAArabic:make makePluginsJson ensureJarCompatibility --no-daemon
+      - name: Verify actual TV Native settings and original operations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('MOOSAHub/src/main/kotlin/com/moosa/hub')
+          s=(root/'MOOSASettingsDialog.kt').read_text()
+          c=(root/'MOOSATVSettingsStyle.kt').read_text()
+          sources=(root/'MOOSASourceTesterDialog.kt').read_text()
+          servers=(root/'MOOSAServerManagerDialog.kt').read_text()
+          versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
+          assert versions['MOOSAHub']==126,versions
+          assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
+          assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
+          assert 'Color.rgb(8, 8, 8)' in c
+          assert 'isFocusable = true' in c and 'setOnFocusChangeListener' in c
+          assert 'SETTINGS / OVERVIEW' in s
+          assert all(t in s for t in ('render()', 'source manager','server manager','Playback', 'Performance','Subtitles','Advanced','Web Bridge','rerenderWithoutLosingFocus'))
+          assert 'MOOSASourceTesterDialog.show(requireContext())' in s
+          assert 'MOOSAServerManagerDialog.show(requireContext())' in s
+          assert 'MOOSASettingsStore.setVerifyLinks(verify)' in s
+          assert 'MOOSASettingsStore.setProviderConcurrency(concurrency)' in s
+          assert 'MOOSASettingsStore.setSubdlKey(key)' in s
+          assert 'MOOSACloudStreamBridge.connect(requireContext(), code)' in s
+          assert 'MOOSASourceTester.testAll(' in sources
+          assert 'MOOSAServerRegistry.testAll(' in servers
+          assert 'selectionControls.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE' in servers
+          assert 'disableOffline.visibility = if (all.any { it.lastResult == false })' in servers
+          assert 'searchButton.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE' in servers
+          assert 'View.FOCUS_FORWARD' in s
+          assert not any('Color.rgb(64, 151, 220)' in x for x in (s,c,sources,servers))
+          print('PASS: unified monochrome TV-native layout, source/server tools preserved, full build')
+          PY

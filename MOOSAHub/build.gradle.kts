@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 125
+version = 126
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -148,3 +148,6 @@ dependencies {
 
 // v125: OLED-black Control Center settings panel, real left section rail,
 // in-place right-side details, safe TV margins and preserved advanced tools.
+
+// v126: approved TV Native 01 black monochrome settings and unified
+// Sources/Server Manager pages, functional in-page settings controls.
