@@ -92,8 +92,39 @@ internal object MOOSABrowseFilters {
         val sort: String = "popularity.desc",
         val originCountry: String = "",
         val platformNames: List<String> = emptyList(),
-        val watchRegion: String = "OM"
+        // Keep the default Oman region internal; no unnecessary region control.
+        val watchRegion: String = "OM",
+        val genreKeys: List<String> = emptyList(),
+        val yearMode: String = "any",
+        val yearFrom: Int = 2018,
+        val yearTo: Int = 2026,
+        val minimumRating: Int = 0
     )
+
+    fun currentYear(): Int = java.util.Calendar.getInstance(
+        TimeZone.getTimeZone("UTC")
+    ).get(java.util.Calendar.YEAR)
+
+    fun selectedGenres(selection: Selection): List<String> =
+        if (selection.genreKeys.isNotEmpty()) selection.genreKeys.distinct()
+        else listOfNotNull(selection.genreKey)
+
+    // Anime requires Japanese animation metadata: it cannot be OR-combined
+    // with worldwide animation, which would silently mislabel results.
+    fun withGenreToggle(selection: Selection, key: String?): Selection {
+        if (key == null) return selection.copy(genreKey = null, genreKeys = emptyList())
+        val selected = selectedGenres(selection)
+        val next = when {
+            key in selected -> selected - key
+            key == "anime" -> listOf("anime")
+            else -> (selected - "anime") + key
+        }
+        return selection.copy(
+            genreKey = null, genreKeys = next,
+            originCountry = if (key == "anime" && "anime" in next) "JP"
+                else selection.originCountry
+        )
+    }
 
     fun initial(original: MainPageRequest): Selection {
         val raw = original.data
@@ -123,12 +154,16 @@ internal object MOOSABrowseFilters {
             isTv = isTv,
             genreKey = selection.genreKey?.takeIf { key ->
                 availableGenres(isTv).any { it.key == key }
+            },
+            genreKeys = selection.genreKeys.filter { key ->
+                availableGenres(isTv).any { it.key == key }
             }
         )
 
     fun toRequest(original: MainPageRequest, choice: Selection): MainPageRequest {
-        val genreId = genres.firstOrNull { it.key == choice.genreKey }
-            ?.id(choice.isTv)
+        val keys = selectedGenres(choice)
+        val genreIds = genres.filter { it.key in keys }
+            .mapNotNull { it.id(choice.isTv) }.distinct()
         val selectedSort = sorts.firstOrNull { it.apiSort == choice.sort }
             ?: sorts.first()
         val params = linkedMapOf(
@@ -137,10 +172,12 @@ internal object MOOSABrowseFilters {
                 else "primary_release_date.desc"
             } else selectedSort.apiSort
         )
-        genreId?.let { params["with_genres"] = it.toString() }
+        if (genreIds.isNotEmpty()) {
+            params["with_genres"] = genreIds.joinToString("|")
+        }
         // TMDB has no native Anime genre: animation + Japanese original
         // language separates anime from non-Japanese cartoons.
-        if (choice.genreKey == "anime") {
+        if ("anime" in keys) {
             params["with_original_language"] = "ja"
         }
         if (choice.originCountry in countries.map { it.code } &&
@@ -164,15 +201,32 @@ internal object MOOSABrowseFilters {
             params["vote_count.gte"] = if (choice.isTv) "50" else "100"
         }
 
-        if (choice.sort == "date.desc") {
-            val utc = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
-                timeZone = TimeZone.getTimeZone("UTC")
-            }.format(Date())
-            params[if (choice.isTv) "first_air_date.lte"
-                   else "primary_release_date.lte"] = utc
-            if (choice.isTv) {
-                params["include_null_first_air_dates"] = "false"
-            }
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date())
+        val nowYear = currentYear()
+        val safeFrom = choice.yearFrom.coerceIn(1900, nowYear)
+        val safeTo = choice.yearTo.coerceIn(safeFrom, nowYear)
+        val years = when (choice.yearMode) {
+            "current" -> nowYear to nowYear
+            "last3" -> (nowYear - 2) to nowYear
+            "last5" -> (nowYear - 4) to nowYear
+            "last10" -> (nowYear - 9) to nowYear
+            "range" -> safeFrom to safeTo
+            else -> null
+        }
+        val datePrefix = if (choice.isTv) "first_air_date" else "primary_release_date"
+        if (years != null) {
+            params["$datePrefix.gte"] = "${years.first}-01-01"
+            params["$datePrefix.lte"] =
+                minOf("${years.second}-12-31", today)
+            if (choice.isTv) params["include_null_first_air_dates"] = "false"
+        } else if (choice.sort == "date.desc") {
+            params["$datePrefix.lte"] = today
+            if (choice.isTv) params["include_null_first_air_dates"] = "false"
+        }
+        if (choice.minimumRating in 1..10) {
+            params["vote_average.gte"] = choice.minimumRating.toString()
         }
 
         val type = if (choice.isTv) "tv" else "movie"
