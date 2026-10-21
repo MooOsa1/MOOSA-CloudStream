@@ -472,6 +472,7 @@ class MOOSABrowseDialog : DialogFragment() {
             ) {
                 if (filterPanelVisible) focusLens.focusFirst()
                 else focusFirstVisiblePoster()
+                true
             } else false
         }
         closeButton.nextFocusDownId = filterToggleButton.id
