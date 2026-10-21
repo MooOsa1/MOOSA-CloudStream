@@ -43,7 +43,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 class MOOSABrowseDialog : DialogFragment() {
@@ -59,12 +58,7 @@ class MOOSABrowseDialog : DialogFragment() {
     private lateinit var filterToggleButton: Button
     private lateinit var filterPanel: LinearLayout
     private lateinit var focusLens: MOOSAFocusLensView
-    private var lensPreviewJob: Job? = null
-    private var lensPreviewGeneration = 0
     private lateinit var filtersScrim: View
-    private lateinit var chipsRow: LinearLayout
-    private var lastRenderedChips: List<String> = emptyList()
-    private lateinit var showResultsButton: Button
     private var draftFilters: MOOSABrowseFilters.Selection? = null
     private var filterPanelVisible = false
     private lateinit var browseRoot: LinearLayout
@@ -75,7 +69,6 @@ class MOOSABrowseDialog : DialogFragment() {
     private var contentParked = false
     private var parkedHadDim = false
     private var parkedDimAmount = 0f
-    private var focusFilterId = View.NO_ID
     private var stayOnFilterAfterReload = false
 
     private data class BrowseSnapshot(
@@ -288,9 +281,9 @@ class MOOSABrowseDialog : DialogFragment() {
         }
         header.addView(status)
 
-        filterToggleButton = focusableButton("☷  Filters  ▾")
+        filterToggleButton = focusableButton("☷  Refine  ▾")
         header.addView(filterToggleButton, LinearLayout.LayoutParams(
-            dp(118), dp(37)
+            dp(110), dp(37)
         ).apply { marginEnd = dp(9) })
         closeButton = focusableButton("×").apply {
             contentDescription = "Close"
@@ -299,33 +292,13 @@ class MOOSABrowseDialog : DialogFragment() {
         header.addView(closeButton, LinearLayout.LayoutParams(dp(40), dp(37)))
         root.addView(header)
 
-        // A single unobtrusive row shows APPLIED filters. The editor stays
-        // invisible until requested and never pushes the posters downward.
-        chipsRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            isFocusable = false
-        }
-        // Small screens and long country/genre labels can scroll; no
-        // cropped chips and no extra focusable elements in the DPAD path.
-        val chipScroller = HorizontalScrollView(context).apply {
-            isHorizontalScrollBarEnabled = false
-            isFocusable = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            clipToPadding = false
-            addView(chipsRow, ViewGroup.LayoutParams(-2, -1))
-        }
-        root.addView(chipScroller, LinearLayout.LayoutParams(-1, dp(31)).apply {
-            topMargin = dp(3)
-        })
-
         // Focus Lens owns the entire filter editor, including all inline
         // choices and DPAD navigation. No more nested Android alert dialogs.
         focusLens = MOOSAFocusLensView(
             context, request,
             onDraftChanged = { choice ->
                 draftFilters = choice
-                updateLensPreview(choice)
+                // Draft only: no network work until Show Results is pressed.
             },
             onApply = { choice ->
                 val changed = choice != selectedFilters
@@ -460,9 +433,13 @@ class MOOSABrowseDialog : DialogFragment() {
         filterPanel = focusLens
         filterPanel.visibility = View.GONE
         filterPanel.elevation = dp(16).toFloat()
-        container.addView(filterPanel, FrameLayout.LayoutParams(-1, -1).apply {
-            topMargin = dp(55)
-            bottomMargin = dp(14)
+        // Cover the top of Show More without pushing/recreating the poster grid.
+        // For low-resolution Android TVs, shrink rather than clipping controls.
+        val windowPixels = (resources.displayMetrics.heightPixels * 0.94f).toInt()
+        val panelPixels = minOf(dp(335),
+            (windowPixels - dp(90)).coerceAtLeast(dp(205)))
+        container.addView(filterPanel, FrameLayout.LayoutParams(-1, panelPixels).apply {
+            topMargin = dp(57)
             leftMargin = dp(12)
             rightMargin = dp(12)
         })
@@ -751,12 +728,11 @@ class MOOSABrowseDialog : DialogFragment() {
         else ViewGroup.FOCUS_AFTER_DESCENDANTS
         filterPanel.animate().cancel()
         filtersScrim.animate().cancel()
-        filterToggleButton.text = if (open) "☷  Filters  ▴" else "☷  Filters  ▾"
+        updateFilterLabels()
         if (open) {
             draftFilters = selectedFilters
             focusLens.bindSelection(draftFilters)
             updateFilterLabels()
-            updateLensPreview(draftFilters)
             filtersScrim.visibility = View.VISIBLE
             filtersScrim.alpha = 0f
             filtersScrim.animate().alpha(1f).setDuration(190L).start()
@@ -770,8 +746,6 @@ class MOOSABrowseDialog : DialogFragment() {
             // where the next DPAD press can land on the poster grid.
             restoreFilterFocus()
         } else {
-            lensPreviewGeneration++
-            lensPreviewJob?.cancel(CancellationException("Focus Lens closed"))
             filterPanel.animate().alpha(0f)
                 .translationY(-dp(22).toFloat())
                 .setDuration(190L).setInterpolator(DecelerateInterpolator())
@@ -843,47 +817,6 @@ class MOOSABrowseDialog : DialogFragment() {
         if (filterPanelVisible && ::focusLens.isInitialized) focusLens.focusFirst()
     }
 
-    private fun updateLensPreview(choice: MOOSABrowseFilters.Selection?) {
-        if (!::focusLens.isInitialized || !filterPanelVisible) return
-        val effective = choice?.let { MOOSABrowseFilters.toRequest(request, it) }
-            ?: request
-        lensPreviewGeneration++
-        val generation = lensPreviewGeneration
-        lensPreviewJob?.cancel(CancellationException("Preview selection changed"))
-        // Reuse the visible catalog or cached query instead of double-fetching.
-        if (choice == selectedFilters && items.isNotEmpty()) {
-            focusLens.showPreview(items.take(20))
-            return
-        }
-        val cache = browseSnapshots[effective.data]?.takeIf {
-            android.os.SystemClock.elapsedRealtime() - it.savedAtMs < 120_000L
-        }
-        if (cache != null) {
-            focusLens.showPreview(cache.items.take(20))
-            return
-        }
-        focusLens.showPreview(emptyList(), loading = true)
-        lensPreviewJob = lifecycleScope.launch {
-            delay(230)
-            try {
-                val batch = withContext(Dispatchers.IO) {
-                    MOOSACatalog.browseBatch(
-                        api = api, request = effective, startPage = 1, pageCount = 1
-                    )
-                }
-                if (generation == lensPreviewGeneration && filterPanelVisible) {
-                    focusLens.showPreview(batch.items)
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                if (generation == lensPreviewGeneration && filterPanelVisible) {
-                    focusLens.showPreview(emptyList(), error = true)
-                }
-            }
-        }
-    }
-
     private fun saveSnapshot(key: String) {
         if (items.isEmpty()) return
         browseSnapshots[key] = BrowseSnapshot(
@@ -895,64 +828,40 @@ class MOOSABrowseDialog : DialogFragment() {
     }
 
     private fun updateFilterLabels() {
-        // The compact applied chips are never changed by uncommitted edits.
-        val applied = selectedFilters
-        val active = applied ?: MOOSABrowseFilters.initial(request)
-        val labels = listOfNotNull(
-            if (active.isTv) "Series" else "Movies",
-            MOOSABrowseFilters.genres.firstOrNull { it.key == active.genreKey }?.label,
-            MOOSABrowseFilters.countries.firstOrNull {
-                it.code == active.originCountry && it.code.isNotEmpty()
-            }?.name,
-            if (applied == null) null else
-                MOOSABrowseFilters.sorts.firstOrNull { it.apiSort == active.sort }?.name,
-            if (active.platformNames.isNotEmpty()) active.platformNames.joinToString(", ")
-                + " · " + active.watchRegion else null
-        )
-        if (labels == lastRenderedChips) return
-        lastRenderedChips = labels
-        chipsRow.removeAllViews()
-        for (name in labels) {
-            val chip = TextView(requireContext()).apply {
-                text = name
-                textSize = 11f
-                setTextColor(Color.rgb(195, 195, 204))
-                gravity = Gravity.CENTER
-                setPadding(dp(10), 0, dp(10), 0)
-                setSingleLine(true)
-                ellipsize = TextUtils.TruncateAt.END
-                background = rounded(Color.rgb(38, 38, 43), 6,
-                    Color.rgb(68, 68, 75))
-                isFocusable = false
-            }
-            chipsRow.addView(chip, LinearLayout.LayoutParams(-2, dp(23)).apply {
-                marginEnd = dp(7)
-            })
-        }
+        val s = selectedFilters
+        val count = if (s == null) 0 else
+            s.platformNames.size +
+            MOOSABrowseFilters.selectedGenres(s).size +
+            (if (s.yearMode != "any") 1 else 0) +
+            (if (s.minimumRating > 0) 1 else 0) +
+            (if (s.sort != "shelf") 1 else 0) +
+            (if (s.isTv != MOOSABrowseFilters.initial(request).isTv) 1 else 0)
+        filterToggleButton.text = "☷  Refine" +
+            (if (count > 0) "  ($count)" else "") +
+            (if (filterPanelVisible) "  ▴" else "  ▾")
     }
 
     private fun updateCategoryTitle() {
         if (!::categoryTitle.isInitialized) return
-        val applied = selectedFilters
-        if (applied == null) {
+        val applied = selectedFilters ?: run {
             categoryTitle.text = request.name
             return
         }
-        val medium = if (applied.isTv) "Series" else "Movies"
-        val genre = MOOSABrowseFilters.genres.firstOrNull {
-            it.key == applied.genreKey
-        }?.label
-        val country = MOOSABrowseFilters.countries.firstOrNull {
-            it.code == applied.originCountry && it.code.isNotEmpty()
-        }?.name
-        val order = MOOSABrowseFilters.sorts.firstOrNull {
-            it.apiSort == applied.sort
-        }?.name ?: "Most popular"
-        val kind = if (genre == null) medium else "$genre $medium"
-        val platform = applied.platformNames.takeIf { it.isNotEmpty() }
-            ?.joinToString(", ")
-        categoryTitle.text = listOfNotNull(platform, country, kind, order)
-            .joinToString(" • ")
+        val original = MOOSABrowseFilters.initial(request).isTv
+        // The original shelf name is the title, not a list of filter values.
+        // Only update the medium when the user switches Movies / Series.
+        categoryTitle.text = when {
+            applied.isTv == original -> request.name
+            applied.isTv && request.name.contains("Movies") ->
+                request.name.replace("Movies", "Series")
+            !applied.isTv && request.name.contains("Series") ->
+                request.name.replace("Series", "Movies")
+            applied.isTv && request.name.contains("Movie") ->
+                request.name.replace("Movie", "Series")
+            !applied.isTv && request.name.contains("TV") ->
+                request.name.replace("TV", "Movies")
+            else -> request.name + if (applied.isTv) " • Series" else " • Movies"
+        }
     }
 
     private fun applyFilters(choice: MOOSABrowseFilters.Selection?) {

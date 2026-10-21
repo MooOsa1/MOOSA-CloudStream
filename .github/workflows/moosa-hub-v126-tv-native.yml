@@ -1,4 +1,4 @@
-name: MOOSA Hub v128 Focus Lens and settings verification
+name: MOOSA Hub v129 Top Refine and TV settings verification
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==128,versions
+          assert versions['MOOSAHub']==129,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -73,11 +73,21 @@ jobs:
           browse=(root/'MOOSABrowseDialog.kt').read_text()
           policy=(root/'MOOSABrowseFilters.kt').read_text()
           assert 'MOOSAFocusLensView(' in browse
-          assert 'private fun updateLensPreview(' in browse
-          assert 'lensPreviewJob?.cancel(CancellationException(' in browse
+          assert 'private fun updateLensPreview(' not in browse
+          assert 'lensPreviewJob' not in browse
           assert 'focusLens.trapDpad(direction)' in browse
           assert 'onDraftChanged' in lens and 'onApply' in lens and 'onClose' in lens
-          assert 'showPreview(rows: List<SearchResponse>' in lens
+          assert 'private fun renderYear()' in lens
+          assert 'Last 3 years' in lens and 'Last 5 years' in lens
+          assert 'fun trapDpad(direction: Int)' in lens
+          assert 'setChosen(typeMovie' in lens and 'setChosen(typeSeries' in lens
+          assert 'categoryTitle.text = request.name' in browse
+          assert 'panelPixels = minOf(dp(335)' in browse
+          assert 'withGenreToggle(' in lens
+          assert 'with_watch_providers' in policy
+          assert 'minimumRating' in policy and 'first_air_date' in policy
+          assert 'yearMode' in policy and 'date.asc' in policy
+          assert 'chipsRow' not in browse
           assert 'MOOSACatalog.browseBatch(' in browse
           assert 'with_watch_providers' in policy
           assert 'with_watch_monetization_types' in policy
@@ -85,5 +95,5 @@ jobs:
           assert 'platformNames: List<String>' in policy
           assert 'watchRegions = listOf(' in policy
           assert 'AlertDialog.Builder(requireContext())' not in browse
-          print('PASS: v128 TV settings + Focus Lens + real TMDB watch providers and previews')
+          print('PASS: v129 TV settings + compact top Refine + true range and catalog filters')
           PY

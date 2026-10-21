@@ -107,4 +107,64 @@ class MOOSAAnimeAndShowMoreTest {
         assertFalse(data.contains("Imaginary"))
     }
 
+    @Test
+    fun customYearRangeAndRatingProduceRealTmdbFilters() {
+        val data = MOOSABrowseFilters.toRequest(
+            anime,
+            MOOSABrowseFilters.Selection(
+                isTv = false,
+                yearMode = "range",
+                yearFrom = 2021,
+                yearTo = 2024,
+                minimumRating = 8
+            )
+        ).data
+        assertTrue(data.startsWith("/discover/movie?"))
+        assertTrue(data.contains("primary_release_date.gte=2021-01-01"))
+        assertTrue(data.contains("primary_release_date.lte=2024-12-31"))
+        assertTrue(data.contains("vote_average.gte=8"))
+    }
+
+    @Test
+    fun rollingYearPresetTracksCurrentYearWithoutHardcoding() {
+        val year = MOOSABrowseFilters.currentYear()
+        val data = MOOSABrowseFilters.toRequest(
+            anime,
+            MOOSABrowseFilters.Selection(isTv = true, yearMode = "last5")
+        ).data
+        assertTrue(data.contains("first_air_date.gte=" + (year - 4) + "-01-01"))
+        assertTrue(data.contains("first_air_date.lte="))
+        assertTrue(data.contains("include_null_first_air_dates=false"))
+    }
+
+    @Test
+    fun multipleGenresUseOrWithoutAccidentallyMixingAnime() {
+        val start = MOOSABrowseFilters.Selection(isTv = true)
+        val crime = MOOSABrowseFilters.withGenreToggle(start, "crime")
+        val drama = MOOSABrowseFilters.withGenreToggle(crime, "drama")
+        assertEquals(listOf("crime", "drama"),
+            MOOSABrowseFilters.selectedGenres(drama))
+        val data = MOOSABrowseFilters.toRequest(anime, drama).data
+        assertTrue(data.contains("with_genres=80|18"))
+        assertFalse(data.contains("with_original_language=ja"))
+        val animeOnly = MOOSABrowseFilters.withGenreToggle(drama, "anime")
+        assertEquals(listOf("anime"), MOOSABrowseFilters.selectedGenres(animeOnly))
+        val japanese = MOOSABrowseFilters.toRequest(anime, animeOnly).data
+        assertTrue(japanese.contains("with_original_language=ja"))
+    }
+
+    @Test
+    fun defaultShelfOrderAndOldestOrderingAreNotFake() {
+        val topSeries = MainPageRequest("Top Rated Series", "/tv/top_rated", false)
+        val original = MOOSABrowseFilters.toRequest(
+            topSeries, MOOSABrowseFilters.Selection(isTv = true)
+        ).data
+        assertTrue(original.contains("sort_by=vote_average.desc"))
+        val oldest = MOOSABrowseFilters.toRequest(
+            topSeries,
+            MOOSABrowseFilters.Selection(isTv = true, sort = "date.asc")
+        ).data
+        assertTrue(oldest.contains("sort_by=first_air_date.asc"))
+    }
+
 }

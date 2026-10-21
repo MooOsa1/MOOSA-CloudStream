@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 128
+version = 129
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -157,3 +157,7 @@ dependencies {
 
 // v128: Focus Lens Show More filter panel with true region-scoped TMDB watch
 // providers and cancellable live preview; keep original-shelf reset semantics.
+
+// v129: compact top slide-down Refine; preserve original category title, TV
+// Movies/Series switch, five focused tabs and true rolling release-year
+// presets/range, genre/streaming multi-select, rating and sort TMDB queries.
