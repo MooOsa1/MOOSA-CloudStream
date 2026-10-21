@@ -22,10 +22,10 @@
     },
     {
         "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
-        "fileHash": "sha256-63c4b49fcfd02f957d69651d6d235f005c7ce566ff363dc8634817d6e8895128",
+        "fileHash": "sha256-37385a33db633f27d655a2cbd8f5137568fb755be97debff86ddb6041c051bfe",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/MooOsa1/MOOSA-CloudStream",
-        "fileSize": 407603,
+        "fileSize": 408097,
         "status": 1,
         "language": "en",
         "authors": [
@@ -38,7 +38,7 @@
             "AnimeMovie",
             "OVA"
         ],
-        "version": 129,
+        "version": 130,
         "internalName": "MOOSAHub",
         "description": "Global movies, series and anime with native anime episodes and Arabic subtitles; Arabic originals in MOOSA Arabic",
         "url": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/builds/MOOSAHub.cs3",
