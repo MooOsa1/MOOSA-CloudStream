@@ -36,6 +36,8 @@ class MOOSASettingsDialog : DialogFragment() {
         shell.content.removeAllViews()
         val scroll = ScrollView(requireContext()).apply {
             isVerticalScrollBarEnabled = false
+            isFocusable = false
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
             overScrollMode = View.OVER_SCROLL_NEVER
         }
         val body = LinearLayout(requireContext()).apply {
@@ -195,19 +197,19 @@ class MOOSASettingsDialog : DialogFragment() {
         addRow(body, actionRow("Verify stream links",
             "Check links before presenting them • " + if (verify) "ON" else "OFF") {
             verify = !verify
-            render()
+            rerenderWithoutLosingFocus()
         })
         addRow(body, actionRow("Fast Arabic mode",
             "Prioritize Arabic subtitle searching • " +
                 if (arabicFast) "ON" else "OFF") {
             arabicFast = !arabicFast
-            render()
+            rerenderWithoutLosingFocus()
         })
         action(body, "Save settings  ✓") {
             MOOSASettingsStore.setVerifyLinks(verify)
             MOOSASettingsStore.setArabicFastMode(arabicFast)
             notifyUser("Playback settings saved")
-            render()
+            rerenderWithoutLosingFocus()
         }
     }
 
@@ -231,7 +233,7 @@ class MOOSASettingsDialog : DialogFragment() {
         action(body, "Apply performance setting  ✓") {
             MOOSASettingsStore.setProviderConcurrency(concurrency)
             notifyUser("Saved: $concurrency providers")
-            render()
+            rerenderWithoutLosingFocus()
         }
     }
 
@@ -351,6 +353,21 @@ class MOOSASettingsDialog : DialogFragment() {
         action(body, "Disconnect Web Bridge", false) {
             MOOSACloudStreamBridge.disconnect(requireContext())
             render()
+        }
+    }
+
+    private fun rerenderWithoutLosingFocus() {
+        // Rebuilding a selected setting previously moved remote focus to the
+        // top bar. Remember its ordinal and restore it on the next layout.
+        val before = shell.content.getFocusables(View.FOCUS_FORWARD)
+        val index = before.indexOf(shell.content.findFocus())
+        render()
+        shell.content.post {
+            if (!isAdded) return@post
+            val after = shell.content.getFocusables(View.FOCUS_FORWARD)
+            if (after.isNotEmpty()) {
+                after[index.coerceIn(0, after.lastIndex)].requestFocus()
+            }
         }
     }
 
