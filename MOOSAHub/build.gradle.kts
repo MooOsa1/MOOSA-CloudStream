@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 130
+version = 131
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -165,3 +165,6 @@ dependencies {
 // v130: real-TV layout correction: dynamic Show More panel height from actual
 // dialog bounds, compact option rows, underline active tab, one close button,
 // visible scroll hint and fixed footer; no backend or shelf-content changes.
+
+// v131: row-aware DPAD traversal, explicit ScrollView scrolling and stable
+// focus after selection redraw on Fire TV/Android 7; unit-tested boundaries.
