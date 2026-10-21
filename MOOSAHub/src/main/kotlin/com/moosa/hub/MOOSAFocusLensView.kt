@@ -225,7 +225,7 @@ internal class MOOSAFocusLensView(
                      onClick: () -> Unit): Button {
         val b = button(label + if (selected) "  ✓" else "")
         b.tag = key
-        b.setOnClickListener(onClick)
+        b.setOnClickListener { onClick() }
         setChosen(b, selected)
         dynamic.add(b)
         return b
