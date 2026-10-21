@@ -93,7 +93,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
     private fun actionButton(text: String, color: Int): Button =
         MOOSATVSettingsStyle.button(
             requireContext(), text,
-            text.startsWith("Discover") || text.startsWith("Test All")
+            text.startsWith("Scan & Test") || text.startsWith("Test All")
         )
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -122,8 +122,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
         ))
         MOOSATVSettingsStyle.heading(
             context, page, "DISCOVERY / PROVIDERS",
-            "Sources",
-            "Manage installed providers and test them."
+            "Providers",
+            "Enable, disable and test installed content providers."
         )
 
         val header = LinearLayout(context).apply {
@@ -151,8 +151,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
         val controls1 = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        selectAll = actionButton("Select All", Color.rgb(53, 53, 53))
-        selectNone = actionButton("Select None", Color.rgb(53, 53, 53))
+        selectAll = actionButton("Enable All", Color.rgb(53, 53, 53))
+        selectNone = actionButton("Disable All", Color.rgb(53, 53, 53))
         controls1.addView(
             selectAll,
             LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(6) }
@@ -167,8 +167,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(7), 0, 0)
         }
-        testAllButton = actionButton("Test All Sources", Color.rgb(53, 53, 53))
-        disableOffline = actionButton("Disable Offline", Color.rgb(53, 53, 53))
+        testAllButton = actionButton("Test All Providers", Color.rgb(53, 53, 53))
+        disableOffline = actionButton("Disable Offline Providers", Color.rgb(53, 53, 53))
         controls2.addView(
             testAllButton,
             LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginEnd = dp(6) }
@@ -203,7 +203,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
         }
         page.addView(progressText)
 
-        searchButton = actionButton("Search Sources…", Color.rgb(53, 53, 53))
+        searchButton = actionButton("Search Providers…", Color.rgb(53, 53, 53))
         page.addView(
             searchButton,
             LinearLayout.LayoutParams(
@@ -217,7 +217,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             visibility = View.GONE
         }
         searchInput = EditText(context).apply {
-            hint = "Search Sources by name"
+            hint = "Search Providers by name"
             setSingleLine(true)
             textSize = 14f
             setTextColor(Color.WHITE)
@@ -243,7 +243,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
         })
         applySearch.setOnClickListener {
             query = searchInput.text?.toString()?.trim().orEmpty()
-            searchButton.text = if (query.isBlank()) "Search Sources…"
+            searchButton.text = if (query.isBlank()) "Search Providers…"
                 else "Search: " + query
             rebuildList()
             searchPanel.visibility = View.GONE
@@ -252,7 +252,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
         clearSearch.setOnClickListener {
             query = ""
             searchInput.setText("")
-            searchButton.text = "Search Sources…"
+            searchButton.text = "Search Providers…"
             rebuildList()
             searchPanel.visibility = View.GONE
             searchButton.requestFocus()
@@ -599,14 +599,14 @@ class MOOSASourceTesterDialog : DialogFragment() {
 
             if (isAdded) {
                 scanRunning = false
-                testAllButton.text = "TEST ALL SOURCES"
+                testAllButton.text = "Test All Providers"
                 updateOfflineAction()
                 progressBar.progress = total
                 progressText.text =
                     "Finished • Online ${online.get()} • Unverified ${unverified.get()} • Offline ${offline.get()}"
                 Toast.makeText(
                     requireContext(),
-                    "Source test finished.",
+                    "Provider test finished.",
                     Toast.LENGTH_SHORT
                 ).show()
             }
