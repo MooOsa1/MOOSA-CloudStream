@@ -375,7 +375,7 @@ class MOOSAServerManagerDialog : DialogFragment() {
         if (visible.isEmpty()) {
             listContainer.addView(
                 label(
-                    "No servers yet. Press DISCOVER & TEST SERVERS.",
+                    "No servers found yet. Choose Scan & Test Servers.",
                     16f,
                     Color.LTGRAY
                 ).apply {
