@@ -135,8 +135,11 @@ class MOOSASettingsDialog : DialogFragment() {
     private fun overview(body: LinearLayout) {
         heading(body, "SETTINGS / OVERVIEW", "Everything, organized.",
                 "Choose a section. Every tool uses the same interface.")
+        val sourceList = MOOSASourceTester.sources()
+        val activeSources = sourceList.count { MOOSASourceTester.isEnabled(it) }
         val sections = listOf(
-            Triple("Sources", "5 installed providers · manage and test", "sources"),
+            Triple("Sources", activeSources.toString() + " / " +
+                sourceList.size + " enabled · manage and test", "sources"),
             Triple("Servers", "Discover and test streaming links", "servers"),
             Triple("Playback", "Verification and Arabic fast mode", "playback"),
             Triple("Performance", "Parallel searches", "performance"),
@@ -178,7 +181,7 @@ class MOOSASettingsDialog : DialogFragment() {
         val all = MOOSAServerRegistry.snapshot()
         heading(body, "STREAMING / SERVER MANAGER", "Server Manager",
             "Discover and validate links without leaving the settings area.")
-        stat(body, "%02d / %02d".format(all.size, all.size), "Servers available")
+        stat(body, "%02d / %02d".format(all.count { it.lastResult == true }, all.size), "Online / discovered")
         if (all.isNotEmpty()) {
             setting(body, "Verified online", all.count { it.lastResult == true }.toString())
             setting(body, "Offline / untested", all.count { it.lastResult != true }.toString())
