@@ -14,4 +14,19 @@ internal object MOOSARecognizedExternalProvider {
 
     fun shouldIncludeFromGlobal(name: String, isAnime: Boolean): Boolean =
         isAnime || isRecognized(name)
+
+    // When a meta-provider exposes P2P/Torrentio among its direct links,
+    // exclude those candidates without disabling the entire provider.
+    private val torrentLabel = Regex(
+        "(?i)torrentio|torrentsdb|animetosho|bittorrent|\\bp2p\\b|\\btorrent\\b"
+    )
+
+    fun isTorrentCandidate(source: String, server: String, url: String): Boolean {
+        val normalized = url.trim().lowercase(java.util.Locale.ROOT)
+        val path = normalized.substringBefore('?').substringBefore('#')
+        return normalized.startsWith("magnet:") ||
+            path.endsWith(".torrent") ||
+            torrentLabel.containsMatchIn(source) ||
+            torrentLabel.containsMatchIn(server)
+    }
 }
