@@ -125,19 +125,31 @@ internal class MOOSACineStreamVidrockProvider : MainAPI() {
             "Referer" to MOOSACineStreamVidrockPolicy.BASE + "/",
             "User-Agent" to "Mozilla/5.0"
         )
+        MOOSANativeSourceDiagnostics.mark(name, "Requesting S02E01 • Vidrock API")
         val response = withTimeoutOrNull(8000L) {
             runCatching { app.get(address, headers = headers) }.getOrNull()
-        } ?: return false
-        if (!response.isSuccessful) return false
+        } ?: run {
+            MOOSANativeSourceDiagnostics.mark(name, "API unreachable / 8s timeout")
+            return false
+        }
+        if (!response.isSuccessful) {
+            MOOSANativeSourceDiagnostics.mark(name, "API HTTP " + response.code)
+            return false
+        }
         val document = runCatching { JSONObject(response.text) }.getOrNull()
-            ?: return false
+            ?: run {
+                MOOSANativeSourceDiagnostics.mark(name, "API returned invalid JSON")
+                return false
+            }
         var emitted = false
         var count = 0
+        var encryptedCount = 0
         val names = document.keys()
         while (names.hasNext() && count < 12) {
             val server = names.next()
             val encrypted = document.optJSONObject(server)
                 ?.optString("url").orEmpty()
+            if (encrypted.isNotBlank()) encryptedCount++
             val hls = MOOSACineStreamVidrockPolicy.decryptUrl(encrypted) ?: continue
             count++
             callback(newExtractorLink(
@@ -153,6 +165,14 @@ internal class MOOSACineStreamVidrockProvider : MainAPI() {
             })
             emitted = true
         }
+        MOOSANativeSourceDiagnostics.mark(
+            name,
+            when {
+                emitted -> "HLS found • verifying playback / 720p+"
+                encryptedCount > 0 -> "Encrypted links rejected / decrypt failed"
+                else -> "No S02E01 streams in Vidrock response"
+            }
+        )
         return emitted
     }
 }
