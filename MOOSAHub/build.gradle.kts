@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 133
+version = 134
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -177,3 +177,6 @@ dependencies {
 // VaPlayer uses an exact IMDb film or S/E key; it needs no external CS3,
 // torrent, decryption proxy, or private API keys. Quality must be verified
 // from actual HLS metadata before being displayed.
+
+// v134: independent CineStream-origin Vidrock server: TMDB exact film/TV/S-E,
+// AES-GCM authenticated CDN HLS and existing 720p+ quality probe.
