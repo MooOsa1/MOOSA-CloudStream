@@ -445,7 +445,11 @@ object MOOSASourceTester {
         item.detail = "Checking Better Call Saul S02E01"
         MOOSANativeSourceDiagnostics.clear(api.name)
         onUpdate?.invoke(snapshot(api))
-        val valid = withTimeoutOrNull(16000L) {
+        // VidZee can use up to 14s resolving seven endpoints, then each HLS
+        // must still be independently probed. The old fixed 16s canceled
+        // valid link verification before it could mark the source ONLINE.
+        val testDeadline = if (api is MOOSACineStreamVidzeeProvider) 23000L else 17000L
+        val valid = withTimeoutOrNull(testDeadline) {
             val candidates = Collections.synchronizedList(
                 mutableListOf<ExtractorLink>()
             )
