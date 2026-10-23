@@ -291,6 +291,7 @@ object MOOSAServerRegistry {
      * VaPlayer can return an HLS media playlist directly, without the
      * RESOLUTION field that exists only on master playlists. Inspect at most
      * 32 KiB of the REAL first HTTPS .ts segment and parse its H.264 SPS.
+     * A master without RESOLUTION is allowed one verified media-playlist hop.
      * Fail closed if encrypted, fMP4, unreachable or codec unknown.
      * This does not relax MOOSA's minimum 720p requirement.
      */
@@ -298,10 +299,24 @@ object MOOSAServerRegistry {
         link: ExtractorLink, manifest: String
     ): Int? {
         if (link.source != MOOSACineStreamVaPlayerPolicy.SOURCE_NAME) return null
-        val segment = MOOSAHlsMediaQuality.firstTsSegmentUrl(link.url, manifest)
-            ?: return null
         return withTimeoutOrNull(3600L) {
             try {
+                val directSegment = MOOSAHlsMediaQuality.firstTsSegmentUrl(
+                    link.url, manifest
+                )
+                val segment = directSegment ?: run {
+                    val child = MOOSAHlsMediaQuality.firstMediaVariantUrl(
+                        link.url, manifest
+                    ) ?: return@withTimeoutOrNull null
+                    val media = app.get(
+                        child,
+                        headers = link.getAllHeaders(),
+                        referer = link.referer
+                    )
+                    if (!media.isSuccessful) return@withTimeoutOrNull null
+                    MOOSAHlsMediaQuality.firstTsSegmentUrl(child, media.text)
+                        ?: return@withTimeoutOrNull null
+                }
                 val response = app.get(
                     segment,
                     headers = link.getAllHeaders() + mapOf("Range" to "bytes=0-32767"),

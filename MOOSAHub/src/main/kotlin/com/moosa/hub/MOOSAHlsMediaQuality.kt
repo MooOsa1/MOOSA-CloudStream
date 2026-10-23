@@ -12,6 +12,48 @@ import java.util.Locale
  */
 internal object MOOSAHlsMediaQuality {
     private const val SEGMENT_LIMIT = 65536
+    private val bandwidth = Regex("""(?i)(?:^|,)\s*BANDWIDTH\s*=\s*(\d{1,10})(?:,|$)""")
+
+    /**
+     * A master can omit RESOLUTION on every video rendition. Pick the video
+     * rendition with the highest declared bandwidth for a *measurement*, not
+     * as evidence of HD. Its own media playlist and TS SPS must still pass.
+     * Only one child playlist is followed; no recursive or speculative crawl.
+     */
+    fun firstMediaVariantUrl(masterUrl: String, playlist: String): String? {
+        val url = runCatching { URI(masterUrl) }.getOrNull() ?: return null
+        if (!url.scheme.equals("https", true) || url.host.isNullOrBlank()) return null
+        val lines = playlist.lineSequence().map { it.trim() }
+            .filter { it.isNotEmpty() }.toList()
+        if (lines.firstOrNull()?.trimStart('\uFEFF') != "#EXTM3U") return null
+        if (lines.any { it.startsWith("#EXTINF:", true) }) return null
+
+        val choices = mutableListOf<Pair<Long, String>>()
+        for (index in 1 until lines.lastIndex) {
+            val line = lines[index]
+            if (!line.startsWith("#EXT-X-STREAM-INF:", true)) continue
+            val target = safeHttpsMediaUrl(url, lines[index + 1], ".m3u8")
+                ?: continue
+            val weight = bandwidth.find(line.substringAfter(':'))
+                ?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+            choices += weight to target
+        }
+        return choices.maxByOrNull { it.first }?.second
+    }
+
+    private fun safeHttpsMediaUrl(base: URI, reference: String, extension: String): String? {
+        if (reference.startsWith("#")) return null
+        val target = runCatching { base.resolve(reference) }.getOrNull() ?: return null
+        val host = target.host?.lowercase(Locale.ROOT) ?: return null
+        val path = target.path.orEmpty().lowercase(Locale.ROOT)
+        if (!target.scheme.equals("https", true) || target.userInfo != null ||
+            host == "localhost" || host.endsWith(".localhost") ||
+            host.endsWith(".local") || host.startsWith("127.") ||
+            host == "0.0.0.0" || host == "[::1]" ||
+            !path.endsWith(extension)
+        ) return null
+        return target.toString()
+    }
 
     fun firstTsSegmentUrl(playlistUrl: String, playlist: String): String? {
         val url = runCatching { URI(playlistUrl) }.getOrNull() ?: return null
@@ -32,13 +74,7 @@ internal object MOOSAHlsMediaQuality {
                 continue
             }
             if (!afterDuration || line.isEmpty() || line.startsWith("#")) continue
-            val target = runCatching { url.resolve(line) }.getOrNull() ?: return null
-            val path = target.path.orEmpty().lowercase(Locale.ROOT)
-            if (!target.scheme.equals("https", true) ||
-                target.host.isNullOrBlank() || target.userInfo != null ||
-                !path.endsWith(".ts")
-            ) return null
-            return target.toString()
+            return safeHttpsMediaUrl(url, line, ".ts")
         }
         return null
     }
