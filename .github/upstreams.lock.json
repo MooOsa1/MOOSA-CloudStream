@@ -1,0 +1,29 @@
+{
+  "providers": {
+    "CineStream": {
+      "integration": "monitor_only",
+      "release": {
+        "bytes": 695013,
+        "sha256": "sha256-30dc643628702d6b2fe139339e59996783c95a0c1d41efe0a31872ae4d10908b",
+        "url": "https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds/CineStream.cs3",
+        "version": 487
+      },
+      "repository": "SaurabhKaperwan/CSX",
+      "source_available": true,
+      "source_commit": "13903aa1c788a5cdd725b88d38bf2b9c1565a134"
+    },
+    "StreamPlay": {
+      "integration": "monitor_only",
+      "release": {
+        "bytes": 2038526,
+        "sha256": "sha256-2c9be0404fe4527a70824a17740f8a0f2b3906b74fdf759600e7475364e4ab5c",
+        "url": "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/StreamPlay.cs3",
+        "version": 692
+      },
+      "repository": "phisher98/cloudstream-extensions-phisher",
+      "source_available": false,
+      "source_commit": "89aa8e6cbaa345fad37e05dea68e2614352389f8"
+    }
+  },
+  "schema": 1
+}
