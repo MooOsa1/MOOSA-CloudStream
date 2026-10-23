@@ -36,6 +36,12 @@ class MOOSA4KHDHubPolicyTest {
                 "https://cdn.example.workers.dev/my movie.mkv"
             )
         )
+        assertEquals(
+            "https://cdn.example.workers.dev/Movie%20%5BHDR%5D.mkv",
+            MOOSA4KHDHubPolicy.safeDirectFile(
+                "https://cdn.example.workers.dev/Movie [HDR].mkv"
+            )
+        )
     }
 
     private fun b64(value: String): String =

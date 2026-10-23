@@ -98,7 +98,10 @@ internal object MOOSA4KHDHubPolicy {
     /** Only signed, direct CDN files; reject external HTML/ads/P2P. */
     fun safeDirectFile(raw: String): String? {
         // The file name can contain spaces in the upstream HTML href.
-        val encoded = raw.trim().replace(" ", "%20")
+        val encoded = raw.trim()
+            .replace(" ", "%20")
+            .replace("[", "%5B")
+            .replace("]", "%5D")
         val uri = runCatching { URI(encoded) }.getOrNull() ?: return null
         if (uri.scheme != "https" || uri.userInfo != null ||
             uri.host.isNullOrBlank() || uri.port != -1 ||
