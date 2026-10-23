@@ -55,10 +55,36 @@ internal object MOOSAVixSrcPolicy {
         return TokenData(token, expires, playlist)
     }
 
-    fun masterUrl(data: TokenData): String {
+    fun preferredAudioLanguage(originalLanguage: String?): String =
+        originalLanguage?.trim()?.lowercase(Locale.ROOT)
+            ?.takeIf { it.matches(Regex("[a-z]{2,3}")) } ?: "en"
+
+    fun masterUrl(data: TokenData, language: String = "en"): String {
         val separator = if ('?' in data.playlist) '&' else '?'
         return data.playlist + separator + "token=" + URLEncoder.encode(data.token, "UTF-8") +
-            "&expires=" + data.expires + "&h=1"
+            "&expires=" + data.expires + "&h=1&lang=" +
+            URLEncoder.encode(preferredAudioLanguage(language), "UTF-8")
+    }
+
+    /** A video with the wrong dub is not a valid match for the requested title. */
+    fun hasOriginalAudio(master: String, originalLanguage: String): Boolean {
+        val requested = preferredAudioLanguage(originalLanguage)
+        val codes = mapOf(
+            "en" to "eng", "hi" to "hin", "ar" to "ara", "es" to "spa",
+            "fr" to "fra", "de" to "deu", "it" to "ita", "ja" to "jpn",
+            "ko" to "kor", "zh" to "zho", "pt" to "por", "ru" to "rus",
+            "ta" to "tam", "te" to "tel", "ml" to "mal", "bn" to "ben"
+        )
+        val accepted = setOf(requested, codes[requested] ?: requested)
+        val audioLines = master.lines().filter {
+            it.startsWith("#EXT-X-MEDIA:TYPE=AUDIO")
+        }
+        if (audioLines.isEmpty()) return true // Audio may be muxed into the video track.
+        val language = Regex("""(?:^|,)LANGUAGE=["']?([a-z]{2,3})["']?(?:,|$)""", RegexOption.IGNORE_CASE)
+        return audioLines.any { line ->
+            language.find(line)?.groupValues?.get(1)?.lowercase(Locale.ROOT)
+                ?.let { it in accepted } == true
+        }
     }
 
     fun highestVariant(masterUrl: String, playlist: String): Variant? {

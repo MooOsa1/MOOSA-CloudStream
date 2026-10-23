@@ -33,6 +33,7 @@ internal class MOOSAVixSrcProvider : MainAPI() {
         val request = com.lagradost.cloudstream3.utils.AppUtils
             .tryParseJson<MOOSAHubProvider.HubPlaybackRequest>(data) ?: return false
         if (request.isAnime) return false
+        val originalAudio = MOOSAVixSrcPolicy.preferredAudioLanguage(request.originalLanguage)
         val endpoint = MOOSAVixSrcPolicy.apiUrl(
             request.tmdbId, request.isTv, request.season, request.episode
         ) ?: return false
@@ -48,11 +49,13 @@ internal class MOOSAVixSrcProvider : MainAPI() {
                 if (!embed.isSuccessful) return@runCatching null
                 val tokenData = MOOSAVixSrcPolicy.tokenFromHtml(embed.text)
                     ?: return@runCatching null
-                val master = MOOSAVixSrcPolicy.masterUrl(tokenData)
+                val master = MOOSAVixSrcPolicy.masterUrl(tokenData, originalAudio)
                 val masterResponse = app.get(
                     master, headers = HEADERS + ("Referer" to endpoint)
                 )
                 if (!masterResponse.isSuccessful) return@runCatching null
+                if (!MOOSAVixSrcPolicy.hasOriginalAudio(masterResponse.text, originalAudio))
+                    return@runCatching null
                 val variant = MOOSAVixSrcPolicy.highestVariant(
                     master, masterResponse.text
                 ) ?: return@runCatching null

@@ -44,7 +44,20 @@ class MOOSAVixSrcPolicyTest {
         val data = MOOSAVixSrcPolicy.tokenFromHtml(embed)
         assertNotNull(data)
         assertTrue(MOOSAVixSrcPolicy.masterUrl(data!!).contains("expires=$expires&h=1"))
+        assertTrue(MOOSAVixSrcPolicy.masterUrl(data).endsWith("&lang=en"))
+        assertTrue(MOOSAVixSrcPolicy.masterUrl(data, "hi").endsWith("&lang=hi"))
         assertNull(MOOSAVixSrcPolicy.tokenFromHtml(embed.replace(expires.toString(), "10")))
+    }
+
+    @Test fun prefersOriginalAudioInsteadOfItalianDefault() {
+        val manifest = """#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Italian",DEFAULT=YES,LANGUAGE="ita",URI="ita.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",DEFAULT=NO,LANGUAGE="eng",URI="eng.m3u8"
+"""
+        assertEquals("en", MOOSAVixSrcPolicy.preferredAudioLanguage(null))
+        assertTrue(MOOSAVixSrcPolicy.hasOriginalAudio(manifest, "en"))
+        assertTrue(MOOSAVixSrcPolicy.hasOriginalAudio(manifest, "it"))
+        assertTrue(!MOOSAVixSrcPolicy.hasOriginalAudio(manifest, "hi"))
     }
 
     @Test fun hlsQualityIsFromRealRenditionList() {
