@@ -1,0 +1,42 @@
+name: Watch CineStream and StreamPlay upstreams
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: moosa-upstream-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout MOOSA source
+        uses: actions/checkout@v4
+
+      - name: Test monitor with offline fixtures
+        run: python3 -m unittest discover -s scripts/tests -p 'test_upstream_plugins.py' -v
+
+      - name: Check exact upstream releases and source availability
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/monitor_upstream_plugins.py --write --report "$RUNNER_TEMP/upstream-report.md"
+
+      - name: Open review-only update PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          add-paths: .github/upstreams.lock.json
+          commit-message: "chore: refresh audited upstream release metadata"
+          branch: automation/upstream-release-review
+          delete-branch: true
+          title: "chore: review upstream CineStream/StreamPlay changes"
+          body-path: ${{ runner.temp }}/upstream-report.md
