@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 131
+version = 132
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -168,3 +168,7 @@ dependencies {
 
 // v131: row-aware DPAD traversal, explicit ScrollView scrolling and stable
 // focus after selection redraw on Fire TV/Android 7; unit-tested boundaries.
+
+// v132: recognize CineStream/StreamPlay registrations in CloudStream's global
+// provider registry for movies/series, without copying CS3 binaries.
+// Upstream release watcher is a separate review-only GitHub workflow.
