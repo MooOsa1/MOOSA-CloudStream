@@ -1783,6 +1783,11 @@ class MOOSAHubProvider : TmdbProvider() {
     private fun isBundledArabicProvider(api: MainAPI): Boolean =
         api.javaClass.name.startsWith("com.moosa.hub.bundled.")
 
+    // Native CineStream-origin direct source. Unlike a registered external
+    // CineStream plugin, this ships and resolves streams inside MOOSA Hub.
+    // It is not exposed as an extra home-page extension.
+    private val nativeVaPlayer = MOOSACineStreamVaPlayerProvider()
+
     private fun playbackProviders(
         request: HubPlaybackRequest
     ): List<MainAPI> {
@@ -1811,7 +1816,8 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            apis.toList() + allProviders.toList().filter { api ->
+            listOf(nativeVaPlayer) + apis.toList() +
+            allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
                 )
@@ -1942,6 +1948,15 @@ class MOOSAHubProvider : TmdbProvider() {
         aliases: List<String>,
         forceRefresh: Boolean = false
     ): ProviderTarget? {
+        // The native VaPlayer adapter addresses IMDb IDs directly and needs
+        // NO fuzzy title search, Google translation, TMDB-page scraping or
+        // separately installed CineStream. Reject incomplete series episodes.
+        if (api is MOOSACineStreamVaPlayerProvider) {
+            val address = MOOSACineStreamVaPlayerPolicy.requestUrl(
+                request.imdbId, request.season, request.episode
+            ) ?: return null
+            return ProviderTarget(api.name, api.mainUrl, toJson(request))
+        }
         val cacheKey = providerCacheKey(request, api)
 
         if (forceRefresh) {
