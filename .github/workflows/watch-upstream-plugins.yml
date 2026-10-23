@@ -1,6 +1,12 @@
 name: Watch CineStream and StreamPlay upstreams
 
 on:
+  pull_request:
+    paths:
+      - 'scripts/monitor_upstream_plugins.py'
+      - 'scripts/tests/**'
+      - '.github/upstreams.lock.json'
+      - '.github/workflows/watch-upstream-plugins.yml'
   workflow_dispatch:
   schedule:
     - cron: "17 4 * * *"
@@ -14,15 +20,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test monitor offline and verify pinned schema
+        run: |
+          python3 -m unittest discover -s scripts/tests -p 'test_upstream_plugins.py' -v
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('.github/upstreams.lock.json').read_text())
+          assert data['schema']==1
+          assert set(data['providers']) == {'CineStream', 'StreamPlay'}
+          assert all(item['integration']=='monitor_only' for item in data['providers'].values())
+          print('Validated audited release pins; no auto-bundling enabled')
+          PY
+
   review:
+    if: github.event_name != 'pull_request'
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout MOOSA source
         uses: actions/checkout@v4
-
-      - name: Test monitor with offline fixtures
-        run: python3 -m unittest discover -s scripts/tests -p 'test_upstream_plugins.py' -v
 
       - name: Check exact upstream releases and source availability
         env:
