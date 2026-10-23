@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 134
+version = 135
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -180,3 +180,6 @@ dependencies {
 
 // v134: independent CineStream-origin Vidrock server: TMDB exact film/TV/S-E,
 // AES-GCM authenticated CDN HLS and existing 720p+ quality probe.
+
+// v135: native VidZee third independent source; strict TMDB S2 exact IDs,
+// bounded HLS extraction and CBC decode; Vidrock tester now checks S2E1.
