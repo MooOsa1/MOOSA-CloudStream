@@ -1787,6 +1787,7 @@ class MOOSAHubProvider : TmdbProvider() {
     // CineStream plugin, this ships and resolves streams inside MOOSA Hub.
     // It is not exposed as an extra home-page extension.
     private val nativeVaPlayer = MOOSACineStreamVaPlayerProvider()
+    private val nativeVidrock = MOOSACineStreamVidrockProvider()
 
     private fun playbackProviders(
         request: HubPlaybackRequest
@@ -1816,7 +1817,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            listOf(nativeVaPlayer) + apis.toList() +
+            listOf(nativeVaPlayer, nativeVidrock) + apis.toList() +
             allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
@@ -1952,8 +1953,16 @@ class MOOSAHubProvider : TmdbProvider() {
         // NO fuzzy title search, Google translation, TMDB-page scraping or
         // separately installed CineStream. Reject incomplete series episodes.
         if (api is MOOSACineStreamVaPlayerProvider) {
-            val address = MOOSACineStreamVaPlayerPolicy.requestUrl(
+            MOOSACineStreamVaPlayerPolicy.requestUrl(
                 request.imdbId, request.season, request.episode
+            ) ?: return null
+            return ProviderTarget(api.name, api.mainUrl, request.toJson())
+        }
+        if (api is MOOSACineStreamVidrockProvider) {
+            // Exact TMDB show ID plus season/episode, never fuzzy matching or
+            // falling back to another season when the requested one is absent.
+            MOOSACineStreamVidrockPolicy.requestUrl(
+                request.tmdbId, request.isTv, request.season, request.episode
             ) ?: return null
             return ProviderTarget(api.name, api.mainUrl, request.toJson())
         }
