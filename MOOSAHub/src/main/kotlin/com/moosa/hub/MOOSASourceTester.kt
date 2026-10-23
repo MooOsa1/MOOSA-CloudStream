@@ -35,7 +35,8 @@ object MOOSASourceTester {
         val mainUrl: String,
         val status: Status,
         val serverCount: Int,
-        val lastTested: Long?
+        val lastTested: Long?,
+        val detail: String? = null
     )
 
     private data class MutableState(
@@ -43,7 +44,8 @@ object MOOSASourceTester {
         val mainUrl: String,
         var status: Status = Status.UNKNOWN,
         var serverCount: Int = 0,
-        var lastTested: Long? = null
+        var lastTested: Long? = null,
+        var detail: String? = null
     )
 
     private val states = ConcurrentHashMap<String, MutableState>()
@@ -83,7 +85,8 @@ object MOOSASourceTester {
             mainUrl = state.mainUrl,
             status = state.status,
             serverCount = state.serverCount,
-            lastTested = state.lastTested
+            lastTested = state.lastTested,
+            detail = state.detail
         )
     }
 
@@ -263,14 +266,15 @@ object MOOSASourceTester {
         discoveryDepth: Int = 1,
         onUpdate: ((SourceState) -> Unit)? = null
     ): SourceState {
-        // This source has an ID-direct endpoint rather than searchable
-        // catalog pages. Test one known IMDb movie through its REAL HLS
-        // media manifest, not a fake homepage or generic URL HEAD check.
+        // All native sources are tested on the SAME exact episode, rather
+        // than Inception for VaPlayer and Better Call Saul for the others.
+        // This makes ONLINE and UNVERIFIED comparable and meaningful.
         if (api is MOOSACineStreamVaPlayerProvider) {
             return testNativeSource(
                 api,
                 MOOSAHubProvider.HubPlaybackRequest(
-                    title = "Inception", imdbId = "tt1375666"
+                    title = "Better Call Saul", imdbId = "tt3032476",
+                    tmdbId = 60059, isTv = true, season = 2, episode = 1
                 ),
                 onUpdate
             )
@@ -438,6 +442,8 @@ object MOOSASourceTester {
         }
         item.status = Status.TESTING
         item.serverCount = 0
+        item.detail = "Checking Better Call Saul S02E01"
+        MOOSANativeSourceDiagnostics.clear(api.name)
         onUpdate?.invoke(snapshot(api))
         val valid = withTimeoutOrNull(16000L) {
             val candidates = Collections.synchronizedList(
@@ -458,15 +464,32 @@ object MOOSASourceTester {
             }.take(3)
             val results = unique.map { link ->
                 async {
-                    val okay = MOOSAServerRegistry.testLink(link) &&
-                        MOOSAQualityPolicy.accepts(link)
-                    MOOSAServerRegistry.recordResult(link, okay)
-                    okay
+                    val reachable = MOOSAServerRegistry.testLink(link)
+                    val hd = reachable && MOOSAQualityPolicy.accepts(link)
+                    MOOSAServerRegistry.recordResult(link, hd)
+                    hd to when {
+                        !reachable -> MOOSAServerRegistry.lastProbeReason(link)
+                            ?: "Video manifest not playable"
+                        !hd -> "HLS valid, but 720p+ resolution not confirmed"
+                        else -> "Verified HLS 720p+"
+                    }
                 }
             }.awaitAll()
-            item.serverCount = results.count { it }
-            results.any { it }
+            item.serverCount = results.count { it.first }
+            item.detail = when {
+                results.any { it.first } ->
+                    "S02E01 • " + item.serverCount + " verified HD streams"
+                results.isNotEmpty() ->
+                    "S02E01 • " + results.first().second.take(75)
+                else ->
+                    "S02E01 • " + (MOOSANativeSourceDiagnostics.note(api.name)
+                        ?: "No HTTPS HLS links from source").take(85)
+            }
+            results.any { it.first }
         } ?: false
+        if (item.detail == "Checking Better Call Saul S02E01") {
+            item.detail = "S02E01 • test timed out"
+        }
         item.status = if (valid) Status.ONLINE else Status.UNVERIFIED
         item.lastTested = System.currentTimeMillis()
         onUpdate?.invoke(snapshot(api))
