@@ -137,7 +137,7 @@ jobs:
           assert 'this.quality = Qualities.Unknown.value' in native
           assert 'ExtractorLinkType.M3U8' in native
           assert 'MOOSACineStreamVaPlayerProvider()' in tester
-          assert 'testNativeVaPlayer(api, onUpdate)' in tester
+          assert 'testNativeSource(' in tester
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSACineStreamVaPlayerPolicyTest.kt').exists()
           assert 'isAnime || isRecognized(name)' in registry
           assert '"cinestream", "streamplay"' in registry
