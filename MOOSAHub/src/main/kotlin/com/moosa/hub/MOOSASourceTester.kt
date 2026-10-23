@@ -1,5 +1,7 @@
 package com.moosa.hub
 
+import com.lagradost.cloudstream3.utils.AppUtils.toJson
+
 import com.lagradost.cloudstream3.APIHolder.apis
 import com.lagradost.cloudstream3.APIHolder.allProviders
 import com.lagradost.cloudstream3.app
@@ -52,7 +54,8 @@ object MOOSASourceTester {
     fun sources(): List<MainAPI> =
         // Mirror the playback engine's registries. The CloudStream provider
         // mapping and global registry can differ after plugin hot-loading.
-        (apis.toList() + allProviders.toList())
+        (listOf(MOOSACineStreamVaPlayerProvider()) +
+            apis.toList() + allProviders.toList())
             .filter {
                 it.name != "MOOSA Hub" &&
                     (it.providerType == ProviderType.DirectProvider ||
@@ -258,6 +261,12 @@ object MOOSASourceTester {
         discoveryDepth: Int = 1,
         onUpdate: ((SourceState) -> Unit)? = null
     ): SourceState {
+        // This source has an ID-direct endpoint rather than searchable
+        // catalog pages. Test one known IMDb movie through its REAL HLS
+        // media manifest, not a fake homepage or generic URL HEAD check.
+        if (api is MOOSACineStreamVaPlayerProvider) {
+            return testNativeVaPlayer(api, onUpdate)
+        }
         val state = states.computeIfAbsent(key(api)) {
             MutableState(api.name, api.mainUrl)
         }
@@ -387,6 +396,53 @@ object MOOSASourceTester {
 
         state.status = finalStatus
         state.lastTested = System.currentTimeMillis()
+        onUpdate?.invoke(snapshot(api))
+        return snapshot(api)
+    }
+
+    private suspend fun testNativeVaPlayer(
+        api: MOOSACineStreamVaPlayerProvider,
+        onUpdate: ((SourceState) -> Unit)?
+    ): SourceState {
+        val item = states.computeIfAbsent(key(api)) {
+            MutableState(api.name, api.mainUrl)
+        }
+        item.status = Status.TESTING
+        item.serverCount = 0
+        onUpdate?.invoke(snapshot(api))
+        val valid = withTimeoutOrNull(16000L) {
+            val candidates = Collections.synchronizedList(
+                mutableListOf<ExtractorLink>()
+            )
+            // Stable IMDb ID. The remote source may legitimately have no
+            // stream for a title; this is not grounds to block the provider.
+            val request = MOOSAHubProvider.HubPlaybackRequest(
+                title = "Inception", imdbId = "tt1375666"
+            )
+            try {
+                api.loadLinks(
+                    request.toJson(),
+                    false, {}, { link -> candidates.add(link) }
+                )
+            } catch (_: Throwable) {
+                // Never crash the entire source manager for one failing host.
+            }
+            val unique = candidates.distinctBy {
+                "${it.url}|${it.referer}|${it.headers.hashCode()}"
+            }.take(3)
+            val results = unique.map { link ->
+                async {
+                    val okay = MOOSAServerRegistry.testLink(link) &&
+                        MOOSAQualityPolicy.accepts(link)
+                    MOOSAServerRegistry.recordResult(link, okay)
+                    okay
+                }
+            }.awaitAll()
+            item.serverCount = results.count { it }
+            results.any { it }
+        } ?: false
+        item.status = if (valid) Status.ONLINE else Status.UNVERIFIED
+        item.lastTested = System.currentTimeMillis()
         onUpdate?.invoke(snapshot(api))
         return snapshot(api)
     }

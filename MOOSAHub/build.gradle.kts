@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 132
+version = 133
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -172,3 +172,8 @@ dependencies {
 // v132: recognize CineStream/StreamPlay registrations in CloudStream's global
 // provider registry for movies/series, without copying CS3 binaries.
 // Upstream release watcher is a separate review-only GitHub workflow.
+
+// v133: first REAL standalone CineStream-origin direct HTTP/HLS resolver.
+// VaPlayer uses an exact IMDb film or S/E key; it needs no external CS3,
+// torrent, decryption proxy, or private API keys. Quality must be verified
+// from actual HLS metadata before being displayed.
