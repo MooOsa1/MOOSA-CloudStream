@@ -1,4 +1,4 @@
-name: MOOSA Hub v131 Fire TV DPAD navigation and TV settings verification
+name: MOOSA Hub v132 Fire TV navigation and provider interoperability verification
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==131,versions
+          assert versions['MOOSAHub']==132,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -115,5 +115,11 @@ jobs:
           assert 'platformNames: List<String>' in policy
           assert 'watchRegions = listOf(' in policy
           assert 'AlertDialog.Builder(requireContext())' not in browse
-          print('PASS: v131 TV navigation semantic DPAD rows, scroll visibility, and existing settings')
+          hub=(root/'MOOSAHubProvider.kt').read_text()
+          registry=(root/'MOOSARecognizedExternalProvider.kt').read_text()
+          assert 'MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(' in hub
+          assert 'isAnime || isRecognized(name)' in registry
+          assert '"cinestream", "streamplay"' in registry
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSARecognizedExternalProviderTest.kt').exists()
+          print('PASS: v132 TV navigation, recognized upstream provider registry, and existing settings')
           PY
