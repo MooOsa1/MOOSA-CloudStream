@@ -1,4 +1,4 @@
-name: MOOSA Hub v136 exact S02E01 diagnostics verification
+name: MOOSA Hub v137 VaPlayer HLS media resolution verification
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==136,versions
+          assert versions['MOOSAHub']==137,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -121,6 +121,14 @@ jobs:
           native=(root/'MOOSACineStreamVaPlayerProvider.kt').read_text()
           tester=(root/'MOOSASourceTester.kt').read_text()
           assert 'listOf(nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
+          media=(root/'MOOSAHlsMediaQuality.kt').read_text()
+          servers=(root/'MOOSAServerRegistry.kt').read_text()
+          assert 'h264HeightFromTs(bytes: ByteArray)' in media
+          assert 'firstTsSegmentUrl(playlistUrl: String, playlist: String)' in media
+          assert 'verifyVaPlayerMediaHeight(link, body)' in servers
+          assert 'link.source != MOOSACineStreamVaPlayerPolicy.SOURCE_NAME' in servers
+          assert 'bytes=0-32767' in servers
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAHlsMediaQualityTest.kt').exists()
           assert 'if (api is MOOSACineStreamVaPlayerProvider)' in hub
           assert 'MOOSACineStreamVaPlayerPolicy.requestUrl(' in hub
           assert 'MOOSACineStreamVaPlayerPolicy.requestUrl(' in native
@@ -159,5 +167,5 @@ jobs:
           assert 'isAnime || isRecognized(name)' in registry
           assert '"cinestream", "streamplay"' in registry
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSARecognizedExternalProviderTest.kt').exists()
-          print('PASS: v136: three real S02E01 tests, sanitized device diagnostics, TV UI and unchanged extractors')
+          print('PASS: v137: VaPlayer native H264 SPS evidence, strict HD floor and S02E01 diagnostics')
           PY
