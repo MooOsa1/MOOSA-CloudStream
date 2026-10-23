@@ -1,5 +1,7 @@
 package com.moosa.hub
 
+import com.lagradost.cloudstream3.utils.AppUtils.toJson
+
 import com.lagradost.cloudstream3.APIHolder.apis
 import com.lagradost.cloudstream3.APIHolder.allProviders
 import com.lagradost.cloudstream3.app
@@ -419,7 +421,7 @@ object MOOSASourceTester {
             )
             try {
                 api.loadLinks(
-                    com.lagradost.cloudstream3.utils.AppUtils.toJson(request),
+                    request.toJson(),
                     false, {}, { link -> candidates.add(link) }
                 )
             } catch (_: Throwable) {
