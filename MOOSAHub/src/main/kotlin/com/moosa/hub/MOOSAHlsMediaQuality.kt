@@ -125,7 +125,9 @@ internal object MOOSAHlsMediaQuality {
         }
         fun ue(): Int? {
             var zeros = 0
-            while (bit() == 0) {
+            while (true) {
+                val bitValue = bit() ?: return null
+                if (bitValue == 1) break
                 zeros++
                 if (zeros > 24) return null
             }
