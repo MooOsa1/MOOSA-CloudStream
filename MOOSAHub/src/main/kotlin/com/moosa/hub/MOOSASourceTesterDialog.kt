@@ -35,7 +35,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
         val row: View,
         val check: CheckBox,
         val status: TextView,
-        val test: Button
+        val test: Button,
+        val detail: TextView? = null
     )
 
     private lateinit var listContainer: LinearLayout
@@ -376,7 +377,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
                 refs.row,
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    dp(60)
+                    dp(if (MOOSANativeSourceDiagnostics.sourceTestLabel(api.name) != null) 77 else 60)
                 ).apply { bottomMargin = dp(5) }
             )
         }
@@ -409,8 +410,27 @@ class MOOSASourceTesterDialog : DialogFragment() {
             LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.MATCH_PARENT)
         )
 
+        val sourceDetails = MOOSANativeSourceDiagnostics.sourceTestLabel(api.name)
+        val detailView = sourceDetails?.let { title ->
+            label("Test: $title", 11f, MOOSATVSettingsStyle.gray).apply {
+                maxLines = 2
+            }
+        }
+        val sourceLabel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                label(api.name, 14f, Color.WHITE, true).apply { maxLines = 2 },
+                LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
+            detailView?.let { note ->
+                addView(note, LinearLayout.LayoutParams(-1, -2).apply {
+                    topMargin = dp(3)
+                })
+            }
+        }
         row.addView(
-            label(api.name, 14f, Color.WHITE, true).apply { maxLines = 2 },
+            sourceLabel,
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
 
@@ -435,7 +455,7 @@ class MOOSASourceTesterDialog : DialogFragment() {
             LinearLayout.LayoutParams(dp(82), dp(40))
         )
 
-        val refs = RowRefs(api, row, check, status, test)
+        val refs = RowRefs(api, row, check, status, test, detailView)
         refreshRow(refs)
 
         row.setOnClickListener {
@@ -475,6 +495,8 @@ class MOOSASourceTesterDialog : DialogFragment() {
             if (state.serverCount > 0) "$text  ${state.serverCount}"
             else text
         refs.status.background = rounded(MOOSATVSettingsStyle.panel, 5, MOOSATVSettingsStyle.separator)
+        refs.detail?.text = state.detail
+            ?: "Test: " + MOOSANativeSourceDiagnostics.sourceTestLabel(refs.api.name).orEmpty()
     }
 
     private fun wireRows() {
