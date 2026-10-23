@@ -133,6 +133,10 @@ internal class MOOSACineStreamVidzeeProvider : MainAPI() {
         // requests to avoid adding large search latency or stressing Fire TV.
         val gate = Semaphore(3)
         val links = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val responses = java.util.concurrent.atomic.AtomicInteger(0)
+        val encryptedLinks = java.util.concurrent.atomic.AtomicInteger(0)
+        val lastHttpCode = java.util.concurrent.atomic.AtomicInteger(0)
+        MOOSANativeSourceDiagnostics.mark(name, "Requesting S02E01 • VidZee 7 servers")
         val fetched = withTimeoutOrNull(14000L) {
             MOOSACineStreamVidzeePolicy.SERVERS.map { server ->
                 async {
@@ -146,7 +150,11 @@ internal class MOOSACineStreamVidzeeProvider : MainAPI() {
                                 "Referer" to MOOSACineStreamVidzeePolicy.BASE + "/"
                             ))
                         }.getOrNull() ?: return@withPermit
-                        if (!result.isSuccessful) return@withPermit
+                        if (!result.isSuccessful) {
+                            lastHttpCode.set(result.code)
+                            return@withPermit
+                        }
+                        responses.incrementAndGet()
                         val json = runCatching { JSONObject(result.text) }.getOrNull()
                             ?: return@withPermit
                         val provided = json.optJSONObject("headers")
@@ -172,8 +180,10 @@ internal class MOOSACineStreamVidzeeProvider : MainAPI() {
                         val sources = json.optJSONArray("url") ?: return@withPermit
                         for (i in 0 until minOf(sources.length(), 12)) {
                             val entry = sources.optJSONObject(i) ?: continue
+                            val encrypted = entry.optString("link")
+                            if (encrypted.isNotBlank()) encryptedLinks.incrementAndGet()
                             val hls = MOOSACineStreamVidzeePolicy.decryptHls(
-                                entry.optString("link")
+                                encrypted
                             ) ?: continue
                             if (!links.add(hls)) continue
                             val tag = entry.optString("name").take(20)
@@ -193,6 +203,18 @@ internal class MOOSACineStreamVidzeeProvider : MainAPI() {
             }.awaitAll()
             true
         }
+        MOOSANativeSourceDiagnostics.mark(
+            name,
+            when {
+                links.isNotEmpty() -> "HLS found • verifying playback / 720p+"
+                fetched == null -> "Source timeout (14s across 7 servers)"
+                responses.get() == 0 && lastHttpCode.get() != 0 ->
+                    "VidZee API HTTP " + lastHttpCode.get()
+                responses.get() == 0 -> "All VidZee APIs unreachable"
+                encryptedLinks.get() > 0 -> "Encrypted links rejected / decrypt failed"
+                else -> "S02E01 API replied • no stream links"
+            }
+        )
         links.isNotEmpty() && fetched == true
     }
 }
