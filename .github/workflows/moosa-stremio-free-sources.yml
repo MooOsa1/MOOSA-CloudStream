@@ -1,0 +1,187 @@
+name: MOOSA Stremio free-source discovery (no playback claims)
+on:
+  push:
+    branches:
+      - experiment/moosa-hub-aiostreams-20261018
+    paths:
+      - 'AIOStreamsHost/**'
+      - '.github/workflows/moosa-stremio-free-sources.yml'
+  pull_request:
+    paths:
+      - 'AIOStreamsHost/**'
+      - '.github/workflows/moosa-stremio-free-sources.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  addon-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse and check the script
+        run: node --check AIOStreamsHost/source-diagnostics.mjs
+      - name: Source-classification regression tests
+        run: node --test AIOStreamsHost/source-diagnostics.test.mjs
+      - name: Check live addon manifests and source metadata (no video downloaded)
+        run: node AIOStreamsHost/source-diagnostics.mjs
+
+      - name: Verify latest official iPhone IPA on Stremio CDN (HEAD only)
+        run: node AIOStreamsHost/check-ios.mjs
+  live-ui-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated test browser
+        run: |
+          npm install --prefix AIOStreamsHost --no-save --ignore-scripts playwright@1.55.1
+          ./AIOStreamsHost/node_modules/.bin/playwright install chromium
+      - name: Open real AIOStreams page and load MOOSA template in Chromium
+        run: node AIOStreamsHost/import-ui-smoke.cjs
+  ephemeral-addon-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check the isolated backend test
+        run: node --check AIOStreamsHost/end-to-end-addon.mjs
+      - name: Create disposable addon, query real aggregator, then delete it
+        run: node AIOStreamsHost/end-to-end-addon.mjs
+  real-indexed-media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify FFmpeg dependencies
+        run: |
+          if ! command -v ffprobe || ! command -v ffmpeg; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          fi
+          ffprobe -version | head -n 1
+          ffmpeg -version | head -n 1
+      - name: Validate indexed-media test script
+        run: node --check AIOStreamsHost/modern-2025-engine.mjs
+      - name: Launch official Stremio Docker engine (loopback only)
+        run: |
+          docker run -d --rm --name moosa-stremio-server \
+            -p 127.0.0.1:11470:11470 stremio/server:v4.22.2
+          for i in $(seq 1 40); do
+            if curl -sf -m 3 http://127.0.0.1:11470/settings >/dev/null; then
+              echo "OFFICIAL_STREMIO_ENGINE_READY"
+              break
+            fi
+            sleep 2
+          done
+          curl -sSf -m 5 http://127.0.0.1:11470/settings >/dev/null
+      - name: Decode-check modern 2025 film video and audio
+        run: node AIOStreamsHost/modern-2025-engine.mjs
+      - name: Stop ephemeral engine
+        if: always()
+        run: docker rm -f moosa-stremio-server || true
+  windows-one-click-installer:
+    runs-on: windows-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check Windows PowerShell installer
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'AIOStreamsHost/Install-MOOSA-Hub.ps1').Path, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+      - name: Test installed addon using disposable AIOStreams config and delete it
+        shell: powershell
+        run: ./AIOStreamsHost/Install-MOOSA-Hub.ps1 -TestOnly -NoOpen
+      - name: Validate Windows local browser launcher
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'AIOStreamsHost/Start-MOOSA-Browser.ps1').Path, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          Write-Host 'MOOSA local PC launcher syntax passed.'
+  modern-sustained-decode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 21
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify FFmpeg dependencies
+        run: |
+          if ! command -v ffprobe || ! command -v ffmpeg; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          fi
+          ffprobe -version | head -n 1
+          ffmpeg -version | head -n 1
+      - name: Validate indexed-media test script
+        run: node --check AIOStreamsHost/modern-2025-engine.mjs
+      - name: Launch official Stremio Docker engine (loopback only)
+        run: |
+          docker run -d --rm --name moosa-stremio-server \
+            -p 127.0.0.1:11470:11470 stremio/server:v4.22.2
+          for i in $(seq 1 40); do
+            if curl -sf -m 3 http://127.0.0.1:11470/settings >/dev/null; then
+              echo "OFFICIAL_STREMIO_ENGINE_READY"
+              break
+            fi
+            sleep 2
+          done
+          curl -sSf -m 5 http://127.0.0.1:11470/settings >/dev/null
+      - name: Decode ten seconds of both audio and video from 2025 films
+        env:
+          MOOSA_CONTINUITY_SECONDS: '10'
+        run: node AIOStreamsHost/modern-2025-engine.mjs
+      - name: Stop ephemeral engine
+        if: always()
+        run: docker rm -f moosa-stremio-server || true
+  browser-hls-2025:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate browser HLS probe
+        run: node --check AIOStreamsHost/browser-hls-probe.mjs
+      - name: Launch official local Stremio server
+        run: |
+          docker run -d --rm --name moosa-stremio-hls \
+            -p 127.0.0.1:11470:11470 stremio/server:v4.22.2
+          for i in $(seq 1 40); do
+            if curl -sf -m 3 http://127.0.0.1:11470/settings >/dev/null; then
+              echo "OFFICIAL_STREMIO_HLS_ENGINE_READY"
+              break
+            fi
+            sleep 2
+          done
+          curl -sSf -m 5 http://127.0.0.1:11470/settings >/dev/null
+      - name: Verify modern 2025 browser HLS playlist route
+        run: node AIOStreamsHost/browser-hls-probe.mjs
+      - name: Install test Chromium
+        run: |
+          npm install --prefix AIOStreamsHost --no-save --ignore-scripts playwright@1.55.1
+          ./AIOStreamsHost/node_modules/.bin/playwright install chromium
+      - name: Verify real MOOSA Web browser UI and 2025 stream
+        run: node AIOStreamsHost/moosa-web-browser-e2e.mjs
+      - name: Stop test engine
+        if: always()
+        run: docker rm -f moosa-stremio-hls || true

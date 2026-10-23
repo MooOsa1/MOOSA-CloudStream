@@ -1,0 +1,24 @@
+name: MOOSA free HTTP browser source validation
+on:
+  push:
+    paths:
+      - 'AIOStreamsHost/free-http-web-probe.mjs'
+      - '.github/workflows/moosa-free-http-direct.yml'
+  pull_request:
+    paths:
+      - 'AIOStreamsHost/free-http-web-probe.mjs'
+      - '.github/workflows/moosa-free-http-direct.yml'
+  workflow_dispatch:
+jobs:
+  direct-http-2025:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate HTTP source probe
+        run: node --check AIOStreamsHost/free-http-web-probe.mjs
+      - name: Check browser-compatible direct stream transport on 2025 titles
+        run: node AIOStreamsHost/free-http-web-probe.mjs
