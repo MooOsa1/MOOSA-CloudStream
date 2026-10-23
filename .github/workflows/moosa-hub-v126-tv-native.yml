@@ -1,4 +1,4 @@
-name: MOOSA Hub v135 native VidZee S2 source verification
+name: MOOSA Hub v136 exact S02E01 diagnostics verification
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==135,versions
+          assert versions['MOOSAHub']==136,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -132,7 +132,16 @@ jobs:
           assert 'MOOSACineStreamVidrockPolicy.decryptUrl(encrypted)' in vidrock
           assert 'MOOSACineStreamVidrockProvider()' in tester
           assert tester.count('title = "Better Call Saul", tmdbId = 60059, isTv = true') >= 2
-          assert tester.count('season = 2, episode = 1') >= 2
+          assert tester.count('season = 2, episode = 1') >= 3
+          assert 'title = "Better Call Saul", imdbId = "tt3032476"' in tester
+          assert 'detail = item.detail' in tester
+          assert 'No HTTPS HLS links from source' in tester
+          diag=(root/'MOOSANativeSourceDiagnostics.kt').read_text()
+          assert 'ConcurrentHashMap' in diag
+          dialog=(root/'MOOSASourceTesterDialog.kt').read_text()
+          assert 'refs.detail?.text = state.detail' in dialog
+          assert 'Test: ' in dialog
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANativeSourceDiagnosticsTest.kt').exists()
           assert 'MOOSACineStreamVidzeeProvider()' in tester
           vidzee=(root/'MOOSACineStreamVidzeeProvider.kt').read_text()
           assert 'MOOSACineStreamVidzeePolicy.decryptHls(' in vidzee
@@ -150,5 +159,5 @@ jobs:
           assert 'isAnime || isRecognized(name)' in registry
           assert '"cinestream", "streamplay"' in registry
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSARecognizedExternalProviderTest.kt').exists()
-          print('PASS: v135 TV navigation, three native CineStream-origin sources and S2-specific tester')
+          print('PASS: v136: three real S02E01 tests, sanitized device diagnostics, TV UI and unchanged extractors')
           PY
