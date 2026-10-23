@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 135
+version = 136
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -183,3 +183,6 @@ dependencies {
 
 // v135: native VidZee third independent source; strict TMDB S2 exact IDs,
 // bounded HLS extraction and CBC decode; Vidrock tester now checks S2E1.
+
+// v136: compare all native server tests on Better Call Saul S02E01 and show
+// actual API/HLS/quality failure stage on TV. No new sources, no VaPlayer engine changes.
