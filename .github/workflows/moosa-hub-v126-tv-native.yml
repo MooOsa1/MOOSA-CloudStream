@@ -134,7 +134,7 @@ jobs:
           assert tester.count('title = "Better Call Saul", tmdbId = 60059, isTv = true') >= 2
           assert tester.count('season = 2, episode = 1') >= 3
           assert 'title = "Better Call Saul", imdbId = "tt3032476"' in tester
-          assert 'detail = item.detail' in tester
+          assert 'detail = state.detail' in tester
           assert 'No HTTPS HLS links from source' in tester
           diag=(root/'MOOSANativeSourceDiagnostics.kt').read_text()
           assert 'ConcurrentHashMap' in diag
