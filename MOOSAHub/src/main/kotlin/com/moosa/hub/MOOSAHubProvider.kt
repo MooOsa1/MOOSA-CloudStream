@@ -1955,7 +1955,7 @@ class MOOSAHubProvider : TmdbProvider() {
             val address = MOOSACineStreamVaPlayerPolicy.requestUrl(
                 request.imdbId, request.season, request.episode
             ) ?: return null
-            return ProviderTarget(api.name, api.mainUrl, toJson(request))
+            return ProviderTarget(api.name, api.mainUrl, request.toJson())
         }
         val cacheKey = providerCacheKey(request, api)
 
