@@ -1805,11 +1805,20 @@ class MOOSAHubProvider : TmdbProvider() {
         // Plugins can register in CloudStream's global provider registry
         // without being present in its currently mapped UI provider list.
         // Consider both for anime; never load other plugins recursively.
-        val registry = if (request.isAnime) {
-            (apis.toList() + allProviders.toList()).distinctBy { api ->
-                "${api.name}|${api.sourcePlugin.orEmpty()}|${api.mainUrl}"
+        // CineStream / StreamPlay can be registered globally even if the
+        // CloudStream UI-mapped list is stale after plugin hot-loading.
+        // Pull ONLY these recognized extras for movies/series. The anime
+        // registry retains its full existing behavior.
+        // This is registration interoperability, NOT a bundled provider.
+        val registry = (
+            apis.toList() + allProviders.toList().filter { api ->
+                MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
+                    api.name, request.isAnime
+                )
             }
-        } else apis.toList()
+        ).distinctBy { api ->
+            "${api.name}|${api.sourcePlugin.orEmpty()}|${api.mainUrl}"
+        }
         val available = registry
             .filter { api ->
                 // Arabic sites belong to the independent native provider.
