@@ -4074,6 +4074,16 @@ class MOOSAHubProvider : TmdbProvider() {
                                 )
                                 return
                             }
+                            if (MOOSARecognizedExternalProvider.isTorrentCandidate(
+                                    link.source, link.name, link.url
+                                )
+                            ) {
+                                invalidUrls.incrementAndGet()
+                                MOOSAPlaybackDiagnostics.update(
+                                    api, "Torrent/P2P server excluded"
+                                )
+                                return
+                            }
                             if (!validStreamingUrl(link.url)) {
                                 invalidUrls.incrementAndGet()
                                 return
