@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 136
+version = 137
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -186,3 +186,6 @@ dependencies {
 
 // v136: compare all native server tests on Better Call Saul S02E01 and show
 // actual API/HLS/quality failure stage on TV. No new sources, no VaPlayer engine changes.
+
+// v137: confirm VaPlayer single-rendition HLS quality from actual H264 video
+// SPS in a bounded first MPEG-TS segment. Still reject unknown and <720p.
