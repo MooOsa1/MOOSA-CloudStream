@@ -76,6 +76,7 @@ internal class MOOSACineStreamVaPlayerProvider : MainAPI() {
             request.imdbId, request.season, request.episode
         ) ?: return false
 
+        MOOSANativeSourceDiagnostics.mark(name, "Requesting S02E01 • VaPlayer API")
         val response = withTimeoutOrNull(7500L) {
             runCatching {
                 app.get(
@@ -83,13 +84,24 @@ internal class MOOSACineStreamVaPlayerProvider : MainAPI() {
                     headers = mapOf("Referer" to MOOSACineStreamVaPlayerPolicy.REFERER)
                 )
             }.getOrNull()
-        } ?: return false
-        if (!response.isSuccessful) return false
-
+        } ?: run {
+            MOOSANativeSourceDiagnostics.mark(name, "API unreachable / 7.5s timeout")
+            return false
+        }
+        if (!response.isSuccessful) {
+            MOOSANativeSourceDiagnostics.mark(name, "API HTTP " + response.code)
+            return false
+        }
         val json = runCatching { JSONObject(response.text) }.getOrNull()
-            ?: return false
+            ?: run {
+                MOOSANativeSourceDiagnostics.mark(name, "API returned invalid JSON")
+                return false
+            }
         val streamList = json.optJSONObject("data")?.optJSONArray("stream_urls")
-            ?: return false
+            ?: run {
+                MOOSANativeSourceDiagnostics.mark(name, "No links for S02E01 in API data")
+                return false
+            }
         val urls = (0 until minOf(streamList.length(), 12))
             .mapNotNull { index ->
                 MOOSACineStreamVaPlayerPolicy.hlsUrl(
@@ -116,6 +128,11 @@ internal class MOOSACineStreamVaPlayerProvider : MainAPI() {
             )
         }
 
+        MOOSANativeSourceDiagnostics.mark(
+            name,
+            if (emitted) "HLS found • verifying playback / 720p+"
+            else "API responded • no valid HTTPS HLS"
+        )
         // Native/third-party subtitles are still handled by MOOSA's existing
         // parallel language-verified subtitle engine; no speculative captions.
         return emitted
