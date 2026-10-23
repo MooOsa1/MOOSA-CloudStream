@@ -79,4 +79,45 @@ class MOOSAHlsMediaQualityTest {
             "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:4,\nsegment.m4s"
         ))
     }
+
+    @Test fun missingResolutionMasterCanSelectOneVideoPlaylistForActualSpsCheck() {
+        val master = """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,URI="audio/index.m3u8",GROUP-ID="stereo",NAME="English"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS="avc1.42e01e"
+            low/index.m3u8?token=1
+            #EXT-X-STREAM-INF:BANDWIDTH=4000000,CODECS="avc1.640028"
+            hd/index.m3u8?token=2
+        """.trimIndent()
+        assertEquals(
+            "https://cdn.example/series/hd/index.m3u8?token=2",
+            MOOSAHlsMediaQuality.firstMediaVariantUrl(
+                "https://cdn.example/series/master.m3u8", master
+            )
+        )
+        // Bandwidth alone never proves HD; this is strictly a child URI.
+        assertNull(MOOSAHlsMasterQuality.highestVariantHeight(master))
+        assertNull(MOOSAHlsMediaQuality.firstTsSegmentUrl(
+            "https://cdn.example/series/master.m3u8", master
+        ))
+    }
+
+    @Test fun rejectsUnsafeOrInvalidMasterReferences() {
+        assertNull(MOOSAHlsMediaQuality.firstMediaVariantUrl(
+            "https://cdn.example/master.m3u8",
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nhttp://cdn.example/stream.m3u8"
+        ))
+        assertNull(MOOSAHlsMediaQuality.firstMediaVariantUrl(
+            "https://cdn.example/master.m3u8",
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nhttps://127.0.0.1/a.m3u8"
+        ))
+        assertNull(MOOSAHlsMediaQuality.firstMediaVariantUrl(
+            "https://cdn.example/master.m3u8",
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\n#EXT-X-ENDLIST"
+        ))
+        assertNull(MOOSAHlsMediaQuality.firstMediaVariantUrl(
+            "https://cdn.example/master.m3u8",
+            "#EXTM3U\n#EXTINF:6,\nsegment.ts"
+        ))
+    }
 }

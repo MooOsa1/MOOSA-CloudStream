@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 137
+version = 138
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -189,3 +189,5 @@ dependencies {
 
 // v137: confirm VaPlayer single-rendition HLS quality from actual H264 video
 // SPS in a bounded first MPEG-TS segment. Still reject unknown and <720p.
+// v138: for VaPlayer masters with no RESOLUTION, follow one video rendition
+// and measure its TS H264 SPS. No bitrate-based quality guessing.
