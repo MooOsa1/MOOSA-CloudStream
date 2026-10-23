@@ -287,6 +287,44 @@ object MOOSAServerRegistry {
     fun lastProbeReason(link: ExtractorLink): String? =
         probeReasons[linkKey(link)]
 
+    /**
+     * VaPlayer can return an HLS media playlist directly, without the
+     * RESOLUTION field that exists only on master playlists. Inspect at most
+     * 32 KiB of the REAL first HTTPS .ts segment and parse its H.264 SPS.
+     * Fail closed if encrypted, fMP4, unreachable or codec unknown.
+     * This does not relax MOOSA's minimum 720p requirement.
+     */
+    private suspend fun verifyVaPlayerMediaHeight(
+        link: ExtractorLink, manifest: String
+    ): Int? {
+        if (link.source != MOOSACineStreamVaPlayerPolicy.SOURCE_NAME) return null
+        val segment = MOOSAHlsMediaQuality.firstTsSegmentUrl(link.url, manifest)
+            ?: return null
+        return withTimeoutOrNull(3600L) {
+            try {
+                val response = app.get(
+                    segment,
+                    headers = link.getAllHeaders() + mapOf("Range" to "bytes=0-32767"),
+                    referer = link.referer
+                )
+                if (!response.isSuccessful) return@withTimeoutOrNull null
+                val buffer = ByteArray(32768)
+                val read = response.body.byteStream().use { stream ->
+                    var total = 0
+                    while (total < buffer.size) {
+                        val n = stream.read(buffer, total, buffer.size - total)
+                        if (n <= 0) break
+                        total += n
+                    }
+                    total
+                }
+                MOOSAHlsMediaQuality.h264HeightFromTs(buffer.copyOf(read))
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
     private suspend fun probeOnce(link: ExtractorLink): ProbeCheck {
         if (
             !link.url.startsWith("http://", ignoreCase = true) &&
@@ -319,8 +357,10 @@ object MOOSAServerRegistry {
                                 // rendition even when an addon labels the
                                 // overall HLS URL merely 720p or Unknown.
                                 // Reuse THIS request; no second lookup.
-                                MOOSAHlsMasterQuality.highestVariantHeight(body)
-                                    ?.let { link.quality = it }
+                                val confirmedHeight =
+                                    MOOSAHlsMasterQuality.highestVariantHeight(body)
+                                        ?: verifyVaPlayerMediaHeight(link, body)
+                                confirmedHeight?.let { link.quality = it }
                             }
                             ProbeCheck(
                                 valid,
