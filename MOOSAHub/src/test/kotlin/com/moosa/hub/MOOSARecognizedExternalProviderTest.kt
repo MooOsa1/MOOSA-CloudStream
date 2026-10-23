@@ -28,4 +28,26 @@ class MOOSARecognizedExternalProviderTest {
             "CineStream", false
         ))
     }
+    @Test fun knownTorrentCandidatesAreBlockedWithoutBlockingHttpVideo() {
+        val policy = MOOSARecognizedExternalProvider
+        assertTrue(policy.isTorrentCandidate(
+            "Torrentio", "4K", "https://example.org/video.mp4"
+        ))
+        assertTrue(policy.isTorrentCandidate(
+            "CineStream", "P2P", "https://example.org/video.m3u8"
+        ))
+        assertTrue(policy.isTorrentCandidate(
+            "CineStream", "Server", "magnet:?xt=urn:btih:aa"
+        ))
+        assertTrue(policy.isTorrentCandidate(
+            "CineStream", "Server", "https://example.org/file.torrent?x=1"
+        ))
+        assertFalse(policy.isTorrentCandidate(
+            "CineStream", "1080p", "https://media.example.org/film.mp4"
+        ))
+        assertFalse(policy.isTorrentCandidate(
+            "StreamPlay", "CDN 720p", "https://media.example.org/master.m3u8"
+        ))
+    }
+
 }
