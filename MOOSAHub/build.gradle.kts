@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 139
+version = 140
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -193,3 +193,5 @@ dependencies {
 // and measure its TS H264 SPS. No bitrate-based quality guessing.
 // v139: bundled 4KHDHub movie source; exact title/year plus a 206 EBML/MKV
 // video-track dimension check before advertising a direct 2160p link.
+// v140: independently confirmed VixSrc adaptive HLS (1080/720/480) for exact
+// TMDB movie and episode IDs; prefer compact UHD files over BluRay REMUX.

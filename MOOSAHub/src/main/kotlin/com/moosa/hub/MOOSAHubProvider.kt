@@ -1787,6 +1787,7 @@ class MOOSAHubProvider : TmdbProvider() {
     // CineStream plugin, this ships and resolves streams inside MOOSA Hub.
     // It is not exposed as an extra home-page extension.
     private val native4KHDHub = MOOSA4KHDHubProvider()
+    private val nativeVixSrc = MOOSAVixSrcProvider()
     private val nativeVaPlayer = MOOSACineStreamVaPlayerProvider()
     private val nativeVidrock = MOOSACineStreamVidrockProvider()
     private val nativeVidzee = MOOSACineStreamVidzeeProvider()
@@ -1819,7 +1820,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            listOf(native4KHDHub, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
+            listOf(native4KHDHub, nativeVixSrc, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
             allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
@@ -1951,6 +1952,13 @@ class MOOSAHubProvider : TmdbProvider() {
         aliases: List<String>,
         forceRefresh: Boolean = false
     ): ProviderTarget? {
+        // VixSrc resolves TMDB ID + exact S/E directly, not fuzzy titles.
+        if (api is MOOSAVixSrcProvider) {
+            if (request.isAnime || request.tmdbId == null ||
+                (request.isTv && (request.season == null || request.episode == null))
+            ) return null
+            return ProviderTarget(api.name, api.mainUrl, request.toJson())
+        }
         // The local UHD adapter performs its own exact title/year matching
         // on Play. No fuzzy search or external repository is required.
         if (api is MOOSA4KHDHubProvider) {
@@ -3659,6 +3667,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 .lowercase()
 
         return when {
+            api is MOOSAVixSrcProvider -> 17_000L
             api is MOOSA4KHDHubProvider -> 26_000L
             api is MOOSACineStreamVidzeeProvider -> 16500L
 
