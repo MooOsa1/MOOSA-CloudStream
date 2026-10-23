@@ -47,7 +47,9 @@ class MOOSAHlsMediaQualityTest {
         assertNull(MOOSAHlsMediaQuality.h264HeightFromTs(notTransportStream))
         val malformed = tsWithSps("6742c01fda014016ec044000000300400000030083c60ca8")
         // Destroy the SPS marker so no 'HD' can be guessed from packet size.
-        malformed[4] = 0x11
+        // The start code is 00 00 00 01. Modifying its final 01 destroys
+        // both 4-byte and overlapping 3-byte Annex-B signatures.
+        malformed[7] = 0x11
         assertNull(MOOSAHlsMediaQuality.h264HeightFromTs(malformed))
     }
 
