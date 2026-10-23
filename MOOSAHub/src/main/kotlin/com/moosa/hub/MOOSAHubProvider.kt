@@ -1788,6 +1788,7 @@ class MOOSAHubProvider : TmdbProvider() {
     // It is not exposed as an extra home-page extension.
     private val nativeVaPlayer = MOOSACineStreamVaPlayerProvider()
     private val nativeVidrock = MOOSACineStreamVidrockProvider()
+    private val nativeVidzee = MOOSACineStreamVidzeeProvider()
 
     private fun playbackProviders(
         request: HubPlaybackRequest
@@ -1817,7 +1818,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            listOf(nativeVaPlayer, nativeVidrock) + apis.toList() +
+            listOf(nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
             allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
@@ -1963,6 +1964,12 @@ class MOOSAHubProvider : TmdbProvider() {
             // falling back to another season when the requested one is absent.
             MOOSACineStreamVidrockPolicy.requestUrl(
                 request.tmdbId, request.isTv, request.season, request.episode
+            ) ?: return null
+            return ProviderTarget(api.name, api.mainUrl, request.toJson())
+        }
+        if (api is MOOSACineStreamVidzeeProvider) {
+            MOOSACineStreamVidzeePolicy.requestUrl(
+                request.tmdbId, request.isTv, request.season, request.episode, 0
             ) ?: return null
             return ProviderTarget(api.name, api.mainUrl, request.toJson())
         }
@@ -3645,6 +3652,8 @@ class MOOSAHubProvider : TmdbProvider() {
                 .lowercase()
 
         return when {
+            api is MOOSACineStreamVidzeeProvider -> 16500L
+
             request.originalLanguage.equals("ar", true) &&
                 MOOSASettingsStore.arabicFastMode() &&
                 isAkwamProvider(api) -> 23000L

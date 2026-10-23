@@ -55,7 +55,8 @@ object MOOSASourceTester {
         // Mirror the playback engine's registries. The CloudStream provider
         // mapping and global registry can differ after plugin hot-loading.
         (listOf(MOOSACineStreamVaPlayerProvider(),
-                MOOSACineStreamVidrockProvider()) +
+                MOOSACineStreamVidrockProvider(),
+                MOOSACineStreamVidzeeProvider()) +
             apis.toList() + allProviders.toList())
             .filter {
                 it.name != "MOOSA Hub" &&
@@ -279,7 +280,17 @@ object MOOSASourceTester {
                 api,
                 MOOSAHubProvider.HubPlaybackRequest(
                     title = "Better Call Saul", tmdbId = 60059, isTv = true,
-                    season = 1, episode = 1
+                    season = 2, episode = 1
+                ),
+                onUpdate
+            )
+        }
+        if (api is MOOSACineStreamVidzeeProvider) {
+            return testNativeSource(
+                api,
+                MOOSAHubProvider.HubPlaybackRequest(
+                    title = "Better Call Saul", tmdbId = 60059, isTv = true,
+                    season = 2, episode = 1
                 ),
                 onUpdate
             )

@@ -1,4 +1,4 @@
-name: MOOSA Hub v134 CineStream Vidrock source verification
+name: MOOSA Hub v135 native VidZee S2 source verification
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==134,versions
+          assert versions['MOOSAHub']==135,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -120,7 +120,7 @@ jobs:
           assert 'MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(' in hub
           native=(root/'MOOSACineStreamVaPlayerProvider.kt').read_text()
           tester=(root/'MOOSASourceTester.kt').read_text()
-          assert 'listOf(nativeVaPlayer, nativeVidrock)' in hub
+          assert 'listOf(nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
           assert 'if (api is MOOSACineStreamVaPlayerProvider)' in hub
           assert 'MOOSACineStreamVaPlayerPolicy.requestUrl(' in hub
           assert 'MOOSACineStreamVaPlayerPolicy.requestUrl(' in native
@@ -131,7 +131,15 @@ jobs:
           assert 'this.quality = Qualities.Unknown.value' in vidrock
           assert 'MOOSACineStreamVidrockPolicy.decryptUrl(encrypted)' in vidrock
           assert 'MOOSACineStreamVidrockProvider()' in tester
-          assert 'title = "Better Call Saul", tmdbId = 60059, isTv = true' in tester
+          assert tester.count('title = "Better Call Saul", tmdbId = 60059, isTv = true') >= 2
+          assert tester.count('season = 2, episode = 1') >= 2
+          assert 'MOOSACineStreamVidzeeProvider()' in tester
+          vidzee=(root/'MOOSACineStreamVidzeeProvider.kt').read_text()
+          assert 'MOOSACineStreamVidzeePolicy.decryptHls(' in vidzee
+          assert 'Cipher.getInstance("AES/CBC/PKCS5Padding")' in vidzee
+          assert 'val gate = Semaphore(3)' in vidzee
+          assert 'this.quality = Qualities.Unknown.value' in vidzee
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSACineStreamVidzeePolicyTest.kt').exists()
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSACineStreamVidrockPolicyTest.kt').exists()
 
           assert 'this.quality = Qualities.Unknown.value' in native
@@ -142,5 +150,5 @@ jobs:
           assert 'isAnime || isRecognized(name)' in registry
           assert '"cinestream", "streamplay"' in registry
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSARecognizedExternalProviderTest.kt').exists()
-          print('PASS: v134 TV navigation, two native CineStream-origin sources, and existing providers')
+          print('PASS: v135 TV navigation, three native CineStream-origin sources and S2-specific tester')
           PY
