@@ -1,4 +1,4 @@
-name: MOOSA Hub v133 native CineStream VaPlayer source verification
+name: MOOSA Hub v134 CineStream Vidrock source verification
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==133,versions
+          assert versions['MOOSAHub']==134,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -120,11 +120,20 @@ jobs:
           assert 'MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(' in hub
           native=(root/'MOOSACineStreamVaPlayerProvider.kt').read_text()
           tester=(root/'MOOSASourceTester.kt').read_text()
-          assert 'listOf(nativeVaPlayer)' in hub
+          assert 'listOf(nativeVaPlayer, nativeVidrock)' in hub
           assert 'if (api is MOOSACineStreamVaPlayerProvider)' in hub
           assert 'MOOSACineStreamVaPlayerPolicy.requestUrl(' in hub
           assert 'MOOSACineStreamVaPlayerPolicy.requestUrl(' in native
           assert 'MOOSACineStreamVaPlayerPolicy.hlsUrl(' in native
+          vidrock=(root/'MOOSACineStreamVidrockProvider.kt').read_text()
+          assert 'MOOSACineStreamVidrockPolicy.requestUrl(' in vidrock
+          assert 'Cipher.getInstance("AES/GCM/NoPadding")' in vidrock
+          assert 'this.quality = Qualities.Unknown.value' in vidrock
+          assert 'MOOSACineStreamVidrockPolicy.decryptUrl(encrypted)' in vidrock
+          assert 'MOOSACineStreamVidrockProvider()' in tester
+          assert 'title = "Better Call Saul", tmdbId = 60059, isTv = true' in tester
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSACineStreamVidrockPolicyTest.kt').exists()
+
           assert 'this.quality = Qualities.Unknown.value' in native
           assert 'ExtractorLinkType.M3U8' in native
           assert 'MOOSACineStreamVaPlayerProvider()' in tester
@@ -133,5 +142,5 @@ jobs:
           assert 'isAnime || isRecognized(name)' in registry
           assert '"cinestream", "streamplay"' in registry
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSARecognizedExternalProviderTest.kt').exists()
-          print('PASS: v133 TV navigation, bundled VaPlayer source, registered external providers, and settings')
+          print('PASS: v134 TV navigation, two native CineStream-origin sources, and existing providers')
           PY
