@@ -37,7 +37,9 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         val url: String,
         val referer: String,
         val width: Int,
-        val height: Int
+        val height: Int,
+        val quality: Int,
+        val sizeGb: Double?
     )
 
     override suspend fun loadLinks(
@@ -57,14 +59,16 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         }.orEmpty().distinctBy { it.url }
 
         discovered.forEach { media ->
+            val tag = if (media.quality == 2160) "4K" else "${media.quality}p"
+            val size = media.sizeGb?.let { " • ${"%.1f".format(java.util.Locale.US, it)} GB" }.orEmpty()
             callback(
                 newExtractorLink(
                     name,
-                    "HubCloud • verified 4K",
+                    "HubCloud • verified $tag$size",
                     media.url,
                     ExtractorLinkType.VIDEO
                 ) {
-                    this.quality = 2160
+                    this.quality = media.quality
                     this.referer = media.referer
                     this.headers = mapOf(
                         "Referer" to media.referer,
@@ -76,7 +80,7 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         MOOSANativeSourceDiagnostics.mark(
             name,
             if (discovered.isNotEmpty()) {
-                "Verified 3840-wide MKV • HTTP 206 seek • ${discovered.size} server(s)"
+                "Verified MKV resolution • HTTP 206 seek • ${discovered.size} server(s)"
             } else {
                 "No independently verified 4K direct file"
             }
@@ -108,23 +112,35 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
             ?: return@coroutineScope emptyList()
         if (!details.isSuccessful) return@coroutineScope emptyList()
 
-        // The quality comes from the actual stream, not this release text.
-        // At most two UHD options; 1080p fallback is handled by other sources.
-        val releases = details.document.select(".download-item")
-            .filter { element ->
-                MOOSA4KHDHubPolicy.isUhdRelease(
-                    element.selectFirst(".file-title")?.text().orEmpty()
-                )
-            }
-            .take(2)
+        // A 64 GB remux was observed buffering on Fire TV. Prefer smaller
+        // *real* 4K encodes and also offer one seekable 1080p fallback.
+        // Neither labels nor sizes are sufficient to claim resolution.
+        val available = details.document.select(".download-item")
+        val uhd = available.filter { element ->
+            MOOSA4KHDHubPolicy.isUhdRelease(
+                element.selectFirst(".file-title")?.text().orEmpty()
+            )
+        }.sortedBy(::releaseSizeGb).take(2).map { it to 2160 }
+        val fhd = available.filter { element ->
+            val title = element.selectFirst(".file-title")?.text().orEmpty()
+            !MOOSA4KHDHubPolicy.isUhdRelease(title) &&
+                Regex("""\b1080p\b""", RegexOption.IGNORE_CASE).containsMatchIn(title)
+        }.sortedBy(::releaseSizeGb).take(1).map { it to 1080 }
+        val releases = uhd + fhd
 
-        releases.map { release ->
+        releases.map { (release, requiredQuality) ->
             async {
                 withTimeoutOrNull(13_000L) {
-                    resolveRelease(release)
+                    resolveRelease(release, requiredQuality)
                 }
             }
         }.awaitAll().filterNotNull()
+    }
+
+    private fun releaseSizeGb(release: Element): Double {
+        val found = Regex("""(\d+(?:\.\d+)?)\s*GB""", RegexOption.IGNORE_CASE)
+            .find(release.text())?.groupValues?.get(1)?.toDoubleOrNull()
+        return found ?: Double.MAX_VALUE
     }
 
     private fun safeCatalogPath(path: String): String? {
@@ -134,7 +150,8 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         return "${MOOSA4KHDHubPolicy.BASE}$path"
     }
 
-    private suspend fun resolveRelease(element: Element): VerifiedVideo? {
+    private suspend fun resolveRelease(element: Element, requiredQuality: Int): VerifiedVideo? {
+        val sizeGb = releaseSizeGb(element).takeIf { it.isFinite() && it < Double.MAX_VALUE }
         val gateway = element.select("a[href]")
             .firstOrNull { it.text().contains("HubCloud", ignoreCase = true) }
             ?.attr("href") ?: return null
@@ -166,7 +183,7 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
             .take(2)
 
         for (video in candidates) {
-            val verified = verifyReal4K(video, filePageUrl)
+            val verified = verifyRealVideo(video, filePageUrl, requiredQuality, sizeGb)
             if (verified != null) return verified
         }
         return null
@@ -184,8 +201,8 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
             )
     }
 
-    private suspend fun verifyReal4K(
-        url: String, referer: String
+    private suspend fun verifyRealVideo(
+        url: String, referer: String, requiredQuality: Int, sizeGb: Double?
     ): VerifiedVideo? {
         val response = runCatching {
             app.get(
@@ -216,9 +233,16 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         }
         val dimensions = MOOSA4KHDHubPolicy.videoDimensions(bytes.copyOf(count))
             ?: return null
-        // 3840x1600 is also genuine UHD cinematic framing (letterbox cropped).
-        if (dimensions.first < 3800 || dimensions.second < 1600) return null
-        return VerifiedVideo(url, referer, dimensions.first, dimensions.second)
+        // Cinematic UHD files can be vertically cropped (3840x1600+).
+        val verifiedQuality = when {
+            dimensions.first >= 3800 && dimensions.second >= 1600 -> 2160
+            dimensions.first >= 1700 && dimensions.second >= 800 -> 1080
+            else -> return null
+        }
+        if (verifiedQuality < requiredQuality) return null
+        return VerifiedVideo(
+            url, referer, dimensions.first, dimensions.second, verifiedQuality, sizeGb
+        )
     }
 
     private companion object {
