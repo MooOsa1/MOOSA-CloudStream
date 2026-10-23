@@ -1,4 +1,4 @@
-name: MOOSA Hub v138 VaPlayer master-to-media quality verification
+name: MOOSA Hub v139 verified direct 2160p file integration
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==138,versions
+          assert versions['MOOSAHub']==139,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -169,5 +169,17 @@ jobs:
           assert 'isAnime || isRecognized(name)' in registry
           assert '"cinestream", "streamplay"' in registry
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSARecognizedExternalProviderTest.kt').exists()
-          print('PASS: v138: VaPlayer master->media H264 SPS verification, strict HD floor and S02E01 diagnostics')
+          uhd_provider=(root/'MOOSA4KHDHubProvider.kt').read_text()
+          uhd_policy=(root/'MOOSA4KHDHubPolicy.kt').read_text()
+          hub=(root/'MOOSAHubProvider.kt').read_text()
+          assert 'MOOSA4KHDHubProvider()' in hub
+          assert 'api is MOOSA4KHDHubProvider' in hub
+          assert 'verifyReal4K(video, filePageUrl)' in uhd_provider
+          assert 'response.code != 206' in uhd_provider
+          assert 'videoDimensions(bytes.copyOf(count))' in uhd_provider
+          assert 'exactCatalogMatch(' in uhd_provider
+          assert 'bytes=0-131071' in uhd_provider
+          assert '0x1654AE6BL' in uhd_policy
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSA4KHDHubPolicyTest.kt').exists()
+          print('PASS: v139: verified direct 2160p MKV source, strict match, HTTP range and native VaPlayer checks')
           PY

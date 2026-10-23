@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 138
+version = 139
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -191,3 +191,5 @@ dependencies {
 // SPS in a bounded first MPEG-TS segment. Still reject unknown and <720p.
 // v138: for VaPlayer masters with no RESOLUTION, follow one video rendition
 // and measure its TS H264 SPS. No bitrate-based quality guessing.
+// v139: bundled 4KHDHub movie source; exact title/year plus a 206 EBML/MKV
+// video-track dimension check before advertising a direct 2160p link.

@@ -1786,6 +1786,7 @@ class MOOSAHubProvider : TmdbProvider() {
     // Native CineStream-origin direct source. Unlike a registered external
     // CineStream plugin, this ships and resolves streams inside MOOSA Hub.
     // It is not exposed as an extra home-page extension.
+    private val native4KHDHub = MOOSA4KHDHubProvider()
     private val nativeVaPlayer = MOOSACineStreamVaPlayerProvider()
     private val nativeVidrock = MOOSACineStreamVidrockProvider()
     private val nativeVidzee = MOOSACineStreamVidzeeProvider()
@@ -1818,7 +1819,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            listOf(nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
+            listOf(native4KHDHub, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
             allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
@@ -1950,6 +1951,12 @@ class MOOSAHubProvider : TmdbProvider() {
         aliases: List<String>,
         forceRefresh: Boolean = false
     ): ProviderTarget? {
+        // The local UHD adapter performs its own exact title/year matching
+        // on Play. No fuzzy search or external repository is required.
+        if (api is MOOSA4KHDHubProvider) {
+            if (request.isTv || request.isAnime || request.year == null) return null
+            return ProviderTarget(api.name, api.mainUrl, request.toJson())
+        }
         // The native VaPlayer adapter addresses IMDb IDs directly and needs
         // NO fuzzy title search, Google translation, TMDB-page scraping or
         // separately installed CineStream. Reject incomplete series episodes.
@@ -3652,6 +3659,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 .lowercase()
 
         return when {
+            api is MOOSA4KHDHubProvider -> 26_000L
             api is MOOSACineStreamVidzeeProvider -> 16500L
 
             request.originalLanguage.equals("ar", true) &&

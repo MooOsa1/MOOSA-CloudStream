@@ -1,0 +1,95 @@
+package com.moosa.hub
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.util.Base64
+
+class MOOSA4KHDHubPolicyTest {
+    @Test fun exactMovieIdentityRequired() {
+        assertTrue(MOOSA4KHDHubPolicy.exactCatalogMatch(
+            "Dune: Part Two", 2024, "Dune Part Two", 2024
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.exactCatalogMatch(
+            "Dune: Part Two", 2024, "Dune Part One", 2024
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.exactCatalogMatch(
+            "Dune: Part Two", 2024, "Dune: Part Two", 2021
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.exactCatalogMatch(
+            "Dune: Part Two", null, "Dune: Part Two", 2024
+        ))
+    }
+
+    @Test fun claimsAreOnlyDiscoveryHints() {
+        assertTrue(MOOSA4KHDHubPolicy.isUhdRelease("Movie 2160p HDR10.mkv"))
+        assertTrue(MOOSA4KHDHubPolicy.isUhdRelease("Movie 4K UHD BluRay"))
+        assertFalse(MOOSA4KHDHubPolicy.isUhdRelease("Movie 1080p BluRay"))
+        assertNull(MOOSA4KHDHubPolicy.safeDirectFile("https://localhost/video.mkv"))
+        assertNull(MOOSA4KHDHubPolicy.safeDirectFile("http://cdn.example.workers.dev/a"))
+        assertNull(MOOSA4KHDHubPolicy.safeDirectFile("https://evil.example/?go=workers.dev"))
+        assertEquals(
+            "https://cdn.example.workers.dev/my%20movie.mkv",
+            MOOSA4KHDHubPolicy.safeDirectFile(
+                "https://cdn.example.workers.dev/my movie.mkv"
+            )
+        )
+    }
+
+    private fun b64(value: String): String =
+        Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8))
+
+    private fun rot13(value: String): String = value.map { c ->
+        when (c) {
+            in 'a'..'z' -> ('a'.code + (c.code - 'a'.code + 13) % 26).toChar()
+            in 'A'..'Z' -> ('A'.code + (c.code - 'A'.code + 13) % 26).toChar()
+            else -> c
+        }
+    }.joinToString("")
+
+    @Test fun gatewayDecodeDoesNotNeedAdRedirects() {
+        val target = "https://hubcloud.ist/drive/abc123"
+        val encoded = b64(b64(rot13(b64("{\"o\":\"${b64(target)}\"}"))))
+        val gatewayPage = "<script>s('o','$encoded',180*1000);</script>"
+        assertEquals(target, MOOSA4KHDHubPolicy.decodeGateway(gatewayPage))
+        assertNull(MOOSA4KHDHubPolicy.decodeGateway("<html>No encoded target</html>"))
+        assertNull(MOOSA4KHDHubPolicy.safeHubPage("https://localhost/drive/a"))
+        assertNull(MOOSA4KHDHubPolicy.safeHostPage("https://gamerxyt.com.evil.test/a"))
+    }
+
+    private fun elem(id: ByteArray, data: ByteArray): ByteArray {
+        require(data.size <= 126)
+        return id + byteArrayOf((0x80 or data.size).toByte()) + data
+    }
+
+    private fun ebmlUhdSample(width: ByteArray, height: ByteArray): ByteArray {
+        val video = elem(byteArrayOf(0xe0.toByte()),
+            elem(byteArrayOf(0xb0.toByte()), width) +
+                elem(byteArrayOf(0xba.toByte()), height))
+        val track = elem(byteArrayOf(0xae.toByte()),
+            elem(byteArrayOf(0x83.toByte()), byteArrayOf(1)) + video)
+        val tracks = elem(
+            byteArrayOf(0x16, 0x54, 0xae.toByte(), 0x6b), track
+        )
+        val header = elem(
+            byteArrayOf(0x1a, 0x45, 0xdf.toByte(), 0xa3.toByte()),
+            byteArrayOf(0x42, 0x86.toByte(), 0x81.toByte(), 0x01)
+        )
+        return header + elem(byteArrayOf(0x18, 0x53, 0x80.toByte(), 0x67), tracks)
+    }
+
+    @Test fun ebmlDimensionsComeFromVideoTrack() {
+        val uhd = ebmlUhdSample(
+            byteArrayOf(0x0f, 0x00), byteArrayOf(0x08, 0x70)
+        )
+        assertEquals(3840 to 2160, MOOSA4KHDHubPolicy.videoDimensions(uhd))
+        val hd = ebmlUhdSample(
+            byteArrayOf(0x05, 0x00), byteArrayOf(0x02, 0xd0.toByte())
+        )
+        assertEquals(1280 to 720, MOOSA4KHDHubPolicy.videoDimensions(hd))
+        assertNull(MOOSA4KHDHubPolicy.videoDimensions(uhd.copyOfRange(0, 10)))
+        assertNull(MOOSA4KHDHubPolicy.videoDimensions(ByteArray(100)))
+    }
+}
