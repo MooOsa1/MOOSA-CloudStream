@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 141
+version = 142
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -199,3 +199,5 @@ dependencies {
 // v141: prioritize exact-ID FHD for TV, remove redundant native retries,
 // reject unsupported AV1/Dolby Vision and explicit audio-only HLS, add
 // regional NetMirror 1080/720 direct MP4 fallback with on-device verification.
+
+// v142: second-rendition VixSrc fallback after 1080p segment failure; reject audio-only codec variants.

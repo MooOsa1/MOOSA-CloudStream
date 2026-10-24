@@ -10,7 +10,11 @@ internal object MOOSAVixSrcPolicy {
     const val BASE = "https://vixsrc.to"
 
     data class TokenData(val token: String, val expires: Long, val playlist: String)
-    data class Variant(val url: String, val height: Int)
+    data class Variant(
+        val url: String,
+        val height: Int,
+        val declaredVideoCodec: Boolean = false
+    )
 
     fun apiUrl(tmdbId: Int?, isTv: Boolean, season: Int?, episode: Int?): String? {
         if (tmdbId == null || tmdbId !in 1..999_999_999) return null
@@ -87,24 +91,47 @@ internal object MOOSAVixSrcPolicy {
         }
     }
 
-    fun highestVariant(masterUrl: String, playlist: String): Variant? {
-        if (!playlist.trimStart().startsWith("#EXTM3U")) return null
+    /**
+     * Retain multiple genuine HD renditions. The original implementation
+     * checked ONLY the highest rendition: a blocked 1080p segment discarded
+     * a potentially healthy 720p episode altogether.
+     *
+     * Reject a declared audio-only or AV1/Dolby-Vision rendition on Fire TV.
+     * Missing CODECS is not trusted until the provider probes real H264 TS.
+     */
+    fun hdVariants(masterUrl: String, playlist: String): List<Variant> {
+        if (!playlist.trimStart().startsWith("#EXTM3U")) return emptyList()
         val lines = playlist.lines()
-        val regex = Regex("""(?:^|,)RESOLUTION=(\d+)x(\d+)(?:,|$)""")
+        val resolution = Regex("""(?:^|[:,])RESOLUTION=(\d+)x(\d+)(?:,|$)""")
         return lines.mapIndexedNotNull { index, line ->
-            if (!line.startsWith("#EXT-X-STREAM-INF:")) return@mapIndexedNotNull null
-            val height = regex.find(line)?.groupValues?.get(2)?.toIntOrNull()
+            if (!line.startsWith("#EXT-X-STREAM-INF:", ignoreCase = true))
+                return@mapIndexedNotNull null
+            val height = resolution.find(line)?.groupValues?.get(2)?.toIntOrNull()
                 ?: return@mapIndexedNotNull null
-            if (height !in 720..2160) return@mapIndexedNotNull null
+            // This is the adaptive FHD source. 4K has a separate provider.
+            if (height !in 720..1080) return@mapIndexedNotNull null
+            val codecValue = Regex("""CODECS="([^"]+)"""", RegexOption.IGNORE_CASE)
+                .find(line)?.groupValues?.get(1)
+            val tokens = codecValue?.lowercase()?.split(',')?.map(String::trim).orEmpty()
+            val video = tokens.any { token ->
+                token.startsWith("avc1") || token.startsWith("avc3") ||
+                    token.startsWith("hvc1") || token.startsWith("hev1")
+            }
+            if (codecValue != null && !video) return@mapIndexedNotNull null
+            if (tokens.any { it.startsWith("av01") || it.startsWith("dvhe") ||
+                    it.startsWith("dvh1") }) return@mapIndexedNotNull null
             val relative = lines.drop(index + 1).firstOrNull { value ->
                 value.isNotBlank() && !value.startsWith('#')
             }?.trim() ?: return@mapIndexedNotNull null
             val resolved = runCatching {
                 URI(masterUrl).resolve(relative).toASCIIString()
             }.getOrNull()?.let(::safePlaylist) ?: return@mapIndexedNotNull null
-            Variant(resolved, height)
-        }.maxByOrNull { it.height }
+            Variant(resolved, height, video)
+        }.distinctBy { it.url }.sortedByDescending { it.height }.take(3)
     }
+
+    fun highestVariant(masterUrl: String, playlist: String): Variant? =
+        hdVariants(masterUrl, playlist).firstOrNull()
 
     fun firstSegment(mediaUrl: String, playlist: String): String? {
         if (!playlist.trimStart().startsWith("#EXTM3U") ||

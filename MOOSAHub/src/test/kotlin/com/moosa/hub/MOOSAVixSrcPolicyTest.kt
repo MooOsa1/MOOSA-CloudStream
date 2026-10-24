@@ -78,6 +78,39 @@ class MOOSAVixSrcPolicyTest {
         assertNull(MOOSAVixSrcPolicy.highestVariant(url, "#EXTM3U\n#EXTINF:1\n360.ts"))
     }
 
+    @Test fun fallsBackTo720When1080IsAudioOnlyOrAv1() {
+        val masterUrl = "https://vixsrc.to/playlist/episode?token=abc"
+        val playlist = """#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=854x480,CODECS="avc1.42e01e,mp4a.40.2"
+sd/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,CODECS="mp4a.40.2"
+audio-only/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,CODECS="av01.0.08M.08,mp4a.40.2"
+av1/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,CODECS="avc1.4d401f,mp4a.40.2"
+hd/index.m3u8
+"""
+        val renditions = MOOSAVixSrcPolicy.hdVariants(masterUrl, playlist)
+        assertEquals(1, renditions.size)
+        assertEquals(720, renditions.first().height)
+        assertTrue(renditions.first().declaredVideoCodec)
+        assertTrue(renditions.first().url.endsWith("/playlist/hd/index.m3u8"))
+    }
+
+    @Test fun reports1080And720CandidatesWithoutDowngradingToSd() {
+        val url = "https://vixsrc.to/playlist/episode?token=abc"
+        val playlist = """#EXTM3U
+#EXT-X-STREAM-INF:RESOLUTION=1280x720,CODECS="avc1.4d401f"
+720/index.m3u8
+#EXT-X-STREAM-INF:RESOLUTION=1920x1080,CODECS="avc1.640028"
+1080/index.m3u8
+#EXT-X-STREAM-INF:RESOLUTION=854x480,CODECS="avc1.42e01e"
+480/index.m3u8
+"""
+        assertEquals(listOf(1080, 720), MOOSAVixSrcPolicy.hdVariants(url, playlist)
+            .map { it.height })
+    }
+
     @Test fun checksMediaPlaylistBeforeEmitting() {
         val playlist = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key\"\n" +
             "#EXTINF:6,\nsegments/00001.ts\n#EXTINF:6,\nsegments/00002.ts"

@@ -56,40 +56,60 @@ internal class MOOSAVixSrcProvider : MainAPI() {
                 if (!masterResponse.isSuccessful) return@runCatching null
                 if (!MOOSAVixSrcPolicy.hasOriginalAudio(masterResponse.text, originalAudio))
                     return@runCatching null
-                val variant = MOOSAVixSrcPolicy.highestVariant(
+                // First check 1080p, then 720p on a failed CDN fragment.
+                // A broken top rendition must not hide an otherwise healthy episode.
+                val variants = MOOSAVixSrcPolicy.hdVariants(
                     master, masterResponse.text
-                ) ?: return@runCatching null
-                val media = app.get(
-                    variant.url, headers = HEADERS + ("Referer" to endpoint)
                 )
-                if (!media.isSuccessful) return@runCatching null
-                val segment = MOOSAVixSrcPolicy.firstSegment(
-                    variant.url, media.text
-                ) ?: return@runCatching null
-                val sample = app.get(
-                    segment,
-                    headers = HEADERS + mapOf(
-                        "Referer" to endpoint,
-                        "Range" to "bytes=0-2047"
-                    )
-                )
-                if (!sample.isSuccessful ||
-                    sample.headers["Content-Type"].orEmpty().contains("html", true)
-                ) return@runCatching null
-                val prefix = ByteArray(32)
-                val evidence = sample.body.byteStream().use { stream ->
-                    var read = 0
-                    while (read < prefix.size) {
-                        val n = stream.read(prefix, read, prefix.size - read)
-                        if (n <= 0) break
-                        read += n
+                if (variants.isEmpty()) return@runCatching null
+                var playableHeight: Int? = null
+                for (variant in variants) {
+                    val headers = HEADERS + ("Referer" to endpoint)
+                    val media = runCatching {
+                        app.get(variant.url, headers = headers)
+                    }.getOrNull() ?: continue
+                    if (!media.isSuccessful) continue
+                    val segment = MOOSAVixSrcPolicy.firstSegment(
+                        variant.url, media.text
+                    ) ?: continue
+                    val readLimit = if (variant.declaredVideoCodec) 32 else 32768
+                    val sample = runCatching {
+                        app.get(
+                            segment,
+                            headers = headers + ("Range" to "bytes=0-${readLimit - 1}")
+                        )
+                    }.getOrNull() ?: continue
+                    val contentType = sample.headers["Content-Type"].orEmpty()
+                    if (!sample.isSuccessful ||
+                        contentType.contains("html", ignoreCase = true) ||
+                        contentType.startsWith("audio/", ignoreCase = true)
+                    ) continue
+                    val prefix = ByteArray(readLimit)
+                    val evidence = sample.body.byteStream().use { stream ->
+                        var read = 0
+                        while (read < prefix.size) {
+                            val n = stream.read(prefix, read, prefix.size - read)
+                            if (n <= 0) break
+                            read += n
+                        }
+                        read
                     }
-                    read
+                    if (evidence < 12 || prefix[0] == '<'.code.toByte() ||
+                        prefix[0] == '{'.code.toByte()
+                    ) continue
+                    // No video CODECS? Prove H264 video exists in the TS.
+                    if (!variant.declaredVideoCodec) {
+                        val measured = MOOSAHlsMediaQuality.h264HeightFromTs(
+                            prefix.copyOf(evidence)
+                        ) ?: continue
+                        if (measured < 720) continue
+                    }
+                    playableHeight = variant.height
+                    break
                 }
-                if (evidence < 12 || prefix[0] == '<'.code.toByte() ||
-                    prefix[0] == '{'.code.toByte()
-                ) return@runCatching null
-                master to variant.height
+                // Retain master HLS and its separate audio tracks. Returning
+                // bare video-rendition URLs can lose the original audio.
+                playableHeight?.let { master to it }
             }.getOrNull()
         }
         if (result == null) {
@@ -99,7 +119,7 @@ internal class MOOSAVixSrcProvider : MainAPI() {
 
         callback(newExtractorLink(
             name,
-            "VixSrc • Adaptive ${result.second}p",
+            "VixSrc • verified segment ${result.second}p",
             result.first,
             ExtractorLinkType.M3U8
         ) {
@@ -108,7 +128,7 @@ internal class MOOSAVixSrcProvider : MainAPI() {
             this.headers = HEADERS + ("Referer" to endpoint)
         })
         MOOSANativeSourceDiagnostics.mark(
-            name, "HLS ${result.second}p variant and segment reachable"
+            name, "HLS video ${result.second}p rendition and segment reachable"
         )
         return true
     }

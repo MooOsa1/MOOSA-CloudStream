@@ -1,4 +1,4 @@
-name: MOOSA Hub v141 verified video compatibility and FHD alternatives
+name: MOOSA Hub v142 HLS fallback and audio-only exclusion
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==141,versions
+          assert versions['MOOSAHub']==142,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -187,9 +187,9 @@ jobs:
           vix_policy=(root/'MOOSAVixSrcPolicy.kt').read_text()
           assert 'MOOSAVixSrcProvider()' in hub
           assert 'if (api is MOOSAVixSrcProvider)' in hub
-          assert 'highestVariant(' in vix_provider
+          assert 'hdVariants(' in vix_provider
           assert 'firstSegment(' in vix_provider
-          assert 'bytes=0-2047' in vix_provider
+          assert 'bytes=0-${readLimit - 1}' in vix_provider
           assert 'RESOLUTION=' in vix_policy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAVixSrcPolicyTest.kt').exists()
           netmirror=(root/'MOOSANetMirrorProvider.kt').read_text()
@@ -200,5 +200,5 @@ jobs:
           assert 'currentEpisode' in netpolicy and 'currentSeason' in netpolicy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANetMirrorPolicyTest.kt').exists()
           assert 'explicitlyAudioOnly(body)' in servers
-          print('PASS: v141: exact-ID FHD priority, compatibility and additional conditional source')
+          print('PASS: v142: exact-ID FHD, HD rendition fallback, audio-only exclusion')
           PY

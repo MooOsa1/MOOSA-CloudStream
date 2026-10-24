@@ -376,7 +376,16 @@ object MOOSAServerRegistry {
                                 val confirmedHeight =
                                     MOOSAHlsMasterQuality.highestVariantHeight(body)
                                         ?: verifyVaPlayerMediaHeight(link, body)
-                                confirmedHeight?.let { link.quality = it }
+                                // VixSrc already sampled the actual highest
+                                // playable rendition. Its 1080p variant may
+                                // be broken while the master still advertises
+                                // it, so don't overwrite a proven 720p with
+                                // the unverified master maximum.
+                                if (link.source != MOOSAVixSrcPolicy.SOURCE_NAME ||
+                                    link.quality <= 0
+                                ) {
+                                    confirmedHeight?.let { link.quality = it }
+                                }
                             }
                             ProbeCheck(
                                 valid,
