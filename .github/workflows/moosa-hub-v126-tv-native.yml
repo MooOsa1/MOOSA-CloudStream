@@ -189,7 +189,7 @@ jobs:
           assert 'if (api is MOOSAVixSrcProvider)' in hub
           assert 'hdVariants(' in vix_provider
           assert 'firstSegment(' in vix_provider
-          assert 'bytes=0-2047' in vix_provider
+          assert 'bytes=0-${readLimit - 1}' in vix_provider
           assert 'RESOLUTION=' in vix_policy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAVixSrcPolicyTest.kt').exists()
           netmirror=(root/'MOOSANetMirrorProvider.kt').read_text()
