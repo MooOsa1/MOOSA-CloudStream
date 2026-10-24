@@ -322,3 +322,62 @@ jobs:
                           print("HUBDRIVE OUT HOST",u.hostname,"pathPrefix",u.path[:20],flush=True)
               except Exception as e:
                   print("HubDrive resolver exception",type(e).__name__,str(e)[:80],flush=True)
+
+
+      - name: Test independent public ShowBox and Nuvio stream endpoints
+        shell: python
+        run: |
+          import concurrent.futures,json,urllib.request,urllib.error,urllib.parse,re
+          bases=[
+             ("showbox-strxo","https://showbox.strxo.workers.dev"),
+             ("showbox-codiv","https://showbox.codiv.dpdns.org"),
+             ("nuvio-public","https://nuviostreams.hayd.uk"),
+             ("showbox-stremio","https://showbox.stremio.online"),
+          ]
+          HEAD={"User-Agent":"Mozilla/5.0 (Linux; Android 7.1.2) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36","Accept":"application/json"}
+          paths=[
+             "/manifest.json",
+             "/stream/series/tt3032476:2:3.json",
+             "/stream/movie/tt0068646.json",
+          ]
+          def check(item):
+             name,base,path=item
+             req=urllib.request.Request(base+path,headers=HEAD)
+             try:
+                with urllib.request.urlopen(req,timeout=11) as res:
+                   status=res.status
+                   actual=res.geturl()
+                   mime=res.headers.get("Content-Type","")
+                   body=res.read(120000)
+             except urllib.error.HTTPError as e:
+                status=e.code;mime=e.headers.get("Content-Type","");body=e.read(2000);actual=base+path
+             except Exception as e:
+                return f"{name} {path} ERROR {type(e).__name__} {str(e)[:75]}"
+             parsed=None
+             try: parsed=json.loads(body)
+             except:pass
+             summary=""
+             if isinstance(parsed,dict):
+                 if path.endswith("manifest.json"):
+                     summary="manifestName="+str(parsed.get("name"))[:50]+" resources="+str(parsed.get("resources"))[:120]
+                 else:
+                     links=parsed.get("streams",[])
+                     counts={"4k":0,"1080p":0,"720p":0,"http":0,"torrent":0,"audio-labeled":0}
+                     for x in links if isinstance(links,list) else []:
+                        if not isinstance(x,dict):continue
+                        nameValue=str(x.get("name",""))+" "+str(x.get("title",""))+" "+str(x.get("description",""))
+                        url=str(x.get("url",""))
+                        if re.search(r'2160p|\b4k\b',nameValue,re.I):counts["4k"]+=1
+                        if re.search("1080p",nameValue,re.I):counts["1080p"]+=1
+                        if re.search("720p",nameValue,re.I):counts["720p"]+=1
+                        if url.startswith("https://"):counts["http"]+=1
+                        if x.get("infoHash"):counts["torrent"]+=1
+                        if re.search(r'English|Hindi|Korean|Japanese|Multi Audio|Dual Audio',nameValue,re.I):counts["audio-labeled"]+=1
+                     summary=f"streams={len(links) if isinstance(links,list) else 'NA'} counts={counts} error={str(parsed.get('error',''))[:100]}"
+             else:
+                 summary="nonJSON title="+str(re.search(b'<title[^>]*>(.*?)</title',body,re.I|re.S).group(1)[:55] if re.search(b'<title[^>]*>(.*?)</title',body,re.I|re.S) else '')
+             return f"{name} {path} status={status} type={mime[:25]} actualHost={urllib.parse.urlparse(actual).hostname} {summary}"
+          items=[(name,base,path) for name,base in bases for path in paths]
+          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+              for line in pool.map(check,items):
+                  print(line,flush=True)
