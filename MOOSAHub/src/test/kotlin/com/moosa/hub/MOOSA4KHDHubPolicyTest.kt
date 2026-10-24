@@ -27,6 +27,9 @@ class MOOSA4KHDHubPolicyTest {
         assertTrue(MOOSA4KHDHubPolicy.isUhdRelease("Movie 2160p HDR10.mkv"))
         assertTrue(MOOSA4KHDHubPolicy.isUhdRelease("Movie 4K UHD BluRay"))
         assertFalse(MOOSA4KHDHubPolicy.isUhdRelease("Movie 1080p BluRay"))
+        assertFalse(MOOSA4KHDHubPolicy.isCompatibleRelease("Movie 2160p DV HDR10"))
+        assertFalse(MOOSA4KHDHubPolicy.isCompatibleRelease("Movie AV1 1080p"))
+        assertTrue(MOOSA4KHDHubPolicy.isCompatibleRelease("Movie 2160p HEVC HDR10"))
         assertNull(MOOSA4KHDHubPolicy.safeDirectFile("https://localhost/video.mkv"))
         assertNull(MOOSA4KHDHubPolicy.safeDirectFile("http://cdn.example.workers.dev/a"))
         assertNull(MOOSA4KHDHubPolicy.safeDirectFile("https://evil.example/?go=workers.dev"))
@@ -70,12 +73,15 @@ class MOOSA4KHDHubPolicyTest {
         return id + byteArrayOf((0x80 or data.size).toByte()) + data
     }
 
-    private fun ebmlUhdSample(width: ByteArray, height: ByteArray): ByteArray {
+    private fun ebmlUhdSample(
+        width: ByteArray, height: ByteArray, codec: String = "V_MPEGH/ISO/HEVC"
+    ): ByteArray {
         val video = elem(byteArrayOf(0xe0.toByte()),
             elem(byteArrayOf(0xb0.toByte()), width) +
                 elem(byteArrayOf(0xba.toByte()), height))
         val track = elem(byteArrayOf(0xae.toByte()),
-            elem(byteArrayOf(0x83.toByte()), byteArrayOf(1)) + video)
+            elem(byteArrayOf(0x83.toByte()), byteArrayOf(1)) +
+                elem(byteArrayOf(0x86.toByte()), codec.toByteArray()) + video)
         val tracks = elem(
             byteArrayOf(0x16, 0x54, 0xae.toByte(), 0x6b), track
         )
@@ -91,10 +97,14 @@ class MOOSA4KHDHubPolicyTest {
             byteArrayOf(0x0f, 0x00), byteArrayOf(0x08, 0x70)
         )
         assertEquals(3840 to 2160, MOOSA4KHDHubPolicy.videoDimensions(uhd))
+        assertEquals("V_MPEGH/ISO/HEVC", MOOSA4KHDHubPolicy.compatibleVideo(uhd)?.codecId)
         val hd = ebmlUhdSample(
             byteArrayOf(0x05, 0x00), byteArrayOf(0x02, 0xd0.toByte())
         )
         assertEquals(1280 to 720, MOOSA4KHDHubPolicy.videoDimensions(hd))
+        assertNull(MOOSA4KHDHubPolicy.videoDimensions(
+            ebmlUhdSample(byteArrayOf(0x0f, 0x00), byteArrayOf(0x08, 0x70), "V_AV1")
+        ))
         assertNull(MOOSA4KHDHubPolicy.videoDimensions(uhd.copyOfRange(0, 10)))
         assertNull(MOOSA4KHDHubPolicy.videoDimensions(ByteArray(100)))
     }

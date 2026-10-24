@@ -27,6 +27,11 @@ internal object MOOSA4KHDHubPolicy {
     fun isUhdRelease(title: String): Boolean =
         Regex("""(?i)(?:\b2160p\b|\b4k\s+uhd\b)""").containsMatchIn(title)
 
+    /** Fire TV Stick 4K (mantis) cannot decode AV1 or some Dolby Vision profiles. */
+    fun isCompatibleRelease(title: String): Boolean =
+        !Regex("""(?i)(?:\bav1\b|\bav01\b|\bdovi\b|\bdv\b|\bdolby[ ._-]*vision\b)""")
+            .containsMatchIn(title)
+
     /** Reverses the public page's nested encoding, without executing its ad JS. */
     fun decodeGateway(html: String): String? {
         val payload = Regex("""s\(['\"]o['\"],\s*['\"]([A-Za-z0-9+/=]+)['\"]""")
@@ -171,8 +176,10 @@ internal object MOOSA4KHDHubPolicy {
         return result
     }
 
-    /** Returns exact encoded video dimensions, not the release filename. */
-    fun videoDimensions(prefix: ByteArray): Pair<Int, Int>? {
+    data class CompatibleVideo(val width: Int, val height: Int, val codecId: String)
+
+    /** Only compatible real Matroska video tracks, never audio-only or AV1. */
+    fun compatibleVideo(prefix: ByteArray): CompatibleVideo? {
         if (prefix.size < 24 || !prefix.copyOfRange(0, 4)
                 .contentEquals(byteArrayOf(0x1a, 0x45, 0xdf.toByte(), 0xa3.toByte()))
         ) return null
@@ -185,6 +192,11 @@ internal object MOOSA4KHDHubPolicy {
             val type = findElements(prefix, entry.data, entry.end, 0x83L)
                 .firstOrNull()?.let { unsigned(prefix, it) }
             if (type != 1) continue
+            val codec = findElements(prefix, entry.data, entry.end, 0x86L)
+                .firstOrNull()?.let { value ->
+                    String(prefix, value.data, value.end - value.data, Charsets.US_ASCII)
+                } ?: continue
+            if (codec !in setOf("V_MPEGH/ISO/HEVC", "V_MPEG4/ISO/AVC")) continue
             val video = findElements(prefix, entry.data, entry.end, 0xE0L)
                 .firstOrNull() ?: continue
             val width = findElements(prefix, video.data, video.end, 0xB0L)
@@ -193,8 +205,12 @@ internal object MOOSA4KHDHubPolicy {
                 .firstOrNull()?.let { unsigned(prefix, it) }
             if (width != null && height != null &&
                 width in 640..8192 && height in 360..4320
-            ) return width to height
+            ) return CompatibleVideo(width, height, codec)
         }
         return null
     }
+
+    /** Convenience accessor for tests and real encoded resolution labels. */
+    fun videoDimensions(prefix: ByteArray): Pair<Int, Int>? =
+        compatibleVideo(prefix)?.let { it.width to it.height }
 }

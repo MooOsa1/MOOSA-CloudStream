@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 140
+version = 141
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -32,6 +32,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("com.google.android.material:material:1.14.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
 
 // v66: real TMDB original names, correct MySeed Arabic episode/season indexing, HD Ajax discovery and verified fallback, local Downet CDN speed samples
@@ -195,3 +196,6 @@ dependencies {
 // video-track dimension check before advertising a direct 2160p link.
 // v140: independently confirmed VixSrc adaptive HLS (1080/720/480) for exact
 // TMDB movie and episode IDs; prefer compact UHD files over BluRay REMUX.
+// v141: prioritize exact-ID FHD for TV, remove redundant native retries,
+// reject unsupported AV1/Dolby Vision and explicit audio-only HLS, add
+// regional NetMirror 1080/720 direct MP4 fallback with on-device verification.

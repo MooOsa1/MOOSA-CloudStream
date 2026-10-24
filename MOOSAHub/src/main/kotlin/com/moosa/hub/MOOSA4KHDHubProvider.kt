@@ -117,13 +117,14 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         // Neither labels nor sizes are sufficient to claim resolution.
         val available = details.document.select(".download-item")
         val uhd = available.filter { element ->
-            MOOSA4KHDHubPolicy.isUhdRelease(
-                element.selectFirst(".file-title")?.text().orEmpty()
-            )
+            val filename = element.selectFirst(".file-title")?.text().orEmpty()
+            MOOSA4KHDHubPolicy.isUhdRelease(filename) &&
+                MOOSA4KHDHubPolicy.isCompatibleRelease(filename)
         }.sortedBy(::releaseSizeGb).take(2).map { it to 2160 }
         val fhd = available.filter { element ->
             val title = element.selectFirst(".file-title")?.text().orEmpty()
             !MOOSA4KHDHubPolicy.isUhdRelease(title) &&
+                MOOSA4KHDHubPolicy.isCompatibleRelease(title) &&
                 Regex("""\b1080p\b""", RegexOption.IGNORE_CASE).containsMatchIn(title)
         }.sortedBy(::releaseSizeGb).take(1).map { it to 1080 }
         val releases = uhd + fhd
@@ -231,8 +232,9 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
             }
             read
         }
-        val dimensions = MOOSA4KHDHubPolicy.videoDimensions(bytes.copyOf(count))
+        val videoTrack = MOOSA4KHDHubPolicy.compatibleVideo(bytes.copyOf(count))
             ?: return null
+        val dimensions = videoTrack.width to videoTrack.height
         // Cinematic UHD files can be vertically cropped (3840x1600+).
         val verifiedQuality = when {
             dimensions.first >= 3800 && dimensions.second >= 1600 -> 2160
