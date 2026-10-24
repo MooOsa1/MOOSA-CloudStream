@@ -221,6 +221,22 @@ jobs:
                   print("FILEPAGE HOST COUNTS",dict(hoststats),flush=True)
                   for link in allanchors:
                       parsed=urllib.parse.urlparse(html.unescape(link))
+                      if parsed.hostname not in ("gpdl.hubcloud.ist","snvhost.com"):continue
+                      print("ALTERNATE HOST",parsed.hostname,"path",parsed.path[:35],"query present",bool(parsed.query),flush=True)
+                      try:
+                          code,headers,body=get(html.unescape(link),ref=filepage,by=131072)
+                          print("ALTERNATE RANGE",parsed.hostname,"status",code,
+                                "contenttype",headers.get("Content-Type","")[:75],
+                                "content-range",headers.get("Content-Range","")[:35],
+                                "final length",len(body),
+                                "EBML",body[:4]==bytes([26,69,223,163]),flush=True)
+                      except urllib.error.HTTPError as e:
+                          print("ALTERNATE HOST",parsed.hostname,"HTTP",e.code,flush=True)
+                      except Exception as e:
+                          print("ALTERNATE HOST",parsed.hostname,type(e).__name__,str(e)[:60],flush=True)
+
+                  for link in allanchors:
+                      parsed=urllib.parse.urlparse(html.unescape(link))
                       if parsed.hostname not in ("pixeldrain.dev","pixeldrain.com"):continue
                       m=re.fullmatch("/u/([A-Za-z0-9_-]{4,30})",parsed.path)
                       if not m:continue
