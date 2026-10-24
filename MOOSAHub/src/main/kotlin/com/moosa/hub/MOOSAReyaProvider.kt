@@ -50,6 +50,8 @@ internal class MOOSAReyaProvider : MainAPI() {
         ) ?: return false
 
         var sourceSubtitles = emptyList<MOOSAReyaPolicy.Subtitle>()
+        var lastCaptionCueSeconds: Double? = null
+        var referenceCaptionSource: String? = null
         val found = withTimeoutOrNull(21_000L) {
             val response = runCatching {
                 app.get(endpoint, headers = DEFAULT_HEADERS)
@@ -63,6 +65,21 @@ internal class MOOSAReyaProvider : MainAPI() {
             sourceSubtitles = MOOSAReyaPolicy.subtitles(
                 json, request.isTv, request.season, request.episode
             )
+            // One bounded text request per episode, BEFORE parallel video
+            // checks. A missing/broken VTT cannot be used as timing evidence.
+            val reference = sourceSubtitles.firstOrNull { it.language == "English" }
+                ?: sourceSubtitles.firstOrNull { it.language == "Arabic" }
+            if (reference != null) {
+                referenceCaptionSource = reference.source
+                lastCaptionCueSeconds = withTimeoutOrNull(2_800L) {
+                    runCatching {
+                        val vtt = app.get(reference.url, headers = DEFAULT_HEADERS)
+                        if (vtt.isSuccessful) {
+                            MOOSAReyaPolicy.finalCueSeconds(vtt.text.take(160_000))
+                        } else null
+                    }.getOrNull()
+                }
+            }
             val items = json.optJSONArray("streams")
                 ?: return@withTimeoutOrNull emptyList<Link>()
             val sources = (0 until items.length()).mapNotNull { index ->
@@ -90,7 +107,12 @@ internal class MOOSAReyaProvider : MainAPI() {
                     async {
                         gate.withPermit {
                             withTimeoutOrNull(12_000L) {
-                                checkSource(source, request.originalLanguage)
+                                checkSource(
+                                    source, request.originalLanguage,
+                                    lastCaptionCueSeconds.takeIf {
+                                        source.label.equals(referenceCaptionSource, true)
+                                    }
+                                )
                             }.orEmpty()
                         }
                     }
@@ -101,10 +123,14 @@ internal class MOOSAReyaProvider : MainAPI() {
         // Native source-specific WebVTT, aligned to this exact episode's
         // Reya/VidNest release. Offer these before generic subtitle indexes.
         // Never emit captions if no matching playable video source exists.
-        if (found.isNotEmpty()) {
-            sourceSubtitles.forEach { candidate ->
+        if (found.isNotEmpty() && lastCaptionCueSeconds != null) {
+            // The API merges providers. Only offer a native caption when its
+            // source actually matches a verified, runtime-compatible video.
+            sourceSubtitles.filter { sub ->
+                found.any { link -> sub.source.equals(link.source, true) }
+            }.forEach { candidate ->
                 subtitleCallback(SubtitleFile(
-                    candidate.language + " • Reya source-matched",
+                    candidate.language + " • Reya native",
                     candidate.url
                 ))
             }
@@ -133,13 +159,14 @@ internal class MOOSAReyaProvider : MainAPI() {
         MOOSANativeSourceDiagnostics.mark(
             name,
             if (found.isEmpty()) "No validated HLS video + original audio"
-            else "Validated fMP4 streams: " + found.size + " (4K AVC may be device limited)"
+            else "Validated fMP4 + compatible episode runtime: " + found.size +
+                " (4K AVC may be device limited)"
         )
         return found.isNotEmpty()
     }
 
     private suspend fun checkSource(
-        source: Source, originalLanguage: String?
+        source: Source, originalLanguage: String?, subtitleLastCue: Double?
     ): List<Link> {
         val masterResponse = runCatching {
             app.get(source.url, headers = source.headers)
@@ -160,6 +187,11 @@ internal class MOOSAReyaProvider : MainAPI() {
                 app.get(variant.url, headers = source.headers)
             }.getOrNull() ?: continue
             if (!response.isSuccessful) continue
+            // Reject wrong/incomplete episode mirrors BEFORE any expensive
+            // media-init or CDN fragment reads.
+            if (!MOOSAReyaPolicy.runtimeCompatible(
+                    MOOSAReyaPolicy.playlistSeconds(response.text), subtitleLastCue
+                )) continue
             val stream = MOOSAReyaPolicy.media(variant.url, response.text) ?: continue
             val initResponse = runCatching {
                 app.get(stream.init, headers = source.headers)
