@@ -1,4 +1,4 @@
-name: MOOSA Hub v144 real alternate UHD and native audio tracks
+name: MOOSA Hub v146 validated Reya 2160p fMP4 and FHD fallback
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==144,versions
+          assert versions['MOOSAHub']==146,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -120,7 +120,7 @@ jobs:
           assert 'MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(' in hub
           native=(root/'MOOSACineStreamVaPlayerProvider.kt').read_text()
           tester=(root/'MOOSASourceTester.kt').read_text()
-          assert 'listOf(native4KHDHub, nativeVixSrc, nativeNetMirror, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
+          assert 'listOf(native4KHDHub, nativeVixSrc, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
           media=(root/'MOOSAHlsMediaQuality.kt').read_text()
           servers=(root/'MOOSAServerRegistry.kt').read_text()
           assert 'h264HeightFromTs(bytes: ByteArray)' in media
@@ -174,6 +174,14 @@ jobs:
           hub=(root/'MOOSAHubProvider.kt').read_text()
           assert 'MOOSA4KHDHubProvider()' in hub
           assert 'MOOSAOpenDirectoryProvider()' in hub
+          assert 'MOOSAReyaProvider()' in hub
+          assert 'api is MOOSAReyaProvider' in hub
+          assert 'MOOSAReyaPolicy.identity(' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'MOOSAReyaPolicy.inspectInit(' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'isFmp4Fragment(' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'MOOSAAudioTrackPolicy.accept(' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAReyaPolicyTest.kt').exists()
+
           assert 'MOOSAAudioTrackPolicy.accept(' in (root/'MOOSA4KHDHubProvider.kt').read_text()
           assert 'MOOSAAudioTrackPolicy.accept(' in (root/'MOOSANetMirrorProvider.kt').read_text()
           assert 'MOOSAAudioTrackPolicy.accept(' in (root/'MOOSAOpenDirectoryProvider.kt').read_text()
@@ -215,5 +223,5 @@ jobs:
           assert 'currentEpisode' in netpolicy and 'currentSeason' in netpolicy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANetMirrorPolicyTest.kt').exists()
           assert 'explicitlyAudioOnly(body)' in servers
-          print('PASS: v144: independent direct UHD/FHD adapter and audio identity gates')
+          print('PASS: v146: original-audio and 2160p video track inspection, FHD fallback')
           PY
