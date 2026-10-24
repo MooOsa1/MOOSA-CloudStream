@@ -78,9 +78,25 @@ sd/index.m3u8
         assertTrue(MOOSAReyaPolicy.runtimeCompatible(2765.24, lastCue))
         assertFalse(MOOSAReyaPolicy.runtimeCompatible(2136.134, lastCue))
         assertFalse(MOOSAReyaPolicy.runtimeCompatible(2184.0, lastCue))
-        assertFalse(MOOSAReyaPolicy.runtimeCompatible(null, lastCue))
+        // No playlist ENDLIST != proven bad video. Preserve playable 4K.
+        assertTrue(MOOSAReyaPolicy.runtimeCompatible(null, lastCue))
         assertTrue(MOOSAReyaPolicy.runtimeCompatible(null, null))
         assertTrue(MOOSAReyaPolicy.runtimeCompatible(2526.98, 2499.831))
+    }
+
+    @Test fun regressionPreserves4KWhenTimelineMetadataIsUnavailable() {
+        val missingEndlist = buildString {
+            append("#EXTM3U\n#EXT-X-VERSION:7\n")
+            repeat(460) { i -> append("#EXTINF:6.0,\nseg").append(i).append(".m4s\n") }
+        }
+        // Actual video bytes may be perfectly fine even if the CDN omits
+        // ENDLIST. This must not collapse all Reya links back to NetMirror.
+        assertNull(MOOSAReyaPolicy.playlistSeconds(missingEndlist))
+        assertTrue(MOOSAReyaPolicy.runtimeCompatible(
+            MOOSAReyaPolicy.playlistSeconds(missingEndlist), 2705.995))
+        // A FULL 35m VOD matched to a 45m subtitle really is truncated.
+        assertFalse(MOOSAReyaPolicy.runtimeCompatible(2136.134, 2705.995))
+        assertTrue(MOOSAReyaPolicy.runtimeCompatible(2756.0, 2705.995))
     }
 
     @Test fun calculateVideoHlsAndNativeVttTimelines() {

@@ -34,7 +34,7 @@ internal class MOOSAReyaProvider : MainAPI() {
                               val headers: Map<String, String>)
     private data class Link(val url: String, val height: Int, val codec: String,
                             val source: String, val headers: Map<String, String>,
-                            val audioLanguages: Set<String>?)
+                            val audioLanguages: Set<String>?, val timelineVerified: Boolean)
 
     override suspend fun loadLinks(
         data: String, isCasting: Boolean,
@@ -127,7 +127,9 @@ internal class MOOSAReyaProvider : MainAPI() {
             // The API merges providers. Only offer a native caption when its
             // source actually matches a verified, runtime-compatible video.
             sourceSubtitles.filter { sub ->
-                found.any { link -> sub.source.equals(link.source, true) }
+                found.any { link ->
+                    link.timelineVerified && sub.source.equals(link.source, true)
+                }
             }.forEach { candidate ->
                 subtitleCallback(SubtitleFile(
                     candidate.language + " • Reya native",
@@ -142,11 +144,13 @@ internal class MOOSAReyaProvider : MainAPI() {
             val warning = if (link.height == 2160 && link.codec == "AVC")
                 " • AVC (experimental on Fire TV 2018)" else ""
             val audio = " • " + MOOSAAudioTrackPolicy.display(link.audioLanguages)
+            val timelineTag = if (link.timelineVerified) "" else
+                " • subtitle timing unverified"
             callback(
                 newExtractorLink(
                     name,
                     "Reya " + link.source.take(26) + " • " +
-                        qualityName + " " + link.codec + warning + audio,
+                        qualityName + " " + link.codec + warning + audio + timelineTag,
                     link.url,
                     ExtractorLinkType.M3U8
                 ) {
@@ -187,11 +191,13 @@ internal class MOOSAReyaProvider : MainAPI() {
                 app.get(variant.url, headers = source.headers)
             }.getOrNull() ?: continue
             if (!response.isSuccessful) continue
-            // Reject wrong/incomplete episode mirrors BEFORE any expensive
-            // media-init or CDN fragment reads.
+            // Distinguish PROVEN missing video (reject) from MISSING
+            // timeline metadata (keep the video, with no synced captions).
+            val videoSeconds = MOOSAReyaPolicy.playlistSeconds(response.text)
             if (!MOOSAReyaPolicy.runtimeCompatible(
-                    MOOSAReyaPolicy.playlistSeconds(response.text), subtitleLastCue
+                    videoSeconds, subtitleLastCue
                 )) continue
+            val aligned = subtitleLastCue != null && videoSeconds != null
             val stream = MOOSAReyaPolicy.media(variant.url, response.text) ?: continue
             val initResponse = runCatching {
                 app.get(stream.init, headers = source.headers)
@@ -231,7 +237,7 @@ internal class MOOSAReyaProvider : MainAPI() {
             }
             if (!MOOSAReyaPolicy.isFmp4Fragment(prefix.copyOf(read))) continue
             chosen += Link(variant.url, variant.height, track.codec,
-                source.label, source.headers, track.audioLanguages)
+                source.label, source.headers, track.audioLanguages, aligned)
             if (variant.height >= 2160) foundUhd = true
             else foundFhd = true
             // One independently verified UHD and one HD safety fallback.

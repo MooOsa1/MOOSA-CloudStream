@@ -128,8 +128,11 @@ internal object MOOSAReyaPolicy {
      * Small credits gaps are allowed, including longer movie end credits.
      */
     fun runtimeCompatible(videoSeconds: Double?, subtitleLastCueSeconds: Double?): Boolean {
-        if (subtitleLastCueSeconds == null) return true
-        val length = videoSeconds ?: return false
+        // A VTT may be available while the HLS window has no ENDLIST or
+        // a CDN omits its complete duration. Missing timing evidence must
+        // suppress "synced" captions, never a separately verified video.
+        if (subtitleLastCueSeconds == null || videoSeconds == null) return true
+        val length = videoSeconds
         val extraCreditsAllowance = maxOf(300.0, length * 0.10)
         return length >= subtitleLastCueSeconds - 75.0 &&
             length <= subtitleLastCueSeconds + extraCreditsAllowance
