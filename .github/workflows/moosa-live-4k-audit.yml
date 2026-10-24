@@ -144,3 +144,81 @@ jobs:
               if season=="S02":
                   for name in normalized[:22]:
                       print("S02 FILE",name[:230],flush=True)
+
+      - name: Probe S02E03 CDN partial content without leaking signed URLs
+        shell: python
+        run: |
+          import re,urllib.request,urllib.error,urllib.parse,html,base64,codecs,json
+          def get(url,ref=None,by=240000):
+              headers={"User-Agent":"Mozilla/5.0 (Linux; Android 7.1.2) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"}
+              if ref: headers["Referer"]=ref
+              if by==131072: headers["Range"]="bytes=0-131071"
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=13) as resp:
+                  return resp.status,dict(resp.headers),resp.read(by)
+          def status(url,ref=None):
+              try:
+                  code,headers,body=get(url,ref)
+                  return (code,headers,body)
+              except urllib.error.HTTPError as e:
+                  return (e.code,{},e.read(1000))
+              except Exception as e:
+                  print("NETWORK",type(e).__name__,str(e)[:60],flush=True)
+                  return (0,{},b"")
+          page="https://4khdhub.one/better-call-saul-series-2193/"
+          _,_,raw=get(page,by=900000)
+          source=raw.decode("utf8","replace")
+          titlepattern=r'<div\s+class="episode-file-title"[^>]*>(.*?)</div>'
+          # Real episode cards are self-contained, href is inside the same card.
+          cards=re.findall(r'<div class="episode-download-item">(.*?)<div class="episode-links">(.*?)</div>',source,re.S|re.I)
+          options=[]
+          for titleBlock,linkBlock in cards:
+              m=re.search(titlepattern,titleBlock,re.S|re.I)
+              if m is None:continue
+              title=" ".join(html.unescape(re.sub("<[^>]+>"," ",m.group(1))).split())
+              if not re.search(r'\bS02E03\b',title,re.I):continue
+              if not re.search(r'\b1080p\b',title,re.I):continue
+              if not title.endswith(".mkv"):continue
+              for url,label in re.findall(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>',linkBlock,re.S|re.I):
+                  if 'HubCloud' in label:
+                      options.append((title,html.unescape(url)))
+          print("BCS S02E03 live FHD HubCloud gateways",len(options),flush=True)
+          for title,gateway in options[:2]:
+              try:
+                  code,_,gb=get(gateway,by=100000)
+                  print("gateway HTTP",code,flush=True)
+                  match=re.search(r"s\(['\x22]o['\x22],\s*['\x22]([A-Za-z0-9+/=]+)['\x22]",gb.decode("utf8","replace"))
+                  if not match:
+                      print("gateway no encoded target",flush=True);continue
+                  layer=base64.b64decode(base64.b64decode(match.group(1))).decode("utf8","replace")
+                  obj=base64.b64decode(codecs.decode(layer,"rot_13")).decode("utf8","replace")
+                  hub=base64.b64decode(json.loads(obj)["o"]).decode("utf8","replace")
+                  if urllib.parse.urlparse(hub).hostname not in ["hubcloud.ist","hubdrive.ist"]:
+                      print("unexpected hub",flush=True);continue
+                  code,_,hubhtml=get(hub,by=160000)
+                  print("hub HTTP",code,flush=True)
+                  m=re.search(r"var\s+url\s*=\s*['\x22]([^'\x22]+)['\x22]",hubhtml.decode("utf8","replace"))
+                  if not m:continue
+                  filepage=m.group(1)
+                  if urllib.parse.urlparse(filepage).hostname not in ["gamerxyt.com","hubcloud.ist","hubdrive.ist"]:
+                      print("unexpected file page",flush=True);continue
+                  code,_,filehtml=get(filepage,ref=hub,by=130000)
+                  print("file page HTTP",code,flush=True)
+                  links=re.findall(r'href="(https://[^"]+)"',filehtml.decode("utf8","replace"),re.I)
+                  media=[html.unescape(u) for u in links if any(urllib.parse.urlparse(u).hostname or '' in ('') for _ in [0])] if False else []
+                  for u in links:
+                      host=urllib.parse.urlparse(u).hostname or ''
+                      if host.endswith((".workers.dev",".r2.dev",".cloudflarestorage.com")):
+                          media.append(html.unescape(u))
+                  print("signed media candidates",len(media),flush=True)
+                  for direct in media[:1]:
+                      try:
+                          code,headers,prefix=get(direct,ref=filepage,by=131072)
+                          print("CDN",code,"range",headers.get("Content-Range","")[:30],
+                                "bytes",len(prefix),"EBML",prefix[:4]==b"\x1a\x45\xdf\xa3",
+                                "video codec",("V_MPEGH/ISO/HEVC" in prefix.decode("latin1") or "V_MPEG4/ISO/AVC" in prefix.decode("latin1")),
+                                "eng language",("eng" in prefix.decode("latin1")),flush=True)
+                      except Exception as e:
+                          print("CDN fetch",type(e).__name__,str(e)[:80],flush=True)
+              except Exception as e:
+                  print("gateway exception",type(e).__name__,str(e)[:100],flush=True)
