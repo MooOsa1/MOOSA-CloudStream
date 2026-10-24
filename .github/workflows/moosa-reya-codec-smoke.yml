@@ -1,0 +1,44 @@
+name: Reya UHD codec and identity smoke (no release)
+on:
+  push:
+    branches:
+      - audit/moosa-live-4k-20261024
+jobs:
+  reya:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read real 2160p init codec and exact TMDB identity
+        shell: python
+        run: |
+          import urllib.request,urllib.parse,json,re,collections
+          UA={"User-Agent":"Mozilla/5.0 (Linux; Android 7.1.2) AppleWebKit/537.36 Chrome/123 Safari/537.36"}
+          def get(url,n=60000):
+              with urllib.request.urlopen(urllib.request.Request(url,headers=UA),timeout=15) as r:
+                  return r.read(n)
+          for name,url in [
+               ("BCS","https://vidnst.reyamika.eu.cc/api/stream?tmdbId=60059&type=tv&season=2&episode=3"),
+               ("Godfather","https://vidnst.reyamika.eu.cc/api/stream?tmdbId=238&type=movie")]:
+              try:
+                  obj=json.loads(get(url,150000))
+                  print(name,"IDENTITY",obj.get("tmdbId"),obj.get("mediaType"),obj.get("season"),obj.get("episode"),flush=True)
+                  for source in obj.get("streams",[]):
+                      master=source.get("url","")
+                      if not master.startswith("https://"):continue
+                      h=get(master).decode("utf8","ignore")
+                      if "RESOLUTION=3840x2160" not in h:continue
+                      lines=h.splitlines()
+                      for i,l in enumerate(lines):
+                          if not (l.startswith("#EXT-X-STREAM-INF:") and "RESOLUTION=3840x2160" in l and i+1<len(lines)):continue
+                          print(name,"2160 CODECS ATTR",re.search(r'CODECS="([^"]+)"',l).group(1) if re.search(r'CODECS="([^"]+)"',l) else "unspecified",flush=True)
+                          variant=urllib.parse.urljoin(master,lines[i+1])
+                          media=get(variant,120000).decode("utf8","ignore")
+                          m=re.search(r'#EXT-X-MAP:URI="([^"]+)"',media)
+                          if not m:continue
+                          init=get(urllib.parse.urljoin(variant,m.group(1)),60000)
+                          print(name,"INIT codecs",[(code,init.count(code.encode())) for code in ["hvc1","hev1","avc1","avc3","av01","dvhe","dvh1","mp4a","ac-3","ec-3"]],
+                                "size",len(init),flush=True)
+                          break
+                      break
+              except Exception as e:
+                  print(name,"CHECK ERROR",type(e).__name__,str(e)[:80],flush=True)
