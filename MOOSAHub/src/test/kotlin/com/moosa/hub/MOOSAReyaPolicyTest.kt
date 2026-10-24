@@ -47,11 +47,11 @@ sd/index.m3u8
     @Test fun nativeVttForExactEpisodeAndLanguagesOnly() {
         val payload = JSONObject("""{
             "subtitles": [
-                {"label":"Arabic","url":"https://cache.vdrk.site/subtitles/60059/2/5/Arabic.vtt"},
-                {"label":"English","url":"https://cache.vdrk.site/subtitles/60059/2/5/English.vtt"},
-                {"label":"Chinese","url":"https://cache.vdrk.site/subtitles/60059/2/5/Chinese.vtt"},
-                {"label":"Arabic","url":"https://evil.example/subtitles/60059/2/5/Arabic.vtt"},
-                {"label":"Arabic","url":"https://cache.vdrk.site/subtitles/60059/2/3/Arabic.vtt"}
+                {"source":"vidnest","label":"Arabic","url":"https://cache.vdrk.site/subtitles/60059/2/5/Arabic.vtt"},
+                {"source":"vidnest","label":"English","url":"https://cache.vdrk.site/subtitles/60059/2/5/English.vtt"},
+                {"source":"vidnest","label":"Chinese","url":"https://cache.vdrk.site/subtitles/60059/2/5/Chinese.vtt"},
+                {"source":"vidnest","label":"Arabic","url":"https://evil.example/subtitles/60059/2/5/Arabic.vtt"},
+                {"source":"vidnest","label":"Arabic","url":"https://cache.vdrk.site/subtitles/60059/2/3/Arabic.vtt"}
             ]
         }""")
         val matches = MOOSAReyaPolicy.subtitles(payload, true, 2, 5)
@@ -70,6 +70,54 @@ sd/index.m3u8
             {"label":"Arabic","url":"https://cache.vdrk.site/subtitles/2/5/Arabic.vtt#spoof"}
         ]}""")
         assertTrue(MOOSAReyaPolicy.subtitles(data, true, 2, 5).isEmpty())
+    }
+
+    @Test fun reject35MinuteIncompleteEpisodeWhenCaptionsRun45Minutes() {
+        val lastCue = 2705.995
+        assertTrue(MOOSAReyaPolicy.runtimeCompatible(2756.0, lastCue))
+        assertTrue(MOOSAReyaPolicy.runtimeCompatible(2765.24, lastCue))
+        assertFalse(MOOSAReyaPolicy.runtimeCompatible(2136.134, lastCue))
+        assertFalse(MOOSAReyaPolicy.runtimeCompatible(2184.0, lastCue))
+        assertFalse(MOOSAReyaPolicy.runtimeCompatible(null, lastCue))
+        assertTrue(MOOSAReyaPolicy.runtimeCompatible(null, null))
+        assertTrue(MOOSAReyaPolicy.runtimeCompatible(2526.98, 2499.831))
+    }
+
+    @Test fun calculateVideoHlsAndNativeVttTimelines() {
+        val playlist = buildString {
+            append("#EXTM3U\n#EXT-X-VERSION:7\n")
+            repeat(460) { i ->
+                append("#EXTINF:6.0,\nseg").append(i).append(".m4s\n")
+            }
+            append("#EXT-X-ENDLIST\n")
+        }
+        assertEquals(2760.0, MOOSAReyaPolicy.playlistSeconds(playlist)!!, 0.01)
+        assertNull(MOOSAReyaPolicy.playlistSeconds(
+            playlist.replace("#EXT-X-ENDLIST", "")
+        ))
+        val vtt = buildString {
+            append("WEBVTT\n\n")
+            repeat(24) { i ->
+                append("%02d:00.000 --> %02d:01.000\nCaption\n\n".format(i + 1, i + 1))
+            }
+            append("45:03.550 --> 45:05.995\nEnd\n")
+        }
+        assertEquals(2705.995, MOOSAReyaPolicy.finalCueSeconds(vtt)!!, 0.001)
+        assertNull(MOOSAReyaPolicy.finalCueSeconds("WEBVTT\n00:00.000 --> 00:01.000\nx"))
+        assertNull(MOOSAReyaPolicy.finalCueSeconds("html"))
+    }
+
+    @Test fun captionsMustBeBoundToActualStreamProvider() {
+        val body = JSONObject("""{"subtitles":[
+          {"label":"Arabic","source":"vidnest","url":"https://cache.vdrk.site/subtitles/60059/2/5/Arabic.vtt"},
+          {"label":"Arabic","source":"vidlink","url":"https://cache.vdrk.site/subtitles/60059/2/5/Arabic.vtt"},
+          {"label":"English","source":"vidnest","url":"https://cache.vdrk.site/subtitles/60059/2/5/English.vtt"},
+          {"label":"Arabic","url":"https://cache.vdrk.site/subtitles/60059/2/5/Arabic.vtt"}
+        ]}""")
+        val candidates = MOOSAReyaPolicy.subtitles(body, true, 2, 5)
+        assertEquals(3, candidates.size)
+        assertEquals(2, candidates.count { it.source == "vidnest" })
+        assertEquals(1, candidates.count { it.source == "vidlink" })
     }
 
     @Test fun mediaPlaylistMustHaveMapAndRealSegments() {

@@ -60,7 +60,7 @@ internal object MOOSAReyaPolicy {
      * Only the original CDN URL, exact episode path and Arabic/English tracks
      * are accepted. Caller emits tracks only if an actual video was verified.
      */
-    data class Subtitle(val language: String, val url: String)
+    data class Subtitle(val language: String, val url: String, val source: String)
 
     fun subtitles(
         body: JSONObject, isTv: Boolean, season: Int?, episode: Int?
@@ -85,8 +85,54 @@ internal object MOOSAReyaPolicy {
                 if (season == null || episode == null ||
                     !path.contains("/$season/$episode/")) return@mapNotNull null
             }
-            Subtitle(language, uri.toASCIIString())
-        }.distinctBy { it.language }.take(2)
+            val source = item.optString("source").trim().lowercase(Locale.ROOT)
+            if (!source.matches(Regex("""[a-z0-9_-]{2,32}"""))) return@mapNotNull null
+            Subtitle(language, uri.toASCIIString(), source)
+        }.distinctBy { "${it.source}|${it.language}" }.take(8)
+    }
+
+    /** Measure a source's actual VTT timeline without guessing offsets. */
+    fun finalCueSeconds(vtt: String): Double? {
+        if (!vtt.trimStart('\uFEFF', '\n', '\r', ' ').startsWith("WEBVTT"))
+            return null
+        val cue = Regex(
+            """(?m)^\s*(?:\d{2}:)?\d{2}:\d{2}\.\d{3}\s*-->\s*((?:\d{2}:)?\d{2}:\d{2}\.\d{3})"""
+        )
+        val all = cue.findAll(vtt).mapNotNull { m ->
+            val pieces = m.groupValues[1].split(":").map { it.toDoubleOrNull() }
+            if (pieces.any { it == null }) null else {
+                val x = pieces.map { it!! }
+                if (x.size == 3) x[0] * 3600 + x[1] * 60 + x[2]
+                else x[0] * 60 + x[1]
+            }
+        }.toList()
+        return all.takeIf { it.size >= 20 }?.maxOrNull()
+            ?.takeIf { it >= 600.0 && it <= 28_800.0 }
+    }
+
+    /** Use full VIDEO-on-demand HLS rather than headers or title's guessed runtime. */
+    fun playlistSeconds(media: String): Double? {
+        if (!media.trimStart().startsWith("#EXTM3U") ||
+            !media.lines().any { it.trim() == "#EXT-X-ENDLIST" }) return null
+        val lengths = Regex("""(?m)^#EXTINF:\s*([0-9]+(?:\.[0-9]+)?)""")
+            .findAll(media).mapNotNull { it.groupValues[1].toDoubleOrNull() }
+            .toList()
+        if (lengths.size < 30 || lengths.any { it <= 0 || it > 35 }) return null
+        return lengths.sum().takeIf { it in 600.0..28_800.0 }
+    }
+
+    /**
+     * Wrong-cut CDN mirrors have been seen presenting 35min of S02E05 while
+     * the same episode's matched VTT runs to 45min. No constant subtitle
+     * offset can repair a missing ~10min of video. Fail closed on mismatch.
+     * Small credits gaps are allowed, including longer movie end credits.
+     */
+    fun runtimeCompatible(videoSeconds: Double?, subtitleLastCueSeconds: Double?): Boolean {
+        if (subtitleLastCueSeconds == null) return true
+        val length = videoSeconds ?: return false
+        val extraCreditsAllowance = maxOf(300.0, length * 0.10)
+        return length >= subtitleLastCueSeconds - 75.0 &&
+            length <= subtitleLastCueSeconds + extraCreditsAllowance
     }
 
     fun variants(masterUrl: String, manifest: String): List<Variant> {

@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 147
+version = 148
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -209,3 +209,5 @@ dependencies {
 // v146: independent Reya exact TMDB/episode HLS fMP4 UHD, real tracks and safe FHD fallback.
 
 // v147: native Reya per-episode Arabic+English VTT subtitles, no cross-episode matching.
+
+// v148: reject Reya CDN VOD missing 10 minutes vs source subtitles; provider-bound captions.

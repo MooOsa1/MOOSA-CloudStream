@@ -1,4 +1,4 @@
-name: MOOSA Hub v147 matched native Reya SRT VTT subtitles
+name: MOOSA Hub v148 reject runtime-mismatched Reya VOD and unpaired native captions
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==147,versions
+          assert versions['MOOSAHub']==148,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -178,9 +178,12 @@ jobs:
           assert 'api is MOOSAReyaProvider' in hub
           assert 'MOOSAReyaPolicy.identity(' in (root/'MOOSAReyaProvider.kt').read_text()
           assert 'MOOSAReyaPolicy.subtitles(' in (root/'MOOSAReyaProvider.kt').read_text()
-          assert 'sourceSubtitles.forEach' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'MOOSAReyaPolicy.finalCueSeconds(' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'MOOSAReyaPolicy.playlistSeconds(' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'MOOSAReyaPolicy.runtimeCompatible(' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'sourceSubtitles.filter' in (root/'MOOSAReyaProvider.kt').read_text()
           assert 'cache.vdrk.site' in (root/'MOOSAReyaPolicy.kt').read_text()
-          assert 'Reya Synced' in hub
+          assert 'Reya Native' in hub
           assert 'MOOSAReyaPolicy.inspectInit(' in (root/'MOOSAReyaProvider.kt').read_text()
           assert 'isFmp4Fragment(' in (root/'MOOSAReyaProvider.kt').read_text()
           assert 'MOOSAAudioTrackPolicy.accept(' in (root/'MOOSAReyaProvider.kt').read_text()
@@ -227,5 +230,5 @@ jobs:
           assert 'currentEpisode' in netpolicy and 'currentSeason' in netpolicy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANetMirrorPolicyTest.kt').exists()
           assert 'explicitlyAudioOnly(body)' in servers
-          print('PASS: v147: exact-episode native source-matched VTT subtitles plus UHD video')
+          print('PASS: v148: actual HLS duration guard rejects wrong-cut 4K; captions bound to video source')
           PY
