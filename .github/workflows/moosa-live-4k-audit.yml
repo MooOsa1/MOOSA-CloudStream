@@ -316,5 +316,9 @@ jobs:
                         "var-url",bool(re.search(r'var\s+url\s*=',body)),
                         "drive hrefs",len(re.findall("hubcloud.ist/drive",body)),
                         "buttons",len(re.findall(r'<a ',body)),flush=True)
+                  for link in re.findall('href="([^"]+)"',body,re.I):
+                      u=urllib.parse.urlparse(html.unescape(link))
+                      if u.hostname and ("hub" in u.hostname or "drive" in u.hostname or "cloud" in u.hostname):
+                          print("HUBDRIVE OUT HOST",u.hostname,"pathPrefix",u.path[:20],flush=True)
               except Exception as e:
                   print("HubDrive resolver exception",type(e).__name__,str(e)[:80],flush=True)
