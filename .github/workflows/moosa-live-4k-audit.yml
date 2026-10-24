@@ -219,6 +219,28 @@ jobs:
                       hoststats[x.hostname or "relative"]+=1
                       if x.hostname: print("FILEPAGE LINK HOST",x.hostname,"extension",x.path[-10:],flush=True)
                   print("FILEPAGE HOST COUNTS",dict(hoststats),flush=True)
+                  for link in allanchors:
+                      parsed=urllib.parse.urlparse(html.unescape(link))
+                      if parsed.hostname not in ("pixeldrain.dev","pixeldrain.com"):continue
+                      m=re.fullmatch("/u/([A-Za-z0-9_-]{4,30})",parsed.path)
+                      if not m:continue
+                      print("PIXELDRAIN FILE ID PRESENT",len(m.group(1)),flush=True)
+                      for domain in ["pixeldrain.dev","pixeldrain.com"]:
+                          direct="https://"+domain+"/api/file/"+m.group(1)
+                          try:
+                              code,headers,prefix=get(direct,by=131072)
+                              print("PIXELDRAIN API",domain,code,
+                                    "mime",headers.get("Content-Type",""),
+                                    "range",headers.get("Content-Range","")[:45],
+                                    "bytes",len(prefix),
+                                    "ebml",prefix.startswith(bytes([26,69,223,163])),
+                                    flush=True)
+                          except urllib.error.HTTPError as e:
+                              print("PIXELDRAIN API",domain,e.code,flush=True)
+                          except Exception as e:
+                              print("PIXELDRAIN API",domain,type(e).__name__,str(e)[:60],flush=True)
+                      break
+
                   filest=filehtml.decode("utf8","replace")
                   tt=re.search(r'<title[^>]*>(.*?)</title>',filest,re.S|re.I)
                   print("FILEPAGE", "html bytes",len(filest),
