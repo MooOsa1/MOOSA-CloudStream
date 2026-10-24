@@ -181,7 +181,7 @@ jobs:
           assert 'MOOSAReyaPolicy.finalCueSeconds(' in (root/'MOOSAReyaProvider.kt').read_text()
           assert 'MOOSAReyaPolicy.playlistSeconds(' in (root/'MOOSAReyaProvider.kt').read_text()
           assert 'MOOSAReyaPolicy.runtimeCompatible(' in (root/'MOOSAReyaProvider.kt').read_text()
-          assert 'sourceSubtitles.forEach' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'sourceSubtitles.filter' in (root/'MOOSAReyaProvider.kt').read_text()
           assert 'cache.vdrk.site' in (root/'MOOSAReyaPolicy.kt').read_text()
           assert 'Reya Native' in hub
           assert 'MOOSAReyaPolicy.inspectInit(' in (root/'MOOSAReyaProvider.kt').read_text()
