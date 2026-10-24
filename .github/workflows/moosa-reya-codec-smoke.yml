@@ -31,11 +31,16 @@ jobs:
                       for i,l in enumerate(lines):
                           if not (l.startswith("#EXT-X-STREAM-INF:") and "RESOLUTION=3840x2160" in l and i+1<len(lines)):continue
                           print(name,"2160 CODECS ATTR",re.search(r'CODECS="([^"]+)"',l).group(1) if re.search(r'CODECS="([^"]+)"',l) else "unspecified",flush=True)
+                          mb=re.search(r'BANDWIDTH=(\\d+)',l)
+                          print(name,"2160 HLS BANDWIDTH",mb.group(1) if mb else "unspecified",flush=True)
                           variant=urllib.parse.urljoin(master,lines[i+1])
                           media=get(variant,120000).decode("utf8","ignore")
                           m=re.search(r'#EXT-X-MAP:URI="([^"]+)"',media)
                           if not m:continue
                           init=get(urllib.parse.urljoin(variant,m.group(1)),60000)
+                          avcc=init.find(b"avcC")
+                          if avcc!=-1 and avcc+8<=len(init):
+                              print(name,"avcC","profile",init[avcc+5],"level",init[avcc+7],flush=True)
                           print(name,"INIT codecs",[(code,init.count(code.encode())) for code in ["hvc1","hev1","avc1","avc3","av01","dvhe","dvh1","mp4a","ac-3","ec-3"]],
                                 "size",len(init),flush=True)
                           break
