@@ -47,6 +47,27 @@ internal object MOOSA4KHDHubPolicy {
             !Regex("""(?i)\.zip\b""").containsMatchIn(label) &&
             isCompatibleRelease(label)
 
+    /**
+     * Live 4KHDHub episode card separates the filename from file-info:
+     * episode-file-title = "Better Call Saul S02E03 ... .mkv"
+     * episode-file-info = "Episode-03 2.5 GB".
+     *
+     * v143/v144 incorrectly required `.mkv` inside file-info, so it
+     * silently discarded every real TV episode on this catalog.
+     */
+    fun matchesEpisodeFile(
+        season: Int, episode: Int, badge: String, fileTitle: String
+    ): Boolean {
+        if (!isStandaloneEpisodeFile(fileTitle)) return false
+        val identity = Regex("""(?i)\bS0*(\d{1,3})E0*(\d{1,3})\b""")
+            .find(fileTitle) ?: return false
+        val titleSeason = identity.groupValues[1].toIntOrNull()
+        val titleEpisode = identity.groupValues[2].toIntOrNull()
+        if (titleSeason != season || titleEpisode != episode) return false
+        // Badge is not authoritative; accept only when it agrees explicitly.
+        return episodeNumber(badge) == episode
+    }
+
     fun isUhdRelease(title: String): Boolean =
         Regex("""(?i)(?:\b2160p\b|\b4k\s+uhd\b)""").containsMatchIn(title)
 

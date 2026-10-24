@@ -47,6 +47,30 @@ class MOOSA4KHDHubPolicyTest {
         )
     }
 
+    @Test fun liveCatalogSeparatedFilenameAndEpisodeBadgeAreMatched() {
+        val title = "Better Call Saul S02E03 1080p BluRay " +
+            "[Hindi DDP 2.0 + English AAC 5.1] x265 (Silence-4kHDHub).mkv"
+        val badge = "Episode-03"
+        assertTrue(MOOSA4KHDHubPolicy.matchesEpisodeFile(2, 3, badge, title))
+        assertFalse(MOOSA4KHDHubPolicy.matchesEpisodeFile(2, 1, badge, title))
+        assertFalse(MOOSA4KHDHubPolicy.matchesEpisodeFile(3, 3, badge, title))
+        assertFalse(MOOSA4KHDHubPolicy.matchesEpisodeFile(
+            2, 3, "Episode-04", title
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.matchesEpisodeFile(
+            2, 3, badge, title.replace("S02E03", "S01E03")
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.matchesEpisodeFile(
+            2, 3, badge, title.replace(".mkv", ".zip")
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.matchesEpisodeFile(
+            2, 3, badge, title.replace("x265", "AV1")
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.matchesEpisodeFile(
+            2, 3, badge, "Episode-03 2.5 GB"
+        ))
+    }
+
     @Test fun episodeIdsMustMatchAndSeasonPacksNeverBecomePlayers() {
         assertEquals(2, MOOSA4KHDHubPolicy.seasonNumber("S02"))
         assertEquals(1, MOOSA4KHDHubPolicy.episodeNumber("Episode-01"))
