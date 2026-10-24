@@ -1,4 +1,4 @@
-name: MOOSA Hub v142 HLS fallback and audio-only exclusion
+name: MOOSA Hub v143 verified 4K episode expansion
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==142,versions
+          assert versions['MOOSAHub']==143,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -173,6 +173,12 @@ jobs:
           uhd_policy=(root/'MOOSA4KHDHubPolicy.kt').read_text()
           hub=(root/'MOOSAHubProvider.kt').read_text()
           assert 'MOOSA4KHDHubProvider()' in hub
+          assert 'request.isTv && it is MOOSA4KHDHubProvider' in hub
+          assert 'div.episodes-list div.season-item' in uhd_provider
+          assert 'div.episode-download-item' in uhd_provider
+          assert 'isStandaloneEpisodeFile(fileInfo)' in uhd_provider
+          assert 'take(3)' in uhd_provider
+          assert 'take(2)' in uhd_provider
           assert 'api is MOOSA4KHDHubProvider' in hub
           assert 'verifyRealVideo(video, filePageUrl, requiredQuality, sizeGb)' in uhd_provider
           assert 'sortedBy(::releaseSizeGb)' in uhd_provider
@@ -200,5 +206,5 @@ jobs:
           assert 'currentEpisode' in netpolicy and 'currentSeason' in netpolicy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANetMirrorPolicyTest.kt').exists()
           assert 'explicitlyAudioOnly(body)' in servers
-          print('PASS: v142: exact-ID FHD, HD rendition fallback, audio-only exclusion')
+          print('PASS: v143: individual verified 2160p TV episodes, multiple UHD/FHD encodes, FHD fallback')
           PY

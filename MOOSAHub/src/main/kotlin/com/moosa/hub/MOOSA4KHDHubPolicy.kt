@@ -24,6 +24,29 @@ internal object MOOSA4KHDHubPolicy {
             canonicalTitle(expectedTitle).isNotBlank() &&
             canonicalTitle(expectedTitle) == canonicalTitle(foundTitle)
 
+    /**
+     * Explicit episode blocks only: never treat a complete-season ZIP as a
+     * playable episode or silently substitute S01E01 for another episode.
+     */
+    fun seasonNumber(label: String): Int? =
+        Regex("""(?i)^\s*S0*([1-9]\d{0,2})\s*$""")
+            .matchEntire(label)?.groupValues?.get(1)?.toIntOrNull()
+
+    fun episodeNumber(label: String): Int? {
+        val badge = Regex("""(?i)\bEpisode[\s._-]*0*([1-9]\d{0,3})\b""")
+            .find(label)?.groupValues?.get(1)?.toIntOrNull()
+        val filename = Regex("""(?i)\bS\d{1,3}E0*([1-9]\d{0,3})\b""")
+            .find(label)?.groupValues?.get(1)?.toIntOrNull()
+        // Reject contradictory file and episode badges.
+        if (badge != null && filename != null && badge != filename) return null
+        return badge ?: filename
+    }
+
+    fun isStandaloneEpisodeFile(label: String): Boolean =
+        Regex("""(?i)\.mkv\b""").containsMatchIn(label) &&
+            !Regex("""(?i)\.zip\b""").containsMatchIn(label) &&
+            isCompatibleRelease(label)
+
     fun isUhdRelease(title: String): Boolean =
         Regex("""(?i)(?:\b2160p\b|\b4k\s+uhd\b)""").containsMatchIn(title)
 
