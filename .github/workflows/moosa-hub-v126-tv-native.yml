@@ -1,4 +1,4 @@
-name: MOOSA Hub v140 verified adaptive FHD and compact UHD
+name: MOOSA Hub v141 verified video compatibility and FHD alternatives
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==140,versions
+          assert versions['MOOSAHub']==141,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -120,7 +120,7 @@ jobs:
           assert 'MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(' in hub
           native=(root/'MOOSACineStreamVaPlayerProvider.kt').read_text()
           tester=(root/'MOOSASourceTester.kt').read_text()
-          assert 'listOf(native4KHDHub, nativeVixSrc, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
+          assert 'listOf(native4KHDHub, nativeVixSrc, nativeNetMirror, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
           media=(root/'MOOSAHlsMediaQuality.kt').read_text()
           servers=(root/'MOOSAServerRegistry.kt').read_text()
           assert 'h264HeightFromTs(bytes: ByteArray)' in media
@@ -177,7 +177,8 @@ jobs:
           assert 'verifyRealVideo(video, filePageUrl, requiredQuality, sizeGb)' in uhd_provider
           assert 'sortedBy(::releaseSizeGb)' in uhd_provider
           assert 'response.code != 206' in uhd_provider
-          assert 'videoDimensions(bytes.copyOf(count))' in uhd_provider
+          assert 'compatibleVideo(bytes.copyOf(count))' in uhd_provider
+          assert 'isCompatibleRelease(filename)' in uhd_provider
           assert 'exactCatalogMatch(' in uhd_provider
           assert 'bytes=0-131071' in uhd_provider
           assert '0x1654AE6BL' in uhd_policy
@@ -191,5 +192,13 @@ jobs:
           assert 'bytes=0-2047' in vix_provider
           assert 'RESOLUTION=' in vix_policy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAVixSrcPolicyTest.kt').exists()
-          print('PASS: v140: direct UHD and adaptive FHD source verified by master, media and segment')
+          netmirror=(root/'MOOSANetMirrorProvider.kt').read_text()
+          netpolicy=(root/'MOOSANetMirrorPolicy.kt').read_text()
+          assert 'MOOSANetMirrorProvider()' in hub
+          assert 'api is MOOSANetMirrorProvider' in hub
+          assert 'compatibleMp4(prefix.copyOf(bytes))' in netmirror
+          assert 'currentEpisode' in netpolicy and 'currentSeason' in netpolicy
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANetMirrorPolicyTest.kt').exists()
+          assert 'explicitlyAudioOnly(body)' in servers
+          print('PASS: v141: exact-ID FHD priority, compatibility and additional conditional source')
           PY

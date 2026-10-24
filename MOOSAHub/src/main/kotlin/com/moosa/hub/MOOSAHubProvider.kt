@@ -1788,6 +1788,7 @@ class MOOSAHubProvider : TmdbProvider() {
     // It is not exposed as an extra home-page extension.
     private val native4KHDHub = MOOSA4KHDHubProvider()
     private val nativeVixSrc = MOOSAVixSrcProvider()
+    private val nativeNetMirror = MOOSANetMirrorProvider()
     private val nativeVaPlayer = MOOSACineStreamVaPlayerProvider()
     private val nativeVidrock = MOOSACineStreamVidrockProvider()
     private val nativeVidzee = MOOSACineStreamVidzeeProvider()
@@ -1820,7 +1821,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            listOf(native4KHDHub, nativeVixSrc, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
+            listOf(native4KHDHub, nativeVixSrc, nativeNetMirror, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
             allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
@@ -1882,6 +1883,10 @@ class MOOSAHubProvider : TmdbProvider() {
             .sortedWith(
                 compareByDescending<MainAPI> {
                     when {
+                        !request.isAnime && request.isTv && it is MOOSAVixSrcProvider -> 10
+                        !request.isAnime && !request.isTv && it is MOOSA4KHDHubProvider -> 10
+                        !request.isAnime && it is MOOSAVixSrcProvider -> 9
+                        !request.isAnime && it is MOOSANetMirrorProvider -> 8
                         arabicRequest && isAkwamProvider(it) -> 6
                         arabicRequest && it.name.equals("ShahidWBas", true) -> 5
                         arabicRequest && isArabSeedProvider(it) -> 4
@@ -1956,6 +1961,13 @@ class MOOSAHubProvider : TmdbProvider() {
         if (api is MOOSAVixSrcProvider) {
             if (request.isAnime || request.tmdbId == null ||
                 (request.isTv && (request.season == null || request.episode == null))
+            ) return null
+            return ProviderTarget(api.name, api.mainUrl, request.toJson())
+        }
+        if (api is MOOSANetMirrorProvider) {
+            if (request.isAnime || MOOSANetMirrorPolicy.apiUrl(
+                    request.tmdbId, request.isTv, request.season, request.episode
+                ) == null
             ) return null
             return ProviderTarget(api.name, api.mainUrl, request.toJson())
         }
@@ -3668,6 +3680,7 @@ class MOOSAHubProvider : TmdbProvider() {
 
         return when {
             api is MOOSAVixSrcProvider -> 17_000L
+            api is MOOSANetMirrorProvider -> 15_000L
             api is MOOSA4KHDHubProvider -> 26_000L
             api is MOOSACineStreamVidzeeProvider -> 16500L
 
@@ -4213,6 +4226,12 @@ class MOOSAHubProvider : TmdbProvider() {
                         if (
                             candidateLinks.isEmpty() &&
                             !isStreamPlayProvider(api) &&
+                            api !is MOOSAVixSrcProvider &&
+                            api !is MOOSANetMirrorProvider &&
+                            api !is MOOSA4KHDHubProvider &&
+                            api !is MOOSACineStreamVaPlayerProvider &&
+                            api !is MOOSACineStreamVidrockProvider &&
+                            api !is MOOSACineStreamVidzeeProvider &&
                             !fastArabic
                         ) {
                             val freshTarget =

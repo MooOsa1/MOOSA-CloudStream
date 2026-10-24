@@ -362,6 +362,7 @@ object MOOSAServerRegistry {
                             val body = response.text
                                 .trimStart('\uFEFF', '\n', '\r', ' ', '\t')
                             val valid = body.startsWith("#EXTM3U") &&
+                                !MOOSAHlsMasterQuality.explicitlyAudioOnly(body) &&
                                 (
                                     body.contains("#EXTINF:") ||
                                         body.contains("#EXT-X-STREAM-INF:") ||

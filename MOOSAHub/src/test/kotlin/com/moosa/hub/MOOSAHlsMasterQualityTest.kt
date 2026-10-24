@@ -1,10 +1,30 @@
 package com.moosa.hub
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MOOSAHlsMasterQualityTest {
+    @Test
+    fun rejectsExplicitAudioOnlyMasterWithoutRejectingRealVideo() {
+        assertTrue(MOOSAHlsMasterQuality.explicitlyAudioOnly("""
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=196000,CODECS="mp4a.40.2"
+            audio.m3u8
+        """.trimIndent()))
+        assertFalse(MOOSAHlsMasterQuality.explicitlyAudioOnly("""
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=3500000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2"
+            video.m3u8
+        """.trimIndent()))
+        assertTrue(MOOSAHlsMasterQuality.explicitlyAudioOnly("""
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",URI="eng.m3u8"
+        """.trimIndent()))
+    }
+
     @Test
     fun discovers2160pFromActualHlsMasterEvenIfSourceNameIsUnknown() {
         val master = """
