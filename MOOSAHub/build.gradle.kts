@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 149
+version = 150
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -213,3 +213,5 @@ dependencies {
 // v148: reject Reya CDN VOD missing 10 minutes vs source subtitles; provider-bound captions.
 
 // v149: preserve verified 4K streams when subtitle/HLS timeline metadata is unavailable.
+
+// v150: don't discard playable foreign-language movies when audio track labels are missing.

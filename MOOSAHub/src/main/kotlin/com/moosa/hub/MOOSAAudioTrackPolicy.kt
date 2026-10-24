@@ -27,17 +27,29 @@ internal object MOOSAAudioTrackPolicy {
         return names[key] ?: key.takeIf { it in names.values }
     }
 
-    /** null languages = no reliable metadata, empty = confirmed no labelled audio. */
+    /**
+     * Strict only when the file explicitly proves it has the WRONG audio.
+     * A missing moov, missing language code, or an `und` track does NOT
+     * establish a dub mismatch. v144 rejected ALL unknown Korean/Japanese
+     * tracks; it hid previously playable sources without audio evidence.
+     */
     fun accept(original: String?, languages: Set<String>?): Boolean {
-        val wanted = normalize(original) ?: return languages == null ||
-            languages.any { normalize(it) != null }
-        if (languages == null) {
-            // Keep existing English playback when an MP4 has a tail moov or
-            // unlabelled mux. Do not expose a Korean/Japanese/etc. movie as
-            // dubbed-only without proof of its native-language audio.
-            return wanted == "eng"
-        }
-        return languages.any { normalize(it) == wanted }
+        if (languages == null) return true // unknown != wrong language
+        if (languages.isEmpty()) return false // parser proved no audio tracks
+        val wanted = normalize(original) ?: return true
+        val known = languages.mapNotNull(::normalize).toSet()
+        if (wanted in known) return true
+        // An unlabeled track may carry the requested original soundtrack.
+        // Explicit, fully labeled Hindi-only for Korean remains rejected.
+        if (languages.any { normalize(it) == null }) return true
+        return false
+    }
+
+    fun unverified(original: String?, languages: Set<String>?): Boolean {
+        if (languages == null || languages.isEmpty()) return languages == null
+        val wanted = normalize(original) ?: return true
+        val known = languages.mapNotNull(::normalize).toSet()
+        return wanted !in known && languages.any { normalize(it) == null }
     }
 
     fun display(languages: Set<String>?): String = when {
