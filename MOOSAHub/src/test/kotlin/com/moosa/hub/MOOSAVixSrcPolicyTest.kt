@@ -57,8 +57,12 @@ class MOOSAVixSrcPolicyTest {
         assertEquals("en", MOOSAVixSrcPolicy.preferredAudioLanguage(null))
         assertTrue(MOOSAVixSrcPolicy.hasOriginalAudio(manifest, "en"))
         assertTrue(MOOSAVixSrcPolicy.hasOriginalAudio(manifest, "it"))
+        assertTrue(MOOSAVixSrcPolicy.hasOriginalAudio(
+            "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"Unknown\",URI=\"audio.m3u8\"",
+            "ko"
+        ))
         assertTrue(!MOOSAVixSrcPolicy.hasOriginalAudio(manifest, "hi"))
-        assertTrue(!MOOSAVixSrcPolicy.hasOriginalAudio("#EXTM3U\\n#EXTINF:5,\\na.ts", "ko"))
+        assertTrue(MOOSAVixSrcPolicy.hasOriginalAudio("#EXTM3U\\n#EXTINF:5,\\na.ts", "ko"))
         assertTrue(MOOSAVixSrcPolicy.hasOriginalAudio("#EXTM3U\\n#EXTINF:5,\\na.ts", "en"))
     }
 

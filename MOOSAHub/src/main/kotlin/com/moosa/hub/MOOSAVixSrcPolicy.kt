@@ -83,15 +83,15 @@ internal object MOOSAVixSrcPolicy {
         val audioLines = master.lines().filter {
             it.startsWith("#EXT-X-MEDIA:TYPE=AUDIO")
         }
-        // An unlabelled mux is not proof that a Korean/Japanese/Indian
-        // original carries its native soundtrack. Preserve existing English
-        // fallback until audio-track metadata can be sampled independently.
-        if (audioLines.isEmpty()) return requested == "en"
+        // A missing or unlabeled HLS audio group is UNKNOWN, not proof
+        // of a wrong-language dub. Keep otherwise verified video links.
+        if (audioLines.isEmpty()) return true
         val language = Regex("""(?:^|,)LANGUAGE=["']?([a-z]{2,3})["']?(?:,|$)""", RegexOption.IGNORE_CASE)
-        return audioLines.any { line ->
+        val declared = audioLines.mapNotNull { line ->
             language.find(line)?.groupValues?.get(1)?.lowercase(Locale.ROOT)
-                ?.let { it in accepted } == true
         }
+        if (declared.size < audioLines.size) return true
+        return declared.any { it in accepted }
     }
 
     /**
