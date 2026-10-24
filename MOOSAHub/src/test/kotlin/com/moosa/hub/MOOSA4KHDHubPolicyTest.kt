@@ -116,6 +116,30 @@ class MOOSA4KHDHubPolicyTest {
         return header + elem(byteArrayOf(0x18, 0x53, 0x80.toByte(), 0x67), tracks)
     }
 
+    @Test fun matroskaAudioLanguagesAreReadFromRealTracks() {
+        fun audioTrack(lang: String): ByteArray = elem(
+            byteArrayOf(0xae.toByte()),
+            elem(byteArrayOf(0x83.toByte()), byteArrayOf(2)) +
+                elem(byteArrayOf(0x22, 0xb5.toByte(), 0x9c.toByte()),
+                    lang.toByteArray(Charsets.US_ASCII))
+        )
+        val header = elem(
+            byteArrayOf(0x1a, 0x45, 0xdf.toByte(), 0xa3.toByte()),
+            byteArrayOf(0x42, 0x86.toByte(), 0x81.toByte(), 0x01)
+        )
+        val tracks = elem(
+            byteArrayOf(0x16, 0x54, 0xae.toByte(), 0x6b),
+            audioTrack("kor") + audioTrack("hin")
+        )
+        val payload = header +
+            elem(byteArrayOf(0x18, 0x53, 0x80.toByte(), 0x67), tracks)
+        val languages = MOOSA4KHDHubPolicy.audioLanguages(payload)
+        assertEquals(setOf("kor", "hin"), languages)
+        assertTrue(MOOSAAudioTrackPolicy.accept("ko", languages))
+        assertFalse(MOOSAAudioTrackPolicy.accept("ja", languages))
+        assertNull(MOOSA4KHDHubPolicy.audioLanguages(payload.copyOfRange(0, 12)))
+    }
+
     @Test fun ebmlDimensionsComeFromVideoTrack() {
         val uhd = ebmlUhdSample(
             byteArrayOf(0x0f, 0x00), byteArrayOf(0x08, 0x70)

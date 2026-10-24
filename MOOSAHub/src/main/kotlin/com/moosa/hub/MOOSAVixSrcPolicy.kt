@@ -83,7 +83,10 @@ internal object MOOSAVixSrcPolicy {
         val audioLines = master.lines().filter {
             it.startsWith("#EXT-X-MEDIA:TYPE=AUDIO")
         }
-        if (audioLines.isEmpty()) return true // Audio may be muxed into the video track.
+        // An unlabelled mux is not proof that a Korean/Japanese/Indian
+        // original carries its native soundtrack. Preserve existing English
+        // fallback until audio-track metadata can be sampled independently.
+        if (audioLines.isEmpty()) return requested == "en"
         val language = Regex("""(?:^|,)LANGUAGE=["']?([a-z]{2,3})["']?(?:,|$)""", RegexOption.IGNORE_CASE)
         return audioLines.any { line ->
             language.find(line)?.groupValues?.get(1)?.lowercase(Locale.ROOT)

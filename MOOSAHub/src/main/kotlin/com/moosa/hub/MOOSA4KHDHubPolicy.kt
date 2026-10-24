@@ -233,6 +233,39 @@ internal object MOOSA4KHDHubPolicy {
         return null
     }
 
+    /**
+     * Parse LanguageIETF (0x22B59D) or Language (0x22B59C) from actual
+     * Matroska Audio track entries. No language reported is unknown, not
+     * automatically English. Expose all genuine language choices to player.
+     */
+    fun audioLanguages(prefix: ByteArray): Set<String>? {
+        if (prefix.size < 24 || !prefix.copyOfRange(0, 4)
+                .contentEquals(byteArrayOf(0x1a, 0x45, 0xdf.toByte(), 0xa3.toByte()))
+        ) return null
+        val segment = findElements(prefix, 0, prefix.size, 0x18538067L)
+            .firstOrNull() ?: return null
+        val tracks = findElements(prefix, segment.data, segment.end, 0x1654AE6BL)
+            .firstOrNull() ?: return null
+        val entries = findElements(prefix, tracks.data, tracks.end, 0xAEL)
+        val audioTracks = entries.filter { entry ->
+            findElements(prefix, entry.data, entry.end, 0x83L)
+                .firstOrNull()?.let { unsigned(prefix, it) } == 2
+        }
+        if (audioTracks.isEmpty()) return emptySet()
+        val declared = audioTracks.mapNotNull { entry ->
+            val ietf = findElements(prefix, entry.data, entry.end, 0x22B59DL)
+                .firstOrNull()
+            val legacy = findElements(prefix, entry.data, entry.end, 0x22B59CL)
+                .firstOrNull()
+            (ietf ?: legacy)?.let { field ->
+                MOOSAAudioTrackPolicy.normalize(
+                    String(prefix, field.data, field.end - field.data, Charsets.UTF_8)
+                )
+            }
+        }.toSet()
+        return declared.takeIf { it.isNotEmpty() }
+    }
+
     /** Convenience accessor for tests and real encoded resolution labels. */
     fun videoDimensions(prefix: ByteArray): Pair<Int, Int>? =
         compatibleVideo(prefix)?.let { it.width to it.height }

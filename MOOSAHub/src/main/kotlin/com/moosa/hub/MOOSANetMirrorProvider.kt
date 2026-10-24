@@ -23,6 +23,11 @@ internal class MOOSANetMirrorProvider : MainAPI() {
     override val providerType: ProviderType = ProviderType.DirectProvider
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
+    private data class VerifiedCandidate(
+        val candidate: MOOSANetMirrorPolicy.Candidate,
+        val audioLanguages: Set<String>?
+    )
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -67,8 +72,14 @@ internal class MOOSANetMirrorProvider : MainAPI() {
                                         }
                                         count
                                     }
-                                    if (MOOSANetMirrorPolicy.compatibleMp4(prefix.copyOf(bytes)))
-                                        item else null
+                                    val evidence = prefix.copyOf(bytes)
+                                    if (!MOOSANetMirrorPolicy.compatibleMp4(evidence))
+                                        return@runCatching null
+                                    val languages = MOOSANetMirrorPolicy.audioLanguages(evidence)
+                                    if (!MOOSAAudioTrackPolicy.accept(
+                                            request.originalLanguage, languages
+                                        )) return@runCatching null
+                                    VerifiedCandidate(item, languages)
                                 }.getOrNull()
                             }
                         }
@@ -77,10 +88,12 @@ internal class MOOSANetMirrorProvider : MainAPI() {
             }.getOrNull()
         }.orEmpty()
 
-        playable.forEach { item ->
+        playable.forEach { verified ->
+            val item = verified.candidate
+            val audioLabel = MOOSAAudioTrackPolicy.display(verified.audioLanguages)
             callback(newExtractorLink(
                 name,
-                "NetMirror • confirmed ${item.height}p",
+                "NetMirror • ${item.height}p • $audioLabel",
                 item.url,
                 ExtractorLinkType.VIDEO
             ) {
@@ -91,7 +104,7 @@ internal class MOOSANetMirrorProvider : MainAPI() {
         }
         MOOSANativeSourceDiagnostics.mark(
             name,
-            if (playable.isNotEmpty()) "Compatible MP4 video and seeking verified"
+            if (playable.isNotEmpty()) "Compatible MP4 video + original audio policy + seeking verified"
             else "CDN unavailable or video compatibility not confirmed"
         )
         return playable.isNotEmpty()

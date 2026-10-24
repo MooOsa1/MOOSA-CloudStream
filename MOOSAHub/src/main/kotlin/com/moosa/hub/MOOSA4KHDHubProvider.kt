@@ -40,7 +40,8 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         val width: Int,
         val height: Int,
         val quality: Int,
-        val sizeGb: Double?
+        val sizeGb: Double?,
+        val audioLanguages: Set<String>?
     )
 
     override suspend fun loadLinks(
@@ -58,16 +59,18 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
 
         val discovered = withTimeoutOrNull(23_000L) {
             searchAndVerify(request.title, request.year,
-                request.isTv, request.season, request.episode)
+                request.isTv, request.season, request.episode,
+                request.originalLanguage)
         }.orEmpty().distinctBy { it.url }
 
         discovered.forEach { media ->
             val tag = if (media.quality == 2160) "4K" else "${media.quality}p"
             val size = media.sizeGb?.let { " • ${"%.1f".format(java.util.Locale.US, it)} GB" }.orEmpty()
+            val audio = " • ${MOOSAAudioTrackPolicy.display(media.audioLanguages)}"
             callback(
                 newExtractorLink(
                     name,
-                    "HubCloud • verified $tag$size",
+                    "HubCloud • verified $tag$size$audio",
                     media.url,
                     ExtractorLinkType.VIDEO
                 ) {
@@ -93,7 +96,7 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
 
     private suspend fun searchAndVerify(
         title: String, year: Int, isTv: Boolean,
-        season: Int?, episode: Int?
+        season: Int?, episode: Int?, originalLanguage: String?
     ): List<VerifiedVideo> = coroutineScope {
         val search = "${mainUrl}/?s=${URLEncoder.encode(title, "UTF-8")}"
         val searchResponse = runCatching { app.get(search) }.getOrNull()
@@ -172,7 +175,7 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
             async {
                 gate.withPermit {
                     withTimeoutOrNull(13_000L) {
-                        resolveRelease(release, requiredQuality)
+                        resolveRelease(release, requiredQuality, originalLanguage)
                     }
                 }
             }
@@ -192,7 +195,9 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         return "${MOOSA4KHDHubPolicy.BASE}$path"
     }
 
-    private suspend fun resolveRelease(element: Element, requiredQuality: Int): VerifiedVideo? {
+    private suspend fun resolveRelease(
+        element: Element, requiredQuality: Int, originalLanguage: String?
+    ): VerifiedVideo? {
         val sizeGb = releaseSizeGb(element).takeIf { it.isFinite() && it < Double.MAX_VALUE }
         val gateway = element.select("a[href]")
             .firstOrNull { it.text().contains("HubCloud", ignoreCase = true) }
@@ -225,7 +230,7 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
             .take(2)
 
         for (video in candidates) {
-            val verified = verifyRealVideo(video, filePageUrl, requiredQuality, sizeGb)
+            val verified = verifyRealVideo(video, filePageUrl, requiredQuality, sizeGb, originalLanguage)
             if (verified != null) return verified
         }
         return null
@@ -244,7 +249,8 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
     }
 
     private suspend fun verifyRealVideo(
-        url: String, referer: String, requiredQuality: Int, sizeGb: Double?
+        url: String, referer: String, requiredQuality: Int, sizeGb: Double?,
+        originalLanguage: String?
     ): VerifiedVideo? {
         val response = runCatching {
             app.get(
@@ -283,8 +289,11 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
             else -> return null
         }
         if (verifiedQuality < requiredQuality) return null
+        val audioLanguages = MOOSA4KHDHubPolicy.audioLanguages(bytes.copyOf(count))
+        if (!MOOSAAudioTrackPolicy.accept(originalLanguage, audioLanguages)) return null
         return VerifiedVideo(
-            url, referer, dimensions.first, dimensions.second, verifiedQuality, sizeGb
+            url, referer, dimensions.first, dimensions.second, verifiedQuality,
+            sizeGb, audioLanguages
         )
     }
 

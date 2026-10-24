@@ -57,6 +57,63 @@ internal object MOOSANetMirrorPolicy {
         }.distinctBy { it.url }.sortedByDescending { it.height }.take(2)
     }
 
+    private data class Mp4Box(val type: String, val data: Int, val end: Int)
+
+    private fun boxes(bytes: ByteArray, start: Int, end: Int): List<Mp4Box> {
+        val result = ArrayList<Mp4Box>()
+        var at = start
+        while (at + 8 <= end) {
+            val size = (0..3).fold(0L) { n, i ->
+                (n shl 8) or (bytes[at + i].toLong() and 255)
+            }
+            val type = String(bytes, at + 4, 4, Charsets.US_ASCII)
+            // Extended-size and out-of-sample boxes cannot be safely parsed.
+            if (size < 8 || size > end - at) break
+            val next = at + size.toInt()
+            result += Mp4Box(type, at + 8, next)
+            at = next
+        }
+        return result
+    }
+
+    /**
+     * ISO-BMFF moov/trak/mdia/mdhd has the real audio track language.
+     * "und" and a moov outside the bounded prefix are UNKNOWN, not "en".
+     * Allows correct filtering of Indian dubs on Korean/other original films.
+     */
+    fun audioLanguages(prefix: ByteArray): Set<String>? {
+        val moov = boxes(prefix, 0, prefix.size)
+            .firstOrNull { it.type == "moov" } ?: return null
+        val tracks = boxes(prefix, moov.data, moov.end)
+            .filter { it.type == "trak" }
+        val audio = tracks.mapNotNull { track ->
+            val media = boxes(prefix, track.data, track.end)
+                .firstOrNull { it.type == "mdia" } ?: return@mapNotNull null
+            val mediaBoxes = boxes(prefix, media.data, media.end)
+            val handler = mediaBoxes.firstOrNull { it.type == "hdlr" }
+                ?: return@mapNotNull null
+            if (handler.data + 12 > handler.end ||
+                String(prefix, handler.data + 8, 4, Charsets.US_ASCII) != "soun"
+            ) return@mapNotNull null
+            mediaBoxes.firstOrNull { it.type == "mdhd" }
+        }
+        if (audio.isEmpty()) return null // no complete audio metadata in this prefix
+        val languages = audio.mapNotNull { mdhd ->
+            if (mdhd.data >= mdhd.end) return@mapNotNull null
+            val offset = mdhd.data + (if (prefix[mdhd.data].toInt() == 1) 32 else 20)
+            if (offset + 2 > mdhd.end) return@mapNotNull null
+            val code = ((prefix[offset].toInt() and 255) shl 8) or
+                (prefix[offset + 1].toInt() and 255)
+            val lang = buildString {
+                append(((code shr 10 and 31) + 96).toChar())
+                append(((code shr 5 and 31) + 96).toChar())
+                append(((code and 31) + 96).toChar())
+            }
+            MOOSAAudioTrackPolicy.normalize(lang)
+        }.toSet()
+        return languages.takeIf { it.isNotEmpty() }
+    }
+
     /** Fast-start MP4 metadata must show a playable video track, not just AAC audio. */
     fun compatibleMp4(prefix: ByteArray): Boolean {
         if (prefix.size < 64 || !String(prefix, 4, 4, Charsets.US_ASCII).equals("ftyp"))
