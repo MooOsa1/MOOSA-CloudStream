@@ -102,3 +102,21 @@ jobs:
                           print("DETAIL SAMPLES",samples[:10],flush=True)
                   except Exception as e:
                       print("DETAIL ERROR",type(e).__name__,str(e)[:130],flush=True)
+
+      - name: Inspect S02 episode structure and exact UHD presence
+        shell: python
+        run: |
+          import re,urllib.request,html,urllib.parse
+          url="https://4khdhub.one/better-call-saul-series-2193/"
+          req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/123 Safari/537.36"})
+          with urllib.request.urlopen(req,timeout=20) as response:
+              s=response.read(700000).decode("utf8","replace")
+          def simplify(v):
+              v=re.sub(r'href\s*=\s*["\x27][^"\x27]*["\x27]', 'href="[redacted]"',v,flags=re.I)
+              return " ".join(v.split())[:2500]
+          for marker in ['class="episode-download-item','class="season-item','class="episode-number','2160p','S02','Episode-03']:
+              at=s.find(marker)
+              print("MARKER",marker,"at",at,"near",simplify(s[max(0,at-500):at+2100]),flush=True)
+          # all literal UHD snippets (without download URLs) and neighboring section titles
+          for m in list(re.finditer("2160p",s,re.I))[:20]:
+              print("UHD",simplify(s[max(0,m.start()-350):m.end()+300]),flush=True)
