@@ -120,3 +120,27 @@ jobs:
           # all literal UHD snippets (without download URLs) and neighboring section titles
           for m in list(re.finditer("2160p",s,re.I))[:20]:
               print("UHD",simplify(s[max(0,m.start()-350):m.end()+300]),flush=True)
+
+      - name: Count actual 4K and FHD releases for BCS S02
+        shell: python
+        run: |
+          import re,urllib.request,html
+          url="https://4khdhub.one/better-call-saul-series-2193/"
+          req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/123 Safari/537.36"})
+          with urllib.request.urlopen(req,timeout=20) as response:
+              body=response.read(700000).decode("utf8","replace")
+          split=re.split(r'<div\s+class="season-item episode-item[^"]*"[^>]*>',body)
+          print("SEASON BLOCKS",len(split)-1)
+          for section in split[1:]:
+              match=re.search(r'<div class="episode-number">\s*(S\d+)\s*</div>',section)
+              if not match: continue
+              season=match.group(1)
+              # Stop at the next season block, as separated above
+              titles=re.findall(r'<div\s+class="episode-file-title"[^>]*>(.*?)</div>',section,re.S|re.I)
+              normalized=[" ".join(html.unescape(re.sub(r'<[^>]*>',' ',t)).split()) for t in titles]
+              uhd=[s for s in normalized if re.search(r'\b2160p\b|\b4K\b',s,re.I)]
+              fhd=[s for s in normalized if re.search(r'\b1080p\b',s,re.I)]
+              print("SEASON",season,"files",len(normalized),"UHD",len(uhd),"FHD",len(fhd),flush=True)
+              if season=="S02":
+                  for name in normalized[:22]:
+                      print("S02 FILE",name[:230],flush=True)
