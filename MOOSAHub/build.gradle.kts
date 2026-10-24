@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 143
+version = 144
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -203,3 +203,5 @@ dependencies {
 // v142: second-rendition VixSrc fallback after 1080p segment failure; reject audio-only codec variants.
 
 // v143: 4KHDHub verified individual 2160p TV episodes; more compact UHD/FHD movie alternatives.
+
+// v144: independent verified UHD/FHD directory fallback and original-audio metadata gates for MKV/MP4.

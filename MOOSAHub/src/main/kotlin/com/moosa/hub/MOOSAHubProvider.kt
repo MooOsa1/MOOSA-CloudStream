@@ -1789,6 +1789,7 @@ class MOOSAHubProvider : TmdbProvider() {
     private val native4KHDHub = MOOSA4KHDHubProvider()
     private val nativeVixSrc = MOOSAVixSrcProvider()
     private val nativeNetMirror = MOOSANetMirrorProvider()
+    private val nativeOpenDirectory = MOOSAOpenDirectoryProvider()
     private val nativeVaPlayer = MOOSACineStreamVaPlayerProvider()
     private val nativeVidrock = MOOSACineStreamVidrockProvider()
     private val nativeVidzee = MOOSACineStreamVidzeeProvider()
@@ -1821,7 +1822,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            listOf(native4KHDHub, nativeVixSrc, nativeNetMirror, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
+            listOf(native4KHDHub, nativeVixSrc, nativeNetMirror, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
             allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
@@ -1888,6 +1889,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         !request.isAnime && request.isTv && it is MOOSA4KHDHubProvider -> 7
                         !request.isAnime && it is MOOSAVixSrcProvider -> 9
                         !request.isAnime && it is MOOSANetMirrorProvider -> 8
+                        !request.isAnime && it is MOOSAOpenDirectoryProvider -> 6
                         arabicRequest && isAkwamProvider(it) -> 6
                         arabicRequest && it.name.equals("ShahidWBas", true) -> 5
                         arabicRequest && isArabSeedProvider(it) -> 4
@@ -1962,6 +1964,14 @@ class MOOSAHubProvider : TmdbProvider() {
         if (api is MOOSAVixSrcProvider) {
             if (request.isAnime || request.tmdbId == null ||
                 (request.isTv && (request.season == null || request.episode == null))
+            ) return null
+            return ProviderTarget(api.name, api.mainUrl, request.toJson())
+        }
+        if (api is MOOSAOpenDirectoryProvider) {
+            if (request.isAnime || MOOSAOpenDirectoryPolicy.directory(
+                    request.title, request.year,
+                    if (request.isTv) request.season else null
+                ) == null || (request.isTv && request.episode == null)
             ) return null
             return ProviderTarget(api.name, api.mainUrl, request.toJson())
         }
@@ -4231,6 +4241,7 @@ class MOOSAHubProvider : TmdbProvider() {
                             !isStreamPlayProvider(api) &&
                             api !is MOOSAVixSrcProvider &&
                             api !is MOOSANetMirrorProvider &&
+                            api !is MOOSAOpenDirectoryProvider &&
                             api !is MOOSA4KHDHubProvider &&
                             api !is MOOSACineStreamVaPlayerProvider &&
                             api !is MOOSACineStreamVidrockProvider &&
