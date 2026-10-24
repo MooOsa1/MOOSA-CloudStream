@@ -47,6 +47,30 @@ class MOOSA4KHDHubPolicyTest {
         )
     }
 
+    @Test fun episodeIdsMustMatchAndSeasonPacksNeverBecomePlayers() {
+        assertEquals(2, MOOSA4KHDHubPolicy.seasonNumber("S02"))
+        assertEquals(1, MOOSA4KHDHubPolicy.episodeNumber("Episode-01"))
+        assertEquals(3, MOOSA4KHDHubPolicy.episodeNumber(
+            "Better.Call.Saul.S02E03.2160p.WEB-DL.H265.mkv"
+        ))
+        assertNull(MOOSA4KHDHubPolicy.seasonNumber("S01-S02"))
+        assertNull(MOOSA4KHDHubPolicy.episodeNumber(
+            "Episode-02 / Better.Call.Saul.S02E03.2160p.mkv"
+        ))
+        assertTrue(MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(
+            "Better.Call.Saul.S02E03.2160p.WEB-DL.HEVC.mkv"
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(
+            "Better.Call.Saul.S02.2160p.HEVC.zip"
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(
+            "Better.Call.Saul.S02E03.2160p.DV.H265.mkv"
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(
+            "Better.Call.Saul.S02E03.2160p.AV1.mkv"
+        ))
+    }
+
     private fun b64(value: String): String =
         Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8))
 

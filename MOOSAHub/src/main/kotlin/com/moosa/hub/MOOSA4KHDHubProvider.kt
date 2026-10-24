@@ -12,12 +12,13 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.withPermit
 import org.jsoup.nodes.Element
 import java.net.URI
 import java.net.URLEncoder
 
 /**
- * On-demand, direct-HTTP 4K movie source, independent of any other plugin.
+ * On-demand, direct-HTTP 4K movie and individual TV-episode source.
  *
  * Search -> exact title/year -> 2160p release -> HubCloud gateway ->
  * signed CDN -> 206 range + real Matroska video dimensions.
@@ -31,7 +32,7 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
     override var lang: String = "en"
     override val hasMainPage: Boolean = false
     override val providerType: ProviderType = ProviderType.DirectProvider
-    override val supportedTypes = setOf(TvType.Movie)
+    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     private data class VerifiedVideo(
         val url: String,
@@ -50,12 +51,14 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
     ): Boolean {
         val request = com.lagradost.cloudstream3.utils.AppUtils
             .tryParseJson<MOOSAHubProvider.HubPlaybackRequest>(data) ?: return false
-        if (request.isTv || request.isAnime || request.title.isBlank() ||
-            request.year == null || request.year !in 1900..2100
+        if (request.isAnime || request.title.isBlank() ||
+            request.year == null || request.year !in 1900..2100 ||
+            (request.isTv && (request.season == null || request.episode == null))
         ) return false
 
         val discovered = withTimeoutOrNull(23_000L) {
-            searchAndVerify(request.title, request.year)
+            searchAndVerify(request.title, request.year,
+                request.isTv, request.season, request.episode)
         }.orEmpty().distinctBy { it.url }
 
         discovered.forEach { media ->
@@ -89,7 +92,8 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
     }
 
     private suspend fun searchAndVerify(
-        title: String, year: Int
+        title: String, year: Int, isTv: Boolean,
+        season: Int?, episode: Int?
     ): List<VerifiedVideo> = coroutineScope {
         val search = "${mainUrl}/?s=${URLEncoder.encode(title, "UTF-8")}"
         val searchResponse = runCatching { app.get(search) }.getOrNull()
@@ -112,27 +116,64 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
             ?: return@coroutineScope emptyList()
         if (!details.isSuccessful) return@coroutineScope emptyList()
 
-        // A 64 GB remux was observed buffering on Fire TV. Prefer smaller
-        // *real* 4K encodes and also offer one seekable 1080p fallback.
-        // Neither labels nor sizes are sufficient to claim resolution.
-        val available = details.document.select(".download-item")
+        // Individual TV episode MKVs live under episodes-list, whereas
+        // complete-season download-items frequently lead to ZIP archives.
+        // Never invent an episode mapping from generic movie/pack links.
+        val available = if (isTv) {
+            val requestedSeason = season ?: return@coroutineScope emptyList()
+            val requestedEpisode = episode ?: return@coroutineScope emptyList()
+            details.document.select("div.episodes-list div.season-item")
+                .filter { item ->
+                    MOOSA4KHDHubPolicy.seasonNumber(
+                        item.selectFirst("div.episode-number")?.text().orEmpty()
+                    ) == requestedSeason
+                }
+                .flatMap { item ->
+                    item.select("div.episode-download-item")
+                }
+                .filter { item ->
+                    val badge = item.selectFirst("div.episode-file-info span.badge-psa")
+                        ?.text().orEmpty()
+                    val fileInfo = item.selectFirst("div.episode-file-info")
+                        ?.text().orEmpty()
+                    val identity = MOOSA4KHDHubPolicy.episodeNumber(badge)
+                        ?: MOOSA4KHDHubPolicy.episodeNumber(fileInfo)
+                    identity == requestedEpisode &&
+                        MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(fileInfo)
+                }
+        } else {
+            details.document.select(".download-item")
+        }
+
+        // Prioritize compact UHD encodes rather than very large REMUX.
+        // Include one or more 1080p fallback links if UHD cannot stream.
+        // Every result still needs real MKV track dimensions and HTTP 206.
         val uhd = available.filter { element ->
-            val filename = element.selectFirst(".file-title")?.text().orEmpty()
+            val filename = if (isTv) {
+                element.selectFirst("div.episode-file-info")?.text().orEmpty()
+            } else element.selectFirst(".file-title")?.text().orEmpty()
             MOOSA4KHDHubPolicy.isUhdRelease(filename) &&
                 MOOSA4KHDHubPolicy.isCompatibleRelease(filename)
-        }.sortedBy(::releaseSizeGb).take(2).map { it to 2160 }
+        }.sortedBy(::releaseSizeGb).take(3).map { it to 2160 }
         val fhd = available.filter { element ->
-            val title = element.selectFirst(".file-title")?.text().orEmpty()
-            !MOOSA4KHDHubPolicy.isUhdRelease(title) &&
-                MOOSA4KHDHubPolicy.isCompatibleRelease(title) &&
-                Regex("""\b1080p\b""", RegexOption.IGNORE_CASE).containsMatchIn(title)
-        }.sortedBy(::releaseSizeGb).take(1).map { it to 1080 }
+            val filename = if (isTv) {
+                element.selectFirst("div.episode-file-info")?.text().orEmpty()
+            } else element.selectFirst(".file-title")?.text().orEmpty()
+            !MOOSA4KHDHubPolicy.isUhdRelease(filename) &&
+                MOOSA4KHDHubPolicy.isCompatibleRelease(filename) &&
+                Regex("""\b1080p\b""", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(filename)
+        }.sortedBy(::releaseSizeGb).take(2).map { it to 1080 }
         val releases = uhd + fhd
 
+        // Bound concurrent high-bitrate CDN probes on Fire TV Stick 4K.
+        val gate = kotlinx.coroutines.sync.Semaphore(3)
         releases.map { (release, requiredQuality) ->
             async {
-                withTimeoutOrNull(13_000L) {
-                    resolveRelease(release, requiredQuality)
+                gate.withPermit {
+                    withTimeoutOrNull(13_000L) {
+                        resolveRelease(release, requiredQuality)
+                    }
                 }
             }
         }.awaitAll().filterNotNull()

@@ -1885,6 +1885,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     when {
                         !request.isAnime && request.isTv && it is MOOSAVixSrcProvider -> 10
                         !request.isAnime && !request.isTv && it is MOOSA4KHDHubProvider -> 10
+                        !request.isAnime && request.isTv && it is MOOSA4KHDHubProvider -> 7
                         !request.isAnime && it is MOOSAVixSrcProvider -> 9
                         !request.isAnime && it is MOOSANetMirrorProvider -> 8
                         arabicRequest && isAkwamProvider(it) -> 6
@@ -1974,7 +1975,9 @@ class MOOSAHubProvider : TmdbProvider() {
         // The local UHD adapter performs its own exact title/year matching
         // on Play. No fuzzy search or external repository is required.
         if (api is MOOSA4KHDHubProvider) {
-            if (request.isTv || request.isAnime || request.year == null) return null
+            if (request.isAnime || request.year == null ||
+                (request.isTv && (request.season == null || request.episode == null))
+            ) return null
             return ProviderTarget(api.name, api.mainUrl, request.toJson())
         }
         // The native VaPlayer adapter addresses IMDb IDs directly and needs

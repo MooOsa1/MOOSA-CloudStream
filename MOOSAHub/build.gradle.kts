@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 142
+version = 143
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -201,3 +201,5 @@ dependencies {
 // regional NetMirror 1080/720 direct MP4 fallback with on-device verification.
 
 // v142: second-rendition VixSrc fallback after 1080p segment failure; reject audio-only codec variants.
+
+// v143: 4KHDHub verified individual 2160p TV episodes; more compact UHD/FHD movie alternatives.
