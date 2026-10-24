@@ -44,6 +44,34 @@ sd/index.m3u8
         assertNull(MOOSAReyaPolicy.safeMedia("//evil.com/a", masterUrl))
     }
 
+    @Test fun nativeVttForExactEpisodeAndLanguagesOnly() {
+        val payload = JSONObject("""{
+            "subtitles": [
+                {"label":"Arabic","url":"https://cache.vdrk.site/subtitles/60059/2/5/Arabic.vtt"},
+                {"label":"English","url":"https://cache.vdrk.site/subtitles/60059/2/5/English.vtt"},
+                {"label":"Chinese","url":"https://cache.vdrk.site/subtitles/60059/2/5/Chinese.vtt"},
+                {"label":"Arabic","url":"https://evil.example/subtitles/60059/2/5/Arabic.vtt"},
+                {"label":"Arabic","url":"https://cache.vdrk.site/subtitles/60059/2/3/Arabic.vtt"}
+            ]
+        }""")
+        val matches = MOOSAReyaPolicy.subtitles(payload, true, 2, 5)
+        assertEquals(listOf("Arabic", "English"), matches.map { it.language })
+        assertTrue(matches.all { "/2/5/" in it.url })
+        assertFalse(matches.any { "evil.example" in it.url })
+        assertEquals(emptyList<MOOSAReyaPolicy.Subtitle>(),
+            MOOSAReyaPolicy.subtitles(payload, true, 2, 9))
+    }
+
+    @Test fun rejectsUntrustedOrCompressedNativeCaptions() {
+        val data = JSONObject("""{"subtitles":[
+            {"label":"Arabic","url":"http://cache.vdrk.site/subtitles/2/5/Arabic.vtt"},
+            {"label":"English","url":"https://cache.vdrk.site/subtitles/2/5/English.zip"},
+            {"label":"Arabic","url":"https://cache.vdrk.site/subtitles/2/5/../6/Arabic.vtt"},
+            {"label":"Arabic","url":"https://cache.vdrk.site/subtitles/2/5/Arabic.vtt#spoof"}
+        ]}""")
+        assertTrue(MOOSAReyaPolicy.subtitles(data, true, 2, 5).isEmpty())
+    }
+
     @Test fun mediaPlaylistMustHaveMapAndRealSegments() {
         val playlist = """#EXTM3U
 #EXT-X-VERSION:7

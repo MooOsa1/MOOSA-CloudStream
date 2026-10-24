@@ -53,6 +53,42 @@ internal object MOOSAReyaPolicy {
         return value.toASCIIString().takeIf { permitted }
     }
 
+    /**
+     * Reya API returns *episode-matched* WEBVTT subtitles alongside videos.
+     * v146 ignored this array, so playback could use a mismatched external
+     * WEB-DL/BluRay subtitle even though the matching source's own track exists.
+     * Only the original CDN URL, exact episode path and Arabic/English tracks
+     * are accepted. Caller emits tracks only if an actual video was verified.
+     */
+    data class Subtitle(val language: String, val url: String)
+
+    fun subtitles(
+        body: JSONObject, isTv: Boolean, season: Int?, episode: Int?
+    ): List<Subtitle> {
+        val rows = body.optJSONArray("subtitles") ?: return emptyList()
+        return (0 until rows.length()).mapNotNull { index ->
+            val item = rows.optJSONObject(index) ?: return@mapNotNull null
+            val language = when (item.optString("label").trim().lowercase(Locale.ROOT)) {
+                "arabic" -> "Arabic"
+                "english" -> "English"
+                else -> return@mapNotNull null
+            }
+            val raw = item.optString("url")
+            val uri = runCatching { URI(raw) }.getOrNull()
+                ?: return@mapNotNull null
+            val path = uri.path ?: return@mapNotNull null
+            if (uri.scheme != "https" || uri.host?.lowercase(Locale.ROOT) != "cache.vdrk.site" ||
+                uri.userInfo != null || uri.port != -1 || uri.fragment != null ||
+                uri.query != null || path.contains("..") ||
+                !path.endsWith("/$language.vtt", true)) return@mapNotNull null
+            if (isTv) {
+                if (season == null || episode == null ||
+                    !path.contains("/$season/$episode/")) return@mapNotNull null
+            }
+            Subtitle(language, uri.toASCIIString())
+        }.distinctBy { it.language }.take(2)
+    }
+
     fun variants(masterUrl: String, manifest: String): List<Variant> {
         if (!manifest.trimStart().startsWith("#EXTM3U")) return emptyList()
         val resolution = Regex("""(?i)\bRESOLUTION=(\d+)x(\d+)""")
