@@ -137,12 +137,11 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
                 .filter { item ->
                     val badge = item.selectFirst("div.episode-file-info span.badge-psa")
                         ?.text().orEmpty()
-                    val fileInfo = item.selectFirst("div.episode-file-info")
+                    val fileTitle = item.selectFirst("div.episode-file-title")
                         ?.text().orEmpty()
-                    val identity = MOOSA4KHDHubPolicy.episodeNumber(badge)
-                        ?: MOOSA4KHDHubPolicy.episodeNumber(fileInfo)
-                    identity == requestedEpisode &&
-                        MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(fileInfo)
+                    MOOSA4KHDHubPolicy.matchesEpisodeFile(
+                        requestedSeason, requestedEpisode, badge, fileTitle
+                    )
                 }
         } else {
             details.document.select(".download-item")
@@ -153,14 +152,14 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         // Every result still needs real MKV track dimensions and HTTP 206.
         val uhd = available.filter { element ->
             val filename = if (isTv) {
-                element.selectFirst("div.episode-file-info")?.text().orEmpty()
+                element.selectFirst("div.episode-file-title")?.text().orEmpty()
             } else element.selectFirst(".file-title")?.text().orEmpty()
             MOOSA4KHDHubPolicy.isUhdRelease(filename) &&
                 MOOSA4KHDHubPolicy.isCompatibleRelease(filename)
         }.sortedBy(::releaseSizeGb).take(3).map { it to 2160 }
         val fhd = available.filter { element ->
             val filename = if (isTv) {
-                element.selectFirst("div.episode-file-info")?.text().orEmpty()
+                element.selectFirst("div.episode-file-title")?.text().orEmpty()
             } else element.selectFirst(".file-title")?.text().orEmpty()
             !MOOSA4KHDHubPolicy.isUhdRelease(filename) &&
                 MOOSA4KHDHubPolicy.isCompatibleRelease(filename) &&
