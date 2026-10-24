@@ -206,3 +206,95 @@ jobs:
                   found=True
                   break
               print(name,"2160_MASTER_TESTED",found,flush=True)
+
+      - name: Parse 4K MP4 init boxes and verify actual codec and dimensions
+        shell: python
+        run: |
+          import urllib.request,urllib.parse,json,re,hashlib
+          HEAD={"User-Agent":"Mozilla/5.0 (Linux; Android 7.1.2) AppleWebKit/537.36 Chrome/123 Safari/537.36"}
+          def get(url,n=80000,headers=None):
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url,headers=HEAD|(headers or {})),timeout=12) as r:
+                      return r.status,r.headers.get("Content-Type",""),r.read(n)
+              except Exception as e:return 0,type(e).__name__,str(e).encode()[:100]
+          def boxes(data,start=0,end=None):
+              end=len(data) if end is None else min(end,len(data))
+              results=[]
+              pos=start
+              while pos+8<=end:
+                  size=int.from_bytes(data[pos:pos+4],"big")
+                  name=data[pos+4:pos+8].decode("latin1")
+                  header=8
+                  if size==1 and pos+16<=end:
+                      size=int.from_bytes(data[pos+8:pos+16],"big");header=16
+                  if size<8 or pos+size>end:break
+                  results.append((name,pos+header,pos+size))
+                  pos+=size
+              return results
+          def nested(buf,desc,*names):
+              result=[("",0,len(buf))]
+              for name in names:
+                  result=[box for _,start,end in result for box in boxes(buf,start,end) if box[0]==name]
+              return result
+          def parseInit(data):
+              tracks=[]
+              for _,start,end in nested(data,None,"moov","trak"):
+                  child=boxes(data,start,end)
+                  tkhd=next((b for b in child if b[0]=="tkhd"),None)
+                  mdia=next((b for b in child if b[0]=="mdia"),None)
+                  if not mdia:continue
+                  sub=boxes(data,mdia[1],mdia[2])
+                  hdlr=next((b for b in sub if b[0]=="hdlr"),None)
+                  mdhd=next((b for b in sub if b[0]=="mdhd"),None)
+                  handler=""
+                  if hdlr and hdlr[1]+12<=hdlr[2]:
+                      handler=data[hdlr[1]+8:hdlr[1]+12].decode("latin1")
+                  width=height=0
+                  if tkhd and tkhd[2]-tkhd[1]>=8:
+                      width=int.from_bytes(data[tkhd[2]-8:tkhd[2]-4],"big")>>16
+                      height=int.from_bytes(data[tkhd[2]-4:tkhd[2]],"big")>>16
+                  lang=None
+                  if mdhd and mdhd[1]<mdhd[2]:
+                      ver=data[mdhd[1]]
+                      loc=mdhd[1]+(32 if ver==1 else 20)
+                      if loc+2<=mdhd[2]:
+                          v=int.from_bytes(data[loc:loc+2],"big")
+                          lang="".join(chr(96+((v>>z)&31)) for z in (10,5,0))
+                  tracks.append((handler,width,height,lang))
+              return tracks
+          for name,api in [
+              ("BCS","https://vidnst.reyamika.eu.cc/api/stream?tmdbId=60059&type=tv&season=2&episode=3"),
+              ("Godfather","https://vidnst.reyamika.eu.cc/api/stream?tmdbId=238&type=movie")
+          ]:
+              st,ct,b=get(api,200000)
+              if st!=200:continue
+              feeds=json.loads(b).get("streams",[])
+              for item in feeds:
+                  url=item.get("url","")
+                  st,ct,b=get(url)
+                  if st!=200 or b"#EXTM3U" not in b[:100]:continue
+                  master=b.decode("utf8","ignore")
+                  if "RESOLUTION=3840x2160" not in master:continue
+                  lines=master.splitlines()
+                  variants=[]
+                  for idx,line in enumerate(lines):
+                      if "#EXT-X-STREAM-INF" in line and "RESOLUTION=3840x2160" in line and idx+1<len(lines):
+                          variants.append(urllib.parse.urljoin(url,lines[idx+1].strip()))
+                  for variant in variants[:1]:
+                      s2,_,data=get(variant,160000)
+                      text=data.decode("utf8","ignore")
+                      media=[l.strip() for l in text.splitlines() if l.strip() and not l.startswith("#")]
+                      initMatch=re.search(r'#EXT-X-MAP:.*?URI="([^"]+)"',text)
+                      if not initMatch or not media:
+                          print(name,"NO_MAP_OR_MEDIA","segments",len(media),flush=True);continue
+                      initurl=urllib.parse.urljoin(variant,initMatch.group(1))
+                      segurl=urllib.parse.urljoin(variant,media[0])
+                      stInit,typeInit,init=get(initurl,150000,{"Range":"bytes=0-149999"})
+                      stSeg,typeSeg,seg=get(segurl,150000,{"Range":"bytes=0-149999"})
+                      print(name,"MAP","status",stInit,"mime",typeInit[:40],"bytes",len(init),"head",init[:16].hex(),
+                            "boxes",[(x[0],x[2]-x[1]) for x in boxes(init)[:8]],flush=True)
+                      print(name,"SEG","status",stSeg,"mime",typeSeg[:40],"bytes",len(seg),"head",seg[:16].hex(),
+                            "boxes",[(x[0],x[2]-x[1]) for x in boxes(seg)[:8]],
+                            "sameDataPrefix",init[:100]==seg[:100],flush=True)
+                      print(name,"ACTUAL_TRACKS",parseInit(init),flush=True)
+                  break
