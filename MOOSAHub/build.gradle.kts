@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 148
+version = 149
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -211,3 +211,5 @@ dependencies {
 // v147: native Reya per-episode Arabic+English VTT subtitles, no cross-episode matching.
 
 // v148: reject Reya CDN VOD missing 10 minutes vs source subtitles; provider-bound captions.
+
+// v149: preserve verified 4K streams when subtitle/HLS timeline metadata is unavailable.
