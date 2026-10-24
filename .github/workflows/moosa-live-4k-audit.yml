@@ -280,3 +280,41 @@ jobs:
                           print("CDN fetch",type(e).__name__,str(e)[:80],flush=True)
               except Exception as e:
                   print("gateway exception",type(e).__name__,str(e)[:100],flush=True)
+
+      - name: Audit HubDrive mirror independently of HubCloud
+        shell: python
+        run: |
+          import urllib.request,urllib.parse,urllib.error,base64,codecs,json,re,html
+          hdr={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/123 Safari/537.36"}
+          def fetch(u):
+              with urllib.request.urlopen(urllib.request.Request(u,headers=hdr),timeout=13) as x:
+                  return x.status,x.geturl(),x.read(400000).decode('utf8','replace')
+          _,_,page=fetch("https://4khdhub.one/better-call-saul-series-2193/")
+          cards=re.findall(r'<div class="episode-download-item">(.*?)<div class="episode-links">(.*?)</div>',page,re.S|re.I)
+          targets=[]
+          for first,second in cards:
+              name=" ".join(re.sub("<[^>]*>"," ",first).split())
+              if not re.search(r'\bS02E03\b',name,re.I):continue
+              for link,label in re.findall(r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>',second,re.S|re.I):
+                  if 'HubDrive' in label:
+                      targets.append((name,html.unescape(link)))
+          print("HubDrive mirrors on S02E03",len(targets),flush=True)
+          for name,url in targets[:2]:
+              try:
+                  st,_,gate=fetch(url)
+                  payload=re.search(r"s\(['\x22]o['\x22],\s*['\x22]([A-Za-z0-9+/=]+)['\x22]",gate)
+                  if not payload:
+                      print("gateway not encoded",st);continue
+                  lay=base64.b64decode(base64.b64decode(payload.group(1))).decode()
+                  msg=base64.b64decode(codecs.decode(lay,"rot_13")).decode()
+                  hub=base64.b64decode(json.loads(msg)["o"]).decode()
+                  p=urllib.parse.urlparse(hub)
+                  print("hubdrive URL host",p.hostname,"path prefix",p.path[:20],flush=True)
+                  if p.hostname not in ("hubdrive.ist","hubcloud.ist"):continue
+                  st,final,body=fetch(hub)
+                  print("hubdrive response",st,"final host",urllib.parse.urlparse(final).hostname,
+                        "var-url",bool(re.search(r'var\s+url\s*=',body)),
+                        "drive hrefs",len(re.findall("hubcloud.ist/drive",body)),
+                        "buttons",len(re.findall(r'<a ',body)),flush=True)
+              except Exception as e:
+                  print("HubDrive resolver exception",type(e).__name__,str(e)[:80],flush=True)
