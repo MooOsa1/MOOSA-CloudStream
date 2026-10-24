@@ -1,0 +1,63 @@
+name: MOOSA live 4K source reachability audit (no release)
+on:
+  push:
+    branches:
+      - 'audit/moosa-live-4k-20261024'
+  workflow_dispatch:
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Check real public source endpoints and 4K catalog markup
+        shell: python
+        run: |
+          import concurrent.futures
+          import re
+          import urllib.request
+          import urllib.error
+          import urllib.parse
+          import time
+          import html
+          
+          UA = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
+                "Accept":"text/html,application/json;q=0.9,*/*;q=0.8"}
+          targets = [
+            ("4khdhub-home","https://4khdhub.one/"),
+            ("4khdhub-bcs","https://4khdhub.one/?s=Better+Call+Saul"),
+            ("4khdhub-dune2","https://4khdhub.one/?s=Dune+Part+Two"),
+            ("4khdhub-godfather","https://4khdhub.one/?s=The+Godfather"),
+            ("directory-bcs-s02","https://a.111477.xyz/tvs/Better%20Call%20Saul/Season%2002/"),
+            ("directory-dune2","https://a.111477.xyz/movies/Dune%20Part%20Two%20%282024%29/"),
+            ("netmirror-bcs-s02e03","https://net27.cc/api/embed-tmdb/60059?type=tv&se=2&ep=3"),
+            ("netmirror-godfather","https://net27.cc/api/embed-tmdb/238"),
+          ]
+          def check(item):
+            label,url=item
+            req=urllib.request.Request(url,headers=UA)
+            code=0
+            try:
+              with urllib.request.urlopen(req,timeout=12) as res:
+                code=res.status
+                final=res.geturl()
+                data=res.read(240000).decode("utf-8",errors="replace")
+                kind=res.headers.get("Content-Type","")
+            except urllib.error.HTTPError as e:
+              code=e.code
+              final=url
+              data=e.read(4096).decode("utf-8",errors="replace")
+              kind=e.headers.get("Content-Type","")
+            except Exception as e:
+              return f"{label}: NETWORK_ERROR {type(e).__name__}: {str(e)[:100]}"
+            markers={p:len(re.findall(p,data,re.I)) for p in [
+                "movie-card", "episodes-list", "season-item", "episode-download-item",
+                "download-item", "2160p", "1080p", "mkv", "cloudflare", "captcha",
+                "content-range", "currentEpisode", "streams"
+              ]}
+            # Only public structural counts. Never print any signed media URLs.
+            text_sample = re.sub(r"<[^>]+>"," ",data[:2000])
+            text_sample = " ".join(html.unescape(text_sample).split())[:140]
+            return f"{label}: HTTP {code}; finalHost={urllib.parse.urlparse(final).hostname}; kind={kind[:50]}; len={len(data)}; markers={markers}; intro={text_sample!r}"
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+            for line in ex.map(check,targets):
+              print(line,flush=True)
