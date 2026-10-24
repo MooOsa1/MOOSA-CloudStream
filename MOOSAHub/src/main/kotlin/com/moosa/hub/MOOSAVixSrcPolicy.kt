@@ -102,7 +102,7 @@ internal object MOOSAVixSrcPolicy {
     fun hdVariants(masterUrl: String, playlist: String): List<Variant> {
         if (!playlist.trimStart().startsWith("#EXTM3U")) return emptyList()
         val lines = playlist.lines()
-        val resolution = Regex("""(?:^|,)RESOLUTION=(\d+)x(\d+)(?:,|$)""")
+        val resolution = Regex("""(?:^|[:,])RESOLUTION=(\d+)x(\d+)(?:,|$)""")
         return lines.mapIndexedNotNull { index, line ->
             if (!line.startsWith("#EXT-X-STREAM-INF:", ignoreCase = true))
                 return@mapIndexedNotNull null
