@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 144
+version = 146
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -205,3 +205,5 @@ dependencies {
 // v143: 4KHDHub verified individual 2160p TV episodes; more compact UHD/FHD movie alternatives.
 
 // v144: independent verified UHD/FHD directory fallback and original-audio metadata gates for MKV/MP4.
+
+// v146: independently measured 3840x2160 HLS video from Reya; Fire TV codec/audio verification and adaptive FHD fallback.
