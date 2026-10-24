@@ -1,4 +1,4 @@
-name: MOOSA Hub v146 validated Reya 2160p fMP4 and FHD fallback
+name: MOOSA Hub v147 matched native Reya SRT VTT subtitles
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==146,versions
+          assert versions['MOOSAHub']==147,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -177,6 +177,10 @@ jobs:
           assert 'MOOSAReyaProvider()' in hub
           assert 'api is MOOSAReyaProvider' in hub
           assert 'MOOSAReyaPolicy.identity(' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'MOOSAReyaPolicy.subtitles(' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'sourceSubtitles.forEach' in (root/'MOOSAReyaProvider.kt').read_text()
+          assert 'cache.vdrk.site' in (root/'MOOSAReyaPolicy.kt').read_text()
+          assert 'Reya Synced' in hub
           assert 'MOOSAReyaPolicy.inspectInit(' in (root/'MOOSAReyaProvider.kt').read_text()
           assert 'isFmp4Fragment(' in (root/'MOOSAReyaProvider.kt').read_text()
           assert 'MOOSAAudioTrackPolicy.accept(' in (root/'MOOSAReyaProvider.kt').read_text()
@@ -223,5 +227,5 @@ jobs:
           assert 'currentEpisode' in netpolicy and 'currentSeason' in netpolicy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANetMirrorPolicyTest.kt').exists()
           assert 'explicitlyAudioOnly(body)' in servers
-          print('PASS: v146: original-audio and 2160p video track inspection, FHD fallback')
+          print('PASS: v147: exact-episode native source-matched VTT subtitles plus UHD video')
           PY

@@ -3670,7 +3670,9 @@ class MOOSAHubProvider : TmdbProvider() {
         }
         // Preserve which installed repository provided the track, without
         // leaking free-form filenames that can confuse player language matching.
-        val safeSource = source.replace(" • ", " ")
+        val safeSource = if (source == MOOSAReyaPolicy.NAME) {
+            "Reya Synced"
+        } else source.replace(" • ", " ")
             .replace(Regex("""[\r\n\t]"""), " ").trim().take(28)
         val release = subtitleReleaseHint(subtitle.lang)
         val fps = Regex("""(\d{2}(?:\.\d{1,2})?)fps""", RegexOption.IGNORE_CASE)

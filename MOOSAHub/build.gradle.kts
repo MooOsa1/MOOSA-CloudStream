@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 146
+version = 147
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -207,3 +207,5 @@ dependencies {
 // v144: independent verified UHD/FHD directory fallback and original-audio metadata gates for MKV/MP4.
 
 // v146: independent Reya exact TMDB/episode HLS fMP4 UHD, real tracks and safe FHD fallback.
+
+// v147: native Reya per-episode Arabic+English VTT subtitles, no cross-episode matching.

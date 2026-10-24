@@ -49,6 +49,7 @@ internal class MOOSAReyaProvider : MainAPI() {
             request.tmdbId, request.isTv, request.season, request.episode
         ) ?: return false
 
+        var sourceSubtitles = emptyList<MOOSAReyaPolicy.Subtitle>()
         val found = withTimeoutOrNull(21_000L) {
             val response = runCatching {
                 app.get(endpoint, headers = DEFAULT_HEADERS)
@@ -59,6 +60,9 @@ internal class MOOSAReyaProvider : MainAPI() {
             if (!MOOSAReyaPolicy.identity(json, request.tmdbId,
                     request.isTv, request.season, request.episode))
                 return@withTimeoutOrNull emptyList<Link>()
+            sourceSubtitles = MOOSAReyaPolicy.subtitles(
+                json, request.isTv, request.season, request.episode
+            )
             val items = json.optJSONArray("streams")
                 ?: return@withTimeoutOrNull emptyList<Link>()
             val sources = (0 until items.length()).mapNotNull { index ->
@@ -93,6 +97,18 @@ internal class MOOSAReyaProvider : MainAPI() {
                 }.awaitAll().flatten()
             }
         }.orEmpty().distinctBy { it.url }.sortedByDescending { it.height }
+
+        // Native source-specific WebVTT, aligned to this exact episode's
+        // Reya/VidNest release. Offer these before generic subtitle indexes.
+        // Never emit captions if no matching playable video source exists.
+        if (found.isNotEmpty()) {
+            sourceSubtitles.forEach { candidate ->
+                subtitleCallback(SubtitleFile(
+                    candidate.language + " • Reya source-matched",
+                    candidate.url
+                ))
+            }
+        }
 
         found.forEach { link ->
             val qualityName = if (link.height == 2160) "4K" else
