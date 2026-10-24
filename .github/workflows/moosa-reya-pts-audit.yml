@@ -1,0 +1,69 @@
+name: MOOSA Reya media PTS vs VTT audit (diagnostic only)
+on:
+  push:
+    branches: [audit/moosa-live-4k-20261024]
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Inspect source episode start offsets and subtitle times
+        shell: python
+        run: |
+          import json, urllib.request, urllib.parse, urllib.error, subprocess, re, tempfile, os, shutil, collections
+          H={"User-Agent":"Mozilla/5.0 (Linux; Android 7.1.2) AppleWebKit/537.36 Chrome/123 Safari/537.36","Accept":"*/*"}
+          def fetch(url, cap=2000000):
+              req=urllib.request.Request(url,headers=H)
+              with urllib.request.urlopen(req,timeout=16) as r:
+                  return r.status,r.read(cap)
+          def ffprobe(path):
+              p=subprocess.run(["ffprobe","-v","error","-show_entries","format=start_time,duration:stream=index,codec_name,codec_type,start_time,duration,time_base","-of","json",path],capture_output=True,text=True,timeout=25)
+              if p.returncode: return "ffprobe error: "+p.stderr[:150]
+              obj=json.loads(p.stdout)
+              return {"format":obj.get("format",{}),"streams":obj.get("streams",[])}
+          def first_cues(text):
+              lines=text.splitlines()
+              rg=re.compile(r'((?:(?:\d\d):)?\d\d:\d\d\.\d{3})\s*-->\s*((?:(?:\d\d):)?\d\d:\d\d\.\d{3})')
+              return [m.groups() for l in lines[:300] for m in [rg.search(l)] if m][:8]
+          for ep in [3,5]:
+              print("EP",ep,flush=True)
+              url=f"https://vidnst.reyamika.eu.cc/api/stream?tmdbId=60059&type=tv&season=2&episode={ep}"
+              _,raw=fetch(url,200000)
+              obj=json.loads(raw)
+              for row in obj.get("subtitles",[]):
+                  if row.get("label") in ("English","Arabic"):
+                      try:
+                          _,vtt=fetch(row["url"],80000)
+                          cues=first_cues(vtt.decode("utf8","replace"))
+                          print("CAPTIONS",row["label"],"cues",cues,"bytes",len(vtt),flush=True)
+                      except Exception as e: print("VTT ERROR",str(e)[:65],flush=True)
+              first=obj.get("streams",[None])[0]
+              if not first:continue
+              _,masterRaw=fetch(first["url"],150000)
+              master=masterRaw.decode()
+              lines=master.splitlines()
+              variants=[]
+              for i,l in enumerate(lines[:-1]):
+                  if l.startswith("#EXT-X-STREAM-INF:") and "RESOLUTION=" in l:
+                      height=int(re.search(r'RESOLUTION=\d+x(\d+)',l).group(1))
+                      if height in (2160,1080,720):variants.append((height,urllib.parse.urljoin(first["url"],lines[i+1].strip())))
+              for height,vid in variants[:3]:
+                  try:
+                      _,playlistRaw=fetch(vid,160000)
+                      playlist=playlistRaw.decode()
+                      mapurl=re.search(r'#EXT-X-MAP:[^\r\n]*URI="([^"]+)"',playlist)
+                      if not mapurl: print("NO MAP",height);continue
+                      initurl=urllib.parse.urljoin(vid,mapurl.group(1))
+                      seq=[x.strip() for x in playlist.splitlines() if x.strip() and not x.startswith("#")]
+                      print("VARIANT",height,"segment-count",len(seq),"first-segment",seq[0][-28:],"target",re.search("EXT-X-TARGETDURATION:([^\\r\\n]+)",playlist).group(1) if "EXT-X-TARGETDURATION" in playlist else "unknown",flush=True)
+                      _,init=fetch(initurl,150000)
+                      print("INIT",height,"bytes",len(init),flush=True)
+                      for number in [0,1,5,12]:
+                          if number>=len(seq):continue
+                          segment=urllib.parse.urljoin(vid,seq[number])
+                          _,s=fetch(segment,14000000)
+                          with tempfile.NamedTemporaryFile(suffix=".mp4") as f:
+                              f.write(init+s);f.flush()
+                              diag=ffprobe(f.name)
+                              print("SEGMENT",height,number,"bytes",len(s),"PROBE",diag,flush=True)
+                  except Exception as e:print("VARIANT ERROR",height,type(e).__name__,str(e)[:180],flush=True)
