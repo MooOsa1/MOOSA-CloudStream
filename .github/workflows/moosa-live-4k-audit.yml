@@ -221,6 +221,18 @@ jobs:
                       if short and ("download" in short.lower() or "server" in short.lower() or "direct" in short.lower()):
                           print("FILEPAGE ANCHOR",repr(short),"host",x.hostname or "relative","path suffix",x.path[-15:],flush=True)
                   print("FILEPAGE HOST COUNTS",dict(hoststats),flush=True)
+                  filest=filehtml.decode("utf8","replace")
+                  tt=re.search(r'<title[^>]*>(.*?)</title>',filest,re.S|re.I)
+                  print("FILEPAGE", "html bytes",len(filest),
+                        "title", (" ".join(tt.group(1).split())[:85] if tt else ""),
+                        "cloudflare",filest.lower().count("cloudflare"),
+                        "download",filest.lower().count("download"),
+                        "gdrive",filest.lower().count("gdrive"),
+                        "gamerx",filest.lower().count("gamerx"),
+                        "javascript",filest.lower().count("javascript"),
+                        "anchor",filest.lower().count("<a "),flush=True)
+                  print("FILEPAGE FIRST NONLINK TEXT",
+                        " ".join(re.sub(r'<[^>]*>',' ',filest[:4000]).split())[:370],flush=True)
                   for direct in media[:1]:
                       try:
                           code,headers,prefix=get(direct,ref=filepage,by=131072)
