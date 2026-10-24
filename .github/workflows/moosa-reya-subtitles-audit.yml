@@ -1,0 +1,71 @@
+name: MOOSA Reya subtitles diagnostic (no release)
+on:
+  push:
+    branches: [audit/moosa-live-4k-20261024]
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Inspect native subtitle metadata and media alignment for two episodes
+        shell: python
+        run: |
+          import urllib.request, urllib.parse, urllib.error, json, re
+          UA={"User-Agent":"Mozilla/5.0 (Linux; Android 7.1.2) AppleWebKit/537.36 Chrome/123 Safari/537.36","Accept":"*/*"}
+          def get(u, n=180000):
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(u,headers=UA),timeout=13) as r:
+                      return r.status,r.headers.get("content-type",""),r.read(n)
+              except urllib.error.HTTPError as e: return e.code,e.headers.get("content-type",""),e.read(800)
+              except Exception as e:return 0,type(e).__name__,str(e).encode()[:140]
+          for ep in [3,5]:
+              endpoint=f"https://vidnst.reyamika.eu.cc/api/stream?tmdbId=60059&type=tv&season=2&episode={ep}"
+              status,mime,data=get(endpoint)
+              try:doc=json.loads(data)
+              except:doc={}
+              print("EPISODE",ep,"status",status,"keys",list(doc.keys()) if isinstance(doc,dict) else [],"identity",{k:doc.get(k) for k in ("tmdbId","season","episode")} if isinstance(doc,dict) else "invalid")
+              if not isinstance(doc,dict):continue
+              subs=doc.get("subtitles")
+              print("SUBTITLES TYPE",type(subs).__name__,"COUNT",len(subs) if isinstance(subs,(dict,list)) else 0,flush=True)
+              if isinstance(subs,dict):print("SUBTITLE KEYS",list(subs.keys())[:30],flush=True)
+              if isinstance(subs,list):
+                  from collections import Counter
+                  print("LANGUAGES",dict(Counter(str(s.get("lang",s.get("language","unknown"))) for s in subs if isinstance(s,dict))),flush=True)
+                  for i,s in enumerate(subs[:12]):
+                      if not isinstance(s,dict):continue
+                      u=s.get("url",s.get("file",s.get("src","")))
+                      host=urllib.parse.urlparse(str(u)).hostname
+                      print("SUB",i,"fields",list(s.keys()),"lang",str(s.get("lang",s.get("language",""))),
+                           "name",str(s.get("label",s.get("name",s.get("title",""))))[:75],
+                           "ext",urllib.parse.urlparse(str(u)).path[-15:],
+                           "host",host,flush=True)
+                  for i,s in enumerate(subs[:3]):
+                      if not isinstance(s,dict):continue
+                      u=s.get("url",s.get("file",s.get("src","")))
+                      if not isinstance(u,str) or not u.startswith("https://"):continue
+                      st,ct,body=get(u,12000)
+                      sample=body.decode("utf8","replace")
+                      matches=re.findall(r'(\d\d:\d\d:\d\d[,.]\d\d\d)\s*-->\s*(\d\d:\d\d:\d\d[,.]\d\d\d)',sample)
+                      print("SAMPLE",i,"status",st,"contentType",ct[:45],"firstCue",matches[:1],"fileMarker",sample[:40].replace("\n"," "),flush=True)
+              streams=doc.get("streams",[])
+              if not isinstance(streams,list):continue
+              for stream in streams:
+                  link=stream.get("url","") if isinstance(stream,dict) else ""
+                  if not isinstance(link,str) or not link.startswith("https://"):continue
+                  st,ct,body=get(link)
+                  master=body.decode("utf8","replace")
+                  if "RESOLUTION=3840x2160" not in master:continue
+                  print("MASTER",ep,"audioMediaTags",len(re.findall(r"#EXT-X-MEDIA:TYPE=AUDIO",master)),
+                        "subMediaTags",len(re.findall(r"#EXT-X-MEDIA:TYPE=SUBTITLES",master)),flush=True)
+                  variants=master.splitlines()
+                  for i,line in enumerate(variants):
+                      if "RESOLUTION=3840x2160" in line and i+1 < len(variants):
+                          url=urllib.parse.urljoin(link,variants[i+1].strip())
+                          st,ct,media=get(url)
+                          data=media.decode("utf8","replace")
+                          print("HLS",ep,"VOD", "#EXT-X-ENDLIST" in data,"DISCONTINUITY",data.count("#EXT-X-DISCONTINUITY"),
+                                "START",re.findall(r"#EXT-X-START:[^\r\n]*",data)[:2],
+                                "PDT",re.findall(r"#EXT-X-PROGRAM-DATE-TIME:[^\r\n]*",data)[:1],
+                                "SEGMENT_COUNT",data.count("#EXTINF:"),flush=True)
+                          break
+                  break
