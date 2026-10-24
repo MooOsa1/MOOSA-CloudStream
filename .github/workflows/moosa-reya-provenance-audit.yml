@@ -1,0 +1,21 @@
+name: Reya subtitle-video provider matching audit
+on:
+  push:
+    branches: [audit/moosa-live-4k-20261024]
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Print non-sensitive source identifiers for native captions and video
+        shell: python
+        run: |
+          import urllib.request,json,collections
+          for ep in [3,5]:
+              url=f"https://vidnst.reyamika.eu.cc/api/stream?tmdbId=60059&type=tv&season=2&episode={ep}"
+              request=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"})
+              with urllib.request.urlopen(request,timeout=14) as response:
+                  obj=json.load(response)
+              print("EPISODE",ep,flush=True)
+              print("VIDEO SOURCES",[(r.get("source"),r.get("server"),r.get("type")) for r in obj.get("streams",[])],flush=True)
+              print("SUBTITLE PROVENANCE",[(r.get("label"),r.get("language"),r.get("source")) for r in obj.get("subtitles",[]) if r.get("label") in ("Arabic","English")],flush=True)
