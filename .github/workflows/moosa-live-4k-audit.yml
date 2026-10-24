@@ -212,14 +212,12 @@ jobs:
                           media.append(html.unescape(u))
                   print("signed media candidates",len(media),flush=True)
                   import collections
-                  allanchors=re.findall(r'<a\\b[^>]*href\\s*=\\s*["\\x27]([^"\\x27]+)["\\x27][^>]*>(.*?)</a>',filehtml.decode("utf8","replace"),re.S|re.I)
+                  allanchors=re.findall('href="([^"]+)"',filehtml.decode("utf8","replace"),re.I) + re.findall("href='([^']+)'",filehtml.decode("utf8","replace"),re.I)
                   hoststats=collections.Counter()
-                  for link,label in allanchors:
+                  for link in allanchors:
                       x=urllib.parse.urlparse(html.unescape(link))
                       hoststats[x.hostname or "relative"]+=1
-                      short=" ".join(html.unescape(re.sub(r'<[^>]+>',' ',label)).split())[:65]
-                      if short and ("download" in short.lower() or "server" in short.lower() or "direct" in short.lower()):
-                          print("FILEPAGE ANCHOR",repr(short),"host",x.hostname or "relative","path suffix",x.path[-15:],flush=True)
+                      if x.hostname: print("FILEPAGE LINK HOST",x.hostname,"extension",x.path[-10:],flush=True)
                   print("FILEPAGE HOST COUNTS",dict(hoststats),flush=True)
                   filest=filehtml.decode("utf8","replace")
                   tt=re.search(r'<title[^>]*>(.*?)</title>',filest,re.S|re.I)
