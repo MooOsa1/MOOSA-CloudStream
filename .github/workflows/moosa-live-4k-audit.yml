@@ -211,6 +211,16 @@ jobs:
                       if host.endswith((".workers.dev",".r2.dev",".cloudflarestorage.com")):
                           media.append(html.unescape(u))
                   print("signed media candidates",len(media),flush=True)
+                  import collections
+                  allanchors=re.findall(r'<a\\b[^>]*href\\s*=\\s*["\\x27]([^"\\x27]+)["\\x27][^>]*>(.*?)</a>',filehtml.decode("utf8","replace"),re.S|re.I)
+                  hoststats=collections.Counter()
+                  for link,label in allanchors:
+                      x=urllib.parse.urlparse(html.unescape(link))
+                      hoststats[x.hostname or "relative"]+=1
+                      short=" ".join(html.unescape(re.sub(r'<[^>]+>',' ',label)).split())[:65]
+                      if short and ("download" in short.lower() or "server" in short.lower() or "direct" in short.lower()):
+                          print("FILEPAGE ANCHOR",repr(short),"host",x.hostname or "relative","path suffix",x.path[-15:],flush=True)
+                  print("FILEPAGE HOST COUNTS",dict(hoststats),flush=True)
                   for direct in media[:1]:
                       try:
                           code,headers,prefix=get(direct,ref=filepage,by=131072)
