@@ -310,7 +310,7 @@ jobs:
                   hub=base64.b64decode(json.loads(msg)["o"]).decode()
                   p=urllib.parse.urlparse(hub)
                   print("hubdrive URL host",p.hostname,"path prefix",p.path[:20],flush=True)
-                  if p.hostname not in ("hubdrive.ist","hubcloud.ist"):continue
+                  if p.hostname not in ("hubdrive.ist","hubdrive.bar","hubcloud.ist"):continue
                   st,final,body=fetch(hub)
                   print("hubdrive response",st,"final host",urllib.parse.urlparse(final).hostname,
                         "var-url",bool(re.search(r'var\s+url\s*=',body)),
