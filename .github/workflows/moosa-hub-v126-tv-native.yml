@@ -1,4 +1,4 @@
-name: MOOSA Hub v153 verified standalone 4K TV episodes
+name: MOOSA Hub v154 guarded adaptive UHD playback
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==153,versions
+          assert versions['MOOSAHub']==154,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -257,5 +257,12 @@ jobs:
           assert 'currentEpisode' in netpolicy and 'currentSeason' in netpolicy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANetMirrorPolicyTest.kt').exists()
           assert 'explicitlyAudioOnly(body)' in servers
-          print('PASS: v153: standalone TV 4K MKV selection, strict S/E and ZIP rejection')
+          reya=(root/'MOOSAReyaProvider.kt').read_text()
+          reya_policy=(root/'MOOSAReyaPolicy.kt').read_text()
+          assert 'safeAdaptiveMaster(' in reya and 'adaptive: Boolean' in reya
+          assert 'fun safeAdaptiveMaster(' in reya_policy
+          assert 'adaptive4kMasterRequiresFullyVerifiedSingleAudioLadder' in (
+              Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAReyaPolicyTest.kt'
+          ).read_text()
+          print('PASS: v154: guarded 4K ABR master, fixed UHD retained, original audio protected')
           PY
