@@ -19,8 +19,9 @@ import org.json.JSONObject
 /**
  * On-device, exact-TMDB-id Reya streams. The live source's BCS S02E03
  * fMP4 initialization measured 3840x2160 AVC video and a muxed audio track.
- * A 2160p AVC Level 5.1 source may not decode on 2018 Fire TV 4K; label it
- * EXPERIMENTAL and always seek FHD backup rather than claiming compatibility.
+ * The 2018 Fire TV 4K hardware supports AVC up to 2160p60 / 20 Mbps; CDN
+ * throughput remains unproven by a first-fragment probe. Preserve a fixed 4K
+ * link and offer an ABR master only if every rendition and soundtrack is safe.
  */
 internal class MOOSAReyaProvider : MainAPI() {
     override var name = MOOSAReyaPolicy.NAME
@@ -35,7 +36,8 @@ internal class MOOSAReyaProvider : MainAPI() {
     private data class Link(val url: String, val height: Int, val codec: String,
                             val source: String, val headers: Map<String, String>,
                             val audioLanguages: Set<String>?, val videoSeconds: Double?,
-                            val timelineVerified: Boolean = false)
+                            val timelineVerified: Boolean = false,
+                            val adaptive: Boolean = false)
 
     override suspend fun loadLinks(
         data: String, isCasting: Boolean,
@@ -138,7 +140,9 @@ internal class MOOSAReyaProvider : MainAPI() {
                     link.copy(timelineVerified = durationMatched)
                 }
             }
-        }.orEmpty().distinctBy { it.url }.sortedByDescending { it.height }
+        }.orEmpty().distinctBy { it.url }.sortedWith(
+            compareByDescending<Link> { it.height }.thenByDescending { it.adaptive }
+        )
 
         // A matching episode ID and similar total duration are NOT proof of
         // cue-to-audio synchronization. Offer only readable native tracks
@@ -158,10 +162,11 @@ internal class MOOSAReyaProvider : MainAPI() {
         }
 
         found.forEach { link ->
-            val qualityName = if (link.height == 2160) "4K" else
+            val qualityName = if (link.adaptive) "4K Auto (1080p fallback)"
+                else if (link.height == 2160) "4K" else
                 link.height.toString() + "p"
-            val warning = if (link.height == 2160 && link.codec == "AVC")
-                " • AVC (experimental on Fire TV 2018)" else ""
+            val warning = if (link.height == 2160 && !link.adaptive)
+                " • fixed quality (no auto fallback)" else ""
             val audio = " • " + MOOSAAudioTrackPolicy.display(link.audioLanguages)
             val timelineTag = if (link.timelineVerified)
                 " • caption duration matched (sync unverified)"
@@ -184,7 +189,7 @@ internal class MOOSAReyaProvider : MainAPI() {
             name,
             if (found.isEmpty()) "No validated HLS video + original audio"
             else "Validated fMP4 video; matched caption duration where available: " + found.size +
-                " (4K AVC may be device limited)"
+                " (adaptive only for fully verified masters)"
         )
         return found.isNotEmpty()
     }
@@ -202,7 +207,7 @@ internal class MOOSAReyaProvider : MainAPI() {
             .filter { it.height >= 720 }
         if (variations.isEmpty()) return emptyList()
         return coroutineScope {
-            MOOSAReyaPolicy.verificationLanes(variations).map { lane ->
+            val verified = MOOSAReyaPolicy.verificationLanes(variations).map { lane ->
                 async {
                     // An unreachable 2160p CDN must not burn the entire
                     // source budget before the independent FHD fallback.
@@ -213,6 +218,22 @@ internal class MOOSAReyaProvider : MainAPI() {
                     }
                 }
             }.awaitAll().filterNotNull()
+            // Passing a fixed 2160p media playlist to ExoPlayer disables ABR.
+            // Never substitute the master unless its entire bitrate ladder,
+            // audio identity and runtime are verified. Keep direct links too.
+            val adaptive = if (MOOSAReyaPolicy.safeAdaptiveMaster(
+                    manifest,
+                    variations,
+                    verified.map { it.url }.toSet(),
+                    verified.map { it.audioLanguages },
+                    verified.map { it.videoSeconds },
+                    originalLanguage
+                )) {
+                verified.firstOrNull { it.height == 2160 }?.copy(
+                    url = source.url, adaptive = true
+                )
+            } else null
+            listOfNotNull(adaptive) + verified
         }
     }
 
