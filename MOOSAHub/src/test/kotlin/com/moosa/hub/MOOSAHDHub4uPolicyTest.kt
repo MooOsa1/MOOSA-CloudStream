@@ -90,6 +90,12 @@ class MOOSAHDHub4uPolicyTest {
     @Test fun onlyAllowlistedFileAndEpisodeGateways() {
         assertEquals("https://hubdrive.bar/file/1713898804",
             MOOSAHDHub4uPolicy.safeHubDrive("https://hubdrive.bar/file/1713898804"))
+        assertEquals("https://hubcloud.ist/drive/s7tns2un11112dm",
+            MOOSAHDHub4uPolicy.safeHubCloudDirect("https://hubcloud.ist/drive/s7tns2un11112dm"))
+        assertNull(MOOSAHDHub4uPolicy.safeHubCloudDirect("http://hubcloud.ist/drive/s7tns2un11112dm"))
+        assertNull(MOOSAHDHub4uPolicy.safeHubCloudDirect("https://hubcloud.ist.evil.tld/drive/s7tns2un11112dm"))
+        assertNull(MOOSAHDHub4uPolicy.safeHubCloudDirect("https://hubcloud.ist/drive/s7tns2un11112dm?next=x"))
+        assertNull(MOOSAHDHub4uPolicy.safeHubCloudDirect("https://hubcloud.ist/drive/../../admin"))
         assertEquals("https://hblinks.lol/archives/73611",
             MOOSAHDHub4uPolicy.safeArchive("https://hblinks.lol/archives/73611"))
         assertNull(MOOSAHDHub4uPolicy.safeArchive("https://hblinks.lol/archives/73611?next=evil"))

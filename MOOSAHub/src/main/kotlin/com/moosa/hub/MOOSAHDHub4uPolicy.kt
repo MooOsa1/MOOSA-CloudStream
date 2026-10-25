@@ -129,4 +129,14 @@ internal object MOOSAHDHub4uPolicy {
         ) return null
         return parsed.toASCIIString()
     }
+
+    /** Newer movie posts link straight to HubCloud, skipping HubDrive. */
+    fun safeHubCloudDirect(raw: String): String? {
+        val parsed = uri(raw) ?: return null
+        if (parsed.host.lowercase(Locale.ROOT) != "hubcloud.ist" ||
+            parsed.rawQuery != null ||
+            !Regex("""/drive/[A-Za-z0-9_-]{5,50}/?""").matches(parsed.path)
+        ) return null
+        return parsed.toASCIIString()
+    }
 }
