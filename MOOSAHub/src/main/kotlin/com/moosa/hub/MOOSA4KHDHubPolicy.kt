@@ -50,6 +50,13 @@ internal object MOOSA4KHDHubPolicy {
     fun isUhdRelease(title: String): Boolean =
         Regex("""(?i)(?:\b2160p\b|\b4k\s+uhd\b)""").containsMatchIn(title)
 
+    /** Real container dimensions, including a correctly cropped 2.39:1 UHD. */
+    fun actualQuality(width: Int, height: Int): Int? = when {
+        width >= 3800 && height >= 1500 -> 2160
+        width >= 1700 && height >= 800 -> 1080
+        else -> null
+    }
+
     /** Fire TV Stick 4K (mantis) cannot decode AV1 or some Dolby Vision profiles. */
     fun isCompatibleRelease(title: String): Boolean =
         !Regex("""(?i)(?:\bav1\b|\bav01\b|\bdovi\b|\bdv\b|\bdolby[ ._-]*vision\b)""")

@@ -1,4 +1,4 @@
-name: MOOSA Hub v151 original audio and Reya independent UHD/FHD verification
+name: MOOSA Hub v152 verified MoviesDrive UHD plus cinematic 4K crops
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==151,versions
+          assert versions['MOOSAHub']==152,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -120,7 +120,7 @@ jobs:
           assert 'MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(' in hub
           native=(root/'MOOSACineStreamVaPlayerProvider.kt').read_text()
           tester=(root/'MOOSASourceTester.kt').read_text()
-          assert 'listOf(native4KHDHub, nativeVixSrc, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
+          assert 'listOf(native4KHDHub, nativeMoviesDrive, nativeVixSrc, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
           media=(root/'MOOSAHlsMediaQuality.kt').read_text()
           servers=(root/'MOOSAServerRegistry.kt').read_text()
           assert 'h264HeightFromTs(bytes: ByteArray)' in media
@@ -173,6 +173,17 @@ jobs:
           uhd_policy=(root/'MOOSA4KHDHubPolicy.kt').read_text()
           hub=(root/'MOOSAHubProvider.kt').read_text()
           assert 'MOOSA4KHDHubProvider()' in hub
+          assert 'MOOSAMoviesDriveProvider()' in hub
+          assert 'api is MOOSAMoviesDriveProvider' in hub
+          drive_provider=(root/'MOOSAMoviesDriveProvider.kt').read_text()
+          drive_policy=(root/'MOOSAMoviesDrivePolicy.kt').read_text()
+          assert 'MOOSAMoviesDrivePolicy.imdbId(' in drive_provider
+          assert 'MOOSAMoviesDrivePolicy.pixeldrainApi(' in drive_provider
+          assert 'MOOSA4KHDHubPolicy.compatibleVideo(' in drive_provider
+          assert 'MOOSAAudioTrackPolicy.accept(' in drive_provider
+          assert 'response.code != 206' in drive_provider
+          assert 'width >= 3800 && height >= 1500' in (root/'MOOSA4KHDHubPolicy.kt').read_text()
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAMoviesDrivePolicyTest.kt').exists()
           assert 'MOOSAOpenDirectoryProvider()' in hub
           assert 'MOOSAReyaProvider()' in hub
           assert 'api is MOOSAReyaProvider' in hub
@@ -242,5 +253,5 @@ jobs:
           assert 'currentEpisode' in netpolicy and 'currentSeason' in netpolicy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANetMirrorPolicyTest.kt').exists()
           assert 'explicitlyAudioOnly(body)' in servers
-          print('PASS: v151: preserve unlabelled audio and verify Reya video/captions independently')
+          print('PASS: v152: genuine MoviesDrive 4K, original audio and cropped UHD acceptance')
           PY

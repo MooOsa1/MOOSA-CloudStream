@@ -282,12 +282,10 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         val videoTrack = MOOSA4KHDHubPolicy.compatibleVideo(bytes.copyOf(count))
             ?: return null
         val dimensions = videoTrack.width to videoTrack.height
-        // Cinematic UHD files can be vertically cropped (3840x1600+).
-        val verifiedQuality = when {
-            dimensions.first >= 3800 && dimensions.second >= 1600 -> 2160
-            dimensions.first >= 1700 && dimensions.second >= 800 -> 1080
-            else -> return null
-        }
+        // Cinematic UHD tracks commonly measure 3840x1598 or 3840x1600.
+        val verifiedQuality = MOOSA4KHDHubPolicy.actualQuality(
+            dimensions.first, dimensions.second
+        ) ?: return null
         if (verifiedQuality < requiredQuality) return null
         val audioLanguages = MOOSA4KHDHubPolicy.audioLanguages(bytes.copyOf(count))
         if (!MOOSAAudioTrackPolicy.accept(originalLanguage, audioLanguages)) return null
