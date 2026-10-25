@@ -238,7 +238,6 @@ internal object MOOSAReyaPolicy {
         if (width == 0 || height == 0 || !audio) return null
         // An "und"/unknown language never proves Korean is present.
         val detected = MOOSANetMirrorPolicy.audioLanguages(prefix)
-            ?.mapNotNull(MOOSAAudioTrackPolicy::normalize)?.toSet()
             ?.takeIf { it.isNotEmpty() }
         return InitVideo(width, height, codec, true, detected)
     }

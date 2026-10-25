@@ -55,8 +55,12 @@ internal object MOOSAAudioTrackPolicy {
     fun display(languages: Set<String>?): String = when {
         languages == null -> "audio unknown"
         languages.isEmpty() -> "no audio track"
-        else -> "audio " + languages.mapNotNull(::normalize)
-            .distinct().sorted().joinToString("/")
+        else -> {
+            val labeled = languages.mapNotNull(::normalize).distinct().sorted()
+            val labels = labeled + if (languages.any { normalize(it) == null })
+                listOf("unknown") else emptyList()
+            "audio " + labels.joinToString("/")
+        }
     }
 
     fun isMultiAudio(languages: Set<String>?): Boolean =

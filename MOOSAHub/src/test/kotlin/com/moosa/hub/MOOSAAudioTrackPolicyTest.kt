@@ -26,6 +26,7 @@ class MOOSAAudioTrackPolicyTest {
         // A confirmed Hindi-only file must still not masquerade as Korean.
         assertFalse(MOOSAAudioTrackPolicy.accept("ko", setOf("hin")))
         assertFalse(MOOSAAudioTrackPolicy.accept("ja", setOf("hin", "eng")))
+        assertEquals("audio unknown", MOOSAAudioTrackPolicy.display(setOf("und")))
     }
 
     @Test fun knownDubMismatchRejectsEnglishFilmToo() {

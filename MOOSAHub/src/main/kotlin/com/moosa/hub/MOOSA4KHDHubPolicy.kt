@@ -252,7 +252,7 @@ internal object MOOSA4KHDHubPolicy {
                 .firstOrNull()?.let { unsigned(prefix, it) } == 2
         }
         if (audioTracks.isEmpty()) return emptySet()
-        val declared = audioTracks.mapNotNull { entry ->
+        val declared = audioTracks.map { entry ->
             val ietf = findElements(prefix, entry.data, entry.end, 0x22B59DL)
                 .firstOrNull()
             val legacy = findElements(prefix, entry.data, entry.end, 0x22B59CL)
@@ -261,9 +261,9 @@ internal object MOOSA4KHDHubPolicy {
                 MOOSAAudioTrackPolicy.normalize(
                     String(prefix, field.data, field.end - field.data, Charsets.UTF_8)
                 )
-            }
+            } ?: "und"
         }.toSet()
-        return declared.takeIf { it.isNotEmpty() }
+        return declared
     }
 
     /** Convenience accessor for tests and real encoded resolution labels. */
