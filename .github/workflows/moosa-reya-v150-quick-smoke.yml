@@ -1,0 +1,49 @@
+name: MOOSA v150 live Reya 4K and subtitle smoke (no release)
+on:
+  push:
+    branches: [audit/moosa-live-4k-20261024]
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check S02E03 and S02E05 actual Reya provider and timelines
+        shell: python
+        run: |
+          import json,re,urllib.request,urllib.parse,urllib.error,collections
+          H={"User-Agent":"Mozilla/5.0 (Linux; Android 7.1.2) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36","Accept":"*/*"}
+          def read(url,size=350000):
+              req=urllib.request.Request(url,headers=H)
+              with urllib.request.urlopen(req,timeout=12) as r:
+                  return r.status,r.read(size)
+          for ep in [3,5]:
+              try:
+                  code,raw=read("https://vidnst.reyamika.eu.cc/api/stream?tmdbId=60059&type=tv&season=2&episode="+str(ep))
+                  result=json.loads(raw)
+                  matches=(result.get("tmdbId")==60059 and result.get("season")==2 and result.get("episode")==ep)
+                  print("EP",ep,"API",code,"IDENTITY",matches,"STREAMS",len(result.get("streams",[])),flush=True)
+                  native=[x for x in result.get("subtitles",[]) if x.get("label") in ("Arabic","English")]
+                  print("EP",ep,"SUBS",[(x.get("label"),x.get("source")) for x in native[:5]],flush=True)
+                  for src in result.get("streams",[])[:3]:
+                      label=src.get("source","?"); server=src.get("server","?")
+                      try:
+                          _,body=read(src["url"],200000)
+                          lines=body.decode("utf8","replace").splitlines()
+                          found=[]
+                          for i,l in enumerate(lines[:-1]):
+                              if not l.startswith("#EXT-X-STREAM-INF:"):continue
+                              m=re.search(r'RESOLUTION=(\\d+)x(\\d+)',l)
+                              if m:found.append((int(m.group(2)),urllib.parse.urljoin(src["url"],lines[i+1].strip())))
+                          found.sort(reverse=True)
+                          print("EP",ep,"SOURCE",label,server,"VARIANTS",[height for height,_ in found],flush=True)
+                          for height,url in found:
+                              if height not in (2160,1080):continue
+                              try:
+                                  _,mediaRaw=read(url,350000)
+                                  media=mediaRaw.decode("utf8","replace")
+                                  seconds=sum(float(x) for x in re.findall(r'(?m)^#EXTINF:([0-9.]+)',media))
+                                  print("EP",ep,"SOURCE",label,server,"QUALITY",height,"SECONDS",round(seconds,2),"ENDLIST","#EXT-X-ENDLIST" in media,"MAP","#EXT-X-MAP" in media,flush=True)
+                                  break
+                              except Exception as e:print("MEDIA ERROR",ep,server,height,type(e).__name__,str(e)[:90],flush=True)
+                      except Exception as e: print("STREAM ERROR",ep,label,type(e).__name__,str(e)[:90],flush=True)
+              except Exception as e: print("EP ERROR",ep,type(e).__name__,str(e)[:130],flush=True)
