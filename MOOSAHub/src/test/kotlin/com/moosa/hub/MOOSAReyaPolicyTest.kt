@@ -44,6 +44,20 @@ sd/index.m3u8
         assertNull(MOOSAReyaPolicy.safeMedia("//evil.com/a", masterUrl))
     }
 
+    @Test fun slow4kAnd1080ChecksHaveIndependentFallbackLanes() {
+        val variants = listOf(
+            MOOSAReyaPolicy.Variant("https://example.test/4ka", 3840, 2160),
+            MOOSAReyaPolicy.Variant("https://example.test/4kb", 3840, 2160),
+            MOOSAReyaPolicy.Variant("https://example.test/hd", 1920, 1080),
+            MOOSAReyaPolicy.Variant("https://example.test/720", 1280, 720)
+        )
+        assertEquals(listOf(listOf(2160, 2160), listOf(1080, 720)),
+            MOOSAReyaPolicy.verificationLanes(variants).map { lane ->
+                lane.map { it.height }
+            })
+        assertEquals(1, MOOSAReyaPolicy.verificationLanes(variants.take(2)).size)
+    }
+
     @Test fun nativeVttForExactEpisodeAndLanguagesOnly() {
         val payload = JSONObject("""{
             "subtitles": [
@@ -82,6 +96,22 @@ sd/index.m3u8
         assertTrue(MOOSAReyaPolicy.runtimeCompatible(null, lastCue))
         assertTrue(MOOSAReyaPolicy.runtimeCompatible(null, null))
         assertTrue(MOOSAReyaPolicy.runtimeCompatible(2526.98, 2499.831))
+    }
+
+    @Test fun differentArabicAndEnglishSubtitleCutsAreCheckedIndependently() {
+        // BCS S02E05: a 35-minute video is not the ~46-minute subtitle cut.
+        assertTrue(MOOSAReyaPolicy.provenWrongCut(
+            2136.134, listOf(2759.668, 2799.424)
+        ))
+        // English can match while a different Arabic edition cannot.
+        assertTrue(MOOSAReyaPolicy.subtitleCutMatches(2765.0, 2759.668))
+        assertFalse(MOOSAReyaPolicy.subtitleCutMatches(2765.0, 2136.134))
+        // An offline subtitle CDN must not make the 4K video disappear.
+        assertFalse(MOOSAReyaPolicy.provenWrongCut(2136.134, emptyList()))
+        // An incomplete/live playlist supplies no authoritative duration:
+        // preserve the video but never claim a synchronized native subtitle.
+        assertFalse(MOOSAReyaPolicy.provenWrongCut(null, listOf(2799.424)))
+        assertFalse(MOOSAReyaPolicy.subtitleCutMatches(null, 2799.424))
     }
 
     @Test fun regressionPreserves4KWhenTimelineMetadataIsUnavailable() {

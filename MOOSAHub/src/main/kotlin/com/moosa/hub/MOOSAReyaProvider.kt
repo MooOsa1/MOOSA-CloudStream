@@ -34,7 +34,8 @@ internal class MOOSAReyaProvider : MainAPI() {
                               val headers: Map<String, String>)
     private data class Link(val url: String, val height: Int, val codec: String,
                             val source: String, val headers: Map<String, String>,
-                            val audioLanguages: Set<String>?, val timelineVerified: Boolean)
+                            val audioLanguages: Set<String>?, val videoSeconds: Double?,
+                            val timelineVerified: Boolean = false)
 
     override suspend fun loadLinks(
         data: String, isCasting: Boolean,
@@ -50,8 +51,7 @@ internal class MOOSAReyaProvider : MainAPI() {
         ) ?: return false
 
         var sourceSubtitles = emptyList<MOOSAReyaPolicy.Subtitle>()
-        var lastCaptionCueSeconds: Double? = null
-        var referenceCaptionSource: String? = null
+        var readableNativeCaptions = emptyList<Pair<MOOSAReyaPolicy.Subtitle, Double>>()
         val found = withTimeoutOrNull(21_000L) {
             val response = runCatching {
                 app.get(endpoint, headers = DEFAULT_HEADERS)
@@ -65,21 +65,6 @@ internal class MOOSAReyaProvider : MainAPI() {
             sourceSubtitles = MOOSAReyaPolicy.subtitles(
                 json, request.isTv, request.season, request.episode
             )
-            // One bounded text request per episode, BEFORE parallel video
-            // checks. A missing/broken VTT cannot be used as timing evidence.
-            val reference = sourceSubtitles.firstOrNull { it.language == "English" }
-                ?: sourceSubtitles.firstOrNull { it.language == "Arabic" }
-            if (reference != null) {
-                referenceCaptionSource = reference.source
-                lastCaptionCueSeconds = withTimeoutOrNull(2_800L) {
-                    runCatching {
-                        val vtt = app.get(reference.url, headers = DEFAULT_HEADERS)
-                        if (vtt.isSuccessful) {
-                            MOOSAReyaPolicy.finalCueSeconds(vtt.text.take(160_000))
-                        } else null
-                    }.getOrNull()
-                }
-            }
             val items = json.optJSONArray("streams")
                 ?: return@withTimeoutOrNull emptyList<Link>()
             val sources = (0 until items.length()).mapNotNull { index ->
@@ -102,37 +87,71 @@ internal class MOOSAReyaProvider : MainAPI() {
                     it.label.contains("vidnest", true)) 0 else 1
             }.take(4)
             coroutineScope {
+                // A subtitle URL may be stale, and the Arabic cut can differ
+                // from the English one. Probe each track independently while
+                // video verification proceeds; caption latency must not hide
+                // an otherwise playable 4K/FHD source.
+                val captionsJob = async {
+                    val subtitleGate = Semaphore(3)
+                    sourceSubtitles.map { subtitle ->
+                        async {
+                            subtitleGate.withPermit {
+                                withTimeoutOrNull(2_800L) {
+                                    runCatching {
+                                        val reply = app.get(
+                                            subtitle.url, headers = DEFAULT_HEADERS
+                                        )
+                                        if (!reply.isSuccessful) null else {
+                                            MOOSAReyaPolicy.finalCueSeconds(
+                                                reply.text.take(160_000)
+                                            )?.let { subtitle to it }
+                                        }
+                                    }.getOrNull()
+                                }
+                            }
+                        }
+                    }.awaitAll().filterNotNull()
+                }
                 val gate = Semaphore(3)
-                sources.map { source ->
+                val checked = sources.map { source ->
                     async {
                         gate.withPermit {
                             withTimeoutOrNull(12_000L) {
-                                checkSource(
-                                    source, request.originalLanguage,
-                                    lastCaptionCueSeconds.takeIf {
-                                        source.label.equals(referenceCaptionSource, true)
-                                    }
-                                )
+                                checkSource(source, request.originalLanguage)
                             }.orEmpty()
                         }
                     }
                 }.awaitAll().flatten()
+                readableNativeCaptions = captionsJob.await()
+                checked.mapNotNull { link ->
+                    val sameSource = readableNativeCaptions.filter { (subtitle, _) ->
+                        subtitle.source.equals(link.source, true)
+                    }
+                    // Reject a demonstrably wrong episode cut, not a source
+                    // whose caption server is down or lacks timing metadata.
+                    if (MOOSAReyaPolicy.provenWrongCut(
+                            link.videoSeconds, sameSource.map { it.second }
+                        )) return@mapNotNull null
+                    val durationMatched = sameSource.any { (_, cue) ->
+                        MOOSAReyaPolicy.subtitleCutMatches(link.videoSeconds, cue)
+                    }
+                    link.copy(timelineVerified = durationMatched)
+                }
             }
         }.orEmpty().distinctBy { it.url }.sortedByDescending { it.height }
 
-        // Native source-specific WebVTT, aligned to this exact episode's
-        // Reya/VidNest release. Offer these before generic subtitle indexes.
-        // Never emit captions if no matching playable video source exists.
-        if (found.isNotEmpty() && lastCaptionCueSeconds != null) {
-            // The API merges providers. Only offer a native caption when its
-            // source actually matches a verified, runtime-compatible video.
-            sourceSubtitles.filter { sub ->
+        // A matching episode ID and similar total duration are NOT proof of
+        // cue-to-audio synchronization. Offer only readable native tracks
+        // individually compatible with their own actual video source/cut.
+        if (found.isNotEmpty()) {
+            readableNativeCaptions.filter { (sub, cue) ->
                 found.any { link ->
-                    link.timelineVerified && sub.source.equals(link.source, true)
+                    link.timelineVerified && sub.source.equals(link.source, true) &&
+                        MOOSAReyaPolicy.subtitleCutMatches(link.videoSeconds, cue)
                 }
-            }.forEach { candidate ->
+            }.forEach { (candidate, _) ->
                 subtitleCallback(SubtitleFile(
-                    candidate.language + " • Reya native",
+                    candidate.language + " • Reya native (sync not verified)",
                     candidate.url
                 ))
             }
@@ -144,8 +163,9 @@ internal class MOOSAReyaProvider : MainAPI() {
             val warning = if (link.height == 2160 && link.codec == "AVC")
                 " • AVC (experimental on Fire TV 2018)" else ""
             val audio = " • " + MOOSAAudioTrackPolicy.display(link.audioLanguages)
-            val timelineTag = if (link.timelineVerified) "" else
-                " • subtitle timing unverified"
+            val timelineTag = if (link.timelineVerified)
+                " • caption duration matched (sync unverified)"
+                else " • caption timing unavailable"
             callback(
                 newExtractorLink(
                     name,
@@ -163,14 +183,14 @@ internal class MOOSAReyaProvider : MainAPI() {
         MOOSANativeSourceDiagnostics.mark(
             name,
             if (found.isEmpty()) "No validated HLS video + original audio"
-            else "Validated fMP4 + compatible episode runtime: " + found.size +
+            else "Validated fMP4 video; matched caption duration where available: " + found.size +
                 " (4K AVC may be device limited)"
         )
         return found.isNotEmpty()
     }
 
     private suspend fun checkSource(
-        source: Source, originalLanguage: String?, subtitleLastCue: Double?
+        source: Source, originalLanguage: String?
     ): List<Link> {
         val masterResponse = runCatching {
             app.get(source.url, headers = source.headers)
@@ -181,69 +201,70 @@ internal class MOOSAReyaProvider : MainAPI() {
         val variations = MOOSAReyaPolicy.variants(source.url, manifest)
             .filter { it.height >= 720 }
         if (variations.isEmpty()) return emptyList()
-        val chosen = mutableListOf<Link>()
-        var foundUhd = false
-        var foundFhd = false
-        for (variant in variations) {
-            if (variant.height >= 2160 && foundUhd) continue
-            if (variant.height < 2160 && foundFhd) continue
-            val response = runCatching {
-                app.get(variant.url, headers = source.headers)
-            }.getOrNull() ?: continue
-            if (!response.isSuccessful) continue
-            // Distinguish PROVEN missing video (reject) from MISSING
-            // timeline metadata (keep the video, with no synced captions).
-            val videoSeconds = MOOSAReyaPolicy.playlistSeconds(response.text)
-            if (!MOOSAReyaPolicy.runtimeCompatible(
-                    videoSeconds, subtitleLastCue
-                )) continue
-            val aligned = subtitleLastCue != null && videoSeconds != null
-            val stream = MOOSAReyaPolicy.media(variant.url, response.text) ?: continue
-            val initResponse = runCatching {
-                app.get(stream.init, headers = source.headers)
-            }.getOrNull() ?: continue
-            if (!initResponse.isSuccessful) continue
-            val init = ByteArray(65536)
-            val initSize = initResponse.body.byteStream().use { input ->
-                var total = 0
-                while (total < init.size) {
-                    val n = input.read(init, total, init.size - total)
-                    if (n <= 0) break
-                    total += n
+        return coroutineScope {
+            MOOSAReyaPolicy.verificationLanes(variations).map { lane ->
+                async {
+                    // An unreachable 2160p CDN must not burn the entire
+                    // source budget before the independent FHD fallback.
+                    withTimeoutOrNull(9_000L) {
+                        lane.firstNotNullOfOrNull { variant ->
+                            verifyVariant(source, variant, originalLanguage)
+                        }
+                    }
                 }
-                total
-            }
-            val track = MOOSAReyaPolicy.inspectInit(init.copyOf(initSize)) ?: continue
-            if (track.width != variant.width || track.height != variant.height ||
-                !MOOSAAudioTrackPolicy.accept(originalLanguage, track.audioLanguages))
-                continue
-
-            val firstSegment = runCatching {
-                app.get(
-                    stream.segment,
-                    headers = source.headers + ("Range" to "bytes=0-32767")
-                )
-            }.getOrNull() ?: continue
-            if (!firstSegment.isSuccessful) continue
-            val prefix = ByteArray(32768)
-            val read = firstSegment.body.byteStream().use { input ->
-                var total = 0
-                while (total < prefix.size) {
-                    val n = input.read(prefix, total, prefix.size - total)
-                    if (n <= 0) break
-                    total += n
-                }
-                total
-            }
-            if (!MOOSAReyaPolicy.isFmp4Fragment(prefix.copyOf(read))) continue
-            chosen += Link(variant.url, variant.height, track.codec,
-                source.label, source.headers, track.audioLanguages, aligned)
-            if (variant.height >= 2160) foundUhd = true
-            else foundFhd = true
-            // One independently verified UHD and one HD safety fallback.
-            if (chosen.size >= 2) break
+            }.awaitAll().filterNotNull()
         }
-        return chosen
+    }
+
+    private suspend fun verifyVariant(
+        source: Source, variant: MOOSAReyaPolicy.Variant,
+        originalLanguage: String?
+    ): Link? {
+        val response = runCatching {
+            app.get(variant.url, headers = source.headers)
+        }.getOrNull() ?: return null
+        if (!response.isSuccessful) return null
+        val videoSeconds = MOOSAReyaPolicy.playlistSeconds(response.text)
+        val stream = MOOSAReyaPolicy.media(variant.url, response.text) ?: return null
+        val initResponse = runCatching {
+            app.get(stream.init, headers = source.headers)
+        }.getOrNull() ?: return null
+        if (!initResponse.isSuccessful) return null
+        val init = ByteArray(65536)
+        val initSize = initResponse.body.byteStream().use { input ->
+            var total = 0
+            while (total < init.size) {
+                val n = input.read(init, total, init.size - total)
+                if (n <= 0) break
+                total += n
+            }
+            total
+        }
+        val track = MOOSAReyaPolicy.inspectInit(init.copyOf(initSize)) ?: return null
+        if (track.width != variant.width || track.height != variant.height ||
+            !MOOSAAudioTrackPolicy.accept(originalLanguage, track.audioLanguages))
+            return null
+
+        val firstSegment = runCatching {
+            app.get(
+                stream.segment,
+                headers = source.headers + ("Range" to "bytes=0-32767")
+            )
+        }.getOrNull() ?: return null
+        if (!firstSegment.isSuccessful) return null
+        val prefix = ByteArray(32768)
+        val read = firstSegment.body.byteStream().use { input ->
+            var total = 0
+            while (total < prefix.size) {
+                val n = input.read(prefix, total, prefix.size - total)
+                if (n <= 0) break
+                total += n
+            }
+            total
+        }
+        if (!MOOSAReyaPolicy.isFmp4Fragment(prefix.copyOf(read))) return null
+        return Link(variant.url, variant.height, track.codec,
+            source.label, source.headers, track.audioLanguages, videoSeconds)
     }
 
     private companion object {

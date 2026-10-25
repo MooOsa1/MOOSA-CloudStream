@@ -138,6 +138,16 @@ internal object MOOSAReyaPolicy {
             length <= subtitleLastCueSeconds + extraCreditsAllowance
     }
 
+    /** A compatible *length* is useful release evidence, not proof of A/V sync. */
+    fun subtitleCutMatches(videoSeconds: Double?, lastCue: Double?): Boolean =
+        videoSeconds != null && lastCue != null &&
+            runtimeCompatible(videoSeconds, lastCue)
+
+    /** Missing caption evidence must never remove an otherwise verified video. */
+    fun provenWrongCut(videoSeconds: Double?, captionEndTimes: List<Double>): Boolean =
+        videoSeconds != null && captionEndTimes.isNotEmpty() &&
+            captionEndTimes.none { runtimeCompatible(videoSeconds, it) }
+
     fun variants(masterUrl: String, manifest: String): List<Variant> {
         if (!manifest.trimStart().startsWith("#EXTM3U")) return emptyList()
         val resolution = Regex("""(?i)\bRESOLUTION=(\d+)x(\d+)""")
@@ -161,6 +171,13 @@ internal object MOOSAReyaPolicy {
             Variant(url, width, height)
         }.distinctBy { it.url }.sortedByDescending { it.height }
     }
+
+    /** Independent UHD and HD lanes keep a slow 4K URL from hiding 1080p. */
+    fun verificationLanes(variants: List<Variant>): List<List<Variant>> =
+        listOf(
+            variants.filter { it.height >= 2160 }.take(2),
+            variants.filter { it.height in 720..2159 }.take(2)
+        ).filter { it.isNotEmpty() }
 
     data class Media(val init: String, val segment: String)
     fun media(mediaUrl: String, manifest: String): Media? {
