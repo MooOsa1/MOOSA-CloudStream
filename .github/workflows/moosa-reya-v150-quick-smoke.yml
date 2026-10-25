@@ -46,6 +46,14 @@ jobs:
                                   media=mediaRaw.decode("utf8","replace")
                                   seconds=sum(float(x) for x in re.findall(r'(?m)^#EXTINF:([0-9.]+)',media))
                                   print("EP",ep,"SOURCE",label,server,"QUALITY",height,"SECONDS",round(seconds,2),"ENDLIST","#EXT-X-ENDLIST" in media,"MAP","#EXT-X-MAP" in media,flush=True)
+                                  firstSeg=next((x.strip() for x in media.splitlines() if x.strip() and not x.startswith("#")),None)
+                                  if firstSeg:
+                                      segmentURL=urllib.parse.urljoin(url,firstSeg)
+                                      try:
+                                          segStatus,fragment=read(segmentURL,64000)
+                                          synced=[fragment[i]==71 for i in (0,188,376) if i<len(fragment)]
+                                          print("EP",ep,"TS-PROBE",server,height,"status",segStatus,"path-ext",urllib.parse.urlparse(segmentURL).path[-9:],"bytes",len(fragment),"tsSync",synced,"startsMp4",fragment[4:8] in (b"moof",b"ftyp"),flush=True)
+                                      except Exception as e:print("TS-PROBE ERROR",ep,server,height,type(e).__name__,str(e)[:90],flush=True)
                                   break
                               except Exception as e:print("MEDIA ERROR",ep,server,height,type(e).__name__,str(e)[:90],flush=True)
                       except Exception as e: print("STREAM ERROR",ep,label,type(e).__name__,str(e)[:90],flush=True)
