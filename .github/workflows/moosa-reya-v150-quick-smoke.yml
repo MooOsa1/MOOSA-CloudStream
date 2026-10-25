@@ -35,7 +35,7 @@ jobs:
                           found=[]
                           for i,l in enumerate(lines[:-1]):
                               if not l.startswith("#EXT-X-STREAM-INF:"):continue
-                              m=re.search(r'RESOLUTION=(\\d+)x(\\d+)',l)
+                              m=re.search(r'RESOLUTION=([0-9]+)x([0-9]+)',l)
                               if m:found.append((int(m.group(2)),urllib.parse.urljoin(src["url"],lines[i+1].strip())))
                           found.sort(reverse=True)
                           print("EP",ep,"SOURCE",label,server,"VARIANTS",[height for height,_ in found],flush=True)
