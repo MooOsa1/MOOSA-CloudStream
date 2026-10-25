@@ -20,6 +20,7 @@ jobs:
               try:
                   code,raw=read("https://vidnst.reyamika.eu.cc/api/stream?tmdbId=60059&type=tv&season=2&episode="+str(ep))
                   result=json.loads(raw)
+                  print("EP",ep,"API KEYS",list(result.keys()),"TMDB",repr(result.get("tmdbId")),"mediaType",repr(result.get("mediaType")),"SEASON",repr(result.get("season")),"EPISODE",repr(result.get("episode")),flush=True)
                   matches=(result.get("tmdbId")==60059 and result.get("season")==2 and result.get("episode")==ep)
                   print("EP",ep,"API",code,"IDENTITY",matches,"STREAMS",len(result.get("streams",[])),flush=True)
                   native=[x for x in result.get("subtitles",[]) if x.get("label") in ("Arabic","English")]
@@ -29,6 +30,8 @@ jobs:
                       try:
                           _,body=read(src["url"],200000)
                           lines=body.decode("utf8","replace").splitlines()
+                          print("EP",ep,"SERVER",server,"HTTP-MANIFEST-BYTES",len(body),"START",repr(lines[0][:80] if lines else ""),"EXT-X-STREAM-INF",sum("EXT-X-STREAM-INF" in x for x in lines),"EXTINF",sum("#EXTINF:" in x for x in lines),"EXT-X-MAP",sum("#EXT-X-MAP" in x for x in lines),flush=True)
+                          print("EP",ep,"STREAM-DESCRIPTOR",list(src.keys()),"URLHOST",urllib.parse.urlparse(src.get("url","")).hostname,flush=True)
                           found=[]
                           for i,l in enumerate(lines[:-1]):
                               if not l.startswith("#EXT-X-STREAM-INF:"):continue
