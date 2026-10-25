@@ -138,6 +138,17 @@ class MOOSA4KHDHubPolicyTest {
         assertTrue(MOOSAAudioTrackPolicy.accept("ko", languages))
         assertFalse(MOOSAAudioTrackPolicy.accept("ja", languages))
         assertNull(MOOSA4KHDHubPolicy.audioLanguages(payload.copyOfRange(0, 12)))
+
+        val mixedTracks = elem(
+            byteArrayOf(0x16, 0x54, 0xae.toByte(), 0x6b),
+            audioTrack("hin") + audioTrack("und")
+        )
+        val mixedPayload = header + elem(
+            byteArrayOf(0x18, 0x53, 0x80.toByte(), 0x67), mixedTracks
+        )
+        val mixed = MOOSA4KHDHubPolicy.audioLanguages(mixedPayload)
+        assertEquals(setOf("hin", "und"), mixed)
+        assertTrue(MOOSAAudioTrackPolicy.accept("ko", mixed))
     }
 
     @Test fun ebmlDimensionsComeFromVideoTrack() {

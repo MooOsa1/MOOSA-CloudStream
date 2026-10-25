@@ -75,6 +75,17 @@ class MOOSANetMirrorPolicyTest {
         assertNull(MOOSANetMirrorPolicy.audioLanguages(file.copyOfRange(0, 12)))
     }
 
+    @Test fun unlabeledMp4TrackMustNotBeSilentlyDroppedAlongsideKnownDub() {
+        val file = mp4Box("ftyp", "isom".toByteArray()) +
+            mp4Box("moov", mp4Audio("hin") + mp4Audio("und"))
+        val langs = MOOSANetMirrorPolicy.audioLanguages(file)
+        assertEquals(setOf("hin", "und"), langs)
+        assertTrue(MOOSAAudioTrackPolicy.accept("ko", langs))
+        assertTrue(MOOSAAudioTrackPolicy.unverified("ko", langs))
+        assertEquals("audio hin/unknown", MOOSAAudioTrackPolicy.display(langs))
+        assertFalse(MOOSAAudioTrackPolicy.accept("ko", setOf("hin")))
+    }
+
     @Test fun refuseAudioOnlyAndAv1Mp4() {
         fun sample(handler: String, codec: String): ByteArray = ByteArray(100).apply {
             "ftyp".toByteArray().copyInto(this, 4)

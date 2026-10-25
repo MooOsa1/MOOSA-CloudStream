@@ -2,7 +2,7 @@ import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 150
+version = 151
 android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -215,3 +215,5 @@ dependencies {
 // v149: preserve verified 4K streams when subtitle/HLS timeline metadata is unavailable.
 
 // v150: don't discard playable foreign-language movies when audio track labels are missing.
+// v151: preserve mixed unlabeled tracks; independently verify Reya subtitle cuts;
+// probe UHD and FHD in parallel so slow 4K does not suppress FHD fallback.

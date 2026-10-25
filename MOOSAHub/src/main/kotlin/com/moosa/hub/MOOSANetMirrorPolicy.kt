@@ -95,13 +95,11 @@ internal object MOOSANetMirrorPolicy {
             if (handler.data + 12 > handler.end ||
                 String(prefix, handler.data + 8, 4, Charsets.US_ASCII) != "soun"
             ) return@mapNotNull null
-            mediaBoxes.firstOrNull { it.type == "mdhd" }
-        }
-        if (audio.isEmpty()) return null // no complete audio metadata in this prefix
-        val languages = audio.mapNotNull { mdhd ->
-            if (mdhd.data >= mdhd.end) return@mapNotNull null
+            val mdhd = mediaBoxes.firstOrNull { it.type == "mdhd" }
+                ?: return@mapNotNull "und"
+            if (mdhd.data >= mdhd.end) return@mapNotNull "und"
             val offset = mdhd.data + (if (prefix[mdhd.data].toInt() == 1) 32 else 20)
-            if (offset + 2 > mdhd.end) return@mapNotNull null
+            if (offset + 2 > mdhd.end) return@mapNotNull "und"
             val code = ((prefix[offset].toInt() and 255) shl 8) or
                 (prefix[offset + 1].toInt() and 255)
             val lang = buildString {
@@ -109,9 +107,12 @@ internal object MOOSANetMirrorPolicy {
                 append(((code shr 5 and 31) + 96).toChar())
                 append(((code and 31) + 96).toChar())
             }
-            MOOSAAudioTrackPolicy.normalize(lang)
+            // Keep every unlabeled track. Discarding "und" from a Hindi +
+            // unknown mux makes the entire source look Hindi-only and hides
+            // a potentially correct Korean/Japanese original soundtrack.
+            MOOSAAudioTrackPolicy.normalize(lang) ?: "und"
         }.toSet()
-        return languages.takeIf { it.isNotEmpty() }
+        return audio.takeIf { it.isNotEmpty() }
     }
 
     /** Fast-start MP4 metadata must show a playable video track, not just AAC audio. */
