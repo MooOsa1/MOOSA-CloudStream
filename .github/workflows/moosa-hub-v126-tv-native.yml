@@ -1,4 +1,4 @@
-name: MOOSA Hub v154 guarded adaptive UHD playback
+name: MOOSA Hub v155 independent HDHub4u 4K and episode source
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==154,versions
+          assert versions['MOOSAHub']==155,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -120,7 +120,7 @@ jobs:
           assert 'MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(' in hub
           native=(root/'MOOSACineStreamVaPlayerProvider.kt').read_text()
           tester=(root/'MOOSASourceTester.kt').read_text()
-          assert 'listOf(native4KHDHub, nativeMoviesDrive, nativeVixSrc, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
+          assert 'listOf(native4KHDHub, nativeHDHub4u, nativeMoviesDrive, nativeVixSrc, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
           media=(root/'MOOSAHlsMediaQuality.kt').read_text()
           servers=(root/'MOOSAServerRegistry.kt').read_text()
           assert 'h264HeightFromTs(bytes: ByteArray)' in media
@@ -178,6 +178,19 @@ jobs:
           hub=(root/'MOOSAHubProvider.kt').read_text()
           assert 'MOOSA4KHDHubProvider()' in hub
           assert 'MOOSAMoviesDriveProvider()' in hub
+          assert 'MOOSAHDHub4uProvider()' in hub
+          assert 'api is MOOSAHDHub4uProvider' in hub
+          hdhub_provider=(root/'MOOSAHDHub4uProvider.kt').read_text()
+          hdhub_policy=(root/'MOOSAHDHub4uPolicy.kt').read_text()
+          assert 'safeSitemap(' in hdhub_provider
+          assert 'MOOSA4KHDHubPolicy.decodeGatewayDestination(' in hdhub_provider
+          assert 'exactCatalogHeading(' in hdhub_provider
+          assert 'exactFileIdentity(' in hdhub_provider
+          assert 'response.code != 206' in hdhub_provider
+          assert 'actualQuality(' in hdhub_provider
+          assert 'MOOSAAudioTrackPolicy.accept(' in hdhub_provider
+          assert 'fun safeArchive(' in hdhub_policy
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAHDHub4uPolicyTest.kt').exists()
           assert 'api is MOOSAMoviesDriveProvider' in hub
           drive_provider=(root/'MOOSAMoviesDriveProvider.kt').read_text()
           drive_policy=(root/'MOOSAMoviesDrivePolicy.kt').read_text()
@@ -264,5 +277,5 @@ jobs:
           assert 'adaptive4kMasterRequiresFullyVerifiedSingleAudioLadder' in (
               Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAReyaPolicyTest.kt'
           ).read_text()
-          print('PASS: v154: guarded 4K ABR master, fixed UHD retained, original audio protected')
+          print('PASS: v155: independently verified HDHub4u UHD movies and exact episodic links')
           PY
