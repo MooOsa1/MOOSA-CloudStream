@@ -1,4 +1,4 @@
-name: MOOSA Hub v152 verified MoviesDrive UHD plus cinematic 4K crops
+name: MOOSA Hub v153 verified standalone 4K TV episodes
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==152,versions
+          assert versions['MOOSAHub']==153,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -171,6 +171,10 @@ jobs:
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSARecognizedExternalProviderTest.kt').exists()
           uhd_provider=(root/'MOOSA4KHDHubProvider.kt').read_text()
           uhd_policy=(root/'MOOSA4KHDHubPolicy.kt').read_text()
+          assert 'div.episode-file-title' in uhd_provider
+          assert 'MOOSA4KHDHubPolicy.episodeReleaseInfo(' in uhd_provider
+          assert 'fun episodeReleaseInfo(' in uhd_policy
+          assert 'S5.3' in (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSA4KHDHubPolicyTest.kt').read_text()
           hub=(root/'MOOSAHubProvider.kt').read_text()
           assert 'MOOSA4KHDHubProvider()' in hub
           assert 'MOOSAMoviesDriveProvider()' in hub
@@ -253,5 +257,5 @@ jobs:
           assert 'currentEpisode' in netpolicy and 'currentSeason' in netpolicy
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSANetMirrorPolicyTest.kt').exists()
           assert 'explicitlyAudioOnly(body)' in servers
-          print('PASS: v152: genuine MoviesDrive 4K, original audio and cropped UHD acceptance')
+          print('PASS: v153: standalone TV 4K MKV selection, strict S/E and ZIP rejection')
           PY
