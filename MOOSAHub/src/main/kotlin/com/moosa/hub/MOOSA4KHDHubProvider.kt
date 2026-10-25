@@ -135,13 +135,19 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
                     item.select("div.episode-download-item")
                 }
                 .filter { item ->
-                    val badge = item.selectFirst("div.episode-file-info span.badge-psa")
+                    val fileTitle = item.selectFirst("div.episode-file-title")
                         ?.text().orEmpty()
-                    val fileInfo = item.selectFirst("div.episode-file-info")
+                    val metadata = item.selectFirst("div.episode-file-info")
                         ?.text().orEmpty()
-                    val identity = MOOSA4KHDHubPolicy.episodeNumber(badge)
-                        ?: MOOSA4KHDHubPolicy.episodeNumber(fileInfo)
+                    val fileInfo = MOOSA4KHDHubPolicy.episodeReleaseInfo(
+                        fileTitle, metadata
+                    )
+                    // Parse the badge AND filename together so a conflicting
+                    // Episode-08 / S05E07 record cannot match either episode.
+                    val identity = MOOSA4KHDHubPolicy.episodeNumber(fileInfo)
                     identity == requestedEpisode &&
+                        (MOOSA4KHDHubPolicy.filenameSeason(fileTitle)
+                            ?.let { it == requestedSeason } ?: true) &&
                         MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(fileInfo)
                 }
         } else {
@@ -153,14 +159,14 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         // Every result still needs real MKV track dimensions and HTTP 206.
         val uhd = available.filter { element ->
             val filename = if (isTv) {
-                element.selectFirst("div.episode-file-info")?.text().orEmpty()
+                element.selectFirst("div.episode-file-title")?.text().orEmpty()
             } else element.selectFirst(".file-title")?.text().orEmpty()
             MOOSA4KHDHubPolicy.isUhdRelease(filename) &&
                 MOOSA4KHDHubPolicy.isCompatibleRelease(filename)
         }.sortedBy(::releaseSizeGb).take(3).map { it to 2160 }
         val fhd = available.filter { element ->
             val filename = if (isTv) {
-                element.selectFirst("div.episode-file-info")?.text().orEmpty()
+                element.selectFirst("div.episode-file-title")?.text().orEmpty()
             } else element.selectFirst(".file-title")?.text().orEmpty()
             !MOOSA4KHDHubPolicy.isUhdRelease(filename) &&
                 MOOSA4KHDHubPolicy.isCompatibleRelease(filename) &&

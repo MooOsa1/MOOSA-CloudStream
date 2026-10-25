@@ -29,7 +29,10 @@ internal object MOOSA4KHDHubPolicy {
      * playable episode or silently substitute S01E01 for another episode.
      */
     fun seasonNumber(label: String): Int? =
-        Regex("""(?i)^\s*S0*([1-9]\d{0,2})\s*$""")
+        // The source labels season 5 part 3 as S5.3; this is still season 5.
+        // Exact SxxEyy in the release filename must independently confirm
+        // the requested episode before a stream can be used.
+        Regex("""(?i)^\s*S0*([1-9]\d{0,2})(?:\.[1-9]\d{0,2})?\s*$""")
             .matchEntire(label)?.groupValues?.get(1)?.toIntOrNull()
 
     fun episodeNumber(label: String): Int? {
@@ -42,10 +45,18 @@ internal object MOOSA4KHDHubPolicy {
         return badge ?: filename
     }
 
+    /** A release filename's season must not contradict the enclosing tab. */
+    fun filenameSeason(label: String): Int? =
+        Regex("""(?i)\bS0*([1-9]\d{0,2})E0*[1-9]\d{0,3}\b""")
+            .find(label)?.groupValues?.get(1)?.toIntOrNull()
+
     fun isStandaloneEpisodeFile(label: String): Boolean =
         Regex("""(?i)\.mkv\b""").containsMatchIn(label) &&
             !Regex("""(?i)\.zip\b""").containsMatchIn(label) &&
             isCompatibleRelease(label)
+
+    fun episodeReleaseInfo(fileTitle: String, fileInfo: String): String =
+        "$fileTitle $fileInfo".trim()
 
     fun isUhdRelease(title: String): Boolean =
         Regex("""(?i)(?:\b2160p\b|\b4k\s+uhd\b)""").containsMatchIn(title)
@@ -143,6 +154,9 @@ internal object MOOSA4KHDHubPolicy {
             uri.fragment != null
         ) return null
         val host = uri.host.lowercase(Locale.ROOT)
+        // A 2160p ZIP season pack isn't a playable video stream; selecting
+        // it first previously delayed or hid the real MKV mirror.
+        if (Regex("""(?i)\.(?:zip|rar|7z)$""").containsMatchIn(uri.path)) return null
         if (!(
                 host.endsWith(".workers.dev") ||
                     host.endsWith(".r2.dev") ||

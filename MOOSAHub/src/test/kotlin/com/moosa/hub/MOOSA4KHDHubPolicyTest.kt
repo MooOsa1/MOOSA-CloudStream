@@ -34,6 +34,9 @@ class MOOSA4KHDHubPolicyTest {
         assertEquals(2160, MOOSA4KHDHubPolicy.actualQuality(3840, 2160))
         assertNull(MOOSA4KHDHubPolicy.actualQuality(1920, 600))
         assertNull(MOOSA4KHDHubPolicy.safeDirectFile("https://localhost/video.mkv"))
+        assertNull(MOOSA4KHDHubPolicy.safeDirectFile(
+            "https://cdn.example.workers.dev/S05E08.2160p.mkv.zip"
+        ))
         assertNull(MOOSA4KHDHubPolicy.safeDirectFile("http://cdn.example.workers.dev/a"))
         assertNull(MOOSA4KHDHubPolicy.safeDirectFile("https://evil.example/?go=workers.dev"))
         assertEquals(
@@ -52,6 +55,8 @@ class MOOSA4KHDHubPolicyTest {
 
     @Test fun episodeIdsMustMatchAndSeasonPacksNeverBecomePlayers() {
         assertEquals(2, MOOSA4KHDHubPolicy.seasonNumber("S02"))
+        assertEquals(5, MOOSA4KHDHubPolicy.seasonNumber("S5.3"))
+        assertEquals(5, MOOSA4KHDHubPolicy.seasonNumber("S05.10"))
         assertEquals(1, MOOSA4KHDHubPolicy.episodeNumber("Episode-01"))
         assertEquals(3, MOOSA4KHDHubPolicy.episodeNumber(
             "Better.Call.Saul.S02E03.2160p.WEB-DL.H265.mkv"
@@ -71,6 +76,26 @@ class MOOSA4KHDHubPolicyTest {
         ))
         assertFalse(MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(
             "Better.Call.Saul.S02E03.2160p.AV1.mkv"
+        ))
+        val exactSingleEpisode = MOOSA4KHDHubPolicy.episodeReleaseInfo(
+            "Stranger.Things.S05E08.2160p.NF.SDR.WEB-DL.H.265.mkv",
+            "Episode-08 16.34 GB"
+        )
+        assertEquals(8, MOOSA4KHDHubPolicy.episodeNumber(exactSingleEpisode))
+        assertEquals(5, MOOSA4KHDHubPolicy.filenameSeason(exactSingleEpisode))
+        assertTrue(MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(exactSingleEpisode))
+        assertTrue(MOOSA4KHDHubPolicy.isUhdRelease(exactSingleEpisode))
+        assertNull(MOOSA4KHDHubPolicy.episodeNumber(
+            "Stranger.Things.S05E07.2160p.mkv Episode-08 16.34 GB"
+        ))
+        assertEquals(6, MOOSA4KHDHubPolicy.filenameSeason(
+            "Stranger.Things.S06E08.2160p.mkv"
+        ))
+        assertFalse(MOOSA4KHDHubPolicy.isStandaloneEpisodeFile(
+            MOOSA4KHDHubPolicy.episodeReleaseInfo(
+                "Stranger.Things.S05P02.2160p.NF.WEB-DL.H.265.zip",
+                "Episode-07 29 GB"
+            )
         ))
     }
 
