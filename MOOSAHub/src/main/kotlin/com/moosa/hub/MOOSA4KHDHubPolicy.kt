@@ -74,7 +74,7 @@ internal object MOOSA4KHDHubPolicy {
             .containsMatchIn(title)
 
     /** Reverses the public page's nested encoding, without executing its ad JS. */
-    fun decodeGateway(html: String): String? {
+    fun decodeGatewayDestination(html: String): String? {
         val payload = Regex("""s\(['\"]o['\"],\s*['\"]([A-Za-z0-9+/=]+)['\"]""")
             .find(html)?.groupValues?.get(1) ?: return null
         val decoded = base64(payload)
@@ -83,8 +83,11 @@ internal object MOOSA4KHDHubPolicy {
             ?.let(::base64) ?: return null
         val nested = Regex("""\"o\"\s*:\s*\"([^\"]+)\"""")
             .find(decoded)?.groupValues?.get(1) ?: return null
-        return base64(nested)?.let(::safeHubPage)
+        return base64(nested)
     }
+
+    fun decodeGateway(html: String): String? =
+        decodeGatewayDestination(html)?.let(::safeHubPage)
 
     private fun rot13(value: String): String = value.map { c ->
         when (c) {
