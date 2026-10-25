@@ -21,7 +21,7 @@ import java.net.URLEncoder
  * On-demand, direct-HTTP 4K movie and individual TV-episode source.
  *
  * Search -> exact title/year -> 2160p release -> HubCloud gateway ->
- * signed CDN -> 206 range + real Matroska video dimensions.
+ * signed CDN -> 206 range + real Matroska video dimensions + playable GET.
  *
  * A file page advertising "4K" is not enough. No link reaches the player
  * until its first bytes identify a genuine UHD video track.
@@ -86,7 +86,7 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         MOOSANativeSourceDiagnostics.mark(
             name,
             if (discovered.isNotEmpty()) {
-                "Verified MKV resolution • HTTP 206 seek • ${discovered.size} server(s)"
+                "Verified UHD MKV • HTTP 206 seek and playable initial GET • ${discovered.size} server(s)"
             } else {
                 "No independently verified 4K direct file"
             }
@@ -295,6 +295,9 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         if (verifiedQuality < requiredQuality) return null
         val audioLanguages = MOOSA4KHDHubPolicy.audioLanguages(bytes.copyOf(count))
         if (!MOOSAAudioTrackPolicy.accept(originalLanguage, audioLanguages)) return null
+        // A bounded 206 alone is NOT playback proof: the R2 server used for
+        // Oppenheimer returned 206 here but 403 on the player's initial GET.
+        if (!MOOSADirectStreamProbe.acceptsUnrangedGet(url, referer, USER_AGENT)) return null
         return VerifiedVideo(
             url, referer, dimensions.first, dimensions.second, verifiedQuality,
             sizeGb, audioLanguages
