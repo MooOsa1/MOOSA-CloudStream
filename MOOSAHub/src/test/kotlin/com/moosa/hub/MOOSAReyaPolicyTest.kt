@@ -58,6 +58,42 @@ sd/index.m3u8
         assertEquals(1, MOOSAReyaPolicy.verificationLanes(variants.take(2)).size)
     }
 
+    @Test fun adaptive4kMasterRequiresFullyVerifiedSingleAudioLadder() {
+        val manifest = """#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=12000000,RESOLUTION=3840x2160
+4k/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080
+1080/index.m3u8
+"""
+        val variants = MOOSAReyaPolicy.variants(masterUrl, manifest)
+        val both = variants.map { it.url }.toSet()
+        fun eligible(
+            text: String = manifest,
+            urls: Set<String> = both,
+            audio: List<Set<String>?> = listOf(setOf("eng"), setOf("eng")),
+            length: List<Double?> = listOf(2770.0, 2772.0),
+            original: String = "en"
+        ) = MOOSAReyaPolicy.safeAdaptiveMaster(
+            text, variants, urls, audio, length, original
+        )
+        assertTrue(eligible())
+        assertFalse(eligible(urls = setOf(variants.first().url)))
+        assertFalse(eligible(audio = listOf(setOf("eng"), setOf("hin"))))
+        assertFalse(eligible(audio = listOf(setOf("und"), setOf("eng"))))
+        assertFalse(eligible(audio = listOf(setOf("hin"), setOf("hin"))))
+        assertFalse(eligible(audio = listOf(setOf("und"), setOf("und")), original = "ko"))
+        assertFalse(eligible(length = listOf(2770.0, 2150.0)))
+        assertFalse(eligible(length = listOf(null, 2772.0)))
+        assertFalse(eligible(text = manifest +
+            "#EXT-X-STREAM-INF:RESOLUTION=1280x720\n720/index.m3u8\n"))
+        assertFalse(eligible(text = manifest +
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",URI=\"alt.m3u8\"\n"))
+        // English-original unknown tracks preserve the existing uncertainty,
+        // but cannot introduce an unknown-language rendition to foreign media.
+        assertTrue(eligible(audio = listOf(null, null)))
+        assertFalse(eligible(audio = listOf(null, null), original = "ko"))
+    }
+
     @Test fun nativeVttForExactEpisodeAndLanguagesOnly() {
         val payload = JSONObject("""{
             "subtitles": [
