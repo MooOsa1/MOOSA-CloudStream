@@ -179,6 +179,43 @@ internal object MOOSAReyaPolicy {
             variants.filter { it.height in 720..2159 }.take(2)
         ).filter { it.isNotEmpty() }
 
+    /**
+     * Give ExoPlayer an ABR *master* only when EVERY rendition is already
+     * verified for this exact cut. Otherwise a master could silently select
+     * a broken or wrong-language rendition that our fixed links rejected.
+     * Unknown audio is accepted only for original-English titles, when both
+     * renditions have the same unknown metadata. Other languages need proof.
+     */
+    fun safeAdaptiveMaster(
+        manifest: String,
+        variants: List<Variant>,
+        verifiedUrls: Set<String>,
+        audioTracks: List<Set<String>?>,
+        lengths: List<Double?>,
+        originalLanguage: String?
+    ): Boolean {
+        if (variants.size != 2 || verifiedUrls.size != 2 ||
+            variants.map { it.url }.toSet() != verifiedUrls ||
+            variants.count { it.height == 2160 } != 1 ||
+            variants.count { it.height in 720..2159 } != 1) return false
+        if (manifest.lines().count {
+                it.trimStart().startsWith("#EXT-X-STREAM-INF:", true)
+            } != 2 || manifest.contains("#EXT-X-MEDIA:TYPE=AUDIO", true)) return false
+        if (audioTracks.size != 2 || lengths.size != 2) return false
+        val first = audioTracks[0]
+        if (audioTracks.any { it != first || it?.isEmpty() == true }) return false
+        if (first == null && !originalLanguage.equals("en", true)) return false
+        if (first != null) {
+            val expected = MOOSAAudioTrackPolicy.normalize(originalLanguage)
+            val known = first.mapNotNull(MOOSAAudioTrackPolicy::normalize).toSet()
+            if (expected != null && expected !in known &&
+                !(expected == "eng" && known.isEmpty())) return false
+        }
+        val a = lengths[0] ?: return false
+        val b = lengths[1] ?: return false
+        return kotlin.math.abs(a - b) <= 30.0
+    }
+
     data class Media(val init: String, val segment: String)
     fun media(mediaUrl: String, manifest: String): Media? {
         if (!manifest.trimStart().startsWith("#EXTM3U") ||
