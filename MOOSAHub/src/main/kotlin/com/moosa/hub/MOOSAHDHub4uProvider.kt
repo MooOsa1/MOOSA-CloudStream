@@ -324,6 +324,11 @@ internal class MOOSAHDHub4uProvider : MainAPI() {
         if (actual < expectedQuality) return null
         val languages = MOOSA4KHDHubPolicy.audioLanguages(bytes)
         if (!MOOSAAudioTrackPolicy.accept(originalLanguage, languages)) return null
+        // PixelServer already accepts normal playback GETs. Avoid an extra
+        // startup request for it; R2 links must pass the full startup check.
+        if (MOOSADirectStreamProbe.requiresStartProbe(url) &&
+            !MOOSADirectStreamProbe.acceptsUnrangedGet(url, referer, USER_AGENT)
+        ) return null
         return Video(url, referer, actual, languages)
     }
 
