@@ -1787,6 +1787,7 @@ class MOOSAHubProvider : TmdbProvider() {
     // CineStream plugin, this ships and resolves streams inside MOOSA Hub.
     // It is not exposed as an extra home-page extension.
     private val native4KHDHub = MOOSA4KHDHubProvider()
+    private val nativeHDHub4u = MOOSAHDHub4uProvider()
     private val nativeMoviesDrive = MOOSAMoviesDriveProvider()
     private val nativeVixSrc = MOOSAVixSrcProvider()
     private val nativeNetMirror = MOOSANetMirrorProvider()
@@ -1824,7 +1825,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            listOf(native4KHDHub, nativeMoviesDrive, nativeVixSrc, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
+            listOf(native4KHDHub, nativeHDHub4u, nativeMoviesDrive, nativeVixSrc, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
             allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
@@ -1886,13 +1887,14 @@ class MOOSAHubProvider : TmdbProvider() {
             .sortedWith(
                 compareByDescending<MainAPI> {
                     when {
-                        !request.isAnime && it is MOOSAReyaProvider -> 12
+                        !request.isAnime && it is MOOSAHDHub4uProvider -> 11
                         !request.isAnime && request.isTv && it is MOOSAVixSrcProvider -> 10
                         !request.isAnime && !request.isTv && it is MOOSA4KHDHubProvider -> 10
                         !request.isAnime && !request.isTv && it is MOOSAMoviesDriveProvider -> 10
                         !request.isAnime && request.isTv && it is MOOSA4KHDHubProvider -> 7
                         !request.isAnime && it is MOOSAVixSrcProvider -> 9
                         !request.isAnime && it is MOOSANetMirrorProvider -> 8
+                        !request.isAnime && it is MOOSAReyaProvider -> 4
                         !request.isAnime && it is MOOSAOpenDirectoryProvider -> 6
                         arabicRequest && isAkwamProvider(it) -> 6
                         arabicRequest && it.name.equals("ShahidWBas", true) -> 5
@@ -1997,6 +1999,12 @@ class MOOSAHubProvider : TmdbProvider() {
         // on Play. No fuzzy search or external repository is required.
         if (api is MOOSA4KHDHubProvider) {
             if (request.isAnime || request.year == null ||
+                (request.isTv && (request.season == null || request.episode == null))
+            ) return null
+            return ProviderTarget(api.name, api.mainUrl, request.toJson())
+        }
+        if (api is MOOSAHDHub4uProvider) {
+            if (request.isAnime || (!request.isTv && request.year == null) ||
                 (request.isTv && (request.season == null || request.episode == null))
             ) return null
             return ProviderTarget(api.name, api.mainUrl, request.toJson())
@@ -3715,6 +3723,7 @@ class MOOSAHubProvider : TmdbProvider() {
             api is MOOSANetMirrorProvider -> 15_000L
             api is MOOSAReyaProvider -> 24_000L
             api is MOOSA4KHDHubProvider -> 26_000L
+            api is MOOSAHDHub4uProvider -> 42_000L
             api is MOOSAMoviesDriveProvider -> 26_000L
             api is MOOSACineStreamVidzeeProvider -> 16500L
 
@@ -4265,6 +4274,7 @@ class MOOSAHubProvider : TmdbProvider() {
                             api !is MOOSAReyaProvider &&
                             api !is MOOSAOpenDirectoryProvider &&
                             api !is MOOSA4KHDHubProvider &&
+                            api !is MOOSAHDHub4uProvider &&
                             api !is MOOSAMoviesDriveProvider &&
                             api !is MOOSACineStreamVaPlayerProvider &&
                             api !is MOOSACineStreamVidrockProvider &&

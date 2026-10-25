@@ -56,7 +56,8 @@ object MOOSASourceTester {
     fun sources(): List<MainAPI> =
         // Mirror the playback engine's registries. The CloudStream provider
         // mapping and global registry can differ after plugin hot-loading.
-        (listOf(MOOSACineStreamVaPlayerProvider(),
+        (listOf(MOOSAHDHub4uProvider(),
+                MOOSACineStreamVaPlayerProvider(),
                 MOOSACineStreamVidrockProvider(),
                 MOOSACineStreamVidzeeProvider()) +
             apis.toList() + allProviders.toList())
@@ -266,6 +267,15 @@ object MOOSASourceTester {
         discoveryDepth: Int = 1,
         onUpdate: ((SourceState) -> Unit)? = null
     ): SourceState {
+        if (api is MOOSAHDHub4uProvider) {
+            return testNativeSource(
+                api,
+                MOOSAHubProvider.HubPlaybackRequest(
+                    title = "The Invite", year = 2026, originalLanguage = "en"
+                ),
+                onUpdate, "The Invite (2026) 4K"
+            )
+        }
         // All native sources are tested on the SAME exact episode, rather
         // than Inception for VaPlayer and Better Call Saul for the others.
         // This makes ONLINE and UNVERIFIED comparable and meaningful.
@@ -435,20 +445,25 @@ object MOOSASourceTester {
     private suspend fun testNativeSource(
         api: MainAPI,
         request: MOOSAHubProvider.HubPlaybackRequest,
-        onUpdate: ((SourceState) -> Unit)?
+        onUpdate: ((SourceState) -> Unit)?,
+        fixture: String = "S02E01"
     ): SourceState {
         val item = states.computeIfAbsent(key(api)) {
             MutableState(api.name, api.mainUrl)
         }
         item.status = Status.TESTING
         item.serverCount = 0
-        item.detail = "Checking Better Call Saul S02E01"
+        item.detail = "Checking $fixture"
         MOOSANativeSourceDiagnostics.clear(api.name)
         onUpdate?.invoke(snapshot(api))
         // VidZee can use up to 14s resolving seven endpoints, then each HLS
         // must still be independently probed. The old fixed 16s canceled
         // valid link verification before it could mark the source ONLINE.
-        val testDeadline = if (api is MOOSACineStreamVidzeeProvider) 23000L else 17000L
+        val testDeadline = when (api) {
+            is MOOSAHDHub4uProvider -> 42000L
+            is MOOSACineStreamVidzeeProvider -> 23000L
+            else -> 17000L
+        }
         val valid = withTimeoutOrNull(testDeadline) {
             val candidates = Collections.synchronizedList(
                 mutableListOf<ExtractorLink>()
@@ -482,17 +497,17 @@ object MOOSASourceTester {
             item.serverCount = results.count { it.first }
             item.detail = when {
                 results.any { it.first } ->
-                    "S02E01 • " + item.serverCount + " verified HD streams"
+                    "$fixture • " + item.serverCount + " verified HD streams"
                 results.isNotEmpty() ->
-                    "S02E01 • " + results.first().second.take(75)
+                    "$fixture • " + results.first().second.take(75)
                 else ->
-                    "S02E01 • " + (MOOSANativeSourceDiagnostics.note(api.name)
+                    "$fixture • " + (MOOSANativeSourceDiagnostics.note(api.name)
                         ?: "No HTTPS HLS links from source").take(85)
             }
             results.any { it.first }
         } ?: false
-        if (item.detail == "Checking Better Call Saul S02E01") {
-            item.detail = "S02E01 • test timed out"
+        if (item.detail == "Checking $fixture") {
+            item.detail = "$fixture • test timed out"
         }
         item.status = if (valid) Status.ONLINE else Status.UNVERIFIED
         item.lastTested = System.currentTimeMillis()
