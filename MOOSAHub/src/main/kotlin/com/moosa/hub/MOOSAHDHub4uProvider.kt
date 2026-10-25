@@ -80,6 +80,7 @@ internal class MOOSAHDHub4uProvider : MainAPI() {
             } else {
                 detail.select("a[href]").mapNotNull { link ->
                     val file = MOOSAHDHub4uPolicy.safeHubDrive(link.attr("href"))
+                        ?: MOOSAHDHub4uPolicy.safeHubCloudDirect(link.attr("href"))
                         ?: return@mapNotNull null
                     val quality = MOOSAHDHub4uPolicy.releaseQuality(link.text())
                         ?: return@mapNotNull null
@@ -226,22 +227,37 @@ internal class MOOSAHDHub4uProvider : MainAPI() {
 
         val results = mutableListOf<Video>()
         for ((driveUrl, quality) in destinations) {
-            val filePage = runCatching { app.get(driveUrl) }.getOrNull()
-                ?: continue
-            if (!filePage.isSuccessful) continue
-            val filename = filePage.document.selectFirst("h6")?.text().orEmpty()
-            if (!filename.endsWith(".mkv", ignoreCase = true) ||
-                !MOOSAHDHub4uPolicy.exactFileIdentity(
-                    title, year, season, episode, filename
-                ) || !MOOSA4KHDHubPolicy.isCompatibleRelease(filename)
-            ) continue
-            val hub = filePage.document.select("a[href]")
-                .firstNotNullOfOrNull { link ->
-                    if (!link.text().contains("HubCloud", ignoreCase = true)) null
-                    else MOOSA4KHDHubPolicy.safeHubPage(link.attr("href"))
-                } ?: continue
-            val hubPage = runCatching { app.get(hub) }.getOrNull()
-                ?: continue
+            val directHub = MOOSAHDHub4uPolicy.safeHubCloudDirect(driveUrl)
+            val hubResult = if (directHub != null) {
+                // The public HubCloud <title> is the real MKV filename. Do not
+                // trust the movie-post label without rechecking this identity.
+                val page = runCatching { app.get(directHub) }.getOrNull()
+                    ?: continue
+                if (!page.isSuccessful ||
+                    !MOOSAHDHub4uPolicy.exactFileIdentity(
+                        title, year, season, episode, page.document.title()
+                    ) || !MOOSA4KHDHubPolicy.isCompatibleRelease(page.document.title())
+                ) continue
+                directHub to page
+            } else {
+                val filePage = runCatching { app.get(driveUrl) }.getOrNull()
+                    ?: continue
+                if (!filePage.isSuccessful) continue
+                val filename = filePage.document.selectFirst("h6")?.text().orEmpty()
+                if (!filename.endsWith(".mkv", ignoreCase = true) ||
+                    !MOOSAHDHub4uPolicy.exactFileIdentity(
+                        title, year, season, episode, filename
+                    ) || !MOOSA4KHDHubPolicy.isCompatibleRelease(filename)
+                ) continue
+                val hub = filePage.document.select("a[href]")
+                    .firstNotNullOfOrNull { link ->
+                        if (!link.text().contains("HubCloud", ignoreCase = true)) null
+                        else MOOSA4KHDHubPolicy.safeHubPage(link.attr("href"))
+                    } ?: continue
+                val page = runCatching { app.get(hub) }.getOrNull() ?: continue
+                hub to page
+            }
+            val (hub, hubPage) = hubResult
             if (!hubPage.isSuccessful) continue
             val next = Regex("""var\s+url\s*=\s*['\"]([^'\"]+)['\"]""")
                 .find(hubPage.text)?.groupValues?.get(1)
