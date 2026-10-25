@@ -93,7 +93,7 @@ internal class MOOSAHDHub4uProvider : MainAPI() {
         if (selected.isEmpty()) return@coroutineScope 0
 
         val gate = Semaphore(3)
-        val delivered = mutableSetOf<String>()
+        val delivered = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         selected.map { release ->
             async {
                 gate.withPermit {
@@ -102,8 +102,8 @@ internal class MOOSAHDHub4uProvider : MainAPI() {
                             originalLanguage)
                     }.orEmpty()
                     videos.count { video ->
-                        synchronized(delivered) {
-                            if (!delivered.add(video.url)) return@synchronized false
+                        if (!delivered.add(video.url)) false
+                        else {
                             val qualityLabel = if (video.quality == 2160) "4K" else "1080p"
                             val host = if (video.url.contains("pixeldrain.dev")) "PixelServer"
                                 else "R2 CDN"
