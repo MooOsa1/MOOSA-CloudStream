@@ -1,4 +1,4 @@
-name: MOOSA Hub v155 independent HDHub4u 4K and episode source
+name: MOOSA Hub v156 native HDHub4u direct HubCloud 4K
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==155,versions
+          assert versions['MOOSAHub']==156,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -190,6 +190,9 @@ jobs:
           assert 'actualQuality(' in hdhub_provider
           assert 'MOOSAAudioTrackPolicy.accept(' in hdhub_provider
           assert 'fun safeArchive(' in hdhub_policy
+          assert 'fun safeHubCloudDirect(' in hdhub_policy
+          assert 'MOOSAHDHub4uPolicy.safeHubCloudDirect(' in hdhub_provider
+          assert 'page.document.title()' in hdhub_provider
           assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAHDHub4uPolicyTest.kt').exists()
           assert 'api is MOOSAMoviesDriveProvider' in hub
           drive_provider=(root/'MOOSAMoviesDriveProvider.kt').read_text()
@@ -277,5 +280,5 @@ jobs:
           assert 'adaptive4kMasterRequiresFullyVerifiedSingleAudioLadder' in (
               Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAReyaPolicyTest.kt'
           ).read_text()
-          print('PASS: v155: independently verified HDHub4u UHD movies and exact episodic links')
+          print('PASS: v156: UHD movies via direct HubCloud and exact episodic links')
           PY
