@@ -1790,6 +1790,8 @@ class MOOSAHubProvider : TmdbProvider() {
     private val nativeHDHub4u = MOOSAHDHub4uProvider()
     private val nativeMoviesDrive = MOOSAMoviesDriveProvider()
     private val nativeVixSrc = MOOSAVixSrcProvider()
+    private val nativeDoomHttp = MOOSAAnonymousHttpProvider("Doom", "https://doom-addon.zxflix.com")
+    private val nativePlavioHttp = MOOSAAnonymousHttpProvider("Plavio", "https://plaviohd.vercel.app")
     private val nativeNetMirror = MOOSANetMirrorProvider()
     private val nativeReya = MOOSAReyaProvider()
     private val nativeOpenDirectory = MOOSAOpenDirectoryProvider()
@@ -1825,7 +1827,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            listOf(native4KHDHub, nativeHDHub4u, nativeMoviesDrive, nativeVixSrc, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
+            listOf(native4KHDHub, nativeHDHub4u, nativeMoviesDrive, nativeVixSrc, nativeDoomHttp, nativePlavioHttp, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
             allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
@@ -1893,6 +1895,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         !request.isAnime && !request.isTv && it is MOOSAMoviesDriveProvider -> 10
                         !request.isAnime && request.isTv && it is MOOSA4KHDHubProvider -> 7
                         !request.isAnime && it is MOOSAVixSrcProvider -> 9
+                        !request.isAnime && it is MOOSAAnonymousHttpProvider -> 9
                         !request.isAnime && it is MOOSANetMirrorProvider -> 8
                         !request.isAnime && it is MOOSAReyaProvider -> 4
                         !request.isAnime && it is MOOSAOpenDirectoryProvider -> 6
@@ -1966,6 +1969,13 @@ class MOOSAHubProvider : TmdbProvider() {
         aliases: List<String>,
         forceRefresh: Boolean = false
     ): ProviderTarget? {
+        // Anonymous public HTTP aggregators use exact IMDb S/E, never fuzzy titles.
+        if (api is MOOSAAnonymousHttpProvider) {
+            if (request.isAnime || MOOSAAnonymousHttpPolicy.streamApi(
+                api.mainUrl, request.imdbId, request.season, request.episode, request.isTv
+            ) == null) return null
+            return ProviderTarget(api.name, api.mainUrl, request.toJson())
+        }
         // VixSrc resolves TMDB ID + exact S/E directly, not fuzzy titles.
         if (api is MOOSAVixSrcProvider) {
             if (request.isAnime || request.tmdbId == null ||
@@ -3731,6 +3741,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 .lowercase()
 
         return when {
+            api is MOOSAAnonymousHttpProvider -> 27_000L
             api is MOOSAVixSrcProvider -> 17_000L
             api is MOOSANetMirrorProvider -> 15_000L
             api is MOOSAReyaProvider -> 24_000L
@@ -4281,6 +4292,7 @@ class MOOSAHubProvider : TmdbProvider() {
                         if (
                             candidateLinks.isEmpty() &&
                             !isStreamPlayProvider(api) &&
+                            api !is MOOSAAnonymousHttpProvider &&
                             api !is MOOSAVixSrcProvider &&
                             api !is MOOSANetMirrorProvider &&
                             api !is MOOSAReyaProvider &&
