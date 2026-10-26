@@ -105,12 +105,11 @@ internal class MOOSAHDHub4uProvider : MainAPI() {
                     videos.count { video ->
                         if (!delivered.add(video.url)) false
                         else {
-                            val qualityLabel = if (video.quality == 2160) "4K" else "1080p"
                             val host = if (video.url.contains("pixeldrain.dev")) "PixelServer"
                                 else "R2 CDN"
                             callback(newExtractorLink(
                                 name,
-                                "HDHub4u $host • verified $qualityLabel • ${MOOSAAudioTrackPolicy.display(video.languages)}",
+                                "HDHub4u • $host • ${MOOSAServerTitlePolicy.audio(video.languages)}",
                                 video.url,
                                 ExtractorLinkType.VIDEO
                             ) {
