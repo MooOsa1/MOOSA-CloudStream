@@ -14,14 +14,14 @@ class MOOSAAnonymousHttpPolicyTest {
                 "https://doom-addon.zxflix.com", "tt3032476", 2, 10, true)
         )
         assertEquals(
-            "https://plaviohd.vercel.app/stream/movie/tt15398776.json",
+            "https://free.flixnest.app/stream/movie/tt15398776.json",
             MOOSAAnonymousHttpPolicy.streamApi(
-                "https://plaviohd.vercel.app", "tt15398776", null, null, false)
+                "https://free.flixnest.app", "tt15398776", null, null, false)
         )
         assertNull(MOOSAAnonymousHttpPolicy.streamApi(
-            "https://plaviohd.vercel.app", "tt3032476", 2, null, true))
+            "https://free.flixnest.app", "tt3032476", 2, null, true))
         assertNull(MOOSAAnonymousHttpPolicy.streamApi(
-            "https://plaviohd.vercel.app", "not-imdb", null, null, false))
+            "https://free.flixnest.app", "not-imdb", null, null, false))
     }
 
     @Test fun disallowsPrivateUrlsAndP2P() {
