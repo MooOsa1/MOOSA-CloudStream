@@ -21,6 +21,8 @@ jobs:
           endpoints={
             "Doom": "https://doom-addon.zxflix.com",
             "Plavio": "https://plaviohd.vercel.app",
+            "FlixFree": "https://free.flixnest.app",
+            "NuvioPublic": "https://nuviostreams.hayd.uk",
           }
           wanted={
             "BCS S02E10": "series/tt3032476:2:10",
