@@ -64,13 +64,12 @@ internal class MOOSA4KHDHubProvider : MainAPI() {
         }.orEmpty().distinctBy { it.url }
 
         discovered.forEach { media ->
-            val tag = if (media.quality == 2160) "4K" else "${media.quality}p"
             val size = media.sizeGb?.let { " • ${"%.1f".format(java.util.Locale.US, it)} GB" }.orEmpty()
-            val audio = " • ${MOOSAAudioTrackPolicy.display(media.audioLanguages)}"
+            val audio = " • ${MOOSAServerTitlePolicy.audio(media.audioLanguages)}"
             callback(
                 newExtractorLink(
                     name,
-                    "HubCloud • verified $tag$size$audio",
+                    "4KHDHub • HubCloud$size$audio",
                     media.url,
                     ExtractorLinkType.VIDEO
                 ) {

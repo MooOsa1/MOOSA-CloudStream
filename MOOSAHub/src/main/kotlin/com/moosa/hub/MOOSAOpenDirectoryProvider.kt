@@ -80,13 +80,11 @@ internal class MOOSAOpenDirectoryProvider : MainAPI() {
         }.orEmpty()
 
         available.distinctBy { it.url }.forEach { video ->
-            val audio = MOOSAAudioTrackPolicy.display(video.languages)
+            val audio = MOOSAServerTitlePolicy.audio(video.languages)
             callback(
                 newExtractorLink(
                     name,
-                    "OpenDirectory • verified " +
-                        (if (video.quality == 2160) "4K" else "1080p") +
-                        " • " + audio,
+                    "OpenDirectory • Direct • $audio",
                     video.url,
                     ExtractorLinkType.VIDEO
                 ) {

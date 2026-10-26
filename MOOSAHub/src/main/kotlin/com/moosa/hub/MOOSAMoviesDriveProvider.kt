@@ -46,10 +46,10 @@ internal class MOOSAMoviesDriveProvider : MainAPI() {
             searchAndVerify(imdb, request.originalLanguage)
         }.orEmpty().distinctBy { it.url }
         verified.forEach { file ->
-            val audio = MOOSAAudioTrackPolicy.display(file.languages)
+            val audio = MOOSAServerTitlePolicy.audio(file.languages)
             callback(newExtractorLink(
                 name,
-                "MoviesDrive • Pixeldrain verified ${if (file.quality == 2160) "4K" else "1080p"} • $audio",
+                "MoviesDrive • PixelServer • $audio",
                 file.url,
                 ExtractorLinkType.VIDEO
             ) {

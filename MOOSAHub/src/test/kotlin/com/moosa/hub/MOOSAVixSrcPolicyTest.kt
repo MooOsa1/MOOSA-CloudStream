@@ -1,6 +1,7 @@
 package com.moosa.hub
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -129,5 +130,51 @@ hd/index.m3u8
         assertNull(MOOSAVixSrcPolicy.firstSegment(
             "https://vixsrc.to/playlist/190508/index.m3u8", "#EXTM3U\n#EXT-X-ENDLIST"
         ))
+    }
+
+    @Test fun permitsExactVixCdnAndValidAesKeyForRealS02E10Segments() {
+        val media = "https://vixsrc.to/playlist/190517?type=video&rendition=1080p"
+        val segment = "https://sc-u1-01.blackpuma78.boats/hls/23/2/d6/video/1080p/0000-0250.html?token=abc"
+        val playlist = """#EXTM3U
+#EXT-X-KEY:METHOD=AES-128,URI="/storage/enc.key",IV=0x123456
+#EXTINF:4,
+$segment
+"""
+        assertEquals(segment, MOOSAVixSrcPolicy.firstSegment(media, playlist))
+        assertEquals("https://vixsrc.to/storage/enc.key",
+            MOOSAVixSrcPolicy.aes128KeyUrl(media, playlist))
+        assertEquals(segment, MOOSAVixSrcPolicy.safeMediaSegment(segment))
+        assertNull(MOOSAVixSrcPolicy.safeMediaSegment(
+            "https://sc-u1-01.blackpuma78.boats.evil.test/segment.html"))
+        assertNull(MOOSAVixSrcPolicy.safeMediaSegment(
+            "http://sc-u1-01.blackpuma78.boats/segment.html"))
+        assertNull(MOOSAVixSrcPolicy.safeMediaSegment(
+            "https://evil.test/hls/segment.html"))
+        assertNull(MOOSAVixSrcPolicy.aes128KeyUrl(media,
+            playlist.replace("/storage/enc.key", "https://evil.test/key")))
+        val binary = ByteArray(64) { index -> (index * 137).toByte() }
+        assertTrue(MOOSAVixSrcPolicy.looksLikeEncryptedMedia(binary))
+        assertFalse(MOOSAVixSrcPolicy.looksLikeEncryptedMedia(
+            "<html>Access Denied</html>".toByteArray()))
+    }
+
+    @Test fun exactHlsEpisodeCarriesArabicAndEnglishWebVtt() {
+        val master = """#EXTM3U
+#EXT-X-MEDIA:TYPE=SUBTITLES,LANGUAGE="ara",URI="https://vixsrc.to/playlist/190517?type=subtitle&rendition=5-ara"
+#EXT-X-MEDIA:TYPE=SUBTITLES,LANGUAGE="eng",URI="https://vixsrc.to/playlist/190517?type=subtitle&rendition=4-eng"
+#EXT-X-MEDIA:TYPE=SUBTITLES,LANGUAGE="ita",URI="https://vixsrc.to/playlist/190517?type=subtitle&rendition=10-ita"
+"""
+        val captions = MOOSAVixSrcPolicy.nativeCaptions(master)
+        assertEquals(listOf("Arabic", "English"), captions.map { it.language })
+        val playlist = """#EXTM3U
+#EXTINF:2829.0,
+https://sc-u1-01.blackpuma78.boats/hls/23/2/d6/subtitle/5-ara/subs-0000.vtt?token=abc
+#EXT-X-ENDLIST"""
+        assertEquals(
+            "https://sc-u1-01.blackpuma78.boats/hls/23/2/d6/subtitle/5-ara/subs-0000.vtt?token=abc",
+            MOOSAVixSrcPolicy.nativeVttUrl(captions.first().playlistUrl, playlist)
+        )
+        assertNull(MOOSAVixSrcPolicy.nativeVttUrl(captions.first().playlistUrl,
+            playlist.replace("subs-0000.vtt", "error.html")))
     }
 }

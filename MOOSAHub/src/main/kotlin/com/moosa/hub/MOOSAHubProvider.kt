@@ -3688,6 +3688,8 @@ class MOOSAHubProvider : TmdbProvider() {
         // leaking free-form filenames that can confuse player language matching.
         val safeSource = if (source == MOOSAReyaPolicy.NAME) {
             "Reya Native"
+        } else if (source == MOOSAVixSrcPolicy.SOURCE_NAME) {
+            "VixSrc"
         } else source.replace(" • ", " ")
             .replace(Regex("""[\r\n\t]"""), " ").trim().take(28)
         val release = subtitleReleaseHint(subtitle.lang)

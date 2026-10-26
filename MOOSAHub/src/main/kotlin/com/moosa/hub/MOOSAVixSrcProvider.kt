@@ -9,6 +9,9 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.json.JSONObject
 
 /**
@@ -69,10 +72,14 @@ internal class MOOSAVixSrcProvider : MainAPI() {
                         app.get(variant.url, headers = headers)
                     }.getOrNull() ?: continue
                     if (!media.isSuccessful) continue
+                    val aesKeyUrl = MOOSAVixSrcPolicy.aes128KeyUrl(
+                        variant.url, media.text
+                    )
                     val segment = MOOSAVixSrcPolicy.firstSegment(
                         variant.url, media.text
                     ) ?: continue
-                    val readLimit = if (variant.declaredVideoCodec) 32 else 32768
+                    val readLimit = if (aesKeyUrl != null) 2048
+                        else if (variant.declaredVideoCodec) 64 else 32768
                     val sample = runCatching {
                         app.get(
                             segment,
@@ -81,7 +88,8 @@ internal class MOOSAVixSrcProvider : MainAPI() {
                     }.getOrNull() ?: continue
                     val contentType = sample.headers["Content-Type"].orEmpty()
                     if (!sample.isSuccessful ||
-                        contentType.contains("html", ignoreCase = true) ||
+                        (aesKeyUrl == null &&
+                            contentType.contains("html", ignoreCase = true)) ||
                         contentType.startsWith("audio/", ignoreCase = true)
                     ) continue
                     val prefix = ByteArray(readLimit)
@@ -94,11 +102,25 @@ internal class MOOSAVixSrcProvider : MainAPI() {
                         }
                         read
                     }
-                    if (evidence < 12 || prefix[0] == '<'.code.toByte() ||
+                    if (evidence < 64) continue
+                    if (aesKeyUrl != null) {
+                        if (!MOOSAVixSrcPolicy.looksLikeEncryptedMedia(
+                                prefix.copyOf(evidence)
+                            )
+                        ) continue
+                        // A valid video fragment without its 16-byte AES key
+                        // still cannot be played; don't emit it prematurely.
+                        val keyResponse = runCatching {
+                            app.get(aesKeyUrl, headers = headers)
+                        }.getOrNull() ?: continue
+                        if (!keyResponse.isSuccessful ||
+                            keyResponse.body.bytes().size != 16
+                        ) continue
+                    } else if (prefix[0] == '<'.code.toByte() ||
                         prefix[0] == '{'.code.toByte()
                     ) continue
                     // No video CODECS? Prove H264 video exists in the TS.
-                    if (!variant.declaredVideoCodec) {
+                    if (!variant.declaredVideoCodec && aesKeyUrl == null) {
                         val measured = MOOSAHlsMediaQuality.h264HeightFromTs(
                             prefix.copyOf(evidence)
                         ) ?: continue
@@ -109,7 +131,7 @@ internal class MOOSAVixSrcProvider : MainAPI() {
                 }
                 // Retain master HLS and its separate audio tracks. Returning
                 // bare video-rendition URLs can lose the original audio.
-                playableHeight?.let { master to it }
+                playableHeight?.let { Triple(master, it, masterResponse.text) }
             }.getOrNull()
         }
         if (result == null) {
@@ -119,7 +141,7 @@ internal class MOOSAVixSrcProvider : MainAPI() {
 
         callback(newExtractorLink(
             name,
-            "VixSrc • verified segment ${result.second}p",
+            "VixSrc • HLS • Adaptive",
             result.first,
             ExtractorLinkType.M3U8
         ) {
@@ -127,6 +149,34 @@ internal class MOOSAVixSrcProvider : MainAPI() {
             this.referer = endpoint
             this.headers = HEADERS + ("Referer" to endpoint)
         })
+        // Unlike external full-series search results, these subtitle tracks
+        // belong to the exact episode's HLS master and its actual video cut.
+        // Emit video FIRST; slow caption hosts must not delay player startup.
+        coroutineScope {
+            MOOSAVixSrcPolicy.nativeCaptions(result.third).map { caption ->
+                async {
+                    withTimeoutOrNull(4_000L) {
+                        val playlist = runCatching {
+                            app.get(caption.playlistUrl, headers = HEADERS)
+                        }.getOrNull() ?: return@withTimeoutOrNull
+                        if (!playlist.isSuccessful) return@withTimeoutOrNull
+                        val vtt = MOOSAVixSrcPolicy.nativeVttUrl(
+                            caption.playlistUrl, playlist.text
+                        ) ?: return@withTimeoutOrNull
+                        val body = runCatching {
+                            app.get(vtt, headers = HEADERS)
+                        }.getOrNull() ?: return@withTimeoutOrNull
+                        if (!body.isSuccessful ||
+                            !body.text.trimStart().startsWith("WEBVTT") ||
+                            !body.text.contains(" --> ")
+                        ) return@withTimeoutOrNull
+                        subtitleCallback(SubtitleFile(
+                            "${caption.language} • VixSrc matched episode", vtt
+                        ))
+                    }
+                }
+            }.awaitAll()
+        }
         MOOSANativeSourceDiagnostics.mark(
             name, "HLS video ${result.second}p rendition and segment reachable"
         )

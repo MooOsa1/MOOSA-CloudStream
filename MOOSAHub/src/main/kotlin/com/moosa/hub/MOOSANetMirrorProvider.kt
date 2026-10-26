@@ -90,10 +90,10 @@ internal class MOOSANetMirrorProvider : MainAPI() {
 
         playable.forEach { verified ->
             val item = verified.candidate
-            val audioLabel = MOOSAAudioTrackPolicy.display(verified.audioLanguages)
+            val audioLabel = MOOSAServerTitlePolicy.audio(verified.audioLanguages)
             callback(newExtractorLink(
                 name,
-                "NetMirror • ${item.height}p • $audioLabel",
+                "NetMirror • $audioLabel",
                 item.url,
                 ExtractorLinkType.VIDEO
             ) {
