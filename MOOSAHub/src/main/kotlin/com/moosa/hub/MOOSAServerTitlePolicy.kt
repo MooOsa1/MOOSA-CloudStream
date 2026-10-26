@@ -22,6 +22,15 @@ internal object MOOSAServerTitlePolicy {
             .ifEmpty { listOf("?") }.joinToString(" / ")
     }
 
+    /** Add audio only when independently identified; never display "Audio ?" as fact. */
+    fun audioSuffix(languages: Set<String>?): String {
+        val known = languages?.mapNotNull(MOOSAAudioTrackPolicy::normalize)
+            ?.distinct()?.sorted().orEmpty()
+        if (known.isEmpty()) return ""
+        return " • Audio " + known.map { languageNames[it] ?: it.uppercase(Locale.ROOT) }
+            .joinToString(" / ")
+    }
+
     fun reyaMirror(source: String): String {
         if (source.contains("vidnest", true)) return "VidNest"
         return source.replace(Regex("""[^\p{L}\p{N} ._-]"""), " ")
