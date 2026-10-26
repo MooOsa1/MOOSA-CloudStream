@@ -25,7 +25,7 @@ internal object MOOSAAnonymousHttpPolicy {
             uri.fragment != null || !hostPattern.matches(host) ||
             host.endsWith(".local") || host.endsWith(".internal") ||
             host.endsWith(".localhost") || host.endsWith(".test") ||
-            host.matches(Regex("""[0-9]+(?:\\.[0-9]+){3}""")) ||
+            host.matches(Regex("""[0-9]+(?:\.[0-9]+){3}""")) ||
             host.contains("..")) return null
         if (uri.path.orEmpty().lowercase(Locale.ROOT).endsWith(".torrent")) return null
         return uri.toASCIIString()
