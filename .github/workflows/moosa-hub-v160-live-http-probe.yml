@@ -1,0 +1,81 @@
+name: MOOSA v160 live anonymous HTTP media candidates
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAHub/**'
+      - '.github/workflows/moosa-hub-v160-live-http-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check anonymous HTTP manifests, exact episodes and media signatures
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request, urllib.error, urllib.parse, concurrent.futures, re
+          endpoints={
+            "Doom": "https://doom-addon.zxflix.com",
+            "Plavio": "https://plaviohd.vercel.app",
+          }
+          wanted={
+            "BCS S02E10": "series/tt3032476:2:10",
+            "BCS S03E01": "series/tt3032476:3:1",
+            "Oppenheimer": "movie/tt15398776",
+          }
+          def get(url, timeout=9, byte_range=None):
+            req=urllib.request.Request(url,headers={
+              "User-Agent":"Mozilla/5.0","Accept":"*/*",
+              **({"Range":f"bytes=0-{byte_range-1}"} if byte_range else {})
+            })
+            with urllib.request.urlopen(req,timeout=timeout) as response:
+              return response.read(byte_range or 850000)
+          def check(pair):
+            source,base,label,identity=pair
+            result={"source":source,"title":label,"index":False,
+                    "candidates":0,"media_checked":0,"manifest_uhd_claims":0,
+                    "errors":[]}
+            try:
+              data=json.loads(get(f"{base}/stream/{identity}.json",timeout=14))
+              result["index"]=True
+              if not isinstance(data.get("streams"),list): return result
+              rows=data["streams"][:120]
+              for row in rows:
+                if not isinstance(row,dict): continue
+                url=row.get("url")
+                if not isinstance(url,str) or not url.startswith("https://"): continue
+                parsed=urllib.parse.urlsplit(url)
+                if not parsed.hostname or parsed.username or parsed.password: continue
+                if row.get("infoHash") or "fileIdx" in row: continue
+                title=str(row.get("title",""))+" "+str(row.get("name",""))
+                if re.search(r'(?i)torrent|p2p|debrid|magnet|premium|login',title): continue
+                result["candidates"]+=1
+                # Only two media probes per response. Never log signed URLs.
+                if result["media_checked"]>=2: continue
+                try:
+                  start=get(url,timeout=6,byte_range=65536)
+                  if start.startswith(b"#EXTM3U"):
+                    result["media_checked"]+=1
+                    if b"RESOLUTION=3840x2160" in start: result["manifest_uhd_claims"]+=1
+                  elif start.startswith(b"\x1a\x45\xdf\xa3") or b"ftyp" in start[:16]:
+                    result["media_checked"]+=1
+                except Exception as err:
+                  result["errors"].append(type(err).__name__)
+            except Exception as err:
+              result["errors"].append(type(err).__name__)
+            return result
+          tasks=[(src,base,label,key) for src,base in endpoints.items()
+                for label,key in wanted.items()]
+          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+            results=list(ex.map(check,tasks))
+          print(json.dumps(results,indent=2))
+          # This is a live discovery gate: failed responses must not be
+          # misrepresented as extra 4K server coverage. Actual playback and
+          # subtitle sync require separate validation.
+          passed=[r for r in results if r["media_checked"]>0]
+          assert passed, "Neither new source supplied a playable direct HTTP media sample"
+          PY
