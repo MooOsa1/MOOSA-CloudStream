@@ -162,20 +162,12 @@ internal class MOOSAReyaProvider : MainAPI() {
         }
 
         found.forEach { link ->
-            val qualityName = if (link.adaptive) "4K Auto (1080p fallback)"
-                else if (link.height == 2160) "4K" else
-                link.height.toString() + "p"
-            val warning = if (link.height == 2160 && !link.adaptive)
-                " • fixed quality (no auto fallback)" else ""
-            val audio = " • " + MOOSAAudioTrackPolicy.display(link.audioLanguages)
-            val timelineTag = if (link.timelineVerified)
-                " • caption duration matched (sync unverified)"
-                else " • caption timing unavailable"
+            val mode = if (link.height == 2160 && !link.adaptive) " • Fixed" else ""
             callback(
                 newExtractorLink(
                     name,
-                    "Reya " + link.source.take(26) + " • " +
-                        qualityName + " " + link.codec + warning + audio + timelineTag,
+                    "Reya • ${MOOSAServerTitlePolicy.reyaMirror(link.source)}" +
+                        " • ${link.codec}$mode • ${MOOSAServerTitlePolicy.audio(link.audioLanguages)}",
                     link.url,
                     ExtractorLinkType.M3U8
                 ) {
