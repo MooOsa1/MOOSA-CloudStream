@@ -1,4 +1,4 @@
-name: MOOSA Hub v158 VixSrc native playback and readable servers
+name: MOOSA Hub v159 subtitle identity and source stability
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==158,versions
+          assert versions['MOOSAHub']==159,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -280,5 +280,5 @@ jobs:
           assert 'adaptive4kMasterRequiresFullyVerifiedSingleAudioLadder' in (
               Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAReyaPolicyTest.kt'
           ).read_text()
-          print('PASS: v158: UHD start checks, verified VixSrc HLS, native captions and concise server names')
+          print('PASS: v159: UHD start checks, VixSrc HLS and strict season/episode subtitle identities')
           PY

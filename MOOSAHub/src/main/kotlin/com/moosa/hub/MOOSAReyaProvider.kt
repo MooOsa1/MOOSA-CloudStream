@@ -167,7 +167,7 @@ internal class MOOSAReyaProvider : MainAPI() {
                 newExtractorLink(
                     name,
                     "Reya • ${MOOSAServerTitlePolicy.reyaMirror(link.source)}" +
-                        " • ${link.codec}$mode • ${MOOSAServerTitlePolicy.audio(link.audioLanguages)}",
+                        " • ${link.codec}$mode${MOOSAServerTitlePolicy.audioSuffix(link.audioLanguages)}",
                     link.url,
                     ExtractorLinkType.M3U8
                 ) {

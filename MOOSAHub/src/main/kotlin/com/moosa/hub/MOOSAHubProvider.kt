@@ -2955,8 +2955,13 @@ class MOOSAHubProvider : TmdbProvider() {
 
     private fun normalizeExternalSubtitle(
         sub: StremioSubtitle,
-        source: String
+        source: String,
+        request: HubPlaybackRequest
     ): SubtitleFile? {
+        if (!MOOSASubtitleEpisodePolicy.accepts(
+                request.season, request.episode,
+                null, null, sub.movieReleaseName, sub.subtitleFileName, sub.releaseFormat
+            )) return null
         val url = sub.url?.takeIf { validStreamingUrl(it) } ?: return null
         val language = when (subtitleLanguage(sub.lang)) {
             PreferredSubtitleLanguage.ARABIC -> "Arabic"
@@ -3062,7 +3067,7 @@ class MOOSAHubProvider : TmdbProvider() {
                 "${response.subtitles.count { it.lang == "eng" }} English"
         )
         val parsed = response.subtitles
-            .mapNotNull { normalizeExternalSubtitle(it, "OpenSubtitles") }
+            .mapNotNull { normalizeExternalSubtitle(it, "OpenSubtitles", request) }
             .distinctBy { it.url }
         MOOSASubtitleHealth.candidates("OpenSubtitles", parsed.size)
         return parsed
@@ -3094,7 +3099,7 @@ class MOOSAHubProvider : TmdbProvider() {
         return response.result
             ?.all
             .orEmpty()
-            .mapNotNull { normalizeExternalSubtitle(it, "OpenSubtitles Backup") }
+            .mapNotNull { normalizeExternalSubtitle(it, "OpenSubtitles Backup", request) }
             .distinctBy { it.url }
     }
 
@@ -3127,6 +3132,10 @@ class MOOSAHubProvider : TmdbProvider() {
 
         MOOSASubtitleHealth.update("Wyzie", "Index: ${response.size} entries")
         val parsed = response.mapNotNull { item ->
+            if (!MOOSASubtitleEpisodePolicy.accepts(
+                    request.season, request.episode,
+                    null, null, item.display
+                )) return@mapNotNull null
             val url = item.url?.takeIf { validStreamingUrl(it) } ?: return@mapNotNull null
             // Wyzie display names are release titles and may not contain any
             // language name. Trust its structured language field instead.
@@ -3203,14 +3212,11 @@ class MOOSAHubProvider : TmdbProvider() {
 
             if (subtitle.unpackFiles.isNotEmpty()) {
                 subtitle.unpackFiles.mapNotNull { file ->
-                    if (
-                        isSeries &&
-                        request.season != null &&
-                        request.episode != null &&
-                        file.season != null &&
-                        file.episode != null &&
-                        (file.season != request.season || file.episode != request.episode)
-                    ) return@mapNotNull null
+                    if (isSeries && !MOOSASubtitleEpisodePolicy.accepts(
+                            request.season, request.episode,
+                            file.season, file.episode,
+                            file.releaseName, file.name, subtitle.releaseName
+                        )) return@mapNotNull null
 
                     val raw = file.url?.takeIf { it.isNotBlank() } ?: run {
                         MOOSASubtitleHealth.omitted("SubDL", "file URL missing")
@@ -3256,6 +3262,10 @@ class MOOSAHubProvider : TmdbProvider() {
                     )
                 }
             } else {
+                if (isSeries && !MOOSASubtitleEpisodePolicy.accepts(
+                        request.season, request.episode,
+                        null, null, subtitle.releaseName
+                    )) return@flatMap emptyList()
                 val raw = subtitle.url?.takeIf { it.isNotBlank() } ?: run {
                     MOOSASubtitleHealth.omitted("SubDL", "parent URL missing")
                     return@flatMap emptyList()
