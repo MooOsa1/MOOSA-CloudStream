@@ -109,7 +109,7 @@ internal class MOOSAHDHub4uProvider : MainAPI() {
                                 else "R2 CDN"
                             callback(newExtractorLink(
                                 name,
-                                "HDHub4u • $host • ${MOOSAServerTitlePolicy.audio(video.languages)}",
+                                "HDHub4u • $host${MOOSAServerTitlePolicy.audioSuffix(video.languages)}",
                                 video.url,
                                 ExtractorLinkType.VIDEO
                             ) {
