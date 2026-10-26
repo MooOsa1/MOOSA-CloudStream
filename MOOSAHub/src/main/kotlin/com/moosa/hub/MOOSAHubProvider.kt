@@ -1791,7 +1791,7 @@ class MOOSAHubProvider : TmdbProvider() {
     private val nativeMoviesDrive = MOOSAMoviesDriveProvider()
     private val nativeVixSrc = MOOSAVixSrcProvider()
     private val nativeDoomHttp = MOOSAAnonymousHttpProvider("Doom", "https://doom-addon.zxflix.com")
-    private val nativePlavioHttp = MOOSAAnonymousHttpProvider("Plavio", "https://plaviohd.vercel.app")
+    private val nativeFlixFreeHttp = MOOSAAnonymousHttpProvider("FlixFree", "https://free.flixnest.app")
     private val nativeNetMirror = MOOSANetMirrorProvider()
     private val nativeReya = MOOSAReyaProvider()
     private val nativeOpenDirectory = MOOSAOpenDirectoryProvider()
@@ -1827,7 +1827,7 @@ class MOOSAHubProvider : TmdbProvider() {
         // registry retains its full existing behavior.
         // This is registration interoperability, NOT a bundled provider.
         val registry = (
-            listOf(native4KHDHub, nativeHDHub4u, nativeMoviesDrive, nativeVixSrc, nativeDoomHttp, nativePlavioHttp, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
+            listOf(native4KHDHub, nativeHDHub4u, nativeMoviesDrive, nativeVixSrc, nativeDoomHttp, nativeFlixFreeHttp, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee) + apis.toList() +
             allProviders.toList().filter { api ->
                 MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(
                     api.name, request.isAnime
