@@ -20,9 +20,7 @@ jobs:
           import json, urllib.request, urllib.error, urllib.parse, concurrent.futures, re
           endpoints={
             "Doom": "https://doom-addon.zxflix.com",
-            "Plavio": "https://plaviohd.vercel.app",
             "FlixFree": "https://free.flixnest.app",
-            "NuvioPublic": "https://nuviostreams.hayd.uk",
           }
           wanted={
             "BCS S02E10": "series/tt3032476:2:10",
@@ -39,7 +37,7 @@ jobs:
           def check(pair):
             source,base,label,identity=pair
             result={"source":source,"title":label,"index":False,
-                    "candidates":0,"media_checked":0,"manifest_uhd_claims":0,
+                    "candidates":0,"media_checked":0,"manifest_uhd_claims":0,"media_types":[],
                     "errors":[]}
             try:
               data=json.loads(get(f"{base}/stream/{identity}.json",timeout=14))
@@ -62,9 +60,14 @@ jobs:
                   start=get(url,timeout=6,byte_range=65536)
                   if start.startswith(b"#EXTM3U"):
                     result["media_checked"]+=1
+                    result["media_types"].append("hls")
                     if b"RESOLUTION=3840x2160" in start: result["manifest_uhd_claims"]+=1
-                  elif start.startswith(b"\x1a\x45\xdf\xa3") or b"ftyp" in start[:16]:
+                  elif start.startswith(b"\x1a\x45\xdf\xa3"):
                     result["media_checked"]+=1
+                    result["media_types"].append("mkv")
+                  elif b"ftyp" in start[:16]:
+                    result["media_checked"]+=1
+                    result["media_types"].append("mp4")
                 except Exception as err:
                   result["errors"].append(type(err).__name__)
             except Exception as err:
