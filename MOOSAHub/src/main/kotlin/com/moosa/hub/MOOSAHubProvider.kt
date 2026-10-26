@@ -2960,7 +2960,7 @@ class MOOSAHubProvider : TmdbProvider() {
     ): SubtitleFile? {
         if (!MOOSASubtitleEpisodePolicy.accepts(
                 request.season, request.episode,
-                releaseNames = *arrayOf(sub.movieReleaseName, sub.subtitleFileName, sub.releaseFormat)
+                null, null, sub.movieReleaseName, sub.subtitleFileName, sub.releaseFormat
             )) return null
         val url = sub.url?.takeIf { validStreamingUrl(it) } ?: return null
         val language = when (subtitleLanguage(sub.lang)) {
@@ -3134,7 +3134,7 @@ class MOOSAHubProvider : TmdbProvider() {
         val parsed = response.mapNotNull { item ->
             if (!MOOSASubtitleEpisodePolicy.accepts(
                     request.season, request.episode,
-                    releaseNames = *arrayOf(item.display)
+                    null, null, item.display
                 )) return@mapNotNull null
             val url = item.url?.takeIf { validStreamingUrl(it) } ?: return@mapNotNull null
             // Wyzie display names are release titles and may not contain any
@@ -3215,7 +3215,7 @@ class MOOSAHubProvider : TmdbProvider() {
                     if (isSeries && !MOOSASubtitleEpisodePolicy.accepts(
                             request.season, request.episode,
                             file.season, file.episode,
-                            *arrayOf(file.releaseName, file.name, subtitle.releaseName)
+                            file.releaseName, file.name, subtitle.releaseName
                         )) return@mapNotNull null
 
                     val raw = file.url?.takeIf { it.isNotBlank() } ?: run {
@@ -3264,7 +3264,7 @@ class MOOSAHubProvider : TmdbProvider() {
             } else {
                 if (isSeries && !MOOSASubtitleEpisodePolicy.accepts(
                         request.season, request.episode,
-                        releaseNames = *arrayOf(subtitle.releaseName)
+                        null, null, subtitle.releaseName
                     )) return@flatMap emptyList()
                 val raw = subtitle.url?.takeIf { it.isNotBlank() } ?: run {
                     MOOSASubtitleHealth.omitted("SubDL", "parent URL missing")
