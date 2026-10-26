@@ -1,4 +1,4 @@
-name: MOOSA Hub v159 subtitle identity and source stability
+name: MOOSA Hub v160 anonymous HTTPS sources and media validation
 on:
   pull_request:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           sources=(root/'MOOSASourceTesterDialog.kt').read_text()
           servers=(root/'MOOSAServerManagerDialog.kt').read_text()
           versions={p['internalName']:p['version'] for p in json.loads(Path('build/plugins.json').read_text())}
-          assert versions['MOOSAHub']==159,versions
+          assert versions['MOOSAHub']==160,versions
           assert 'MOOSATVSettingsStyle.shell' in sources and 'MOOSATVSettingsStyle.shell' in servers
           assert 'MOOSATVSettingsStyle.window' in sources and 'MOOSATVSettingsStyle.window' in servers
           assert 'Color.rgb(8, 8, 8)' in c
@@ -120,7 +120,7 @@ jobs:
           assert 'MOOSARecognizedExternalProvider.shouldIncludeFromGlobal(' in hub
           native=(root/'MOOSACineStreamVaPlayerProvider.kt').read_text()
           tester=(root/'MOOSASourceTester.kt').read_text()
-          assert 'listOf(native4KHDHub, nativeHDHub4u, nativeMoviesDrive, nativeVixSrc, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
+          assert 'listOf(native4KHDHub, nativeHDHub4u, nativeMoviesDrive, nativeVixSrc, nativeDoomHttp, nativePlavioHttp, nativeNetMirror, nativeReya, nativeOpenDirectory, nativeVaPlayer, nativeVidrock, nativeVidzee)' in hub
           media=(root/'MOOSAHlsMediaQuality.kt').read_text()
           servers=(root/'MOOSAServerRegistry.kt').read_text()
           assert 'h264HeightFromTs(bytes: ByteArray)' in media
@@ -280,5 +280,8 @@ jobs:
           assert 'adaptive4kMasterRequiresFullyVerifiedSingleAudioLadder' in (
               Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAReyaPolicyTest.kt'
           ).read_text()
-          print('PASS: v159: UHD start checks, VixSrc HLS and strict season/episode subtitle identities')
+          assert (root/'MOOSAAnonymousHttpProvider.kt').exists()
+          assert (root/'MOOSAAnonymousHttpPolicy.kt').exists()
+          assert (Path('MOOSAHub/src/test/kotlin/com/moosa/hub')/'MOOSAAnonymousHttpPolicyTest.kt').exists()
+          print('PASS: v160: existing UHD/FHD sources retained and anonymous HTTPS adapters registered')
           PY
