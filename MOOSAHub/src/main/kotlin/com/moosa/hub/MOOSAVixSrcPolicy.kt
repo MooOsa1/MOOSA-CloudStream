@@ -16,6 +16,8 @@ internal object MOOSAVixSrcPolicy {
         val declaredVideoCodec: Boolean = false
     )
 
+    data class NativeCaption(val language: String, val playlistUrl: String)
+
     fun apiUrl(tmdbId: Int?, isTv: Boolean, season: Int?, episode: Int?): String? {
         if (tmdbId == null || tmdbId !in 1..999_999_999) return null
         if (!isTv) return "$BASE/api/movie/$tmdbId"
@@ -144,6 +146,80 @@ internal object MOOSAVixSrcPolicy {
             line.isNotBlank() && !line.startsWith('#')
         } ?: return null
         return runCatching { URI(mediaUrl).resolve(line.trim()).toASCIIString() }
+            .getOrNull()?.let(::safeMediaSegment)
+    }
+
+    /**
+     * VixSrc playlists use vixsrc.to, but their AES-128 video segments are
+     * currently served from an independent sc-u1-* CDN with .html filenames.
+     * A playlist-host-only check silently discarded otherwise working video.
+     */
+    fun safeMediaSegment(raw: String): String? {
+        val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return null
+        if (uri.scheme != "https" || uri.userInfo != null || uri.port != -1 ||
+            uri.fragment != null || uri.host.isNullOrBlank()
+        ) return null
+        val host = uri.host.lowercase(Locale.ROOT)
+        val signedCdn = Regex("""sc-[a-z0-9-]+\.(?:blackpuma78\.boats|vix-content\.net)""")
+        if (host != "vixsrc.to" && !signedCdn.matches(host)) return null
+        return uri.toASCIIString()
+    }
+
+    /** Only ordinary HLS AES-128 keys on the already trusted playlist host. */
+    fun aes128KeyUrl(mediaUrl: String, playlist: String): String? {
+        val line = playlist.lineSequence().firstOrNull {
+            it.startsWith("#EXT-X-KEY:", ignoreCase = true)
+        } ?: return null
+        if (!Regex("""(?:^|,)METHOD=AES-128(?:,|$)""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(line.substringAfter(':'))
+        ) return null
+        val key = Regex("""(?:^|,)URI="([^"]+)""", RegexOption.IGNORE_CASE)
+            .find(line.substringAfter(':'))?.groupValues?.get(1) ?: return null
+        return runCatching { URI(mediaUrl).resolve(key).toASCIIString() }
             .getOrNull()?.let(::safePlaylist)
     }
+
+    /** Exact episode's subtitles advertised by the same HLS master. */
+    fun nativeCaptions(master: String): List<NativeCaption> =
+        master.lineSequence().filter {
+            it.startsWith("#EXT-X-MEDIA:TYPE=SUBTITLES", ignoreCase = true)
+        }.mapNotNull { line ->
+            val code = Regex("""(?:^|,)LANGUAGE="([a-z]{2,3})""",
+                RegexOption.IGNORE_CASE).find(line.substringAfter(':'))
+                ?.groupValues?.get(1)?.lowercase(Locale.ROOT)
+            val language = when (code) {
+                "ara", "ar" -> "Arabic"
+                "eng", "en" -> "English"
+                else -> return@mapNotNull null
+            }
+            val raw = Regex("""(?:^|,)URI="([^"]+)""", RegexOption.IGNORE_CASE)
+                .find(line.substringAfter(':'))?.groupValues?.get(1)
+                ?: return@mapNotNull null
+            val url = safePlaylist(raw) ?: return@mapNotNull null
+            NativeCaption(language, url)
+        }.distinctBy { it.language }.take(2).toList()
+
+    /** Accept only a real VTT segment from the native episode subtitle HLS. */
+    fun nativeVttUrl(playlistUrl: String, media: String): String? {
+        if (!media.trimStart().startsWith("#EXTM3U") ||
+            !media.contains("#EXTINF:")) return null
+        val relative = media.lineSequence().firstOrNull {
+            it.isNotBlank() && !it.startsWith('#')
+        }?.trim() ?: return null
+        val resolved = runCatching {
+            URI(playlistUrl).resolve(relative).toASCIIString()
+        }.getOrNull()?.let(::safeMediaSegment) ?: return null
+        val path = runCatching { URI(resolved).path }.getOrNull().orEmpty()
+        return resolved.takeIf { path.endsWith(".vtt", ignoreCase = true) }
+    }
+
+    /** Encrypted MPEG-TS looks like binary noise, even with text/html MIME. */
+    fun looksLikeEncryptedMedia(bytes: ByteArray): Boolean = bytes.size >= 64 &&
+        bytes.take(64).any { value ->
+            val unsigned = value.toInt() and 255
+            unsigned < 9 || unsigned in 14..31 || unsigned > 126
+        } && !bytes.take(24).toByteArray().toString(Charsets.UTF_8)
+            .trimStart().startsWith("<", ignoreCase = true) &&
+        !bytes.take(24).toByteArray().toString(Charsets.UTF_8)
+            .trimStart().startsWith("{", ignoreCase = true)
 }
