@@ -15,14 +15,14 @@
     "StreamPlay": {
       "integration": "monitor_only",
       "release": {
-        "bytes": 2038526,
-        "sha256": "sha256-2c9be0404fe4527a70824a17740f8a0f2b3906b74fdf759600e7475364e4ab5c",
+        "bytes": 2106245,
+        "sha256": "sha256-41fef2d83071ddcfb2399910f12e33d9015498d9dac71cfc841a01f6868607e7",
         "url": "https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds/StreamPlay.cs3",
-        "version": 692
+        "version": 694
       },
       "repository": "phisher98/cloudstream-extensions-phisher",
       "source_available": false,
-      "source_commit": "89aa8e6cbaa345fad37e05dea68e2614352389f8"
+      "source_commit": "90ffeda98e24b3144b573a72d4773f898af05c19"
     }
   },
   "schema": 1
