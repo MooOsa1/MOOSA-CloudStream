@@ -1,0 +1,38 @@
+name: MOOSA zero-ad hosted embed validation
+on:
+  push:
+    branches: [experiment/fhd-managed-addon-audit-20261017]
+    paths:
+      - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
+      - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
+      - '.github/workflows/moosa-noads-embed-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'MOOSAWeb/tools/managed-noads-embed-audit.mjs'
+      - 'MOOSAWeb/tools/managed-noads-browser-audit.mjs'
+      - '.github/workflows/moosa-noads-embed-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check script syntax
+        run: |
+          node --check MOOSAWeb/tools/managed-noads-embed-audit.mjs
+          node --check MOOSAWeb/tools/managed-noads-browser-audit.mjs
+      - name: Inspect fixed provider iframe endpoint HTML responses
+        run: node MOOSAWeb/tools/managed-noads-embed-audit.mjs
+      - name: Install Chrome control library for isolated audit
+        run: |
+          command -v google-chrome || command -v google-chrome-stable
+          npm install --no-audit --no-fund --prefix /tmp/moosa-browser puppeteer-core@24.24.0
+      - name: Audit licensed Sintel source in sandboxed browser (no click, no privileged headers)
+        run: timeout 80 node MOOSAWeb/tools/managed-noads-browser-audit.mjs
