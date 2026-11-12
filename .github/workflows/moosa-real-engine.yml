@@ -1,0 +1,48 @@
+name: MOOSA 2025 movie decode through official Stremio server
+on:
+  push:
+    branches:
+      - experiment/moosa-hub-aiostreams-20261018
+    paths:
+      - 'AIOStreamsHost/modern-2025-engine.mjs'
+      - '.github/workflows/moosa-real-engine.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-indexed-media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify FFmpeg dependencies
+        run: |
+          if ! command -v ffprobe || ! command -v ffmpeg; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          fi
+          ffprobe -version | head -n 1
+          ffmpeg -version | head -n 1
+      - name: Check test code
+        run: node --check AIOStreamsHost/modern-2025-engine.mjs
+      - name: Start official Stremio streaming engine bound to localhost
+        run: |
+          docker run -d --rm --name moosa-stremio-server \
+            -p 127.0.0.1:11470:11470 stremio/server:v4.22.2
+          for i in $(seq 1 40); do
+            if curl -sSf -m 3 http://127.0.0.1:11470/settings > /dev/null; then
+              echo "OFFICIAL_STREMIO_ENGINE_READY"
+              break
+            fi
+            sleep 2
+          done
+          curl -sSf -m 5 http://127.0.0.1:11470/settings > /dev/null
+      - name: Test 2025 films Sinners and F1 actual decoded video and audio
+        run: node AIOStreamsHost/modern-2025-engine.mjs
+      - name: Stop streaming engine
+        if: always()
+        run: docker rm -f moosa-stremio-server || true

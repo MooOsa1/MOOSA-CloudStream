@@ -188,6 +188,12 @@ function showWatch(){
   }
   const title=current?.partial?titleFor(current.partial):'مشغل MOOSA';
   const sources=state.sources||[];
+  const labLink=$('#stremio-browser-link');
+  if(labLink){
+    const imdb=current?.partial?.imdb_id||current?.partial?.external_ids?.imdb_id||'';
+    labLink.href=/^tt\d{7,10}$/.test(String(imdb))
+      ?'/stremio-lab.html?imdb='+encodeURIComponent(imdb):'/stremio-lab.html';
+  }
   closeDetails();showPlayer({title,sources});
   if(current)void searchAutomaticSources('movie',current.id);
 }

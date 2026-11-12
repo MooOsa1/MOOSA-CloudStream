@@ -12,6 +12,8 @@ import { nativeJsEngine } from './native-js-catalog-runtime.mjs';
 import {stremioProtocolManifest,resolveStremioProtocolMovie} from './cloudstream-stremio-interop.mjs';
 import {collectStremioAddonSubtitles,officialSubtitleAddons} from './web-stremio-subtitles.mjs';
 import {createMediaGateway} from './verified-media-gateway.mjs';
+import {lookupAIOStreams} from './local-stremio-bridge.mjs';
+import {handleLocalMedia,MEDIA_PREFIX} from './local-stremio-media.mjs';
 import {findNightFromCineStream,vidlinkPilotHosts} from './vidlink-original-night-pilot.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -47,8 +49,8 @@ export const AD_FREE_WEB_CSP = [
   "style-src 'self'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https:",
-  "media-src 'self' blob: https:",
+  "connect-src 'self' https: http://127.0.0.1:11470",
+  "media-src 'self' blob: https: http://127.0.0.1:11470",
   "worker-src 'self' blob:",
   "child-src 'self' blob:"
 ].join('; ');
@@ -162,6 +164,53 @@ async function handle(req,res,mediaGateway=null) {
     if(earlyUrl.pathname.startsWith('/api/media/')){
       if(!mediaGateway)return err(res,404,'No operator-approved media gateway configured');
       return mediaGateway.handle(req,res,earlyUrl);
+    }
+    if(earlyUrl.pathname==='/api/stremio-local/status'){
+      if(req.method!=='GET' ||
+          process.env.MOOSA_HOST!=='127.0.0.1' ||
+          req.socket.localAddress!=='127.0.0.1')
+        return err(res,404,'Local browser lab disabled');
+      try{
+        const service=await fetch('http://127.0.0.1:11470/settings',{
+          signal:AbortSignal.timeout(4000),redirect:'error'
+        });
+        await service.body?.cancel();
+        return json(res,200,{online:service.ok,mode:'loopback'});
+      }catch{
+        return json(res,200,{online:false,mode:'loopback'});
+      }
+    }
+    if(earlyUrl.pathname.startsWith(MEDIA_PREFIX+'/')){
+      // This media relay is NEVER enabled on the public Render website.
+      // Requests and the underlying Stremio engine must both stay on loopback.
+      if(process.env.MOOSA_HOST!=='127.0.0.1' ||
+          req.socket.localAddress!=='127.0.0.1')
+        return err(res,404,'Local Stremio media relay disabled');
+      return handleLocalMedia(req,res,earlyUrl);
+    }
+    if(earlyUrl.pathname==='/api/stremio-local/lookup'){
+      if(req.method!=='POST')return err(res,405,'POST required');
+      // Do not permit cross-site pages to use our account-scoped lookup relay.
+      const origin=req.headers.origin;
+      const reqHost=String(req.headers.host||'');
+      if(!reqHost||!origin||!['https://'+reqHost,'http://'+reqHost].includes(origin))
+        return err(res,403,'Same-origin request required');
+      if(!/^application\/json(?:;|$)/i.test(String(req.headers['content-type']||'')))
+        return err(res,415,'JSON required');
+      let input='';
+      try{
+        for await(const chunk of req){
+          input+=chunk.toString('utf8');
+          if(input.length>2000)return err(res,413,'Request too large');
+        }
+      }catch{return err(res,400,'Invalid body');}
+      let data;
+      try{data=JSON.parse(input);}catch{return err(res,400,'Invalid JSON');}
+      try{
+        return json(res,200,await lookupAIOStreams({
+          manifestUrl:data?.manifestUrl,imdbId:data?.imdbId
+        }));
+      }catch(error){return err(res,error.status||502,error.message||'Source discovery failed');}
     }
     if(req.method !== 'GET' && req.method !== 'HEAD')return err(res,405,'Method not allowed');
     const url=new URL(req.url||'/', 'http://localhost');
@@ -435,5 +484,6 @@ export function createServer({mediaGateway=null}={}){
 }
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const PORT = Number(process.env.PORT||3000);
-  createServer().listen(PORT,'0.0.0.0',()=>console.log(`MOOSA Web on http://localhost:${PORT}`));
+  const HOST=process.env.MOOSA_HOST||'0.0.0.0';
+  createServer().listen(PORT,HOST,()=>console.log(`MOOSA Web on http://${HOST}:${PORT}`));
 }

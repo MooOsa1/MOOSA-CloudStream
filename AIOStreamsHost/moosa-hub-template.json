@@ -1,0 +1,149 @@
+{
+  "metadata": {
+    "id": "moosa.hub.iphone-pc",
+    "name": "MOOSA Hub — iPhone & PC",
+    "description": "Free Stremio iPhone full IPA and Windows source aggregator. Active tested discovery sources: Torrentio and Comet (P2P); HTTP prioritized if found. No debrid subscription. Listings do NOT prove playback.",
+    "author": "MOOSA",
+    "version": "1.3.0",
+    "category": "Streaming",
+    "source": "external",
+    "serviceRequired": false,
+    "setToSaveInstallMenu": true,
+    "services": [],
+    "sourceUrl": "https://raw.githubusercontent.com/MooOsa1/MOOSA-CloudStream/experiment/moosa-hub-aiostreams-20261018/AIOStreamsHost/moosa-hub-template.json"
+  },
+  "config": {
+    "presets": [
+      {
+        "type": "custom",
+        "instanceId": "mcm1",
+        "enabled": true,
+        "options": {
+          "name": "Cinemeta — movies and series",
+          "manifestUrl": "https://v3-cinemeta.strem.io/manifest.json",
+          "timeout": 5000,
+          "resources": [
+            "catalog",
+            "meta"
+          ],
+          "mediaTypes": []
+        }
+      },
+      {
+        "type": "custom",
+        "instanceId": "mos1",
+        "enabled": true,
+        "options": {
+          "name": "OpenSubtitles v3 — subtitles",
+          "manifestUrl": "https://opensubtitles-v3.strem.io/manifest.json",
+          "timeout": 5000,
+          "resources": [
+            "subtitles"
+          ],
+          "mediaTypes": []
+        }
+      },
+      {
+        "type": "torrentio",
+        "instanceId": "mto1",
+        "enabled": true,
+        "options": {
+          "name": "Torrentio — updated stream index",
+          "timeout": 6000,
+          "resources": [
+            "stream"
+          ],
+          "providers": [],
+          "useMultipleInstances": false
+        }
+      },
+      {
+        "type": "comet",
+        "instanceId": "mco1",
+        "enabled": true,
+        "options": {
+          "name": "Comet — P2P index (checked live)",
+          "timeout": 7000,
+          "resources": [
+            "stream"
+          ],
+          "includeP2P": true,
+          "removeTrash": true,
+          "mediaTypes": [],
+          "useMultipleInstances": false
+        }
+      }
+    ],
+    "preferredResolutions": [
+      "2160p",
+      "1440p",
+      "1080p",
+      "720p",
+      "576p",
+      "480p",
+      "360p",
+      "240p",
+      "144p",
+      "Unknown"
+    ],
+    "excludedResolutions": [
+      "576p",
+      "480p",
+      "360p",
+      "240p",
+      "144p"
+    ],
+    "excludedQualities": [
+      "CAM",
+      "SCR",
+      "TS",
+      "TC"
+    ],
+    "excludedVisualTags": [
+      "3D"
+    ],
+    "sortCriteria": {
+      "global": [
+        {
+          "key": "streamType",
+          "direction": "desc"
+        },
+        {
+          "key": "resolution",
+          "direction": "desc"
+        },
+        {
+          "key": "seeders",
+          "direction": "desc"
+        },
+        {
+          "key": "quality",
+          "direction": "desc"
+        },
+        {
+          "key": "size",
+          "direction": "desc"
+        }
+      ]
+    },
+    "deduplicator": {
+      "enabled": true,
+      "multiGroupBehaviour": "aggressive",
+      "keys": [
+        "filename",
+        "infoHash"
+      ],
+      "cached": "single_result",
+      "uncached": "per_service",
+      "p2p": "single_result"
+    },
+    "preferredStreamTypes": [
+      "http",
+      "p2p"
+    ],
+    "preferredSubtitles": [
+      "Arabic",
+      "English"
+    ]
+  }
+}
