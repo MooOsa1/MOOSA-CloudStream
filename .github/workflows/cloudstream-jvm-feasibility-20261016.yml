@@ -1,0 +1,86 @@
+name: CloudStream without Android - JVM feasibility
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-jvm-library:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Official CloudStream source with JVM target
+        run: |
+          git clone --depth 1 https://github.com/recloudstream/cloudstream.git upstream
+          cd upstream
+          echo "OFFICIAL_CLOUDSTREAM_REVISION=$(git rev-parse HEAD)"
+          grep -n -F 'jvm()' library/build.gradle.kts
+      - name: Compile official common CloudStream MainAPI for standalone JVM
+        working-directory: upstream
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :library:jvmJar --no-daemon --console plain --stacktrace
+          test -n "$(find library/build/libs -name '*jvm*.jar' -print -quit)"
+          for file in library/build/libs/*jvm*.jar; do
+            echo "JVM_LIBRARY_BUILT=$file"
+            jar tf "$file" | grep -m 3 'com/lagradost/cloudstream3/MainAPI' || true
+          done
+  original-dex-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Download dex-to-JVM converter
+        run: |
+          curl -fLsS --retry 2 --max-time 80 https://github.com/pxb1988/dex2jar/releases/download/v2.4/dex-tools-v2.4.zip -o /tmp/dex-tools.zip
+          unzip -q /tmp/dex-tools.zip -d /tmp/dex-tools
+          find /tmp/dex-tools -name d2j-dex2jar.sh -exec chmod +x {} \;
+          find /tmp/dex-tools -name d2j-dex2jar.sh -print
+      - name: Fetch integrity-verified original CineStream and StreamPlay plugins
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/plugins /tmp/converted
+          converter="$(find /tmp/dex-tools -name d2j-dex2jar.sh -print -quit)"
+          test -n "$converter"
+          for ext in CineStream StreamPlay; do
+            if [ "$ext" = CineStream ]; then
+              root=https://raw.githubusercontent.com/SaurabhKaperwan/CSX/builds
+            else
+              root=https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/builds
+            fi
+            curl -fLsS --retry 2 "$root/plugins.json" -o "/tmp/plugins/$ext.json"
+            digest="$(jq -r --arg n "$ext" --arg u "$root/$ext.cs3" '[.[] | select(.internalName==$n and .url==$u)]|sort_by(.version)|last|.fileHash // empty' "/tmp/plugins/$ext.json")"
+            if [[ ! "$digest" =~ ^sha256-[a-f0-9]{64}$ ]]; then echo "MISSING_SHA256=$ext"; exit 1; fi
+            curl -fLsS --retry 2 "$root/$ext.cs3" -o "/tmp/plugins/$ext.cs3"
+            echo "$(echo "$digest" | sed 's/^sha256-//')  /tmp/plugins/$ext.cs3" | sha256sum --check
+            echo "PLUGIN_PACKAGE=$ext size=$(stat -c %s /tmp/plugins/$ext.cs3)"
+            unzip -Z1 "/tmp/plugins/$ext.cs3" | head -n 15
+            unzip -p "/tmp/plugins/$ext.cs3" classes.dex >"/tmp/plugins/$ext.dex"
+            test -s "/tmp/plugins/$ext.dex"
+            jar_file="/tmp/converted/$ext.jar"
+            "$converter" --force --output "$jar_file" "/tmp/plugins/$ext.dex"
+            test -s "$jar_file"
+            echo "CONVERTED_JVM_BYTECODE=$ext size=$(stat -c %s "$jar_file")"
+            echo "JVM_CLASS_COUNT=$ext $(jar tf "$jar_file" | grep -c '\.class$')"
+          done
+          javap -classpath /tmp/converted/CineStream.jar -public com.megix.CineStream | head -n 35
+          javap -classpath /tmp/converted/StreamPlay.jar -public com.phisher98.StreamPlayPlugin | head -n 35
+      - name: Inspect Android platform dependency in real converted plugin classes
+        run: |
+          python3 - <<'PY'
+          import zipfile,re
+          for name in ['CineStream','StreamPlay']:
+            with zipfile.ZipFile('/tmp/converted/'+name+'.jar') as jar:
+              names=[p for p in jar.namelist() if p.endswith('.class')]
+              android=sum(bool(re.search(rb'Landroid/|android/content/|android/app/|androidx/',jar.read(p))) for p in names)
+              cloudstream=sum(b'com/lagradost/cloudstream3/' in jar.read(p) for p in names)
+              print(f'BYTECODE_DEPENDENCY_SCAN name={name} javaClasses={len(names)} usesAndroidOrAndroidx={android} usesCloudStream={cloudstream}')
+          PY
